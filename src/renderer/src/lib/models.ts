@@ -4,6 +4,7 @@ export interface ModelVariant {
   id: string
   label: string
   base: string
+  legacySlug?: string
   context?: string
   effort?: string
   thinking: boolean
@@ -52,7 +53,32 @@ const EFFORT_LABEL: Record<string, string> = {
   max: 'Max'
 }
 
-function parseId(id: string): { base: string; effort?: string; thinking: boolean; fast: boolean } {
+function formatContext(raw: string): string {
+  const match = raw.trim().match(/^(\d+(?:\.\d+)?)([kKmM])$/)
+  return match ? `${match[1]}${match[2].toUpperCase()}` : raw.trim()
+}
+
+/** `name[context=300k,effort=high,fast=false]` keeps every context size the flat slug collapses. */
+function parseBracket(id: string): { base: string; context?: string; effort?: string; thinking: boolean; fast: boolean } | undefined {
+  const match = id.match(/^([^[]+)\[([^\]]+)\]$/)
+  if (!match) return undefined
+  const params = new Map<string, string>()
+  for (const part of match[2].split(',')) {
+    const eq = part.indexOf('=')
+    if (eq <= 0) continue
+    params.set(part.slice(0, eq).trim(), part.slice(eq + 1).trim())
+  }
+  const context = params.get('context')
+  return {
+    base: match[1],
+    context: context ? formatContext(context) : undefined,
+    effort: params.get('effort') ?? params.get('reasoning') ?? params.get('reasoning_effort'),
+    thinking: params.get('thinking') === 'true',
+    fast: params.get('fast') === 'true' || params.get('speed') === 'fast'
+  }
+}
+
+function parseId(id: string): { base: string; context?: string; effort?: string; thinking: boolean; fast: boolean } {
   let rest = id
   let fast = false
   if (rest.endsWith('-fast')) {
@@ -126,7 +152,7 @@ export function groupModels(models: ModelInfo[]): ModelGroup[] {
   const groups: ModelGroup[] = []
   const byBase = new Map<string, ModelGroup>()
   for (const model of models) {
-    const parsed = parseId(model.id)
+    const parsed = parseBracket(model.id) ?? parseId(model.id)
     let group = byBase.get(parsed.base)
     if (!group) {
       group = { base: parsed.base, name: parsed.base, variants: [] }
@@ -137,7 +163,8 @@ export function groupModels(models: ModelInfo[]): ModelGroup[] {
       id: model.id,
       label: cleanLabel(model.label),
       base: parsed.base,
-      context: readContext(model.label),
+      legacySlug: model.legacySlug,
+      context: parsed.context ?? readContext(model.label),
       effort: parsed.effort,
       thinking: parsed.thinking,
       fast: parsed.fast
@@ -158,7 +185,9 @@ export function findVariant(groups: ModelGroup[], id: string): ModelVariant | un
     const variant = group.variants.find((v) => v.id === id)
     if (variant) return variant
   }
-  return undefined
+  const legacy = groups.flatMap((group) => group.variants.filter((v) => v.legacySlug === id))
+  if (!legacy.length) return undefined
+  return legacy.sort((a, b) => contextSize(a.context ?? '') - contextSize(b.context ?? ''))[0]
 }
 
 export function describeModel(groups: ModelGroup[], id: string): ModelSummary {
@@ -175,7 +204,11 @@ export function describeModel(groups: ModelGroup[], id: string): ModelSummary {
 }
 
 export function contextChoices(group: ModelGroup): string[] {
-  return [...new Set(group.variants.map((v) => v.context).filter((c): c is string => !!c))].sort((a, b) => contextSize(b) - contextSize(a))
+  const seen: string[] = []
+  for (const variant of group.variants) {
+    if (variant.context && !seen.includes(variant.context)) seen.push(variant.context)
+  }
+  return seen
 }
 
 export function effortChoices(group: ModelGroup): EffortChoice[] {

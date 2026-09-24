@@ -111,6 +111,8 @@ export interface SendRequest {
 export interface ModelInfo {
   id: string
   label: string
+  /** Flat CLI slug when `id` is a parameterized variant such as `name[context=1m,effort=high]`. */
+  legacySlug?: string
 }
 
 export interface CliSession {

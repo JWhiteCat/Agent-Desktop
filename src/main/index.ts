@@ -4,6 +4,8 @@ import fs from 'node:fs'
 import path from 'node:path'
 import type { AgentEvent, AgentMode, AppState, Item, ModelInfo, Project, SendRequest, Settings, ThreadMeta } from '@shared/types'
 import { parseModels, resolveCli, runCliOnce } from './cli'
+import { loadCursorModelCatalog } from './model-catalog'
+import { mergeModelLists } from '@shared/model-catalog'
 import { gitDiff } from './git'
 import { cliChatUpdatedAt, readCliTranscript, scanCliSessions, UNTITLED } from './history'
 import { DEFAULT_TITLE, SessionManager, titleFrom } from './sessions'
@@ -206,7 +208,7 @@ function registerIpc(): void {
     const cli = resolveCli(store.settings.agentPath)
     if (!cli) return [{ id: 'auto', label: 'Auto' }]
     const res = await runCliOnce(cli, ['models'])
-    const models = parseModels(res.stdout)
+    const models = mergeModelLists(parseModels(res.stdout), loadCursorModelCatalog())
     if (models.length) modelsCache = models
     return models.length ? models : [{ id: 'auto', label: 'Auto' }]
   })

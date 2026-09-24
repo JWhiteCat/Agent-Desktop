@@ -29,6 +29,10 @@ export function ModelPicker({ value, onChange }: { value: string; onChange: (id:
   const list = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
+    if (selected?.legacySlug === value && selected.id !== value) onChange(selected.id)
+  }, [selected, value, onChange])
+
+  useEffect(() => {
     if (!open) return
     const id = requestAnimationFrame(() => {
       search.current?.focus()
