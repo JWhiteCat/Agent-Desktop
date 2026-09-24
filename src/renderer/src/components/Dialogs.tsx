@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { CliSession, Settings } from '@shared/types'
 import { relativeTime, shortPath } from '../lib/format'
-import { errorText, loadModels, toast, useStore } from '../store'
+import { errorText, loadModels, rememberModel, preferredModel, toast, useStore } from '../store'
+import { ModelPicker } from './ModelPicker'
 import { MODES } from './Composer'
 import { IconFolder, IconRefresh, IconX, Spinner } from './icons'
 
@@ -41,7 +42,6 @@ function Field({ label, desc, children }: { label: string; desc?: string; childr
 
 export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void; onOpenImport: () => void }) {
   const settings = useStore((s) => s.app.settings)
-  const models = useStore((s) => s.models)
   const [info, setInfo] = useState<Awaited<ReturnType<typeof window.api.cliInfo>> | null>(null)
   const [checking, setChecking] = useState(false)
   const [agentPath, setAgentPath] = useState(settings.agentPath)
@@ -133,15 +133,8 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
 
       <section className="settings-section">
         <h4>默认值</h4>
-        <Field label="默认模型">
-          <select className="input" value={settings.defaultModel} onChange={(e) => update({ defaultModel: e.target.value })}>
-            {!models.some((m) => m.id === settings.defaultModel) && <option value={settings.defaultModel}>{settings.defaultModel}</option>}
-            {models.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.label}
-              </option>
-            ))}
-          </select>
+        <Field label="默认模型" desc="新对话会沿用这里的选择">
+          <ModelPicker value={preferredModel(settings.defaultModel)} onChange={rememberModel} />
         </Field>
         <Field label="默认模式">
           <select className="input" value={settings.defaultMode} onChange={(e) => update({ defaultMode: e.target.value as Settings['defaultMode'] })}>

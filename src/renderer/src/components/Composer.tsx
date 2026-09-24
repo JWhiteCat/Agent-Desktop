@@ -1,8 +1,9 @@
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import type { AgentMode } from '@shared/types'
-import { loadModels, useStore, type SendOptions } from '../store'
-import { IconArrowUp, IconBranch, IconChevronDown, IconFolder, IconList, IconRefresh, IconShield, IconSparkle, IconStop } from './icons'
+import { rememberModel, type SendOptions } from '../store'
+import { IconArrowUp, IconBranch, IconChevronDown, IconFolder, IconList, IconShield, IconSparkle, IconStop } from './icons'
 import { MenuList, Popover } from './Menu'
+import { ModelPicker } from './ModelPicker'
 
 export const MODES: { id: AgentMode; label: string; desc: string }[] = [
   { id: 'agent', label: 'Agent', desc: '可读写文件、执行命令' },
@@ -32,6 +33,10 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
   const [opts, setOpts] = useState<SendOptions>(props.initial)
   const [sending, setSending] = useState(false)
   const ta = useRef<HTMLTextAreaElement>(null)
+
+  useEffect(() => {
+    setOpts((o) => (o.model === props.initial.model ? o : { ...o, model: props.initial.model }))
+  }, [props.initial.model])
 
   useImperativeHandle(ref, () => ({
     focus: () => ta.current?.focus(),
@@ -85,7 +90,13 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
       <div className="composer-bar">
         <div className="composer-left">
           <ModePicker value={opts.mode} onChange={(mode) => setOpts((o) => ({ ...o, mode }))} />
-          <ModelPicker value={opts.model} onChange={(model) => setOpts((o) => ({ ...o, model }))} />
+          <ModelPicker
+            value={opts.model}
+            onChange={(model) => {
+              setOpts((o) => ({ ...o, model }))
+              rememberModel(model)
+            }}
+          />
           <button
             className={`pill ${opts.force ? 'pill-warn' : ''}`}
             title={opts.force ? '完全访问：命令无需确认直接执行（--force）' : '默认权限：遵循 CLI 权限配置'}
@@ -141,76 +152,3 @@ function ModePicker({ value, onChange }: { value: AgentMode; onChange: (m: Agent
   )
 }
 
-function ModelPicker({ value, onChange }: { value: string; onChange: (m: string) => void }) {
-  const models = useStore((s) => s.models)
-  const [open, setOpen] = useState(false)
-  const [q, setQ] = useState('')
-  const [refreshing, setRefreshing] = useState(false)
-  const btn = useRef<HTMLButtonElement>(null)
-  const search = useRef<HTMLInputElement>(null)
-  const label = models.find((m) => m.id === value)?.label ?? value
-
-  useEffect(() => {
-    if (!open) return
-    const id = requestAnimationFrame(() => search.current?.focus())
-    return () => cancelAnimationFrame(id)
-  }, [open])
-  const filtered = useMemo(() => {
-    const s = q.trim().toLowerCase()
-    return s ? models.filter((m) => m.id.toLowerCase().includes(s) || m.label.toLowerCase().includes(s)) : models
-  }, [models, q])
-
-  return (
-    <>
-      <button ref={btn} className={`pill ${open ? 'active' : ''}`} onClick={() => setOpen((o) => !o)} title={value}>
-        <span className="pill-model">{label}</span>
-        <IconChevronDown size={12} />
-      </button>
-      <Popover anchor={btn.current} open={open} onClose={() => setOpen(false)} placement="top-start" className="model-popover">
-        <div className="model-search">
-          <input
-            ref={search}
-            placeholder="搜索模型"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && filtered[0]) {
-                onChange(filtered[0].id)
-                setOpen(false)
-                setQ('')
-              }
-            }}
-          />
-          <button
-            className="icon-btn tiny"
-            title="刷新模型列表"
-            onClick={async () => {
-              setRefreshing(true)
-              await loadModels(true)
-              setRefreshing(false)
-            }}
-          >
-            <IconRefresh size={13} className={refreshing ? 'spin' : ''} />
-          </button>
-        </div>
-        <div className="model-list">
-          {filtered.map((m) => (
-            <button
-              key={m.id}
-              className={`menu-item ${m.id === value ? 'selected' : ''}`}
-              onClick={() => {
-                onChange(m.id)
-                setOpen(false)
-                setQ('')
-              }}
-            >
-              <span className="menu-label">{m.label}</span>
-              <span className="menu-hint mono">{m.id}</span>
-            </button>
-          ))}
-          {filtered.length === 0 && <div className="empty-hint">无匹配模型</div>}
-        </div>
-      </Popover>
-    </>
-  )
-}

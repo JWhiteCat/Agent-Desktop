@@ -28,15 +28,27 @@ export function Popover({ anchor, open, onClose, children, placement = 'bottom-s
 
   useLayoutEffect(() => {
     if (!open || !anchor || !ref.current) return
-    const a = anchor.getBoundingClientRect()
-    const m = ref.current.getBoundingClientRect()
-    const gap = 6
-    let top = placement.startsWith('top') ? a.top - m.height - gap : a.bottom + gap
-    let left = placement.endsWith('end') ? a.right - m.width : a.left
-    if (top + m.height > window.innerHeight - 8) top = Math.max(8, a.top - m.height - gap)
-    if (top < 8) top = Math.min(a.bottom + gap, window.innerHeight - m.height - 8)
-    left = Math.min(Math.max(8, left), window.innerWidth - m.width - 8)
-    setPos({ top, left })
+    const place = () => {
+      const el = ref.current
+      if (!el) return
+      const a = anchor.getBoundingClientRect()
+      const m = el.getBoundingClientRect()
+      const gap = 6
+      let top = placement.startsWith('top') ? a.top - m.height - gap : a.bottom + gap
+      let left = placement.endsWith('end') ? a.right - m.width : a.left
+      if (top + m.height > window.innerHeight - 8) top = Math.max(8, a.top - m.height - gap)
+      if (top < 8) top = Math.min(a.bottom + gap, window.innerHeight - m.height - 8)
+      left = Math.min(Math.max(8, left), window.innerWidth - m.width - 8)
+      setPos((prev) => (prev && prev.top === top && prev.left === left ? prev : { top, left }))
+    }
+    place()
+    const observer = new ResizeObserver(place)
+    observer.observe(ref.current)
+    window.addEventListener('resize', place)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', place)
+    }
   }, [open, anchor, placement])
 
   useEffect(() => {

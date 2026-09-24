@@ -43,11 +43,24 @@ export function useStore<T>(selector: (s: UIState) => T): T {
 }
 
 const LAST_PROJECT_KEY = 'agent-desktop:lastProject'
+const LAST_MODEL_KEY = 'agent-desktop:model'
+
+export function preferredModel(settingsDefault?: string): string {
+  return localStorage.getItem(LAST_MODEL_KEY) || settingsDefault || 'auto'
+}
+
+export function rememberModel(model: string): void {
+  localStorage.setItem(LAST_MODEL_KEY, model)
+  void window.api.updateSettings({ defaultModel: model })
+}
 
 export async function initStore(): Promise<void> {
   const app = await window.api.getState()
   const saved = localStorage.getItem(LAST_PROJECT_KEY) ?? undefined
   const lastProjectId = app.projects.some((p) => p.id === saved) ? saved : app.projects[0]?.id
+  const remembered = localStorage.getItem(LAST_MODEL_KEY)
+  if (remembered && remembered !== app.settings.defaultModel) void window.api.updateSettings({ defaultModel: remembered })
+  else if (!remembered && app.settings.defaultModel) localStorage.setItem(LAST_MODEL_KEY, app.settings.defaultModel)
   setState({ app, lastProjectId, view: { kind: 'home', projectId: lastProjectId } })
 
   window.api.onState((app) => setState({ app }))
