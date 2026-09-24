@@ -16,7 +16,7 @@ interface Run {
 
 export const DEFAULT_TITLE = '新对话'
 
-function titleFrom(prompt: string): string {
+export function titleFrom(prompt: string): string {
   const line = prompt.trim().split(/\r?\n/).find((l) => l.trim()) ?? DEFAULT_TITLE
   return line.length > 48 ? `${line.slice(0, 48)}…` : line
 }
@@ -32,6 +32,10 @@ export class SessionManager {
 
   running(): string[] {
     return [...this.runs.keys()]
+  }
+
+  isRunning(threadId: string): boolean {
+    return this.runs.has(threadId)
   }
 
   send(req: SendRequest): void {
@@ -146,6 +150,7 @@ export class SessionManager {
       const preview = r.lastAssistantText.replace(/\s+/g, ' ').trim().slice(0, 120)
       this.store.updateThread(thread.id, {
         updatedAt: Date.now(),
+        syncedAt: Date.now(),
         unread: true,
         ...(preview ? { preview } : {})
       })

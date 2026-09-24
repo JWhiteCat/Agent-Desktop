@@ -27,6 +27,8 @@ export interface ThreadMeta {
   unread?: boolean
   preview?: string
   source: 'app' | 'cli'
+  /** Last time local items were rebuilt from (or written alongside) the CLI chat store. */
+  syncedAt?: number
 }
 
 export interface UserItem {

@@ -19,6 +19,7 @@ const api: DesktopApi = {
   updateThread: (id, patch) => ipcRenderer.invoke('thread:update', id, patch),
   deleteThread: (id) => ipcRenderer.invoke('thread:delete', id),
   getItems: (id) => ipcRenderer.invoke('thread:items', id),
+  syncFromCli: (id) => ipcRenderer.invoke('thread:syncFromCli', id),
   send: (req) => ipcRenderer.invoke('agent:send', req),
   stop: (id) => ipcRenderer.invoke('agent:stop', id),
   updateSettings: (patch) => ipcRenderer.invoke('settings:update', patch),

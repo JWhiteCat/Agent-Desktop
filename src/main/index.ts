@@ -2,11 +2,11 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, shell } from 'e
 import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
-import type { AgentEvent, AgentMode, AppState, ModelInfo, Project, SendRequest, Settings, ThreadMeta } from '@shared/types'
+import type { AgentEvent, AgentMode, AppState, Item, ModelInfo, Project, SendRequest, Settings, ThreadMeta } from '@shared/types'
 import { parseModels, resolveCli, runCliOnce } from './cli'
 import { gitDiff } from './git'
-import { scanCliSessions } from './history'
-import { DEFAULT_TITLE, SessionManager } from './sessions'
+import { cliChatUpdatedAt, readCliTranscript, scanCliSessions, UNTITLED } from './history'
+import { DEFAULT_TITLE, SessionManager, titleFrom } from './sessions'
 import { newId } from './id'
 import { Store } from './store'
 
@@ -99,6 +99,30 @@ function openInEditor(target: string): Promise<boolean> {
   })
 }
 
+function previewOf(items: Item[]): string | undefined {
+  for (let i = items.length - 1; i >= 0; i--) {
+    const it = items[i]
+    if (it.kind === 'assistant') return it.text.replace(/\s+/g, ' ').trim().slice(0, 120)
+  }
+  return undefined
+}
+
+/** Replaces a thread's local items with the transcript stored by the CLI. */
+function syncFromCli(threadId: string): Item[] | undefined {
+  const t = store.thread(threadId)
+  if (!t?.chatId || sessions.isRunning(threadId)) return undefined
+  const items = readCliTranscript(t.chatId)
+  if (!items) return undefined
+  store.setItems(threadId, items)
+  const firstUser = items.find((i) => i.kind === 'user')
+  store.updateThread(threadId, {
+    syncedAt: Date.now(),
+    preview: previewOf(items) ?? t.preview,
+    ...(t.title === UNTITLED && firstUser?.kind === 'user' ? { title: titleFrom(firstUser.text) } : {})
+  })
+  return items
+}
+
 function registerIpc(): void {
   ipcMain.handle('state:get', () => snapshot())
 
@@ -144,7 +168,27 @@ function registerIpc(): void {
     store.deleteThread(id)
     broadcastState()
   })
-  ipcMain.handle('thread:items', (_e, id: string) => store.items(id))
+  ipcMain.handle('thread:items', (_e, id: string) => {
+    const t = store.thread(id)
+    if (t?.source === 'cli' && t.chatId && !sessions.isRunning(id)) {
+      const cliUpdated = cliChatUpdatedAt(t.chatId)
+      if (cliUpdated && cliUpdated > (t.syncedAt ?? 0)) {
+        try {
+          if (syncFromCli(id)) broadcastState()
+        } catch (err) {
+          console.error('[history] sync failed', err)
+        }
+      }
+    }
+    return store.items(id)
+  })
+  ipcMain.handle('thread:syncFromCli', (_e, id: string) => {
+    if (sessions.isRunning(id)) throw new Error('对话正在运行，请稍后再同步')
+    const items = syncFromCli(id)
+    if (!items) throw new Error('未在 ~/.cursor/chats 中找到该会话')
+    broadcastState()
+    return items
+  })
 
   ipcMain.handle('agent:send', (_e, req: SendRequest) => sessions.send(req))
   ipcMain.handle('agent:stop', (_e, id: string) => sessions.stop(id))
@@ -208,13 +252,21 @@ function registerIpc(): void {
         createdAt: s.createdAt || Date.now(),
         updatedAt: s.updatedAt || Date.now()
       })
-      store.items(thread.id).push({
-        id: newId(),
-        kind: 'notice',
-        level: 'info',
-        text: '此对话导入自 Cursor CLI。早期消息保存在 CLI 本地会话中，发送新消息即可在原会话上下文中继续。'
-      })
-      store.markItemsDirty(thread.id)
+      let synced = false
+      try {
+        synced = !!syncFromCli(thread.id)
+      } catch (err) {
+        console.error('[history] import transcript failed', s.chatId, err)
+      }
+      if (!synced) {
+        store.items(thread.id).push({
+          id: newId(),
+          kind: 'notice',
+          level: 'info',
+          text: '未能读取此会话的历史消息，发送新消息仍会在原会话上下文中继续。'
+        })
+        store.markItemsDirty(thread.id)
+      }
       count++
     }
     broadcastState()

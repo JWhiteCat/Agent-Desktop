@@ -1,7 +1,7 @@
 import { forwardRef, useEffect, useMemo, useRef, useState } from 'react'
 import type { Project, ThreadMeta } from '@shared/types'
 import { relativeTime } from '../lib/format'
-import { addProjectInteractive, goHome, openThread, setState, toast, useStore } from '../store'
+import { addProjectInteractive, goHome, openThread, setState, syncThreadFromCli, toast, useStore } from '../store'
 import {
   IconArchive,
   IconChevronDown,
@@ -15,6 +15,7 @@ import {
   IconMore,
   IconPin,
   IconPlus,
+  IconRefresh,
   IconSearch,
   IconSettings,
   IconTrash,
@@ -324,6 +325,16 @@ function ThreadRow(props: {
       onSelect: () => window.api.updateThread(t.id, { archived: !t.archived })
     },
     'separator',
+    {
+      label: '从 CLI 同步历史',
+      icon: <IconRefresh size={14} />,
+      disabled: !t.chatId || running,
+      onSelect: () => {
+        if (t.source === 'cli' || confirm('用 Cursor CLI 本地保存的记录替换此对话的显示内容？\n（耗时、token 统计等本应用记录的信息会丢失）')) {
+          syncThreadFromCli(t.id)
+        }
+      }
+    },
     {
       label: '复制 CLI 会话 ID',
       icon: <IconCopy size={14} />,

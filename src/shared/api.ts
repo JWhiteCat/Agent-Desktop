@@ -24,6 +24,7 @@ export interface DesktopApi {
   updateThread(id: string, patch: Partial<ThreadMeta>): Promise<void>
   deleteThread(id: string): Promise<void>
   getItems(threadId: string): Promise<Item[]>
+  syncFromCli(threadId: string): Promise<Item[]>
   send(req: SendRequest): Promise<void>
   stop(threadId: string): Promise<void>
   updateSettings(patch: Partial<Settings>): Promise<Settings>

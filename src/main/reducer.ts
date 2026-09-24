@@ -12,7 +12,7 @@ const MAX_STRING = 24_000
 const DROP_KEYS = new Set(['afterFullFileContent', 'beforeFullFileContent', 'parsingResult', 'adminCommandDenylist'])
 
 /** Tool results can embed whole files; keep persisted history small. */
-function compact(value: unknown, depth = 0): unknown {
+export function compact(value: unknown, depth = 0): unknown {
   if (typeof value === 'string') {
     return value.length > MAX_STRING ? `${value.slice(0, MAX_STRING)}\n… (已截断 ${value.length - MAX_STRING} 字符)` : value
   }

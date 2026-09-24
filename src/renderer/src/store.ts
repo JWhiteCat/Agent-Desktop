@@ -121,11 +121,22 @@ export async function openThread(id: string): Promise<void> {
   setState({ view: { kind: 'thread', id } })
   const thread = state.app.threads.find((t) => t.id === id)
   if (thread) rememberProject(thread.projectId)
-  if (!state.items[id]) {
+  const idle = !state.app.running.includes(id)
+  if (!state.items[id] || (thread?.source === 'cli' && idle)) {
     const items = await window.api.getItems(id)
-    setState((s) => ({ items: { ...s.items, [id]: s.items[id] ?? items } }))
+    setState((s) => ({ items: { ...s.items, [id]: s.items[id] && !idle ? s.items[id] : items } }))
   }
   if (thread?.unread) window.api.updateThread(id, { unread: false })
+}
+
+export async function syncThreadFromCli(id: string): Promise<void> {
+  try {
+    const items = await window.api.syncFromCli(id)
+    setState((s) => ({ items: { ...s.items, [id]: items } }))
+    toast(`已从 CLI 同步 ${items.length} 条记录`)
+  } catch (err) {
+    toast(errorText(err), 'error')
+  }
 }
 
 export function goHome(projectId?: string): void {

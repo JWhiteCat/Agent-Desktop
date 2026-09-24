@@ -152,6 +152,11 @@ export class Store {
     return items
   }
 
+  setItems(threadId: string, items: Item[]): void {
+    this.itemsCache.set(threadId, items)
+    this.markItemsDirty(threadId)
+  }
+
   markItemsDirty(threadId: string): void {
     this.dirtyThreads.add(threadId)
     this.scheduleSave()

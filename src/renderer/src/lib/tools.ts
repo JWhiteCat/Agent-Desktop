@@ -30,14 +30,19 @@ export function errorOf(item: ToolItem): string | undefined {
   return pick(e, 'message', 'error', 'reason', 'errorMessage') ?? JSON.stringify(e)
 }
 
+/** ApplyPatch receives the raw patch text instead of an args object. */
+function patchPath(args: unknown): string | undefined {
+  return typeof args === 'string' ? args.match(/^\*\*\* (?:Update|Add|Delete) File: (.+)$/m)?.[1]?.trim() : undefined
+}
+
 export function summarizeTool(item: ToolItem): ToolSummary {
-  const a = item.args ?? {}
+  const a = typeof item.args === 'object' && item.args ? item.args : {}
   const s = successOf(item) ?? {}
   const running = item.status === 'running'
-  const path = pick(a, 'path', 'targetFile', 'filePath', 'file', 'targetDirectory', 'directory')
-  const name = item.tool.toLowerCase()
+  const path = pick(a, 'path', 'targetFile', 'filePath', 'file', 'targetDirectory', 'target_directory', 'directory') ?? patchPath(item.args)
+  const name = item.tool.toLowerCase().replace(/[^a-z]/g, '')
 
-  if (name === 'read') {
+  if (name === 'read' || name === 'readfile') {
     const range = s.readRange ? `L${s.readRange.startLine}-${s.readRange.endLine}` : undefined
     return { kind: 'read', verb: running ? '正在读取' : '已读取', target: path && basename(path), meta: range }
   }
@@ -60,9 +65,9 @@ export function summarizeTool(item: ToolItem): ToolSummary {
     }
   }
   if (name === 'glob') {
-    return { kind: 'search', verb: running ? '正在查找文件' : '已查找文件', target: pick(a, 'globPattern', 'pattern'), meta: s.totalFiles !== undefined ? `${s.totalFiles} 个结果` : undefined }
+    return { kind: 'search', verb: running ? '正在查找文件' : '已查找文件', target: pick(a, 'globPattern', 'glob_pattern', 'pattern'), meta: s.totalFiles !== undefined ? `${s.totalFiles} 个结果` : undefined }
   }
-  if (name === 'grep' || name === 'search' || name === 'codebasesearch' || name === 'semanticsearch') {
+  if (['grep', 'rg', 'search', 'codebasesearch', 'semanticsearch'].includes(name)) {
     return { kind: 'search', verb: running ? '正在搜索' : '已搜索', target: pick(a, 'pattern', 'query', 'regex') }
   }
   if (name === 'ls' || name === 'listdir') {
@@ -76,10 +81,20 @@ export function summarizeTool(item: ToolItem): ToolSummary {
     return { kind: 'todo', verb: '更新待办', meta: Array.isArray(todos) ? `${todos.length} 项` : undefined }
   }
   if (name.includes('web') || name.includes('fetch')) {
-    return { kind: 'web', verb: name.includes('fetch') ? '获取网页' : '搜索网页', target: pick(a, 'url', 'query', 'searchTerm') }
+    return { kind: 'web', verb: name.includes('fetch') ? '获取网页' : '搜索网页', target: pick(a, 'url', 'query', 'searchTerm', 'search_term') }
   }
-  if (name.includes('mcp')) {
-    return { kind: 'mcp', verb: '调用 MCP', target: [pick(a, 'providerIdentifier', 'server', 'serverName'), pick(a, 'toolName', 'name')].filter(Boolean).join(' · ') }
+  if (name.includes('mcp') || name === 'calldynamictool' || name === 'getdynamictools' || name.startsWith('plugin')) {
+    const target = [pick(a, 'providerIdentifier', 'server', 'serverName', 'namespace'), pick(a, 'toolName', 'name')].filter(Boolean).join(' · ')
+    return { kind: 'mcp', verb: name === 'getdynamictools' ? '查询工具' : '调用工具', target: target || item.tool }
+  }
+  if (name === 'await' || name === 'awaitshell') {
+    return { kind: 'shell', verb: running ? '等待命令' : '已等待命令', target: pick(a, 'shell_id', 'shellId', 'task_id') }
+  }
+  if (name === 'askquestion') {
+    return { kind: 'other', verb: '提问', target: pick(a, 'title') ?? (Array.isArray(a.questions) ? a.questions[0]?.prompt : undefined) }
+  }
+  if (name === 'createplan') {
+    return { kind: 'todo', verb: '制定计划', target: pick(a, 'name', 'overview') }
   }
   if (name.includes('task') || name.includes('agent')) {
     return { kind: 'task', verb: running ? '子代理运行中' : '子代理完成', target: pick(a, 'description', 'prompt') }
@@ -93,5 +108,5 @@ export function toolDiff(item: ToolItem): string | undefined {
 }
 
 export function toolPath(item: ToolItem): string | undefined {
-  return pick(item.args ?? {}, 'path', 'targetFile', 'filePath', 'file') ?? successOf(item)?.path
+  return pick(item.args ?? {}, 'path', 'targetFile', 'filePath', 'file') ?? patchPath(item.args) ?? successOf(item)?.path
 }

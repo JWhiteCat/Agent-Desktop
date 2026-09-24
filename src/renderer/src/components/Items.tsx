@@ -109,12 +109,12 @@ export function AssistantMessage({ text, streaming }: { text: string; streaming?
 
 export function ThinkingBlock({ item }: { item: ThinkingItem }) {
   const [open, setOpen] = useState(false)
-  const secs = item.endedAt ? Math.max(1, Math.round((item.endedAt - item.startedAt) / 1000)) : undefined
+  const secs = item.endedAt && item.startedAt ? Math.max(1, Math.round((item.endedAt - item.startedAt) / 1000)) : undefined
   return (
     <div className="step">
       <div className="step-head" onClick={() => setOpen((o) => !o)}>
         <span className="step-icon">{item.done ? <IconBrain size={14} /> : <Spinner size={12} />}</span>
-        <span className={`step-verb ${item.done ? '' : 'shimmer'}`}>{item.done ? `思考了 ${secs ?? 1} 秒` : '思考中'}</span>
+        <span className={`step-verb ${item.done ? '' : 'shimmer'}`}>{item.done ? (secs ? `思考了 ${secs} 秒` : '思考') : '思考中'}</span>
         {open ? <IconChevronDown size={12} /> : <IconChevronRight size={12} />}
       </div>
       {open && item.text.trim() && <div className="step-body thinking-text">{item.text.trim()}</div>}
@@ -160,6 +160,13 @@ function ToolDetail({ item }: { item: ToolItem }) {
         {files.map((f, i) => (
           <DiffLines key={i} lines={f.lines} />
         ))}
+      </div>
+    )
+  }
+  if (typeof item.args === 'string' && sum.kind === 'edit') {
+    return (
+      <div className="tool-detail">
+        <DiffLines lines={item.args.split(/\r?\n/)} />
       </div>
     )
   }
