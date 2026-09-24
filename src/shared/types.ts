@@ -85,6 +85,8 @@ export type Item = UserItem | AssistantItem | ThinkingItem | ToolItem | ResultIt
 export interface Settings {
   agentPath: string
   defaultModel: string
+  /** Model group bases shown in the chat picker. Empty means show every model. */
+  favoriteModels: string[]
   defaultMode: AgentMode
   force: boolean
   theme: 'system' | 'dark' | 'light'
@@ -139,6 +141,7 @@ export type AgentEvent =
 export const DEFAULT_SETTINGS: Settings = {
   agentPath: '',
   defaultModel: 'auto',
+  favoriteModels: [],
   defaultMode: 'agent',
   force: false,
   theme: 'system',

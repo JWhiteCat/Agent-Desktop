@@ -180,6 +180,13 @@ export function groupModels(models: ModelInfo[]): ModelGroup[] {
   return groups
 }
 
+/** Chat picker lists favorite groups. The active group stays visible so an existing thread can keep its model. */
+export function listedModelGroups(groups: ModelGroup[], favoriteBases: string[], selectedBase?: string): ModelGroup[] {
+  if (!favoriteBases.length) return groups
+  const allowed = new Set(favoriteBases)
+  return groups.filter((group) => allowed.has(group.base) || group.base === selectedBase)
+}
+
 export function findVariant(groups: ModelGroup[], id: string): ModelVariant | undefined {
   for (const group of groups) {
     const variant = group.variants.find((v) => v.id === id)

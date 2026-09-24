@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { CliSession, Settings } from '@shared/types'
 import { relativeTime, shortPath } from '../lib/format'
-import { errorText, loadModels, rememberModel, preferredModel, toast, useStore } from '../store'
+import { groupModels } from '../lib/models'
+import { errorText, loadModels, modelForChat, rememberModel, setFavoriteModels, toast, useStore } from '../store'
 import { ModelPicker } from './ModelPicker'
 import { MODES } from './Composer'
 import { IconFolder, IconRefresh, IconX, Spinner } from './icons'
@@ -28,6 +29,86 @@ function Modal({ title, onClose, children, footer, wide }: { title: string; onCl
   )
 }
 
+const NO_FAVORITES: string[] = []
+
+function FavoriteModels() {
+  const models = useStore((s) => s.models)
+  const favoriteModels = useStore((s) => s.app.settings.favoriteModels) ?? NO_FAVORITES
+  const groups = useMemo(() => groupModels(models), [models])
+  const [q, setQ] = useState('')
+  const [refreshing, setRefreshing] = useState(false)
+  const selected = useMemo(() => new Set(favoriteModels), [favoriteModels])
+
+  useEffect(() => {
+    if (models.length <= 1) void loadModels()
+  }, [models.length])
+
+  const filtered = useMemo(() => {
+    const s = q.trim().toLowerCase()
+    if (!s) return groups
+    return groups.filter((g) => g.name.toLowerCase().includes(s) || g.base.toLowerCase().includes(s))
+  }, [groups, q])
+
+  const selectedCount = groups.filter((g) => selected.has(g.base)).length
+  const filteredBases = filtered.map((g) => g.base)
+  const allFilteredOn = filteredBases.length > 0 && filteredBases.every((base) => selected.has(base))
+
+  const toggle = (base: string) => {
+    setFavoriteModels(selected.has(base) ? favoriteModels.filter((id) => id !== base) : [...favoriteModels, base])
+  }
+
+  const toggleFiltered = () => {
+    if (allFilteredOn) {
+      const drop = new Set(filteredBases)
+      setFavoriteModels(favoriteModels.filter((id) => !drop.has(id)))
+      return
+    }
+    const next = new Set(favoriteModels)
+    for (const base of filteredBases) next.add(base)
+    setFavoriteModels([...next])
+  }
+
+  return (
+    <div className="favorite-models">
+      <div className="muted small">对话中只能选择这里勾选的模型。都不勾选时，对话中显示全部模型。</div>
+      <div className="favorite-toolbar">
+        <input className="input" placeholder="搜索模型" value={q} onChange={(e) => setQ(e.target.value)} />
+        <button className="btn" type="button" disabled={!filteredBases.length} onClick={toggleFiltered}>
+          {allFilteredOn ? '取消全选' : q.trim() ? '全选筛选' : '全选'}
+        </button>
+        <button className="btn" type="button" disabled={!favoriteModels.length} onClick={() => setFavoriteModels([])}>
+          清空
+        </button>
+        <button
+          className="icon-btn"
+          type="button"
+          title="刷新模型列表"
+          onClick={async () => {
+            setRefreshing(true)
+            await loadModels(true)
+            setRefreshing(false)
+          }}
+        >
+          <IconRefresh size={13} className={refreshing ? 'spin' : ''} />
+        </button>
+      </div>
+      <div className="muted small">
+        已选 {selectedCount} / {groups.length}
+      </div>
+      <div className="favorite-list">
+        {filtered.map((g) => (
+          <label key={g.base} className="favorite-item">
+            <input type="checkbox" checked={selected.has(g.base)} onChange={() => toggle(g.base)} />
+            <span className="favorite-name">{g.name}</span>
+            {g.base !== g.name && <span className="favorite-base">{g.base}</span>}
+          </label>
+        ))}
+        {filtered.length === 0 && <div className="empty-hint">{groups.length ? '无匹配模型' : '尚未加载模型'}</div>}
+      </div>
+    </div>
+  )
+}
+
 function Field({ label, desc, children }: { label: string; desc?: string; children: React.ReactNode }) {
   return (
     <div className="field">
@@ -42,6 +123,7 @@ function Field({ label, desc, children }: { label: string; desc?: string; childr
 
 export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void; onOpenImport: () => void }) {
   const settings = useStore((s) => s.app.settings)
+  const models = useStore((s) => s.models)
   const [info, setInfo] = useState<Awaited<ReturnType<typeof window.api.cliInfo>> | null>(null)
   const [checking, setChecking] = useState(false)
   const [agentPath, setAgentPath] = useState(settings.agentPath)
@@ -132,9 +214,14 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
       </section>
 
       <section className="settings-section">
+        <h4>常用模型</h4>
+        <FavoriteModels />
+      </section>
+
+      <section className="settings-section">
         <h4>默认值</h4>
-        <Field label="默认模型" desc="新对话会沿用这里的选择">
-          <ModelPicker value={preferredModel(settings.defaultModel)} onChange={rememberModel} />
+        <Field label="默认模型" desc="新对话会沿用这里的选择。勾选常用模型后，这里也只列出常用模型">
+          <ModelPicker value={modelForChat(models, settings.favoriteModels, settings.defaultModel)} onChange={rememberModel} />
         </Field>
         <Field label="默认模式">
           <select className="input" value={settings.defaultMode} onChange={(e) => update({ defaultMode: e.target.value as Settings['defaultMode'] })}>

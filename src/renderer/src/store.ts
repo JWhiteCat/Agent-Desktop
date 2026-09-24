@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react'
-import type { AgentMode, AppState, Item, ModelInfo, ThreadMeta } from '@shared/types'
+import type { AgentMode, AppState, Item, ModelInfo, Settings, ThreadMeta } from '@shared/types'
+import { findVariant, groupModels, pickVariant, wantFrom } from './lib/models'
 
 export type View = { kind: 'home'; projectId?: string } | { kind: 'thread'; id: string }
 
@@ -49,9 +50,40 @@ export function preferredModel(settingsDefault?: string): string {
   return localStorage.getItem(LAST_MODEL_KEY) || settingsDefault || 'auto'
 }
 
+/** Model shown for a new chat: a favorite when favorites are configured, otherwise the last choice. */
+export function modelForChat(models: ModelInfo[], favoriteBases: string[] | undefined, settingsDefault?: string): string {
+  const preferred = preferredModel(settingsDefault)
+  const favorites = favoriteBases ?? []
+  if (!favorites.length) return preferred
+  const groups = groupModels(models)
+  const current = findVariant(groups, preferred)
+  if (current && favorites.includes(current.base)) return preferred
+  const group = groups.find((g) => favorites.includes(g.base))
+  if (!group) return preferred
+  return pickVariant(group, wantFrom(current)).id
+}
+
 export function rememberModel(model: string): void {
   localStorage.setItem(LAST_MODEL_KEY, model)
   void window.api.updateSettings({ defaultModel: model })
+}
+
+export function setFavoriteModels(bases: string[]): void {
+  const patch: Partial<Settings> = { favoriteModels: bases }
+  if (bases.length) {
+    const currentId = preferredModel(state.app.settings.defaultModel)
+    const groups = groupModels(state.models)
+    const current = findVariant(groups, currentId)
+    if (!current || !bases.includes(current.base)) {
+      const group = groups.find((g) => bases.includes(g.base))
+      if (group) {
+        patch.defaultModel = pickVariant(group, wantFrom(current)).id
+        localStorage.setItem(LAST_MODEL_KEY, patch.defaultModel)
+      }
+    }
+  }
+  setState((s) => ({ app: { ...s.app, settings: { ...s.app.settings, ...patch } } }))
+  void window.api.updateSettings(patch)
 }
 
 export async function initStore(): Promise<void> {

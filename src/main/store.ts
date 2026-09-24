@@ -44,7 +44,11 @@ export class Store {
       version: 1,
       projects: loaded?.projects ?? [],
       threads: loaded?.threads ?? [],
-      settings: { ...DEFAULT_SETTINGS, ...loaded?.settings }
+      settings: {
+        ...DEFAULT_SETTINGS,
+        ...loaded?.settings,
+        favoriteModels: Array.isArray(loaded?.settings?.favoriteModels) ? loaded.settings.favoriteModels : []
+      }
     }
   }
 

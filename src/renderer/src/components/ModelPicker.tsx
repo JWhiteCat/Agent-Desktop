@@ -7,6 +7,7 @@ import {
   findVariant,
   groupModels,
   hasFastVariant,
+  listedModelGroups,
   pickVariant,
   speedAvailable,
   wantFrom,
@@ -15,11 +16,16 @@ import {
 import { IconChevronDown, IconRefresh } from './icons'
 import { Popover } from './Menu'
 
+const NO_FAVORITES: string[] = []
+
 export function ModelPicker({ value, onChange }: { value: string; onChange: (id: string) => void }) {
   const models = useStore((s) => s.models)
+  const favoriteModels = useStore((s) => s.app.settings.favoriteModels)
+  const favorites = favoriteModels ?? NO_FAVORITES
   const groups = useMemo(() => groupModels(models), [models])
   const summary = useMemo(() => describeModel(groups, value), [groups, value])
   const selected = useMemo(() => findVariant(groups, value), [groups, value])
+  const listed = useMemo(() => listedModelGroups(groups, favorites, selected?.base), [groups, favorites, selected?.base])
   const selectedGroup = groups.find((g) => g.base === selected?.base)
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
@@ -43,14 +49,14 @@ export function ModelPicker({ value, onChange }: { value: string; onChange: (id:
 
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase()
-    if (!s) return groups
-    return groups.filter(
+    if (!s) return listed
+    return listed.filter(
       (g) =>
         g.name.toLowerCase().includes(s) ||
         g.base.toLowerCase().includes(s) ||
         g.variants.some((v) => v.id.toLowerCase().includes(s) || v.label.toLowerCase().includes(s))
     )
-  }, [groups, q])
+  }, [listed, q])
 
   const select = (id: string) => {
     if (id !== value) onChange(id)
@@ -83,7 +89,7 @@ export function ModelPicker({ value, onChange }: { value: string; onChange: (id:
         <div className="model-search">
           <input
             ref={search}
-            placeholder="搜索模型"
+            placeholder={favorites.length ? '搜索常用模型' : '搜索模型'}
             value={q}
             onChange={(e) => setQ(e.target.value)}
             onKeyDown={(e) => {
@@ -102,14 +108,16 @@ export function ModelPicker({ value, onChange }: { value: string; onChange: (id:
             <IconRefresh size={13} className={refreshing ? 'spin' : ''} />
           </button>
         </div>
+        {favorites.length > 0 && <div className="model-scope">仅常用模型</div>}
         <div className="model-list" ref={list}>
           {filtered.map((g) => (
             <button key={g.base} className={`menu-item ${g.base === selectedGroup?.base ? 'selected' : ''}`} onClick={() => chooseGroup(g)}>
               <span className="menu-label">{g.name}</span>
+              {favorites.length > 0 && g.base === selected?.base && !favorites.includes(g.base) && <span className="menu-hint">当前</span>}
               {g.base === selectedGroup?.base && <span className="menu-check">✓</span>}
             </button>
           ))}
-          {filtered.length === 0 && <div className="empty-hint">无匹配模型</div>}
+          {filtered.length === 0 && <div className="empty-hint">{q.trim() ? '无匹配模型' : favorites.length ? '没有可用的常用模型' : '无匹配模型'}</div>}
         </div>
         {selected && selectedGroup && (contexts.length > 0 || efforts.length > 0 || showSpeed) && (
           <div className="model-params">

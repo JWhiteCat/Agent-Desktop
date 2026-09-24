@@ -578,6 +578,11 @@ select {
   outline: 0;
   background: transparent;
 }
+.model-scope {
+  padding: 2px 8px 6px;
+  color: var(--muted);
+  font-size: 11.5px;
+}
 .model-list {
   max-height: 280px;
   overflow-y: auto;
@@ -1437,6 +1442,58 @@ select {
   font-size: 12px;
   color: var(--muted);
   font-weight: 500;
+}
+.favorite-models {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.favorite-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.favorite-toolbar .input {
+  flex: 1 1 160px;
+  width: auto;
+  min-width: 0;
+}
+.favorite-list {
+  max-height: 240px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.favorite-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  cursor: pointer;
+}
+.favorite-item + .favorite-item {
+  border-top: 1px solid var(--border);
+}
+.favorite-item:hover {
+  background: var(--bg-hover);
+}
+.favorite-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.favorite-base {
+  max-width: 46%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-family: var(--mono);
 }
 .field {
   display: flex;

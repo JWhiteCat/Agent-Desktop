@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { AssistantItem, Item, ResultItem, ThreadMeta, UserItem } from '@shared/types'
 import { duration, shortPath } from '../lib/format'
-import { preferredModel, sendMessage, useStore } from '../store'
+import { modelForChat, sendMessage, useStore } from '../store'
 import { Composer, type ComposerHandle } from './Composer'
 import { IconBranch, IconChevronDown, IconChevronRight, IconCursor, IconDiff, IconFolder, Spinner } from './icons'
 import { ResultFooter, StepItem, UserMessage } from './Items'
@@ -110,6 +110,7 @@ export function ThreadView({ thread, changesOpen, onToggleChanges }: Props) {
   const running = useStore((s) => s.app.running.includes(thread.id))
   const project = useStore((s) => s.app.projects.find((p) => p.id === thread.projectId))
   const settings = useStore((s) => s.app.settings)
+  const models = useStore((s) => s.models)
   const scroller = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
   const composer = useRef<ComposerHandle>(null)
@@ -210,7 +211,7 @@ export function ThreadView({ thread, changesOpen, onToggleChanges }: Props) {
           key={thread.id}
           ref={composer}
           running={running}
-          initial={{ model: thread.model || preferredModel(settings.defaultModel), mode: thread.mode, force: settings.force }}
+          initial={{ model: thread.model || modelForChat(models, settings.favoriteModels, settings.defaultModel), mode: thread.mode, force: settings.force }}
           placeholder={thread.chatId ? '继续对话…' : '描述任务，Enter 发送，Shift+Enter 换行'}
           onSend={(text, opts) => {
             stick.current = true

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { relativeTime, shortPath } from '../lib/format'
-import { addProjectInteractive, goHome, openThread, preferredModel, startThread, useStore } from '../store'
+import { addProjectInteractive, goHome, modelForChat, openThread, startThread, useStore } from '../store'
 import { Composer, type ComposerHandle } from './Composer'
 import { IconChevronDown, IconFolder, IconImport, IconPlus } from './icons'
 import { MenuList, Popover } from './Menu'
@@ -16,6 +16,7 @@ export function Home({ projectId, onOpenImport }: { projectId?: string; onOpenIm
   const projects = useStore((s) => s.app.projects)
   const threads = useStore((s) => s.app.threads)
   const settings = useStore((s) => s.app.settings)
+  const models = useStore((s) => s.models)
   const project = projects.find((p) => p.id === projectId) ?? projects[0]
   const composer = useRef<ComposerHandle>(null)
   const [pickerOpen, setPickerOpen] = useState(false)
@@ -101,7 +102,7 @@ export function Home({ projectId, onOpenImport }: { projectId?: string; onOpenIm
               key={project.id}
               ref={composer}
               showWorktree
-              initial={{ model: preferredModel(settings.defaultModel), mode: settings.defaultMode, force: settings.force, worktree: false }}
+              initial={{ model: modelForChat(models, settings.favoriteModels, settings.defaultModel), mode: settings.defaultMode, force: settings.force, worktree: false }}
               placeholder={`在 ${project.name} 中让 Agent 做点什么…`}
               onSend={async (text, opts) => {
                 await startThread(project.id, text, opts)
