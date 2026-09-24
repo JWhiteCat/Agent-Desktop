@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react'
-import type { AgentMode, AppState, Item, ModelInfo, Settings, ThreadMeta } from '@shared/types'
+import type { AgentMode, AppState, Item, ModelInfo, QuestionAnswer, Settings, ThreadMeta } from '@shared/types'
 import { findVariant, groupModels, pickVariant, wantFrom } from './lib/models'
 
 export type View = { kind: 'home'; projectId?: string } | { kind: 'thread'; id: string }
@@ -250,6 +250,15 @@ export interface SendOptions {
   mode: AgentMode
   force: boolean
   worktree?: boolean
+}
+
+export async function answerQuestion(threadId: string, questionId: string, answers: QuestionAnswer[] | null): Promise<void> {
+  try {
+    await window.api.answerQuestion(threadId, questionId, answers)
+  } catch (err) {
+    toast(errorText(err), 'error')
+    throw err
+  }
 }
 
 export async function sendMessage(threadId: string, prompt: string, opts: SendOptions): Promise<void> {

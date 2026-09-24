@@ -82,7 +82,35 @@ export interface NoticeItem {
   text: string
 }
 
-export type Item = UserItem | AssistantItem | ThinkingItem | ToolItem | ResultItem | NoticeItem
+export interface QuestionOption {
+  id: string
+  label: string
+}
+
+export interface QuestionPrompt {
+  id: string
+  prompt: string
+  options: QuestionOption[]
+  allowMultiple?: boolean
+}
+
+export interface QuestionAnswer {
+  questionId: string
+  selectedOptionIds: string[]
+}
+
+/** A blocking plan/agent question. The run waits until the user answers or skips. */
+export interface QuestionItem {
+  id: string
+  kind: 'question'
+  toolCallId: string
+  title?: string
+  questions: QuestionPrompt[]
+  status: 'pending' | 'answered' | 'skipped'
+  answers?: QuestionAnswer[]
+}
+
+export type Item = UserItem | AssistantItem | ThinkingItem | ToolItem | ResultItem | NoticeItem | QuestionItem
 
 export interface Settings {
   agentPath: string

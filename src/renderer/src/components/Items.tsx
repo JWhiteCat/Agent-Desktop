@@ -1,7 +1,8 @@
 import { isValidElement, memo, useState } from 'react'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import type { Item, NoticeItem, ResultItem, ThinkingItem, ToolItem, UserItem } from '@shared/types'
+import type { Item, NoticeItem, QuestionItem, QuestionPrompt, ResultItem, ThinkingItem, ToolItem, UserItem } from '@shared/types'
+import { answerQuestion } from '../store'
 import { compactNumber, duration } from '../lib/format'
 import { DiffLines, parseUnifiedDiff } from '../lib/diff'
 import { errorOf, successOf, summarizeTool, toolDiff, type ToolKind } from '../lib/tools'
@@ -236,7 +237,99 @@ export function ResultFooter({ item, text }: { item: ResultItem; text?: string }
   )
 }
 
-export function StepItem({ item, streaming }: { item: Item; streaming?: boolean }) {
+export function QuestionCard({ item, threadId }: { item: QuestionItem; threadId: string }) {
+  const [selected, setSelected] = useState<Record<string, string[]>>(() => {
+    const init: Record<string, string[]> = {}
+    for (const answer of item.answers ?? []) init[answer.questionId] = answer.selectedOptionIds
+    return init
+  })
+  const [sending, setSending] = useState(false)
+  const locked = item.status !== 'pending' || sending
+  const chosen = item.status === 'answered' ? item.answers : undefined
+
+  const picked = (questionId: string): string[] => {
+    if (chosen) return chosen.find((a) => a.questionId === questionId)?.selectedOptionIds ?? []
+    return selected[questionId] ?? []
+  }
+
+  const choose = (q: QuestionPrompt, optionId: string) => {
+    if (locked) return
+    setSelected((prev) => {
+      const cur = prev[q.id] ?? []
+      const next = q.allowMultiple ? (cur.includes(optionId) ? cur.filter((id) => id !== optionId) : [...cur, optionId]) : [optionId]
+      return { ...prev, [q.id]: next }
+    })
+  }
+
+  const complete = item.questions.every((q) => picked(q.id).length > 0)
+
+  const submit = async () => {
+    if (locked || !complete) return
+    const answers = item.questions.map((q) => ({ questionId: q.id, selectedOptionIds: picked(q.id) }))
+    setSending(true)
+    try {
+      await answerQuestion(threadId, item.id, answers)
+    } catch {
+      setSending(false)
+    }
+  }
+
+  const skip = async () => {
+    if (locked) return
+    setSending(true)
+    try {
+      await answerQuestion(threadId, item.id, null)
+    } catch {
+      setSending(false)
+    }
+  }
+
+  return (
+    <div className={`question-card ${locked ? 'locked' : ''}`}>
+      <div className="question-title">{item.title || '需要你的选择'}</div>
+      {item.questions.map((q) => (
+        <div key={q.id} className="question-block">
+          <div className="question-prompt">
+            {q.prompt}
+            {q.allowMultiple && <span className="question-hint">可多选</span>}
+          </div>
+          <div className="question-options" role={q.allowMultiple ? 'group' : 'radiogroup'}>
+            {q.options.map((o) => {
+              const on = picked(q.id).includes(o.id)
+              return (
+                <button
+                  key={o.id}
+                  type="button"
+                  role={q.allowMultiple ? 'checkbox' : 'radio'}
+                  aria-checked={on}
+                  className={`question-opt ${on ? 'selected' : ''}`}
+                  onClick={() => choose(q, o.id)}
+                >
+                  <span className="question-mark">{on ? '✓' : ''}</span>
+                  <span>{o.label}</span>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      ))}
+      {item.status === 'pending' ? (
+        <div className="question-actions">
+          <button type="button" className="question-submit" disabled={!complete || sending} onClick={submit}>
+            {sending ? '提交中' : '继续'}
+          </button>
+          <button type="button" className="question-skip" disabled={sending} onClick={skip}>
+            跳过
+          </button>
+        </div>
+      ) : (
+        <div className="question-status">{item.status === 'answered' ? '已提交' : '已跳过'}</div>
+      )}
+    </div>
+  )
+}
+
+export function StepItem({ item, streaming, threadId }: { item: Item; streaming?: boolean; threadId?: string }) {
   switch (item.kind) {
     case 'assistant':
       return <AssistantMessage text={item.text} streaming={streaming} />
@@ -244,6 +337,8 @@ export function StepItem({ item, streaming }: { item: Item; streaming?: boolean 
       return <ThinkingBlock item={item} />
     case 'tool':
       return <ToolRow item={item} />
+    case 'question':
+      return threadId ? <QuestionCard item={item} threadId={threadId} /> : null
     case 'notice':
       return <Notice item={item} />
     default:

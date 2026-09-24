@@ -89,11 +89,11 @@ function cliEnv(): NodeJS.ProcessEnv {
   return env
 }
 
-export function spawnCli(cli: ResolvedCli, args: string[], cwd: string): ChildProcess {
+export function spawnCli(cli: ResolvedCli, args: string[], cwd: string, stdin: 'ignore' | 'pipe' = 'ignore'): ChildProcess {
   return spawn(cli.command, [...cli.prefixArgs, ...args], {
     cwd,
     env: cliEnv(),
-    stdio: ['ignore', 'pipe', 'pipe'],
+    stdio: [stdin, 'pipe', 'pipe'],
     windowsHide: true
   })
 }

@@ -22,6 +22,7 @@ const api: DesktopApi = {
   syncFromCli: (id) => ipcRenderer.invoke('thread:syncFromCli', id),
   send: (req) => ipcRenderer.invoke('agent:send', req),
   stop: (id) => ipcRenderer.invoke('agent:stop', id),
+  answerQuestion: (threadId, questionId, answers) => ipcRenderer.invoke('agent:answerQuestion', threadId, questionId, answers),
   updateSettings: (patch) => ipcRenderer.invoke('settings:update', patch),
   listModels: (refresh) => ipcRenderer.invoke('cli:models', refresh),
   cliInfo: () => ipcRenderer.invoke('cli:info'),

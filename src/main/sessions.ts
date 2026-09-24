@@ -1,10 +1,16 @@
 import type { ChildProcess } from 'node:child_process'
 import fs from 'node:fs'
-import type { AgentEvent, Item, SendRequest } from '@shared/types'
+import type { AgentEvent, Item, QuestionAnswer, QuestionItem, SendRequest } from '@shared/types'
+import { AcpConnection, MethodNotFound, normalizeQuestions, permissionResult } from './acp'
 import { killTree, resolveCli, spawnCli, stripAnsi } from './cli'
 import { newId } from './id'
 import { StreamReducer } from './reducer'
 import type { Store } from './store'
+
+interface PendingQuestion {
+  itemId: string
+  resolve: (decision: QuestionAnswer[] | 'skip' | 'cancel') => void
+}
 
 interface Run {
   child: ChildProcess
@@ -12,6 +18,13 @@ interface Run {
   stopped: boolean
   pending: Map<string, Item>
   flushTimer?: NodeJS.Timeout
+  acp?: AcpConnection
+  sessionId?: string
+  /** Ignore session/update events while session/load replays history. */
+  acceptUpdates: boolean
+  pendingQuestion?: PendingQuestion
+  force: boolean
+  failText?: string
 }
 
 export interface RunFinished {
@@ -57,17 +70,16 @@ export class SessionManager {
     const cli = resolveCli(settings.agentPath)
     if (!cli) throw new Error('未找到 Cursor CLI（agent）。请先安装，或在设置中指定路径。')
 
-    let cwd = thread.cwd && fs.existsSync(thread.cwd) ? thread.cwd : project.path
+    const cwd = thread.cwd && fs.existsSync(thread.cwd) ? thread.cwd : project.path
     if (!fs.existsSync(cwd)) throw new Error(`项目目录不存在：${cwd}`)
 
-    const args = ['-p', '--output-format', 'stream-json', '--stream-partial-output', '--trust']
-    if (thread.chatId) args.push('--resume', thread.chatId)
-    else if (req.worktree) args.push('--worktree')
+    const args = ['--trust']
     if (req.model && req.model !== 'auto') args.push('--model', req.model)
     if (req.mode !== 'agent') args.push('--mode', req.mode)
     if (req.force) args.push('--force')
     if (settings.sandbox !== 'default') args.push('--sandbox', settings.sandbox)
-    args.push('--workspace', cwd, '--', req.prompt)
+    if (!thread.chatId && req.worktree) args.push('--worktree')
+    args.push('--workspace', cwd, 'acp')
 
     const items = this.store.items(thread.id)
     const userItem: Item = { id: newId(), kind: 'user', text: req.prompt, createdAt: Date.now() }
@@ -82,67 +94,48 @@ export class SessionManager {
       archived: false
     })
 
-    const child = spawnCli(cli, args, cwd)
-    const run: Run = { child, reducer: new StreamReducer(items), stopped: false, pending: new Map() }
+    const child = spawnCli(cli, args, cwd, 'pipe')
+    const run: Run = {
+      child,
+      reducer: new StreamReducer(items),
+      stopped: false,
+      pending: new Map(),
+      acceptUpdates: false,
+      force: req.force
+    }
     this.runs.set(thread.id, run)
     this.queue(thread.id, run, [userItem])
     this.emit({ type: 'running', threadId: thread.id, running: true })
     this.onStateChange()
 
-    let buffer = ''
     let stderr = ''
-    const nonJson: string[] = []
-
-    const handleLine = (line: string): void => {
-      const trimmed = line.trim()
-      if (!trimmed) return
-      let ev: any
-      try {
-        ev = JSON.parse(trimmed)
-      } catch {
-        nonJson.push(stripAnsi(trimmed))
-        return
-      }
-      const before = run.reducer.init.sessionId
-      const changed = run.reducer.handle(ev)
-      if (!before && run.reducer.init.sessionId) {
-        const init = run.reducer.init
-        this.store.updateThread(thread.id, {
-          chatId: init.sessionId,
-          cwd: init.cwd ?? cwd,
-          modelLabel: init.model
-        })
-        this.onStateChange()
-      }
-      if (changed.length) this.queue(thread.id, run, changed)
-    }
-
-    child.stdout?.setEncoding('utf8')
-    child.stdout?.on('data', (chunk: string) => {
-      buffer += chunk
-      let idx: number
-      while ((idx = buffer.indexOf('\n')) >= 0) {
-        handleLine(buffer.slice(0, idx))
-        buffer = buffer.slice(idx + 1)
-      }
-    })
     child.stderr?.setEncoding('utf8')
     child.stderr?.on('data', (chunk: string) => {
       stderr = (stderr + chunk).slice(-8000)
     })
 
+    const acp = new AcpConnection(child)
+    run.acp = acp
+    acp.start({
+      onNotification: (method, params) => {
+        if (method !== 'session/update' || !run.acceptUpdates) return
+        const changed = run.reducer.handleAcp(params?.update)
+        if (changed.length) this.queue(thread.id, run, changed)
+      },
+      onRequest: (method, params) => this.onAcpRequest(thread.id, run, method, params)
+    })
+
     const finish = (code: number | null, spawnError?: Error): void => {
       if (!this.runs.has(thread.id)) return
-      if (buffer) handleLine(buffer)
-      buffer = ''
+      this.settleQuestion(run, 'cancel')
       const r = run.reducer
-      const changed: Item[] = [...r.closeSegments(), ...r.abortRunningTools()]
+      const changed: Item[] = [...r.closeSegments(), ...r.abortRunningTools(), ...abandonQuestions(items)]
       if (run.stopped) {
         changed.push(r.push({ id: newId(), kind: 'notice', level: 'info', text: '已停止' }))
       } else if (spawnError) {
         changed.push(r.push({ id: newId(), kind: 'notice', level: 'error', text: `无法启动 Cursor CLI：${spawnError.message}` }))
       } else if (!r.gotResult) {
-        const detail = [stripAnsi(stderr).trim(), ...nonJson].filter(Boolean).join('\n').slice(-4000)
+        const detail = [run.failText, stripAnsi(stderr).trim()].filter(Boolean).join('\n').slice(-4000)
         changed.push(
           r.push({
             id: newId(),
@@ -184,17 +177,174 @@ export class SessionManager {
 
     child.on('error', (err) => finish(null, err))
     child.on('close', (code) => finish(code))
+
+    void this.drive(thread.id, run, acp, req, cwd, thread.chatId).catch((err) => {
+      if (!run.stopped) run.failText = err instanceof Error ? err.message : String(err)
+      killTree(child)
+    })
+  }
+
+  answerQuestion(threadId: string, questionId: string, answers: QuestionAnswer[] | null): void {
+    const run = this.runs.get(threadId)
+    const pending = run?.pendingQuestion
+    if (!run || !pending || pending.itemId !== questionId) throw new Error('这个问题已经不能回答了')
+    run.pendingQuestion = undefined
+    pending.resolve(answers ?? 'skip')
   }
 
   stop(threadId: string): void {
     const run = this.runs.get(threadId)
     if (!run) return
     run.stopped = true
+    this.settleQuestion(run, 'cancel')
+    if (run.sessionId) run.acp?.notify('session/cancel', { sessionId: run.sessionId })
     killTree(run.child)
   }
 
   stopAll(): void {
     for (const id of this.runs.keys()) this.stop(id)
+  }
+
+  private async drive(threadId: string, run: Run, acp: AcpConnection, req: SendRequest, cwd: string, chatId?: string): Promise<void> {
+    await acp.request('initialize', {
+      protocolVersion: 1,
+      clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
+      clientInfo: { name: 'agent-desktop', version: '0.1.0' }
+    })
+    await acp.request('authenticate', { methodId: 'cursor_login' })
+
+    let sessionId = chatId
+    if (sessionId) {
+      await acp.request('session/load', { sessionId, cwd, mcpServers: [] })
+    } else {
+      const created = await acp.request('session/new', { cwd, mcpServers: [] })
+      sessionId = created?.sessionId
+      if (!sessionId) throw new Error('Cursor CLI 没有返回会话 id')
+    }
+    run.sessionId = sessionId
+    run.reducer.init = { sessionId, cwd, model: req.model }
+    this.store.updateThread(threadId, { chatId: sessionId, cwd })
+    this.onStateChange()
+
+    try {
+      await acp.request('session/set_mode', { sessionId, modeId: req.mode })
+    } catch {
+      /* --mode on the process is the fallback */
+    }
+    if (req.model && req.model !== 'auto') {
+      try {
+        await acp.request('session/set_model', { sessionId, modelId: req.model })
+      } catch {
+        /* --model on the process is the fallback */
+      }
+    }
+
+    run.acceptUpdates = true
+    const started = Date.now()
+    const result = await acp.request('session/prompt', {
+      sessionId,
+      prompt: [{ type: 'text', text: req.prompt }]
+    })
+    if (!this.runs.has(threadId)) return
+    const stop = String(result?.stopReason ?? 'end_turn')
+    run.reducer.gotResult = true
+    const usage = result?.usage
+      ? {
+          inputTokens: result.usage.inputTokens,
+          outputTokens: result.usage.outputTokens,
+          cacheReadTokens: result.usage.cachedReadTokens,
+          cacheWriteTokens: result.usage.cachedWriteTokens
+        }
+      : run.reducer.lastUsage
+    const changed = run.reducer.closeSegments()
+    changed.push(
+      run.reducer.push({
+        id: newId(),
+        kind: 'result',
+        isError: stop !== 'end_turn' && stop !== 'cancelled',
+        durationMs: Date.now() - started,
+        usage
+      })
+    )
+    this.queue(threadId, run, changed)
+    run.child.stdin?.end()
+  }
+
+  private onAcpRequest(threadId: string, run: Run, method: string, params: any): Promise<unknown> {
+    if (method === 'cursor/ask_question') return this.answerAskQuestion(threadId, run, params)
+    if (method === 'cursor/create_plan') return Promise.resolve({ outcome: { outcome: 'accepted' } })
+    if (method === 'session/request_permission') return this.answerPermission(threadId, run, params)
+    return Promise.reject(new MethodNotFound(method))
+  }
+
+  private async answerAskQuestion(threadId: string, run: Run, params: any): Promise<unknown> {
+    if (!run.acceptUpdates) return { outcome: { outcome: 'skipped', reason: 'replay' } }
+    const questions = normalizeQuestions(params?.questions)
+    const decision = await this.waitForAnswers(threadId, run, {
+      toolCallId: String(params?.toolCallId ?? ''),
+      title: typeof params?.title === 'string' ? params.title : undefined,
+      questions
+    })
+    if (decision === 'cancel') return { outcome: { outcome: 'cancelled' } }
+    if (decision === 'skip') return { outcome: { outcome: 'skipped', reason: '用户跳过了提问' } }
+    return { outcome: { outcome: 'answered', answers: decision } }
+  }
+
+  private async answerPermission(threadId: string, run: Run, params: any): Promise<unknown> {
+    const options: { optionId?: string; kind?: string; name?: string }[] = Array.isArray(params?.options) ? params.options : []
+    const askFallback = options.some((o) => o.optionId === '__ask_question_skip__')
+    if (!askFallback || !run.acceptUpdates) return permissionResult(options, run.force)
+    const decision = await this.waitForAnswers(threadId, run, {
+      toolCallId: String(params?.toolCall?.toolCallId ?? ''),
+      title: typeof params?.toolCall?.title === 'string' ? params.toolCall.title : undefined,
+      questions: [
+        {
+          id: 'q',
+          prompt: String(params?.toolCall?.title || params?.toolCall?.content?.[0]?.content?.text || '请选择'),
+          allowMultiple: false,
+          options: options
+            .filter((o) => o.optionId && o.optionId !== '__ask_question_skip__')
+            .map((o) => ({ id: String(o.optionId), label: String(o.name || o.optionId) }))
+        }
+      ]
+    })
+    if (decision === 'cancel' || decision === 'skip') {
+      return { outcome: { outcome: 'selected', optionId: '__ask_question_skip__' } }
+    }
+    const optionId = decision[0]?.selectedOptionIds[0]
+    return { outcome: { outcome: 'selected', optionId: optionId || '__ask_question_skip__' } }
+  }
+
+  private waitForAnswers(
+    threadId: string,
+    run: Run,
+    spec: Pick<QuestionItem, 'toolCallId' | 'title' | 'questions'>
+  ): Promise<QuestionAnswer[] | 'skip' | 'cancel'> {
+    if (spec.questions.length === 0) return Promise.resolve('skip')
+    const item: QuestionItem = { id: newId(), kind: 'question', status: 'pending', ...spec }
+    run.reducer.push(item)
+    this.queue(threadId, run, [item])
+    return new Promise((resolve) => {
+      run.pendingQuestion = {
+        itemId: item.id,
+        resolve: (decision) => {
+          if (decision === 'cancel' || decision === 'skip') item.status = 'skipped'
+          else {
+            item.status = 'answered'
+            item.answers = decision
+          }
+          this.queue(threadId, run, [item])
+          resolve(decision)
+        }
+      }
+    })
+  }
+
+  private settleQuestion(run: Run, decision: 'skip' | 'cancel'): void {
+    const pending = run.pendingQuestion
+    if (!pending) return
+    run.pendingQuestion = undefined
+    pending.resolve(decision)
   }
 
   private queue(threadId: string, run: Run, items: Item[]): void {
@@ -210,4 +360,15 @@ export class SessionManager {
     this.emit({ type: 'items', threadId, items: [...run.pending.values()] })
     run.pending.clear()
   }
+}
+
+function abandonQuestions(items: Item[]): Item[] {
+  const changed: Item[] = []
+  for (const it of items) {
+    if (it.kind === 'question' && it.status === 'pending') {
+      it.status = 'skipped'
+      changed.push(it)
+    }
+  }
+  return changed
 }

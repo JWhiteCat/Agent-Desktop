@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, s
 import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
-import type { AgentEvent, AgentMode, AppState, Item, ModelInfo, Project, SendRequest, Settings, ThreadMeta } from '@shared/types'
+import type { AgentEvent, AgentMode, AppState, Item, ModelInfo, Project, QuestionAnswer, SendRequest, Settings, ThreadMeta } from '@shared/types'
 import { parseModels, resolveCli, runCliOnce } from './cli'
 import { loadCursorModelCatalog } from './model-catalog'
 import { mergeModelLists } from '@shared/model-catalog'
@@ -208,6 +208,9 @@ function registerIpc(): void {
 
   ipcMain.handle('agent:send', (_e, req: SendRequest) => sessions.send(req))
   ipcMain.handle('agent:stop', (_e, id: string) => sessions.stop(id))
+  ipcMain.handle('agent:answerQuestion', (_e, threadId: string, questionId: string, answers: QuestionAnswer[] | null) => {
+    sessions.answerQuestion(threadId, questionId, answers)
+  })
 
   ipcMain.handle('settings:update', (_e, patch: Partial<Settings>) => {
     const s = store.updateSettings(patch)

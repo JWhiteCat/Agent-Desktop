@@ -32,7 +32,7 @@ function groupTurns(items: Item[]): Turn[] {
   return turns
 }
 
-function TurnView({ turn, live }: { turn: Turn; live: boolean }) {
+function TurnView({ turn, live, threadId }: { turn: Turn; live: boolean; threadId: string }) {
   const [expanded, setExpanded] = useState(false)
   const lastAssistantIdx = useMemo(() => {
     for (let i = turn.steps.length - 1; i >= 0; i--) if (turn.steps[i].kind === 'assistant') return i
@@ -44,12 +44,13 @@ function TurnView({ turn, live }: { turn: Turn; live: boolean }) {
   if (live) {
     const last = turn.steps[turn.steps.length - 1]
     const streamingText = last?.kind === 'assistant'
-    const busy = last && (last.kind === 'tool' ? last.status === 'running' : last.kind === 'thinking' && !last.done)
+    const waitingForUser = turn.steps.some((s) => s.kind === 'question' && s.status === 'pending')
+    const busy = waitingForUser || (last && (last.kind === 'tool' ? last.status === 'running' : last.kind === 'thinking' && !last.done))
     return (
       <div className="turn">
         {turn.user && <UserMessage item={turn.user} />}
         {turn.steps.map((s, i) => (
-          <StepItem key={s.id} item={s} streaming={streamingText && i === turn.steps.length - 1} />
+          <StepItem key={s.id} item={s} threadId={threadId} streaming={streamingText && i === turn.steps.length - 1} />
         ))}
         {!streamingText && !busy && (
           <div className="working">
@@ -61,8 +62,9 @@ function TurnView({ turn, live }: { turn: Turn; live: boolean }) {
     )
   }
 
-  const intermediate = turn.steps.filter((s, i) => i !== lastAssistantIdx && s.kind !== 'notice')
-  const trailing = turn.steps.filter((s, i) => i === lastAssistantIdx || s.kind === 'notice')
+  const keepVisible = (s: Item, i: number) => s.kind === 'question' || s.kind === 'notice' || i === lastAssistantIdx
+  const intermediate = turn.steps.filter((s, i) => !keepVisible(s, i))
+  const trailing = turn.steps.filter((s, i) => keepVisible(s, i))
   const workMs =
     turn.result?.durationMs ??
     (() => {
@@ -82,17 +84,10 @@ function TurnView({ turn, live }: { turn: Turn; live: boolean }) {
             </span>
             {expanded ? <IconChevronDown size={12} /> : <IconChevronRight size={12} />}
           </button>
-          {expanded && (
-            <div className="worked-steps">
-              {intermediate.map((s) => (
-                <StepItem key={s.id} item={s} />
-              ))}
-            </div>
-          )}
         </div>
       )}
-      {trailing.map((s) => (
-        <StepItem key={s.id} item={s} />
+      {(expanded ? turn.steps : trailing).map((s) => (
+        <StepItem key={s.id} item={s} threadId={threadId} />
       ))}
       {turn.result && <ResultFooter item={turn.result} text={finalText} />}
     </div>
@@ -200,7 +195,7 @@ export function ThreadView({ thread, changesOpen, onToggleChanges }: Props) {
             </div>
           )}
           {turns.map((t, i) => (
-            <TurnView key={t.key} turn={t} live={running && i === turns.length - 1} />
+            <TurnView key={t.key} turn={t} threadId={thread.id} live={running && i === turns.length - 1} />
           ))}
           {items && items.length === 0 && !running && <div className="center-hint muted">发送第一条消息开始对话</div>}
         </div>

@@ -1,4 +1,4 @@
-import type { AssistantItem, Item, ThinkingItem, ToolItem } from '@shared/types'
+import type { AssistantItem, Item, ResultItem, ThinkingItem, ToolItem } from '@shared/types'
 import { newId } from './id'
 
 export interface InitInfo {
@@ -60,6 +60,7 @@ export class StreamReducer {
   init: InitInfo = {}
   gotResult = false
   lastAssistantText = ''
+  lastUsage?: ResultItem['usage']
 
   constructor(private readonly items: Item[]) {}
 
@@ -94,6 +95,39 @@ export class StreamReducer {
         }
         this.items.push(item)
         return [...changed, item]
+      }
+      default:
+        return []
+    }
+  }
+
+  /** Cursor ACP `session/update` payload (`params.update`). */
+  handleAcp(update: any): Item[] {
+    switch (update?.sessionUpdate) {
+      case 'agent_thought_chunk': {
+        const text = textOfContent(update.content)
+        if (!text) return []
+        return this.onThinking({ subtype: 'delta', text, timestamp_ms: Date.now() })
+      }
+      case 'agent_message_chunk': {
+        const text = textOfContent(update.content)
+        if (!text) return []
+        return this.onAssistant({ message: { content: text }, timestamp_ms: Date.now() })
+      }
+      case 'tool_call':
+      case 'tool_call_update':
+        return this.onAcpTool(update)
+      case 'usage_update': {
+        const u = update.usage
+        if (u && typeof u === 'object') {
+          this.lastUsage = {
+            inputTokens: num(u.inputTokens),
+            outputTokens: num(u.outputTokens),
+            cacheReadTokens: num(u.cachedReadTokens),
+            cacheWriteTokens: num(u.cachedWriteTokens)
+          }
+        }
+        return []
       }
       default:
         return []
@@ -203,4 +237,125 @@ export class StreamReducer {
     item.endedAt = Number(tc.completedAtMs) || Date.now()
     return [item]
   }
+
+  private onAcpTool(update: any): Item[] {
+    const rawInput = update.rawInput
+    if (isAskQuestionArgs(rawInput)) {
+      const existing = this.tools.get(String(update.toolCallId || ''))
+      if (!existing || existing.status !== 'running') return []
+      existing.status = 'success'
+      existing.endedAt = Date.now()
+      return [existing]
+    }
+    const callId = String(update.toolCallId || newId())
+    const args = argsFrom(update)
+    const outputText = textOfContent(update.content)
+    const result = asToolResult(update.rawOutput, outputText)
+    const status = acpToolStatus(update.status, result)
+
+    if (update.sessionUpdate === 'tool_call' || !this.tools.has(callId)) {
+      const changed = this.closeSegments()
+      const item: ToolItem = {
+        id: newId(),
+        kind: 'tool',
+        callId,
+        tool: toolNameFrom(update, args),
+        args: compact(args),
+        status,
+        startedAt: Date.now()
+      }
+      if (result !== undefined) item.result = compact(result)
+      if (status !== 'running') item.endedAt = Date.now()
+      this.tools.set(callId, item)
+      this.items.push(item)
+      return [...changed, item]
+    }
+
+    const item = this.tools.get(callId)!
+    if (update.title && !item.tool) item.tool = toolNameFrom(update, args)
+    if (rawInput && typeof rawInput === 'object') item.args = compact(args)
+    if (result !== undefined) item.result = compact(result)
+    item.status = status
+    if (status !== 'running') item.endedAt = Date.now()
+    return [item]
+  }
+}
+
+function num(v: unknown): number | undefined {
+  return typeof v === 'number' && Number.isFinite(v) ? v : undefined
+}
+
+function textOfContent(content: unknown): string {
+  if (typeof content === 'string') return content
+  if (content && typeof content === 'object' && !Array.isArray(content)) {
+    const text = (content as { text?: unknown }).text
+    if (typeof text === 'string') return text
+  }
+  if (!Array.isArray(content)) return ''
+  const parts: string[] = []
+  for (const block of content) {
+    if (!block || typeof block !== 'object') continue
+    const b = block as { text?: unknown; content?: { text?: unknown } }
+    if (typeof b.content?.text === 'string') parts.push(b.content.text)
+    else if (typeof b.text === 'string') parts.push(b.text)
+  }
+  return parts.join('')
+}
+
+function isAskQuestionArgs(raw: unknown): boolean {
+  if (!raw || typeof raw !== 'object') return false
+  const questions = (raw as { questions?: unknown }).questions
+  if (!Array.isArray(questions) || questions.length === 0) return false
+  return questions.some((q) => q && typeof q === 'object' && ('prompt' in q || 'options' in q))
+}
+
+function argsFrom(update: any): Record<string, unknown> {
+  const raw = update.rawInput && typeof update.rawInput === 'object' ? { ...update.rawInput } : {}
+  const path = Array.isArray(update.locations) ? update.locations.find((l: any) => l?.path)?.path : undefined
+  if (typeof path === 'string' && raw.path === undefined && raw.targetFile === undefined && raw.filePath === undefined && raw.command === undefined) {
+    raw.path = path
+  }
+  return raw
+}
+
+function toolNameFrom(update: any, args: Record<string, unknown>): string {
+  if (typeof args.command === 'string') return 'shell'
+  if (typeof args.plan === 'string') return 'createPlan'
+  if (typeof args.globPattern === 'string' || typeof args.glob_pattern === 'string') return 'glob'
+  const kind = String(update.kind ?? '')
+  const mapped: Record<string, string> = {
+    read: 'read',
+    edit: 'edit',
+    delete: 'delete',
+    move: 'edit',
+    search: 'grep',
+    execute: 'shell',
+    fetch: 'webFetch',
+    think: 'thinking',
+    switch_mode: 'switchMode'
+  }
+  if (mapped[kind]) return mapped[kind]
+  return typeof update.title === 'string' && update.title ? update.title : 'tool'
+}
+
+function acpToolStatus(status: string | undefined, result: unknown): ToolItem['status'] {
+  if (status === 'failed') return 'error'
+  if (result && typeof result === 'object') {
+    const r = result as { error?: unknown; failure?: unknown; success?: unknown }
+    if ((r.error !== undefined || r.failure !== undefined) && r.success === undefined) return 'error'
+  }
+  if (status === 'completed') return 'success'
+  return 'running'
+}
+
+function asToolResult(raw: unknown, contentText: string): unknown {
+  if (raw && typeof raw === 'object') {
+    const o = raw as Record<string, unknown>
+    if ('success' in o || 'error' in o || 'failure' in o || 'rejected' in o) return o
+    if ('stdout' in o || 'stderr' in o || 'diffString' in o || 'exitCode' in o || 'linesAdded' in o) return { success: o }
+    return o
+  }
+  if (typeof raw === 'string' && raw.trim()) return { success: { stdout: raw } }
+  if (contentText.trim()) return { success: { stdout: contentText } }
+  return undefined
 }

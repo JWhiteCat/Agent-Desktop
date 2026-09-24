@@ -7,6 +7,7 @@ import type {
   Item,
   ModelInfo,
   Project,
+  QuestionAnswer,
   SendRequest,
   Settings,
   ThreadMeta
@@ -27,6 +28,8 @@ export interface DesktopApi {
   syncFromCli(threadId: string): Promise<Item[]>
   send(req: SendRequest): Promise<void>
   stop(threadId: string): Promise<void>
+  /** `null` skips the question. */
+  answerQuestion(threadId: string, questionId: string, answers: QuestionAnswer[] | null): Promise<void>
   updateSettings(patch: Partial<Settings>): Promise<Settings>
   listModels(refresh?: boolean): Promise<ModelInfo[]>
   cliInfo(): Promise<{ found: boolean; path?: string; version?: string; status?: string }>
