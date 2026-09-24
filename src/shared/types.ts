@@ -6,6 +6,8 @@ export interface Project {
   path: string
   createdAt: number
   collapsed?: boolean
+  /** Last model chosen in this project. Unset projects use settings.defaultModel. */
+  model?: string
 }
 
 export interface ThreadMeta {
@@ -92,6 +94,8 @@ export interface Settings {
   theme: 'system' | 'dark' | 'light'
   sandbox: 'default' | 'enabled' | 'disabled'
   showArchived: boolean
+  /** Send an OS notification when an agent run finishes. */
+  notifyOnComplete: boolean
 }
 
 export interface AppState {
@@ -146,5 +150,6 @@ export const DEFAULT_SETTINGS: Settings = {
   force: false,
   theme: 'system',
   sandbox: 'default',
-  showArchived: false
+  showArchived: false,
+  notifyOnComplete: true
 }

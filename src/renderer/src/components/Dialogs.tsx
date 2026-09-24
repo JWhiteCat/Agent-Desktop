@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { CliSession, Settings } from '@shared/types'
 import { relativeTime, shortPath } from '../lib/format'
 import { groupModels } from '../lib/models'
-import { errorText, loadModels, modelForChat, rememberModel, setFavoriteModels, toast, useStore } from '../store'
+import { errorText, loadModels, modelForChat, setDefaultModel, setFavoriteModels, toast, useStore } from '../store'
 import { ModelPicker } from './ModelPicker'
 import { MODES } from './Composer'
 import { IconFolder, IconRefresh, IconX, Spinner } from './icons'
@@ -220,8 +220,8 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
 
       <section className="settings-section">
         <h4>默认值</h4>
-        <Field label="默认模型" desc="新对话会沿用这里的选择。勾选常用模型后，这里也只列出常用模型">
-          <ModelPicker value={modelForChat(models, settings.favoriteModels, settings.defaultModel)} onChange={rememberModel} />
+        <Field label="默认模型" desc="每个项目会记住自己上次选的模型。这里只给还没单独选过的项目用。勾选常用模型后，这里也只列出常用模型">
+          <ModelPicker value={modelForChat(models, settings.favoriteModels, settings.defaultModel)} onChange={setDefaultModel} />
         </Field>
         <Field label="默认模式">
           <select className="input" value={settings.defaultMode} onChange={(e) => update({ defaultMode: e.target.value as Settings['defaultMode'] })}>
@@ -241,6 +241,18 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
             <option value="enabled">启用</option>
             <option value="disabled">禁用</option>
           </select>
+        </Field>
+      </section>
+
+      <section className="settings-section">
+        <h4>通知</h4>
+        <Field label="任务完成时通知" desc="对话结束后发送系统通知，点击通知可回到该对话">
+          <input
+            type="checkbox"
+            className="toggle"
+            checked={settings.notifyOnComplete}
+            onChange={(e) => update({ notifyOnComplete: e.target.checked })}
+          />
         </Field>
       </section>
 

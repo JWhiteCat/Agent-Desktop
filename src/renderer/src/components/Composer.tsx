@@ -17,6 +17,7 @@ export interface ComposerHandle {
 }
 
 interface Props {
+  projectId: string
   initial: SendOptions
   running?: boolean
   disabled?: boolean
@@ -94,7 +95,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
             value={opts.model}
             onChange={(model) => {
               setOpts((o) => ({ ...o, model }))
-              rememberModel(model)
+              rememberModel(props.projectId, model, opts.model)
             }}
           />
           <button

@@ -39,4 +39,5 @@ export interface DesktopApi {
   openExternal(url: string): Promise<void>
   onEvent(cb: (ev: AgentEvent) => void): () => void
   onState(cb: (state: AppState) => void): () => void
+  onFocusThread(cb: (threadId: string) => void): () => void
 }

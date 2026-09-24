@@ -44,15 +44,14 @@ export function useStore<T>(selector: (s: UIState) => T): T {
 }
 
 const LAST_PROJECT_KEY = 'agent-desktop:lastProject'
-const LAST_MODEL_KEY = 'agent-desktop:model'
+const LEGACY_MODEL_KEY = 'agent-desktop:model'
 
-export function preferredModel(settingsDefault?: string): string {
-  return localStorage.getItem(LAST_MODEL_KEY) || settingsDefault || 'auto'
+/** Model shown for a new chat in a project: that project's last choice, otherwise the global default. */
+export function modelForChat(models: ModelInfo[], favoriteBases: string[] | undefined, settingsDefault?: string, projectModel?: string): string {
+  return resolveModel(models, favoriteBases, projectModel || settingsDefault || 'auto')
 }
 
-/** Model shown for a new chat: a favorite when favorites are configured, otherwise the last choice. */
-export function modelForChat(models: ModelInfo[], favoriteBases: string[] | undefined, settingsDefault?: string): string {
-  const preferred = preferredModel(settingsDefault)
+function resolveModel(models: ModelInfo[], favoriteBases: string[] | undefined, preferred: string): string {
   const favorites = favoriteBases ?? []
   if (!favorites.length) return preferred
   const groups = groupModels(models)
@@ -63,39 +62,95 @@ export function modelForChat(models: ModelInfo[], favoriteBases: string[] | unde
   return pickVariant(group, wantFrom(current)).id
 }
 
-export function rememberModel(model: string): void {
-  localStorage.setItem(LAST_MODEL_KEY, model)
+/** Same catalog entry, including a legacy slug and its parameterized id. */
+function sameModel(models: ModelInfo[], a: string, b: string): boolean {
+  if (a === b) return true
+  const groups = groupModels(models)
+  const left = findVariant(groups, a)
+  const right = findVariant(groups, b)
+  return !!left && !!right && left.id === right.id
+}
+
+export function rememberModel(projectId: string, model: string, previous?: string): void {
+  const project = state.app.projects.find((p) => p.id === projectId)
+  if (!project || project.model === model) return
+  const canonicalizing = previous !== undefined && sameModel(state.models, previous, model)
+  if (canonicalizing) {
+    if (!project.model || !sameModel(state.models, project.model, model)) return
+  } else if (!project.model) {
+    const fallback = modelForChat(state.models, state.app.settings.favoriteModels, state.app.settings.defaultModel)
+    if (sameModel(state.models, model, fallback)) return
+  }
+  setState((s) => ({
+    app: {
+      ...s.app,
+      projects: s.app.projects.map((p) => (p.id === projectId ? { ...p, model } : p))
+    }
+  }))
+  void window.api.updateProject(projectId, { model })
+}
+
+export function setDefaultModel(model: string): void {
+  if (state.app.settings.defaultModel === model) return
+  setState((s) => ({ app: { ...s.app, settings: { ...s.app.settings, defaultModel: model } } }))
   void window.api.updateSettings({ defaultModel: model })
 }
 
 export function setFavoriteModels(bases: string[]): void {
   const patch: Partial<Settings> = { favoriteModels: bases }
+  const projectPatches: { id: string; model: string }[] = []
   if (bases.length) {
-    const currentId = preferredModel(state.app.settings.defaultModel)
     const groups = groupModels(state.models)
-    const current = findVariant(groups, currentId)
-    if (!current || !bases.includes(current.base)) {
+    const snap = (modelId: string): string | undefined => {
+      const current = findVariant(groups, modelId)
+      if (current && bases.includes(current.base)) return undefined
       const group = groups.find((g) => bases.includes(g.base))
-      if (group) {
-        patch.defaultModel = pickVariant(group, wantFrom(current)).id
-        localStorage.setItem(LAST_MODEL_KEY, patch.defaultModel)
-      }
+      if (!group) return undefined
+      const next = pickVariant(group, wantFrom(current)).id
+      return next === modelId ? undefined : next
+    }
+    const snappedDefault = snap(state.app.settings.defaultModel || 'auto')
+    if (snappedDefault) patch.defaultModel = snappedDefault
+    for (const project of state.app.projects) {
+      if (!project.model) continue
+      const next = snap(project.model)
+      if (next) projectPatches.push({ id: project.id, model: next })
     }
   }
-  setState((s) => ({ app: { ...s.app, settings: { ...s.app.settings, ...patch } } }))
+  setState((s) => ({
+    app: {
+      ...s.app,
+      settings: { ...s.app.settings, ...patch },
+      projects: projectPatches.length
+        ? s.app.projects.map((p) => {
+            const hit = projectPatches.find((x) => x.id === p.id)
+            return hit ? { ...p, model: hit.model } : p
+          })
+        : s.app.projects
+    }
+  }))
   void window.api.updateSettings(patch)
+  for (const project of projectPatches) void window.api.updateProject(project.id, { model: project.model })
 }
 
 export async function initStore(): Promise<void> {
-  const app = await window.api.getState()
+  let app = await window.api.getState()
   const saved = localStorage.getItem(LAST_PROJECT_KEY) ?? undefined
   const lastProjectId = app.projects.some((p) => p.id === saved) ? saved : app.projects[0]?.id
-  const remembered = localStorage.getItem(LAST_MODEL_KEY)
-  if (remembered && remembered !== app.settings.defaultModel) void window.api.updateSettings({ defaultModel: remembered })
-  else if (!remembered && app.settings.defaultModel) localStorage.setItem(LAST_MODEL_KEY, app.settings.defaultModel)
+  const legacyModel = localStorage.getItem(LEGACY_MODEL_KEY)
+  if (legacyModel) {
+    localStorage.removeItem(LEGACY_MODEL_KEY)
+    if (legacyModel !== app.settings.defaultModel) {
+      app = { ...app, settings: { ...app.settings, defaultModel: legacyModel } }
+      void window.api.updateSettings({ defaultModel: legacyModel })
+    }
+  }
   setState({ app, lastProjectId, view: { kind: 'home', projectId: lastProjectId } })
 
   window.api.onState((app) => setState({ app }))
+  window.api.onFocusThread((id) => {
+    void openThread(id)
+  })
   window.api.onEvent((ev) => {
     if (ev.type === 'items') {
       setState((s) => {

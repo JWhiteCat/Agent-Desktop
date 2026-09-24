@@ -14,6 +14,14 @@ interface Run {
   flushTimer?: NodeJS.Timeout
 }
 
+export interface RunFinished {
+  threadId: string
+  title: string
+  stopped: boolean
+  failed: boolean
+  preview: string
+}
+
 export const DEFAULT_TITLE = '新对话'
 
 export function titleFrom(prompt: string): string {
@@ -27,7 +35,8 @@ export class SessionManager {
   constructor(
     private readonly store: Store,
     private readonly emit: (ev: AgentEvent) => void,
-    private readonly onStateChange: () => void
+    private readonly onStateChange: () => void,
+    private readonly onFinished: (info: RunFinished) => void
   ) {}
 
   running(): string[] {
@@ -148,7 +157,7 @@ export class SessionManager {
       this.runs.delete(thread.id)
 
       const preview = r.lastAssistantText.replace(/\s+/g, ' ').trim().slice(0, 120)
-      this.store.updateThread(thread.id, {
+      const updated = this.store.updateThread(thread.id, {
         updatedAt: Date.now(),
         syncedAt: Date.now(),
         unread: true,
@@ -157,6 +166,20 @@ export class SessionManager {
       this.store.markItemsDirty(thread.id)
       this.emit({ type: 'running', threadId: thread.id, running: false })
       this.onStateChange()
+      const result = [...items].reverse().find((it) => it.kind === 'result')
+      const failed = !!spawnError || !r.gotResult || (result?.kind === 'result' && result.isError)
+      let summary = preview
+      if (failed && !summary) {
+        const notice = [...items].reverse().find((it) => it.kind === 'notice' && it.level === 'error')
+        if (notice?.kind === 'notice') summary = notice.text.replace(/\s+/g, ' ').trim().slice(0, 120)
+      }
+      this.onFinished({
+        threadId: thread.id,
+        title: updated?.title || thread.title,
+        stopped: run.stopped,
+        failed,
+        preview: summary
+      })
     }
 
     child.on('error', (err) => finish(null, err))

@@ -210,8 +210,9 @@ export function ThreadView({ thread, changesOpen, onToggleChanges }: Props) {
         <Composer
           key={thread.id}
           ref={composer}
+          projectId={thread.projectId}
           running={running}
-          initial={{ model: thread.model || modelForChat(models, settings.favoriteModels, settings.defaultModel), mode: thread.mode, force: settings.force }}
+          initial={{ model: thread.model || modelForChat(models, settings.favoriteModels, settings.defaultModel, project?.model), mode: thread.mode, force: settings.force }}
           placeholder={thread.chatId ? '继续对话…' : '描述任务，Enter 发送，Shift+Enter 换行'}
           onSend={(text, opts) => {
             stick.current = true

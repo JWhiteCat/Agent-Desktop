@@ -33,7 +33,8 @@ const api: DesktopApi = {
   openInEditor: (p) => ipcRenderer.invoke('shell:openInEditor', p),
   openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
   onEvent: (cb) => subscribe('agent:event', cb),
-  onState: (cb) => subscribe('state:changed', cb)
+  onState: (cb) => subscribe('state:changed', cb),
+  onFocusThread: (cb) => subscribe('thread:focus', cb)
 }
 
 contextBridge.exposeInMainWorld('api', api)

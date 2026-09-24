@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, shell } from 'electron'
 import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -8,7 +8,7 @@ import { loadCursorModelCatalog } from './model-catalog'
 import { mergeModelLists } from '@shared/model-catalog'
 import { gitDiff } from './git'
 import { cliChatUpdatedAt, readCliTranscript, scanCliSessions, UNTITLED } from './history'
-import { DEFAULT_TITLE, SessionManager, titleFrom } from './sessions'
+import { DEFAULT_TITLE, SessionManager, titleFrom, type RunFinished } from './sessions'
 import { newId } from './id'
 import { Store } from './store'
 
@@ -35,6 +35,20 @@ function send(channel: string, payload: unknown): void {
 
 const broadcastState = (): void => send('state:changed', snapshot())
 const emitAgent = (ev: AgentEvent): void => send('agent:event', ev)
+
+function notifyRunFinished(info: RunFinished): void {
+  if (info.stopped || !store.settings.notifyOnComplete || !Notification.isSupported()) return
+  const body = (info.failed ? (info.preview ? `未能完成：${info.preview}` : '任务未能完成') : info.preview || '任务已完成').slice(0, 180)
+  const notification = new Notification({ title: info.title || 'Agent Desktop', body })
+  notification.on('click', () => {
+    if (!win || win.isDestroyed()) return
+    if (win.isMinimized()) win.restore()
+    win.show()
+    win.focus()
+    send('thread:focus', info.threadId)
+  })
+  notification.show()
+}
 
 function overlayColors(): { color: string; symbolColor: string } {
   return nativeTheme.shouldUseDarkColors
@@ -290,6 +304,7 @@ function registerIpc(): void {
 }
 
 if (process.env.AGENT_DESKTOP_USER_DATA) app.setPath('userData', process.env.AGENT_DESKTOP_USER_DATA)
+if (isWin) app.setAppUserModelId(app.isPackaged ? 'dev.agentdesktop.app' : process.execPath)
 
 const gotLock = app.requestSingleInstanceLock()
 if (!gotLock) {
@@ -304,7 +319,7 @@ if (!gotLock) {
 
   app.whenReady().then(() => {
     store = new Store()
-    sessions = new SessionManager(store, emitAgent, broadcastState)
+    sessions = new SessionManager(store, emitAgent, broadcastState, notifyRunFinished)
     nativeTheme.themeSource = store.settings.theme
     nativeTheme.on('updated', () => {
       if (isWin && win) win.setTitleBarOverlay({ ...overlayColors(), height: 44 })
