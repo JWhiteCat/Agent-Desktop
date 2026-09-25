@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import type { ModelInfo } from '@shared/types'
+import { installAcpUsagePreload } from './acp-usage'
 
 export interface ResolvedCli {
   command: string
@@ -112,6 +113,7 @@ export function spawnCli(
   apiKey?: string | false
 ): ChildProcess {
   const auth = cliEnv(apiKey)
+  installAcpUsagePreload(auth.env)
   return spawn(cli.command, [...cli.prefixArgs, ...(auth.key ? ['--api-key', auth.key] : []), ...args], {
     cwd,
     env: auth.env,

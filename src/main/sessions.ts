@@ -2,6 +2,7 @@ import type { ChildProcess } from 'node:child_process'
 import fs from 'node:fs'
 import { enabledSkillFingerprint, toAcpMcpServers } from '@shared/agent-config'
 import type { AgentEvent, Item, QuestionAnswer, QuestionItem, SendRequest } from '@shared/types'
+import { normalizeTurnUsage } from '@shared/turn-usage'
 import { normalizeQuestions } from '@shared/questions'
 import { AcpConnection, MethodNotFound, permissionResult, planModePrompt } from './acp'
 import { killTree, resolveApiKey, resolveCli, spawnCli, stripAnsi, type ResolvedCli } from './cli'
@@ -250,6 +251,14 @@ export class SessionManager {
       onNotification: (method, params) => {
         const run = this.runs.get(threadId)
         if (!run || run.proc !== proc || method !== 'session/update' || !run.acceptUpdates) return
+        if (
+          params?.update?.sessionUpdate === 'usage_update' &&
+          params.sessionId &&
+          proc.sessionId &&
+          params.sessionId !== proc.sessionId
+        ) {
+          return
+        }
         if (run.mode === 'plan' && leftPlanMode(params?.update, run.switchCalls)) {
           proc.acp.request('session/set_mode', { sessionId: proc.sessionId, modeId: 'plan' }).catch(() => undefined)
         }
@@ -361,14 +370,7 @@ export class SessionManager {
     if (!this.runs.has(threadId) || run.settled) return
     const stop = String(result?.stopReason ?? 'end_turn')
     run.reducer.gotResult = true
-    const usage = result?.usage
-      ? {
-          inputTokens: result.usage.inputTokens,
-          outputTokens: result.usage.outputTokens,
-          cacheReadTokens: result.usage.cachedReadTokens,
-          cacheWriteTokens: result.usage.cachedWriteTokens
-        }
-      : run.reducer.lastUsage
+    const usage = normalizeTurnUsage(result?.usage) ?? run.reducer.lastUsage
     const changed = run.reducer.closeSegments()
     changed.push(
       run.reducer.push({

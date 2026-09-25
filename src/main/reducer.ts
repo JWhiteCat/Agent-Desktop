@@ -1,4 +1,5 @@
 import type { AssistantItem, Item, ResultItem, ThinkingItem, ToolItem } from '@shared/types'
+import { normalizeTurnUsage } from '@shared/turn-usage'
 import { unifiedDiff } from '@shared/unified-diff'
 import { newId } from './id'
 
@@ -119,15 +120,8 @@ export class StreamReducer {
       case 'tool_call_update':
         return this.onAcpTool(update)
       case 'usage_update': {
-        const u = update.usage
-        if (u && typeof u === 'object') {
-          this.lastUsage = {
-            inputTokens: num(u.inputTokens),
-            outputTokens: num(u.outputTokens),
-            cacheReadTokens: num(u.cachedReadTokens),
-            cacheWriteTokens: num(u.cachedWriteTokens)
-          }
-        }
+        const usage = normalizeTurnUsage(update.usage)
+        if (usage) this.lastUsage = usage
         return []
       }
       default:
@@ -280,10 +274,6 @@ export class StreamReducer {
     if (status !== 'running') item.endedAt = Date.now()
     return [item]
   }
-}
-
-function num(v: unknown): number | undefined {
-  return typeof v === 'number' && Number.isFinite(v) ? v : undefined
 }
 
 function textOfContent(content: unknown): string {

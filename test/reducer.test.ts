@@ -124,6 +124,17 @@ describe('StreamReducer', () => {
     expect(diff).toContain('+hi')
   })
 
+  it('keeps ACP turn usage and splits cache out of input', () => {
+    const reducer = new StreamReducer([])
+    reducer.handleAcp({
+      sessionUpdate: 'usage_update',
+      usage: { inputTokens: 100, outputTokens: 7, cacheReadTokens: 30, cacheWriteTokens: 10, inputIncludesCache: true }
+    })
+    expect(reducer.lastUsage).toEqual({ inputTokens: 60, outputTokens: 7, cacheReadTokens: 30, cacheWriteTokens: 10 })
+    reducer.handleAcp({ sessionUpdate: 'usage_update', usage: { inputTokens: 0, outputTokens: 0 } })
+    expect(reducer.lastUsage?.inputTokens).toBe(60)
+  })
+
   it('appends ACP message chunks', () => {
     const items: Item[] = []
     const reducer = new StreamReducer(items)
