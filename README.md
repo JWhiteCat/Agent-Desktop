@@ -16,6 +16,7 @@
 - 已有会话用 `--resume` 续聊；也可从 CLI 存储同步回本地
 - 任务结束时发送系统通知，点击通知回到该对话
 - 主题：跟随系统、深色、浅色
+- 设置里配置 MCP 服务器和 Agent Skill
 
 ## 环境要求
 
@@ -93,6 +94,14 @@ Windows 也可以双击 `start.bat`，效果相同。
 
 输入框里还可以切换完全访问（`--force`）和沙箱（`--sandbox`）。完全访问会让 CLI 在不逐条确认的情况下执行命令。
 
+## MCP 与 Skill
+
+在设置中添加 MCP 服务器。启用后，新建或恢复会话时会把它们放进 ACP 的 `mcpServers`（stdio、HTTP 或 SSE）。这份列表存在应用自己的 `state.json` 里，不会改写 `~/.cursor/mcp.json`。
+
+启用的 Skill 会写成 `~/.cursor/skills/<名称>/SKILL.md`。名称只能是小写字母、数字和连字符，并且需要一段描述，CLI 会按描述决定是否使用。停用或删除时，只移除本应用创建的目录。同名且不是本应用创建的目录会保留，保存时会提示无法覆盖。
+
+修改 MCP 或 Skill 后，空闲的 CLI 进程会退出。下一条消息才会用上新配置。
+
 ## 数据
 
 项目、对话元数据和设置写在 Electron 的 userData 目录下的 `data/`：
@@ -103,7 +112,7 @@ Windows 也可以双击 `start.bat`，效果相同。
 | macOS | `~/Library/Application Support/Agent Desktop/data` |
 | Linux | `~/.config/Agent Desktop/data` |
 
-`state.json` 保存项目、对话列表和设置；每段对话的消息在 `threads/` 里。CLI 自己的会话记录仍在 `~/.cursor/chats`，本应用只读取和续接，不改写那份存储。
+`state.json` 保存项目、对话列表和设置（含 MCP 服务器与 Skill 正文）；每段对话的消息在 `threads/` 里。CLI 自己的会话记录仍在 `~/.cursor/chats`，本应用只读取和续接，不改写那份存储。启用的 Skill 另外写在 `~/.cursor/skills`。
 
 开发时可用环境变量 `AGENT_DESKTOP_USER_DATA` 指定另一份 userData 目录。
 

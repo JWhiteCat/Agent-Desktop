@@ -1565,11 +1565,94 @@ select {
   width: auto;
   min-width: 0;
 }
-.favorite-list {
+.favorite-list,
+.config-list {
   max-height: 240px;
   overflow: auto;
   border: 1px solid var(--border);
   border-radius: 10px;
+}
+.config-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.config-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+}
+.config-item + .config-item {
+  border-top: 1px solid var(--border);
+}
+.config-main {
+  flex: 1;
+  min-width: 0;
+}
+.config-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.config-sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.btn.small {
+  height: 26px;
+  padding: 0 8px;
+  font-size: 12px;
+}
+.stack-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-hover);
+}
+.stack-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.stack-field > span {
+  color: var(--muted);
+  font-size: 12px;
+}
+.stack-form .input,
+.stack-form .textarea {
+  width: 100%;
+}
+.textarea {
+  min-height: 72px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg);
+  color: inherit;
+  font: inherit;
+  line-height: 1.45;
+  resize: vertical;
+  outline: 0;
+  user-select: text;
+}
+.textarea.tall {
+  min-height: 140px;
+}
+.textarea:focus {
+  border-color: var(--blue);
+}
+.check-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 .favorite-item {
   display: flex;

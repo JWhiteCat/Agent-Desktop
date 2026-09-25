@@ -1,6 +1,7 @@
 import { app } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
+import { normalizeMcpServers, normalizeSkills } from '@shared/agent-config'
 import { DEFAULT_SETTINGS, type Item, type Project, type Settings, type ThreadMeta } from '@shared/types'
 import { newId } from './id'
 
@@ -47,7 +48,9 @@ export class Store {
       settings: {
         ...DEFAULT_SETTINGS,
         ...loaded?.settings,
-        favoriteModels: Array.isArray(loaded?.settings?.favoriteModels) ? loaded.settings.favoriteModels : []
+        favoriteModels: Array.isArray(loaded?.settings?.favoriteModels) ? loaded.settings.favoriteModels : [],
+        mcpServers: normalizeMcpServers(loaded?.settings?.mcpServers),
+        skills: normalizeSkills(loaded?.settings?.skills)
       }
     }
   }

@@ -5,6 +5,7 @@ import { groupModels } from '../lib/models'
 import { errorText, loadModels, modelForChat, setDefaultModel, setFavoriteModels, toast, useStore } from '../store'
 import { ModelPicker } from './ModelPicker'
 import { MODES } from './Composer'
+import { McpSettings, SkillSettings } from './AgentConfigSettings'
 import { IconFolder, IconRefresh, IconX, Spinner } from './icons'
 
 function Modal({ title, onClose, children, footer, wide }: { title: string; onClose: () => void; children: React.ReactNode; footer?: React.ReactNode; wide?: boolean }) {
@@ -146,7 +147,7 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
   const update = (patch: Partial<Settings>) => window.api.updateSettings(patch)
 
   return (
-    <Modal title="设置" onClose={onClose}>
+    <Modal title="设置" onClose={onClose} wide>
       <section className="settings-section">
         <h4>Cursor CLI</h4>
         <div className="cli-card">
@@ -230,6 +231,16 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
             }}
           />
         </Field>
+      </section>
+
+      <section className="settings-section">
+        <h4>MCP</h4>
+        <McpSettings />
+      </section>
+
+      <section className="settings-section">
+        <h4>Skill</h4>
+        <SkillSettings />
       </section>
 
       <section className="settings-section">

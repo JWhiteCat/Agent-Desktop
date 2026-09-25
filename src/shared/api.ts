@@ -45,6 +45,7 @@ export interface DesktopApi {
   importCliSessions(chatIds: string[]): Promise<number>
   gitDiff(cwd: string): Promise<GitDiff>
   openPath(path: string): Promise<void>
+  openSkillsDir(): Promise<void>
   openInEditor(path: string): Promise<boolean>
   openExternal(url: string): Promise<void>
   onEvent(cb: (ev: AgentEvent) => void): () => void

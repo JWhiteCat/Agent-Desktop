@@ -12,6 +12,8 @@ import { materializeCliFork, planCliFork } from './fork'
 import { cliChatUpdatedAt, findChatDir, readCliTranscript, scanCliSessions, UNTITLED } from './history'
 import { DEFAULT_TITLE, SessionManager, titleFrom, type RunFinished } from './sessions'
 import { newId } from './id'
+import { syncManagedSkills, userSkillsDir } from './skills'
+import { normalizeMcpServers, normalizeSkills } from '@shared/agent-config'
 import { Store } from './store'
 
 let win: BrowserWindow | null = null
@@ -287,10 +289,24 @@ function registerIpc(): void {
   })
 
   ipcMain.handle('settings:update', (_e, patch: Partial<Settings>) => {
-    const s = store.updateSettings(patch)
+    const next: Partial<Settings> = { ...patch }
+    if (patch.mcpServers !== undefined) next.mcpServers = normalizeMcpServers(patch.mcpServers)
+    if (patch.skills !== undefined) {
+      next.skills = normalizeSkills(patch.skills)
+      syncManagedSkills(next.skills)
+    }
+    const s = store.updateSettings(next)
     if (patch.theme) applyTheme(patch.theme)
     if (patch.agentPath !== undefined || patch.apiKey !== undefined) modelsCache = null
-    if (patch.agentPath !== undefined || patch.apiKey !== undefined || patch.sandbox !== undefined) sessions.dropIdle()
+    if (
+      patch.agentPath !== undefined ||
+      patch.apiKey !== undefined ||
+      patch.sandbox !== undefined ||
+      patch.mcpServers !== undefined ||
+      patch.skills !== undefined
+    ) {
+      sessions.dropIdle()
+    }
     broadcastState()
     return s
   })
@@ -377,6 +393,11 @@ function registerIpc(): void {
   ipcMain.handle('shell:openPath', async (_e, p: string) => {
     await shell.openPath(p)
   })
+  ipcMain.handle('shell:openSkills', async () => {
+    const dir = userSkillsDir()
+    fs.mkdirSync(dir, { recursive: true })
+    await shell.openPath(dir)
+  })
   ipcMain.handle('shell:openInEditor', async (_e, p: string) => {
     const ok = await openInEditor(p)
     if (!ok) await shell.openPath(p)
@@ -395,6 +416,11 @@ if (isWin) app.setAppUserModelId(app.isPackaged ? 'dev.agentdesktop.app' : proce
 
 app.whenReady().then(() => {
   store = new Store()
+  try {
+    syncManagedSkills(store.settings.skills)
+  } catch (err) {
+    console.error('[skills] sync failed', err)
+  }
   sessions = new SessionManager(store, emitAgent, broadcastState, notifyRunFinished)
   nativeTheme.themeSource = store.settings.theme
   nativeTheme.on('updated', () => {

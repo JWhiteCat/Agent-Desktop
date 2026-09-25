@@ -112,6 +112,36 @@ export interface QuestionItem {
 
 export type Item = UserItem | AssistantItem | ThinkingItem | ToolItem | ResultItem | NoticeItem | QuestionItem
 
+export type McpTransport = 'stdio' | 'http' | 'sse'
+
+export interface NamedValue {
+  name: string
+  value: string
+}
+
+/** One MCP server attached to agent sessions from Settings. */
+export interface McpServerConfig {
+  id: string
+  name: string
+  enabled: boolean
+  transport: McpTransport
+  command: string
+  args: string[]
+  env: NamedValue[]
+  url: string
+  headers: NamedValue[]
+}
+
+/** A user skill written to ~/.cursor/skills when enabled. */
+export interface SkillConfig {
+  id: string
+  name: string
+  description: string
+  enabled: boolean
+  /** Markdown body after the SKILL.md frontmatter. */
+  body: string
+}
+
 export interface Settings {
   agentPath: string
   /** Cursor user API key. Empty uses the CURSOR_API_KEY environment variable. */
@@ -126,6 +156,8 @@ export interface Settings {
   showArchived: boolean
   /** Send an OS notification when an agent run finishes. */
   notifyOnComplete: boolean
+  mcpServers: McpServerConfig[]
+  skills: SkillConfig[]
 }
 
 export interface AppState {
@@ -182,5 +214,7 @@ export const DEFAULT_SETTINGS: Settings = {
   theme: 'system',
   sandbox: 'default',
   showArchived: false,
-  notifyOnComplete: true
+  notifyOnComplete: true,
+  mcpServers: [],
+  skills: []
 }

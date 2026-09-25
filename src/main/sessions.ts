@@ -1,8 +1,10 @@
 import type { ChildProcess } from 'node:child_process'
 import fs from 'node:fs'
+import { enabledSkillFingerprint, toAcpMcpServers } from '@shared/agent-config'
 import type { AgentEvent, Item, QuestionAnswer, QuestionItem, SendRequest } from '@shared/types'
 import { AcpConnection, MethodNotFound, normalizeQuestions, permissionResult } from './acp'
 import { killTree, resolveApiKey, resolveCli, spawnCli, stripAnsi, type ResolvedCli } from './cli'
+import { syncManagedSkills } from './skills'
 import { newId } from './id'
 import { StreamReducer } from './reducer'
 import type { Store } from './store'
@@ -93,13 +95,15 @@ export class SessionManager {
     const cwd = thread.cwd && fs.existsSync(thread.cwd) ? thread.cwd : project.path
     if (!fs.existsSync(cwd)) throw new Error(`项目目录不存在：${cwd}`)
 
-    const fingerprint = procFingerprint(cli, cwd, settings.sandbox, req.force, apiKey)
+    const mcpServers = toAcpMcpServers(settings.mcpServers)
+    const fingerprint = procFingerprint(cli, cwd, settings.sandbox, req.force, apiKey, mcpServers, enabledSkillFingerprint(settings.skills))
     let proc = this.agents.get(thread.id)
     const reusable = !!proc && this.canReuse(proc, fingerprint)
     if (proc && !reusable) {
       this.discard(thread.id)
       proc = undefined
     }
+    if (!proc) syncManagedSkills(settings.skills)
 
     const items = this.store.items(thread.id)
     const userItem: Item = { id: newId(), kind: 'user', text: req.prompt, createdAt: Date.now() }
@@ -142,7 +146,7 @@ export class SessionManager {
 
     const turn = reusable
       ? this.continueSession(thread.id, run, req)
-      : this.drive(thread.id, run, req, cwd, thread.chatId, !apiKey)
+      : this.drive(thread.id, run, req, cwd, thread.chatId, !apiKey, mcpServers)
     void turn.catch((err) => {
       if (run.settled) return
       if (!run.stopped) run.failText = err instanceof Error ? err.message : String(err)
@@ -199,7 +203,7 @@ export class SessionManager {
     for (const id of [...this.agents.keys()]) this.discard(id)
   }
 
-  /** Drop idle processes after CLI path, API key, or sandbox changes. */
+  /** Drop idle processes after CLI path, API key, sandbox, MCP, or skill changes. */
   dropIdle(): void {
     for (const id of [...this.agents.keys()]) {
       if (!this.runs.has(id)) this.discard(id)
@@ -289,7 +293,8 @@ export class SessionManager {
     req: SendRequest,
     cwd: string,
     chatId?: string,
-    useLogin = false
+    useLogin = false,
+    mcpServers: Record<string, unknown>[] = []
   ): Promise<void> {
     const { proc } = run
     const acp = proc.acp
@@ -304,9 +309,9 @@ export class SessionManager {
 
     let sessionId = chatId
     if (sessionId) {
-      await acp.request('session/load', { sessionId, cwd, mcpServers: [] })
+      await acp.request('session/load', { sessionId, cwd, mcpServers })
     } else {
-      const created = await acp.request('session/new', { cwd, mcpServers: [] })
+      const created = await acp.request('session/new', { cwd, mcpServers })
       sessionId = created?.sessionId
       if (!sessionId) throw new Error('Cursor CLI 没有返回会话 id')
     }
@@ -538,8 +543,16 @@ export class SessionManager {
   }
 }
 
-function procFingerprint(cli: ResolvedCli, cwd: string, sandbox: string, force: boolean, apiKey: string): string {
-  return JSON.stringify([cli.command, cli.prefixArgs, cwd, sandbox, force ? 1 : 0, apiKey])
+function procFingerprint(
+  cli: ResolvedCli,
+  cwd: string,
+  sandbox: string,
+  force: boolean,
+  apiKey: string,
+  mcpServers: unknown,
+  skills: unknown
+): string {
+  return JSON.stringify([cli.command, cli.prefixArgs, cwd, sandbox, force ? 1 : 0, apiKey, mcpServers, skills])
 }
 
 function abandonQuestions(items: Item[]): Item[] {

@@ -32,6 +32,7 @@ const api: DesktopApi = {
   importCliSessions: (ids) => ipcRenderer.invoke('cli:import', ids),
   gitDiff: (cwd) => ipcRenderer.invoke('git:diff', cwd),
   openPath: (p) => ipcRenderer.invoke('shell:openPath', p),
+  openSkillsDir: () => ipcRenderer.invoke('shell:openSkills'),
   openInEditor: (p) => ipcRenderer.invoke('shell:openInEditor', p),
   openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
   onEvent: (cb) => subscribe('agent:event', cb),
