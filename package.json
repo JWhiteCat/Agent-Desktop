@@ -10,6 +10,7 @@
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "test": "vitest run",
+    "setup:public-server": "node scripts/setup-public-server.mjs",
     "test:live": "vitest run --config vitest.live.config.ts",
     "dist": "electron-vite build && electron-builder"
   },
