@@ -39,9 +39,9 @@ export interface ModelSummary {
   fast: boolean
 }
 
-const EFFORT_SUFFIXES = ['extra-high', 'xhigh', 'minimal', 'medium', 'none', 'high', 'low', 'max'] as const
-const EFFORT_ORDER = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'extra-high', 'max']
-const PREFER_EFFORT = ['high', 'medium', 'xhigh', 'extra-high', 'max', 'low', 'minimal', 'none']
+const EFFORT_SUFFIXES = ['extra-high', 'xhigh', 'minimal', 'medium', 'none', 'high', 'low', 'max', 'ultra'] as const
+const EFFORT_ORDER = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'extra-high', 'max', 'ultra']
+const PREFER_EFFORT = ['high', 'medium', 'xhigh', 'extra-high', 'max', 'ultra', 'low', 'minimal', 'none']
 
 const EFFORT_LABEL: Record<string, string> = {
   none: 'None',
@@ -51,7 +51,8 @@ const EFFORT_LABEL: Record<string, string> = {
   high: 'High',
   xhigh: 'Extra High',
   'extra-high': 'Extra High',
-  max: 'Max'
+  max: 'Max',
+  ultra: 'Ultra'
 }
 
 function formatContext(raw: string): string {

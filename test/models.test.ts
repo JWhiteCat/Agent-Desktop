@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { catalogFromStorageJson, mergeModelLists } from '../src/shared/model-catalog'
 import { modelForChat, pruneFavoriteList } from '../src/renderer/src/store'
-import { describeModel, findVariant, groupModels, listedModelGroups, modelCaption, pickVariant } from '../src/renderer/src/lib/models'
+import { describeModel, effortChoices, findVariant, groupModels, listedModelGroups, modelCaption, pickVariant } from '../src/renderer/src/lib/models'
 import type { ModelInfo } from '../src/shared/types'
 import { GROK_47_500K_HIGH_FAST } from './grok-model'
 
@@ -127,6 +127,11 @@ describe('model picker', () => {
       { id: 'gpt-5.4[low]', label: '5.4 low' }
     ])
     expect(codex[0].variants.map((variant) => variant.effort)).toEqual(['high', 'low'])
+    const astra = groupModels([
+      { id: 'gpt-6-astra[max]', label: '6 Astra (max)' },
+      { id: 'gpt-6-astra[ultra]', label: '6 Astra (ultra)' }
+    ])
+    expect(effortChoices(astra[0]).map((choice) => choice.label)).toEqual(['Max', 'Ultra'])
     expect(listedModelGroups(codex, ['grok-4.7'])).toBe(codex)
     expect(listedModelGroups(codex, ['gpt-5.4'])).toEqual(codex)
     expect(pickVariant(grok!, { context: '500K', effort: 'high', fast: false }).id).toBe(GROK_500K_HIGH)

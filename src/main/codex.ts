@@ -177,16 +177,21 @@ interface ConfigOption {
   _meta?: { jetbrains?: { air?: { recommendedValue?: string } } }
 }
 
-/** Prefers config selects, then the legacy `models.availableModels` list on the same response. */
+/**
+ * Uses each model's own effort list. The session config select only describes the current model,
+ * so crossing it with every model drops efforts like Astra's `ultra` and invents ones others lack.
+ */
 export function modelsFromSession(created: { configOptions?: unknown; models?: unknown } | null | undefined): CodexModelList {
   const fromConfig = modelsFromConfig(created?.configOptions)
-  if (fromConfig.models.length) return fromConfig
   const available =
     created?.models && typeof created.models === 'object' && Array.isArray((created.models as { availableModels?: unknown }).availableModels)
       ? (created.models as { availableModels: { modelId?: string; name?: string }[] }).availableModels
       : []
   const models = available.filter((model) => model?.modelId).map((model) => ({ id: String(model.modelId), label: String(model.name || model.modelId) }))
-  return { models }
+  if (!models.length) return fromConfig
+  const recommended = fromConfig.recommended && models.some((model) => model.id === fromConfig.recommended) ? fromConfig.recommended : undefined
+  if (!recommended) return { models }
+  return { recommended, models: models.slice().sort((a, b) => Number(b.id === recommended) - Number(a.id === recommended)) }
 }
 
 /** Expands Codex model and reasoning-effort selects into picker ids like `gpt-5.4[high]`. */

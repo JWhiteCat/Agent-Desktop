@@ -42,6 +42,47 @@ describe('codex mode and models', () => {
     expect(listed.models).toEqual([{ id: 'gpt-5.4[high]', label: '5.4 (high)' }])
   })
 
+  it('keeps Astra ultra and does not give every model the current effort list', () => {
+    const listed = modelsFromSession({
+      configOptions: [
+        {
+          id: 'model',
+          currentValue: 'gpt-6-astra',
+          options: [
+            { value: 'gpt-6-astra', name: '6 Astra' },
+            { value: 'gpt-5.5', name: '5.5' }
+          ]
+        },
+        {
+          id: 'reasoning_effort',
+          currentValue: 'high',
+          options: [
+            { value: 'low', name: 'Low' },
+            { value: 'high', name: 'High' },
+            { value: 'max', name: 'Max' }
+          ]
+        }
+      ],
+      models: {
+        availableModels: [
+          { modelId: 'gpt-6-astra[low]', name: '6 Astra (low)' },
+          { modelId: 'gpt-6-astra[high]', name: '6 Astra (high)' },
+          { modelId: 'gpt-6-astra[ultra]', name: '6 Astra (ultra)' },
+          { modelId: 'gpt-5.5[low]', name: '5.5 (low)' },
+          { modelId: 'gpt-5.5[high]', name: '5.5 (high)' }
+        ]
+      }
+    })
+    expect(listed.recommended).toBe('gpt-6-astra[high]')
+    expect(listed.models.map((model) => model.id)).toEqual([
+      'gpt-6-astra[high]',
+      'gpt-6-astra[low]',
+      'gpt-6-astra[ultra]',
+      'gpt-5.5[low]',
+      'gpt-5.5[high]'
+    ])
+  })
+
   it('finds the bundled ACP adapter', () => {
     expect(resolveCodexAcpEntry()).toMatch(/codex-acp[\\/]dist[\\/]index\.js$/)
   })
