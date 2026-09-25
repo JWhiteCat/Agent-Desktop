@@ -388,38 +388,26 @@ function registerIpc(): void {
 if (process.env.AGENT_DESKTOP_USER_DATA) app.setPath('userData', process.env.AGENT_DESKTOP_USER_DATA)
 if (isWin) app.setAppUserModelId(app.isPackaged ? 'dev.agentdesktop.app' : process.execPath)
 
-const gotLock = app.requestSingleInstanceLock()
-if (!gotLock) {
-  app.quit()
-} else {
-  app.on('second-instance', () => {
-    if (win) {
-      if (win.isMinimized()) win.restore()
-      win.focus()
-    }
+app.whenReady().then(() => {
+  store = new Store()
+  sessions = new SessionManager(store, emitAgent, broadcastState, notifyRunFinished)
+  nativeTheme.themeSource = store.settings.theme
+  nativeTheme.on('updated', () => {
+    if (isWin && win) win.setTitleBarOverlay({ ...overlayColors(), height: 44 })
   })
+  if (isMac) Menu.setApplicationMenu(Menu.buildFromTemplate([{ role: 'appMenu' }, { role: 'editMenu' }, { role: 'windowMenu' }]))
+  registerIpc()
+  createWindow()
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+  })
+})
 
-  app.whenReady().then(() => {
-    store = new Store()
-    sessions = new SessionManager(store, emitAgent, broadcastState, notifyRunFinished)
-    nativeTheme.themeSource = store.settings.theme
-    nativeTheme.on('updated', () => {
-      if (isWin && win) win.setTitleBarOverlay({ ...overlayColors(), height: 44 })
-    })
-    if (isMac) Menu.setApplicationMenu(Menu.buildFromTemplate([{ role: 'appMenu' }, { role: 'editMenu' }, { role: 'windowMenu' }]))
-    registerIpc()
-    createWindow()
-    app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0) createWindow()
-    })
-  })
+app.on('before-quit', () => {
+  sessions?.stopAll()
+  store?.flush()
+})
 
-  app.on('before-quit', () => {
-    sessions?.stopAll()
-    store?.flush()
-  })
-
-  app.on('window-all-closed', () => {
-    if (!isMac) app.quit()
-  })
-}
+app.on('window-all-closed', () => {
+  if (!isMac) app.quit()
+})
