@@ -1,5 +1,12 @@
 export type AgentMode = 'agent' | 'plan' | 'ask'
 
+/** Which local CLI owns a thread. Missing values on older threads mean Cursor. */
+export type CliProvider = 'cursor' | 'codex'
+
+export function threadCli(thread: { cli?: CliProvider }): CliProvider {
+  return thread.cli === 'codex' ? 'codex' : 'cursor'
+}
+
 export interface Project {
   id: string
   name: string
@@ -14,8 +21,10 @@ export interface ThreadMeta {
   id: string
   projectId: string
   title: string
-  /** Cursor CLI chat/session id, used with `--resume`. */
+  /** CLI chat/session id, used to resume. Cursor threads use `--resume`; Codex threads use ACP `session/load`. */
   chatId?: string
+  /** Which CLI created this thread. Omitted on threads saved before Codex support; those stay on Cursor. */
+  cli?: CliProvider
   /** Actual working directory reported by the CLI (differs from project path for worktrees). */
   cwd?: string
   model?: string
@@ -149,10 +158,18 @@ export interface SkillConfig {
 }
 
 export interface Settings {
+  /** CLI used for new threads. Existing threads keep the CLI stored on them. */
+  cliProvider: CliProvider
   agentPath: string
   /** Cursor user API key. Empty uses the CURSOR_API_KEY environment variable. */
   apiKey: string
+  /** Codex executable. Empty auto-detects, then falls back to the adapter's bundled CLI. */
+  codexPath: string
+  /** Codex API key. Empty uses CODEX_API_KEY, then OPENAI_API_KEY, then ChatGPT login. */
+  codexApiKey: string
   defaultModel: string
+  /** Default model for new Codex threads. Empty uses the adapter's recommended model. */
+  codexDefaultModel: string
   /** Model group bases shown in the chat picker. Empty means show every model. */
   favoriteModels: string[]
   defaultMode: AgentMode
@@ -219,11 +236,22 @@ export interface ModelInfo {
 
 export interface CliSession {
   chatId: string
+  cli: CliProvider
   title: string
   cwd: string
   createdAt: number
   updatedAt: number
   imported: boolean
+}
+
+export interface CliInfo {
+  found: boolean
+  path?: string
+  version?: string
+  status?: string
+  hasApiKey?: boolean
+  /** Codex is running from the adapter package rather than a CLI on PATH. */
+  bundled?: boolean
 }
 
 export interface GitDiff {
@@ -239,9 +267,13 @@ export type AgentEvent =
   | { type: 'running'; threadId: string; running: boolean }
 
 export const DEFAULT_SETTINGS: Settings = {
+  cliProvider: 'cursor',
   agentPath: '',
   apiKey: '',
+  codexPath: '',
+  codexApiKey: '',
   defaultModel: 'auto',
+  codexDefaultModel: '',
   favoriteModels: [],
   defaultMode: 'agent',
   force: false,

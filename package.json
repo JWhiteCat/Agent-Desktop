@@ -2,7 +2,7 @@
   "name": "agent-desktop",
   "productName": "Agent Desktop",
   "version": "0.1.0",
-  "description": "A Codex-style desktop client for Cursor CLI with multi-project history",
+  "description": "A desktop client for Cursor CLI and Codex CLI with multi-project history",
   "main": "out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
@@ -21,7 +21,15 @@
       "output": "release"
     },
     "files": [
-      "out/**/*"
+      "out/**/*",
+      "node_modules/@agentclientprotocol/codex-acp/**/*",
+      "node_modules/@openai/codex/**/*",
+      "node_modules/@openai/codex-*/**/*"
+    ],
+    "asarUnpack": [
+      "node_modules/@agentclientprotocol/codex-acp/**/*",
+      "node_modules/@openai/codex/**/*",
+      "node_modules/@openai/codex-*/**/*"
     ],
     "win": {
       "target": "nsis"
@@ -34,6 +42,7 @@
     }
   },
   "dependencies": {
+    "@agentclientprotocol/codex-acp": "^1.13.1",
     "qrcode": "^1.5.4",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",

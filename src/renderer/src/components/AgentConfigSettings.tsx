@@ -127,7 +127,7 @@ export function SkillSettings() {
   return (
     <div className="config-block">
       <div className="muted small">
-        启用的 Skill 会写入 ~/.cursor/skills/&lt;名称&gt;/SKILL.md，Cursor CLI 会按描述自动选用。名称只能是小写字母、数字和连字符。已有同名、且不是本应用创建的目录不会被覆盖。
+        启用的 Skill 会写入 ~/.cursor/skills/&lt;名称&gt;/SKILL.md，以及 Codex 的 ~/.agents/skills 和 ~/.codex/skills。CLI 会按描述自动选用。名称只能是小写字母、数字和连字符。已有同名、且不是本应用创建的目录不会被覆盖。
       </div>
       <div className="config-list">
         {skills.map((skill) => (

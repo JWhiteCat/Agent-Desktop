@@ -47,6 +47,10 @@ describe('model prices', () => {
     expect(quoteModel('some-new-model', { inputTokens: 1_000 }).costUsd).toBeNull()
     expect(quoteModel('gpt-5.4-mini', { inputTokens: 1_000_000 }).costUsd).toBeCloseTo(0.75)
     expect(quoteModel('gpt-5.4', { inputTokens: 1_000_000 }).costUsd).toBeCloseTo(5)
+    const codex = quoteModel('gpt-5.4-codex', { inputTokens: 1_000_000 })
+    expect(codex.label).toBe('GPT-5.4 Codex 长上下文')
+    expect(codex.costUsd).toBeCloseTo(5)
+    expect(quoteModel('gpt-5.3-codex', { inputTokens: 1_000_000 }).label).toBe('GPT-5.3 Codex')
   })
 })
 

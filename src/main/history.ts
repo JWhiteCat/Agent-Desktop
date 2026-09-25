@@ -38,6 +38,7 @@ export function scanCliSessions(importedChatIds: Set<string>): CliSession[] {
       if (!meta?.cwd || meta.hasConversation === false) continue
       sessions.push({
         chatId: chat.name,
+        cli: 'cursor',
         title: meta.title?.trim() || UNTITLED,
         cwd: meta.cwd,
         createdAt: meta.createdAtMs ?? 0,

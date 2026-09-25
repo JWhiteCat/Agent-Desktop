@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
-import type { AgentMode } from '@shared/types'
+import type { AgentMode, CliProvider } from '@shared/types'
 import { rememberModel, type SendOptions } from '../store'
 import { IconArrowUp, IconBranch, IconChevronDown, IconFolder, IconList, IconShield, IconSparkle, IconStop } from './icons'
 import { MenuList, Popover } from './Menu'
@@ -25,6 +25,7 @@ interface Props {
   disabled?: boolean
   placeholder?: string
   showWorktree?: boolean
+  cli?: CliProvider
   footerLeft?: React.ReactNode
   onSend: (text: string, opts: SendOptions) => Promise<void> | void
   onStop?: () => void
@@ -105,10 +106,11 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
         <div className="composer-left">
           <ModePicker value={opts.mode} onChange={(mode) => setOpts((o) => ({ ...o, mode }))} />
           <ModelPicker
+            cli={props.cli}
             value={opts.model}
             onChange={(model) => {
               setOpts((o) => ({ ...o, model }))
-              rememberModel(props.projectId, model, opts.model)
+              rememberModel(props.projectId, model, opts.model, props.cli)
             }}
           />
           <button

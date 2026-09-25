@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { AssistantItem, Item, ResultItem, ThreadMeta, ToolItem, UserItem } from '@shared/types'
+import { threadCli } from '@shared/types'
 import { DiffFileView, collectEditedFiles } from '../lib/diff'
 import { duration, shortPath } from '../lib/format'
 import { planPath, planUriOf } from '../lib/tools'
@@ -147,7 +148,8 @@ export function ThreadView({ thread, changesOpen, onToggleChanges }: Props) {
   const running = useStore((s) => s.app.running.includes(thread.id))
   const project = useStore((s) => s.app.projects.find((p) => p.id === thread.projectId))
   const settings = useStore((s) => s.app.settings)
-  const models = useStore((s) => s.models)
+  const cli = threadCli(thread)
+  const models = useStore((s) => s.modelsByCli[cli] ?? s.models)
   const scroller = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
   const composer = useRef<ComposerHandle>(null)
@@ -233,6 +235,7 @@ export function ThreadView({ thread, changesOpen, onToggleChanges }: Props) {
               <IconBranch size={12} /> worktree
             </span>
           )}
+          <span className="badge">{cli === 'codex' ? 'Codex' : 'Cursor'}</span>
           {thread.source === 'cli' && <span className="badge">CLI 导入</span>}
         </div>
         <div className="header-actions no-drag">
@@ -296,7 +299,12 @@ export function ThreadView({ thread, changesOpen, onToggleChanges }: Props) {
           ref={composer}
           projectId={thread.projectId}
           running={running}
-          initial={{ model: thread.model || modelForChat(models, settings.favoriteModels, settings.defaultModel, project?.model), mode: thread.mode, force: settings.force }}
+          cli={cli}
+          initial={{
+            model: thread.model || modelForChat(models, settings.favoriteModels, cli === 'codex' ? settings.codexDefaultModel : settings.defaultModel, project?.model),
+            mode: thread.mode,
+            force: settings.force
+          }}
           placeholder={thread.chatId ? '继续对话…' : '描述任务，Enter 发送，Shift+Enter 换行'}
           onSend={(text, opts) => {
             if (text.trim() === '/fork') {

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import QRCode from 'qrcode'
-import type { CliSession, RemoteInfo, Settings } from '@shared/types'
+import type { CliInfo, CliProvider, CliSession, RemoteInfo, Settings } from '@shared/types'
 import type { UsageSessionRow, UsageSummary, UsageWindow } from '@shared/usage'
 import { compactNumber, formatUsd, relativeTime, shortPath } from '../lib/format'
 import { groupModels, modelCaption } from '../lib/models'
@@ -56,7 +56,8 @@ function Modal({
 const NO_FAVORITES: string[] = []
 
 function FavoriteModels() {
-  const models = useStore((s) => s.models)
+  const cli = useStore((s) => (s.app.settings.cliProvider === 'codex' ? 'codex' : 'cursor'))
+  const models = useStore((s) => s.modelsByCli[cli] ?? s.models)
   const favoriteModels = useStore((s) => s.app.settings.favoriteModels) ?? NO_FAVORITES
   const groups = useMemo(() => groupModels(models), [models])
   const [q, setQ] = useState('')
@@ -109,7 +110,7 @@ function FavoriteModels() {
           title="刷新模型列表"
           onClick={async () => {
             setRefreshing(true)
-            await loadModels(true)
+            await loadModels(true, cli)
             setRefreshing(false)
           }}
         >
@@ -548,14 +549,14 @@ function UsageSettings() {
         </>
       )}
       <p className="usage-note">
-        费用按 Cursor 公开标价估算（美元 / 百万 token），不是套餐剩余额度，也不含 Teams 的 Token Rate。Auto 和价目表没有的模型只计 token。上方合计里，分叉复制的同一轮只计一次。会话列表包含全部历史对话，按各对话自己的记录累计，不受上面的天数限制；没有 token 记录的对话费用留空。
+        Cursor 模型按 Cursor 公开标价估算，Codex 的 GPT 模型用同一份已收录的公开 token 标价（美元 / 百万 token）。这不是套餐剩余额度，也不含 Teams 的 Token Rate。Auto 和价目表没有的模型只计 token。上方合计里，分叉复制的同一轮只计一次。会话列表包含全部历史对话，按各对话自己的记录累计，不受上面的天数限制；没有 token 记录的对话费用留空。
       </p>
     </section>
   )
 }
 
 const SETTINGS_TABS = [
-  { id: 'cli', label: 'Cursor CLI' },
+  { id: 'cli', label: 'CLI' },
   { id: 'mcp', label: 'MCP' },
   { id: 'skill', label: 'Skill' },
   { id: 'models', label: '模型' },
@@ -568,31 +569,143 @@ const SETTINGS_TABS = [
 
 type SettingsTab = (typeof SETTINGS_TABS)[number]['id']
 
-export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void; onOpenImport: () => void }) {
-  const settings = useStore((s) => s.app.settings)
-  const models = useStore((s) => s.models)
-  const [info, setInfo] = useState<Awaited<ReturnType<typeof window.api.cliInfo>> | null>(null)
+function CliCard({
+  provider,
+  pathValue,
+  pathPlaceholder,
+  pathDesc,
+  keyValue,
+  keyPlaceholder,
+  keyDesc,
+  missing,
+  install,
+  onPath,
+  onKey
+}: {
+  provider: CliProvider
+  pathValue: string
+  pathPlaceholder: string
+  pathDesc: string
+  keyValue: string
+  keyPlaceholder: string
+  keyDesc: string
+  missing: string
+  install: string
+  onPath: (value: string) => void | Promise<void>
+  onKey: (value: string) => void | Promise<void>
+}) {
+  const [info, setInfo] = useState<CliInfo | null>(null)
   const [checking, setChecking] = useState(false)
-  const [agentPath, setAgentPath] = useState(settings.agentPath)
-  const [apiKey, setApiKey] = useState(settings.apiKey ?? '')
   const [loggingIn, setLoggingIn] = useState(false)
-  const [tab, setTab] = useState<SettingsTab>('cli')
-  const tabs = SETTINGS_TABS.filter((item) => item.id !== 'remote' || !window.api.isRemote)
+  const [pathDraft, setPathDraft] = useState(pathValue)
+  const [keyDraft, setKeyDraft] = useState(keyValue)
 
   const check = async () => {
     setChecking(true)
     try {
-      setInfo(await window.api.cliInfo())
+      setInfo(await window.api.cliInfo(provider))
     } finally {
       setChecking(false)
     }
   }
 
   useEffect(() => {
-    check()
-  }, [])
+    void check()
+  }, [provider])
+
+  return (
+    <>
+      <div className="cli-card">
+        {checking && !info ? (
+          <div className="row-gap">
+            <Spinner /> <span className="muted">正在检测…</span>
+          </div>
+        ) : info?.found ? (
+          <>
+            <div className="row-gap">
+              <span className="ok-dot" /> <strong>{info.bundled ? '使用内置 Codex' : '已找到'}</strong>{' '}
+              <span className="muted small">{info.version}</span>
+            </div>
+            <div className="muted small mono break">{info.path}</div>
+            {info.status && <pre className="cli-status">{info.status}</pre>}
+          </>
+        ) : (
+          <>
+            <div className="row-gap">
+              <span className="err-dot" /> <strong>{missing}</strong>
+            </div>
+            <div className="muted small">{install}</div>
+          </>
+        )}
+        <div className="row-gap wrap">
+          <button className="btn" onClick={() => void check()} disabled={checking}>
+            <IconRefresh size={13} className={checking ? 'spin' : ''} /> 重新检测
+          </button>
+          <button
+            className="btn"
+            disabled={!info?.found || loggingIn}
+            onClick={async () => {
+              setLoggingIn(true)
+              try {
+                const out = await window.api.login(provider)
+                toast(out.split('\n').pop() || '登录流程已结束')
+                void check()
+              } catch (err) {
+                toast(errorText(err), 'error')
+              } finally {
+                setLoggingIn(false)
+              }
+            }}
+          >
+            {loggingIn ? <Spinner size={12} /> : null} 登录 / 重新登录
+          </button>
+        </div>
+      </div>
+      <Field label="API Key" desc={keyDesc}>
+        <input
+          className="input"
+          type="password"
+          value={keyDraft}
+          placeholder={keyPlaceholder}
+          autoComplete="off"
+          spellCheck={false}
+          onChange={(e) => setKeyDraft(e.target.value)}
+          onBlur={() => {
+            if (keyDraft !== keyValue) {
+              void Promise.resolve(onKey(keyDraft)).then(() => check())
+            }
+          }}
+        />
+      </Field>
+      <Field label="CLI 路径" desc={pathDesc}>
+        <input
+          className="input"
+          value={pathDraft}
+          placeholder={pathPlaceholder}
+          onChange={(e) => setPathDraft(e.target.value)}
+          onBlur={() => {
+            if (pathDraft !== pathValue) {
+              void Promise.resolve(onPath(pathDraft)).then(() => check())
+            }
+          }}
+        />
+      </Field>
+    </>
+  )
+}
+
+export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void; onOpenImport: () => void }) {
+  const settings = useStore((s) => s.app.settings)
+  const cli = settings.cliProvider === 'codex' ? 'codex' : 'cursor'
+  const models = useStore((s) => s.modelsByCli[cli] ?? s.models)
+  const [tab, setTab] = useState<SettingsTab>('cli')
+  const tabs = SETTINGS_TABS.filter((item) => item.id !== 'remote' || !window.api.isRemote)
 
   const update = (patch: Partial<Settings>) => window.api.updateSettings(patch)
+  const saveCli = async (patch: Partial<Settings>, provider: CliProvider) => {
+    await update(patch)
+    void loadModels(true, provider)
+  }
 
   return (
     <Modal
@@ -616,88 +729,49 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
     >
       {tab === 'cli' && (
       <section className="settings-section">
+        <h4>CLI</h4>
+        <Field label="新建对话使用" desc="已有对话继续使用创建时的 CLI。">
+          <select
+            className="input"
+            value={cli}
+            onChange={(e) => {
+              const next = e.target.value === 'codex' ? 'codex' : 'cursor'
+              void update({ cliProvider: next })
+              void loadModels(false, next)
+            }}
+          >
+            <option value="cursor">Cursor CLI</option>
+            <option value="codex">Codex CLI</option>
+          </select>
+        </Field>
         <h4>Cursor CLI</h4>
-        <div className="cli-card">
-          {checking && !info ? (
-            <div className="row-gap">
-              <Spinner /> <span className="muted">正在检测…</span>
-            </div>
-          ) : info?.found ? (
-            <>
-              <div className="row-gap">
-                <span className="ok-dot" /> <strong>已找到</strong> <span className="muted small">{info.version}</span>
-              </div>
-              <div className="muted small mono break">{info.path}</div>
-              {info.status && <pre className="cli-status">{info.status}</pre>}
-            </>
-          ) : (
-            <>
-              <div className="row-gap">
-                <span className="err-dot" /> <strong>未找到 Cursor CLI</strong>
-              </div>
-              <div className="muted small">
-                安装方式：Windows 在 PowerShell 执行 <code className="inline-code">irm 'https://cursor.com/install?win32=true' | iex</code>
-                ；macOS / Linux 执行 <code className="inline-code">curl https://cursor.com/install -fsS | bash</code>
-              </div>
-            </>
-          )}
-          <div className="row-gap wrap">
-            <button className="btn" onClick={check} disabled={checking}>
-              <IconRefresh size={13} className={checking ? 'spin' : ''} /> 重新检测
-            </button>
-            <button
-              className="btn"
-              disabled={!info?.found || loggingIn}
-              onClick={async () => {
-                setLoggingIn(true)
-                try {
-                  const out = await window.api.login()
-                  toast(out.split('\n').pop() || '登录流程已结束')
-                  check()
-                } catch (err) {
-                  toast(errorText(err), 'error')
-                } finally {
-                  setLoggingIn(false)
-                }
-              }}
-            >
-              {loggingIn ? <Spinner size={12} /> : null} 登录 / 重新登录
-            </button>
-          </div>
-        </div>
-        <Field label="API Key" desc="有 Key 时优先使用（设置优先于环境变量 CURSOR_API_KEY）。都没有时使用浏览器登录。可在 cursor.com/dashboard/api 创建。">
-          <input
-            className="input"
-            type="password"
-            value={apiKey}
-            placeholder="留空使用 CURSOR_API_KEY"
-            autoComplete="off"
-            spellCheck={false}
-            onChange={(e) => setApiKey(e.target.value)}
-            onBlur={async () => {
-              if (apiKey !== (settings.apiKey ?? '')) {
-                await update({ apiKey })
-                check()
-                loadModels(true)
-              }
-            }}
-          />
-        </Field>
-        <Field label="CLI 路径" desc="留空自动检测；可填 agent 可执行文件或安装目录">
-          <input
-            className="input"
-            value={agentPath}
-            placeholder="自动检测"
-            onChange={(e) => setAgentPath(e.target.value)}
-            onBlur={async () => {
-              if (agentPath !== settings.agentPath) {
-                await update({ agentPath })
-                check()
-                loadModels(true)
-              }
-            }}
-          />
-        </Field>
+        <CliCard
+          provider="cursor"
+          pathValue={settings.agentPath}
+          pathPlaceholder="自动检测"
+          pathDesc="留空自动检测；可填 agent 可执行文件或安装目录"
+          keyValue={settings.apiKey ?? ''}
+          keyPlaceholder="留空使用 CURSOR_API_KEY"
+          keyDesc="有 Key 时优先使用（设置优先于环境变量 CURSOR_API_KEY）。都没有时使用浏览器登录。可在 cursor.com/dashboard/api 创建。"
+          missing="未找到 Cursor CLI"
+          install="安装方式：Windows 在 PowerShell 执行 irm 'https://cursor.com/install?win32=true' | iex ；macOS / Linux 执行 curl https://cursor.com/install -fsS | bash"
+          onPath={(agentPath) => void saveCli({ agentPath }, 'cursor')}
+          onKey={(apiKey) => void saveCli({ apiKey }, 'cursor')}
+        />
+        <h4>Codex CLI</h4>
+        <CliCard
+          provider="codex"
+          pathValue={settings.codexPath ?? ''}
+          pathPlaceholder="自动检测，否则使用内置 Codex"
+          pathDesc="留空时先找本机 codex。找不到则使用应用内置的 Codex。"
+          keyValue={settings.codexApiKey ?? ''}
+          keyPlaceholder="留空使用 CODEX_API_KEY 或 OPENAI_API_KEY"
+          keyDesc="有 Key 时优先使用。都没有时使用 ChatGPT 登录。"
+          missing="未找到 Codex 适配器"
+          install="需要安装本应用依赖里的 Codex 适配器。本机另有 codex 时会优先使用它。"
+          onPath={(codexPath) => void saveCli({ codexPath }, 'codex')}
+          onKey={(codexApiKey) => void saveCli({ codexApiKey }, 'codex')}
+        />
       </section>
       )}
 
@@ -720,7 +794,11 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
         <h4>常用模型</h4>
         <FavoriteModels />
         <Field label="默认模型" desc="每个项目会记住自己上次选的模型。这里只给还没单独选过的项目用。勾选常用模型后，这里也只列出常用模型">
-          <ModelPicker value={modelForChat(models, settings.favoriteModels, settings.defaultModel)} onChange={setDefaultModel} />
+          <ModelPicker
+            cli={cli}
+            value={modelForChat(models, settings.favoriteModels, cli === 'codex' ? settings.codexDefaultModel : settings.defaultModel)}
+            onChange={setDefaultModel}
+          />
         </Field>
       </section>
       )}
@@ -786,7 +864,7 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
         <Field label="显示已归档对话">
           <input type="checkbox" className="toggle" checked={settings.showArchived} onChange={(e) => update({ showArchived: e.target.checked })} />
         </Field>
-        <Field label="CLI 历史会话" desc="从 ~/.cursor/chats 导入，按工作目录自动归入项目">
+        <Field label="CLI 历史会话" desc="从 ~/.cursor/chats 和 ~/.codex/sessions 导入，按工作目录自动归入项目">
           <button
             className="btn"
             onClick={() => {
@@ -838,7 +916,7 @@ export function ImportDialog({ onClose }: { onClose: () => void }) {
 
   return (
     <Modal
-      title="导入 Cursor CLI 历史会话"
+      title="导入 CLI 历史会话"
       wide
       onClose={onClose}
       footer={
@@ -880,7 +958,7 @@ export function ImportDialog({ onClose }: { onClose: () => void }) {
             <Spinner />
           </div>
         )}
-        {sessions && sessions.length === 0 && <div className="empty-hint">没有在 ~/.cursor/chats 中找到 CLI 会话</div>}
+        {sessions && sessions.length === 0 && <div className="empty-hint">没有在 ~/.cursor/chats 或 ~/.codex/sessions 中找到 CLI 会话</div>}
         {groups.map(([cwd, list]) => {
           const ids = list.filter((s) => !s.imported).map((s) => s.chatId)
           const allOn = ids.length > 0 && ids.every((id) => selected.has(id))
@@ -900,7 +978,9 @@ export function ImportDialog({ onClose }: { onClose: () => void }) {
                     checked={s.imported || selected.has(s.chatId)}
                     onChange={(e) => toggle([s.chatId], e.target.checked)}
                   />
-                  <span className="import-title">{s.title}</span>
+                  <span className="import-title">
+                    {s.title} <span className="badge">{s.cli === 'codex' ? 'Codex' : 'Cursor'}</span>
+                  </span>
                   <span className="muted small">{s.imported ? '已导入' : relativeTime(s.updatedAt)}</span>
                 </label>
               ))}

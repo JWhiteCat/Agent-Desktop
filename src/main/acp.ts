@@ -45,14 +45,14 @@ export class AcpConnection {
     })
     this.child.on('close', () => {
       this.closed = true
-      const err = new Error('Cursor CLI 已退出')
+      const err = new Error('CLI 进程已退出')
       for (const waiter of this.pending.values()) waiter.reject(err)
       this.pending.clear()
     })
   }
 
   request(method: string, params: unknown): Promise<any> {
-    if (this.closed) return Promise.reject(new Error('Cursor CLI 已退出'))
+    if (this.closed) return Promise.reject(new Error('CLI 进程已退出'))
     const id = this.nextId++
     return new Promise((resolve, reject) => {
       this.pending.set(id, { resolve, reject })
@@ -129,6 +129,25 @@ Once the requirements are clear, deliver the plan with the CreatePlan tool. Stay
 
 export function planModePrompt(prompt: string): string {
   return `${PLAN_CLIENT_HINT}\n\n${prompt}`
+}
+
+/**
+ * Codex Plan is a collaboration mode, not Cursor's CreatePlan tool. The same questions
+ * block feeds the existing picker; the plan tool's markdown feeds the existing plan card.
+ */
+const CODEX_PLAN_HINT = `<agent_desktop_client>
+You are running inside the Agent Desktop client, in Codex plan mode.
+When you need the user to choose between options, do not list the options as plain text. Output one fenced code block with the language "${QUESTION_BLOCK_LANG}" whose body is JSON, then end your turn and wait:
+\`\`\`${QUESTION_BLOCK_LANG}
+{"title":"short title","questions":[{"id":"q1","prompt":"question text","allowMultiple":false,"options":[{"id":"a","label":"option text"},{"id":"b","label":"option text"}]}]}
+\`\`\`
+Write the prompts and labels in the user's language. The user's picks arrive as the next message.
+Ask before planning: a turn that contains a questions block must not emit a plan.
+Once the requirements are clear, emit one plan with a short name, a one-paragraph overview, and the full plan as Markdown. Do not change modes and do not edit files. The user starts implementation from the client.
+</agent_desktop_client>`
+
+export function codexPlanModePrompt(prompt: string): string {
+  return `${CODEX_PLAN_HINT}\n\n${prompt}`
 }
 
 export function permissionResult(options: { optionId?: string; kind?: string }[], force: boolean): { outcome: { outcome: string; optionId?: string } } {

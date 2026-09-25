@@ -3,16 +3,19 @@ import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import type { AgentEvent, AgentMode, AppState, Item, ModelInfo, Project, QuestionAnswer, RemoteInfo, SendRequest, Settings, ThreadMeta } from '@shared/types'
+import type { AgentEvent, AgentMode, AppState, CliProvider, Item, ModelInfo, Project, QuestionAnswer, RemoteInfo, SendRequest, Settings, ThreadMeta } from '@shared/types'
+import { threadCli } from '@shared/types'
 import { parseModels, resolveApiKey, resolveCli, runCliOnce } from './cli'
 import { loadCursorModelCatalog } from './model-catalog'
 import { mergeModelLists } from '@shared/model-catalog'
 import { gitDiff } from './git'
 import { materializeCliFork, planCliFork } from './fork'
 import { cliChatUpdatedAt, findChatDir, readCliTranscript, scanCliSessions, UNTITLED } from './history'
+import { codexChatUpdatedAt, readCodexTranscript, scanCodexSessions } from './codex-history'
+import { codexLogin, codexStatus, codexVersion, listCodexModels, resolveCodex, resolveCodexApiKey } from './codex'
 import { DEFAULT_TITLE, SessionManager, titleFrom, type RunFinished } from './sessions'
 import { newId } from './id'
-import { syncManagedSkills, userSkillsDir } from './skills'
+import { syncAllManagedSkills, userSkillsDir } from './skills'
 import { normalizeMcpServers, normalizeSkills } from '@shared/agent-config'
 import { Store } from './store'
 import { lanAddresses, newRemoteToken, RemoteServer, type Handler } from './remote'
@@ -22,7 +25,7 @@ import { listSessionUsage, summarizeUsage, type UsageWindow } from '@shared/usag
 let win: BrowserWindow | null = null
 let store: Store
 let sessions: SessionManager
-let modelsCache: ModelInfo[] | null = null
+const modelsCache = new Map<CliProvider, ModelInfo[]>()
 const remote = new RemoteServer()
 const publicTunnel = new PublicTunnel()
 let remoteError: string | undefined
@@ -42,7 +45,7 @@ function snapshot(): AppState {
 
 /** Hides secrets from remote clients. */
 function remoteSafeSettings(s: Settings): Settings {
-  return { ...s, apiKey: '', remoteToken: '' }
+  return { ...s, apiKey: '', codexApiKey: '', remoteToken: '' }
 }
 
 function remoteSafeState(state: AppState): AppState {
@@ -146,6 +149,7 @@ function previewOf(items: Item[]): string | undefined {
 }
 
 const FORK_NOTICE = '未能复制 Cursor CLI 的会话上下文，之后发送的消息会从新会话开始。'
+const CODEX_FORK_NOTICE = '已复制对话记录。之后发送的消息会从新的 Codex 会话开始。'
 
 function forkTitle(title: string, projectId: string): string {
   const base = title.replace(/^\(\d+\)\s+/, '')
@@ -180,9 +184,12 @@ function forkThread(id: string, throughItemId?: string): { thread: ThreadMeta; i
 
   const cloned = cloneItems(prefix)
   const title = forkTitle(src.title, src.projectId)
+  const cli = threadCli(src)
   let chatId: string | undefined
   let cwd = src.cwd
-  if (src.chatId) {
+  if (cli === 'codex') {
+    if (src.chatId) cloned.push({ id: newId(), kind: 'notice', level: 'info', text: CODEX_FORK_NOTICE })
+  } else if (src.chatId) {
     const dir = findChatDir(src.chatId)
     const plan = dir ? planCliFork(dir, items, throughItemId) : { extraBlobs: [], linked: false }
     if (!dir || !plan.linked) {
@@ -204,6 +211,7 @@ function forkThread(id: string, throughItemId?: string): { thread: ThreadMeta; i
     title,
     chatId,
     cwd,
+    cli,
     model: src.model,
     modelLabel: src.modelLabel,
     mode: src.mode,
@@ -221,7 +229,7 @@ function forkThread(id: string, throughItemId?: string): { thread: ThreadMeta; i
 function syncFromCli(threadId: string): Item[] | undefined {
   const t = store.thread(threadId)
   if (!t?.chatId || sessions.isRunning(threadId)) return undefined
-  const items = readCliTranscript(t.chatId)
+  const items = threadCli(t) === 'codex' ? readCodexTranscript(t.chatId) : readCliTranscript(t.chatId)
   if (!items) return undefined
   store.setItems(threadId, items)
   const firstUser = items.find((i) => i.kind === 'user')
@@ -265,7 +273,7 @@ const handlers: Record<string, Handler> = {
 
   'thread:create': (projectId: string, mode: AgentMode, model: string) => {
     if (!store.project(projectId)) throw new Error('项目不存在')
-    const t = store.createThread({ projectId, title: DEFAULT_TITLE, mode, model, source: 'app' })
+    const t = store.createThread({ projectId, title: DEFAULT_TITLE, mode, model, cli: store.settings.cliProvider, source: 'app' })
     broadcastState()
     return t
   },
@@ -281,7 +289,7 @@ const handlers: Record<string, Handler> = {
   'thread:items': (id: string) => {
     const t = store.thread(id)
     if (t?.source === 'cli' && t.chatId && !sessions.isRunning(id)) {
-      const cliUpdated = cliChatUpdatedAt(t.chatId)
+      const cliUpdated = threadCli(t) === 'codex' ? codexChatUpdatedAt(t.chatId) : cliChatUpdatedAt(t.chatId)
       if (cliUpdated && cliUpdated > (t.syncedAt ?? 0)) {
         try {
           if (syncFromCli(id)) broadcastState()
@@ -296,7 +304,7 @@ const handlers: Record<string, Handler> = {
   'thread:syncFromCli': (id: string) => {
     if (sessions.isRunning(id)) throw new Error('对话正在运行，请稍后再同步')
     const items = syncFromCli(id)
-    if (!items) throw new Error('未在 ~/.cursor/chats 中找到该会话')
+    if (!items) throw new Error(threadCli(store.thread(id) ?? { cli: 'cursor' }) === 'codex' ? '未在 ~/.codex/sessions 中找到该会话' : '未在 ~/.cursor/chats 中找到该会话')
     broadcastState()
     return items
   },
@@ -332,14 +340,20 @@ const handlers: Record<string, Handler> = {
     if (patch.remotePublicPort !== undefined) next.remotePublicPort = validatePublicPort(Number(patch.remotePublicPort))
     if (patch.skills !== undefined) {
       next.skills = normalizeSkills(patch.skills)
-      syncManagedSkills(next.skills)
+      syncAllManagedSkills(next.skills)
+    }
+    if (patch.cliProvider !== undefined && patch.cliProvider !== 'cursor' && patch.cliProvider !== 'codex') {
+      next.cliProvider = 'cursor'
     }
     const s = store.updateSettings(next)
     if (patch.theme) applyTheme(patch.theme)
-    if (patch.agentPath !== undefined || patch.apiKey !== undefined) modelsCache = null
+    if (patch.agentPath !== undefined || patch.apiKey !== undefined) modelsCache.delete('cursor')
+    if (patch.codexPath !== undefined || patch.codexApiKey !== undefined) modelsCache.delete('codex')
     if (
       patch.agentPath !== undefined ||
       patch.apiKey !== undefined ||
+      patch.codexPath !== undefined ||
+      patch.codexApiKey !== undefined ||
       patch.sandbox !== undefined ||
       patch.mcpServers !== undefined ||
       patch.skills !== undefined
@@ -361,51 +375,58 @@ const handlers: Record<string, Handler> = {
     return s
   },
 
-  'cli:models': async (refresh?: boolean) => {
-    if (modelsCache && !refresh) return modelsCache
-    const cli = resolveCli(store.settings.agentPath)
-    if (!cli) return [{ id: 'auto', label: 'Auto' }]
-    const apiKey = resolveApiKey(store.settings.apiKey)
-    const res = await runCliOnce(cli, ['models'], 60_000, apiKey)
-    const models = mergeModelLists(parseModels(res.stdout), loadCursorModelCatalog())
-    if (models.length) modelsCache = models
-    return models.length ? models : [{ id: 'auto', label: 'Auto' }]
+  'cli:models': async (refresh?: boolean, provider?: CliProvider) => {
+    const cli = provider === 'codex' || provider === 'cursor' ? provider : store.settings.cliProvider
+    const cached = modelsCache.get(cli)
+    if (cached && !refresh) return cached
+    const models = cli === 'codex' ? await codexModelList() : await cursorModelList()
+    if (models.length) modelsCache.set(cli, models)
+    return models
   },
 
-  'cli:info': async () => {
-    const cli = resolveCli(store.settings.agentPath)
-    if (!cli) return { found: false }
+  'cli:info': async (provider?: CliProvider) => {
+    const cli = provider === 'codex' || provider === 'cursor' ? provider : store.settings.cliProvider
+    if (cli === 'codex') return await codexInfo()
+    const cursor = resolveCli(store.settings.agentPath)
+    if (!cursor) return { found: false }
     const apiKey = resolveApiKey(store.settings.apiKey)
     const [version, status] = await Promise.all([
-      runCliOnce(cli, ['--version']),
-      runCliOnce(cli, ['status'], 60_000, apiKey || undefined)
+      runCliOnce(cursor, ['--version']),
+      runCliOnce(cursor, ['status'], 60_000, apiKey || undefined)
     ])
     return {
       found: true,
-      path: cli.display,
+      path: cursor.display,
       version: version.stdout.trim() || version.stderr.trim(),
       status: (status.stdout + status.stderr).trim(),
       hasApiKey: !!apiKey
     }
   },
 
-  'cli:login': async () => {
-    const cli = resolveCli(store.settings.agentPath)
-    if (!cli) throw new Error('未找到 Cursor CLI')
-    const res = await runCliOnce(cli, ['login'], 5 * 60_000, false)
+  'cli:login': async (provider?: CliProvider) => {
+    const cli = provider === 'codex' || provider === 'cursor' ? provider : store.settings.cliProvider
+    if (cli === 'codex') {
+      const codex = resolveCodex(store.settings.codexPath)
+      if (!codex) throw new Error('未找到 Codex CLI')
+      return codexLogin(codex)
+    }
+    const cursor = resolveCli(store.settings.agentPath)
+    if (!cursor) throw new Error('未找到 Cursor CLI')
+    const res = await runCliOnce(cursor, ['login'], 5 * 60_000, false)
     return (res.stdout + res.stderr).trim()
   },
 
   'cli:scan': () => {
     const imported = new Set(store.threads.map((t) => t.chatId).filter((x): x is string => !!x))
-    return scanCliSessions(imported)
+    return [...scanCliSessions(imported), ...scanCodexSessions(imported)].sort((a, b) => b.updatedAt - a.updatedAt)
   },
 
   'cli:import': (chatIds: string[]) => {
     const wanted = new Set(chatIds)
     const imported = new Set(store.threads.map((t) => t.chatId).filter(Boolean))
     let count = 0
-    for (const s of scanCliSessions(new Set())) {
+    const found = [...scanCliSessions(new Set()), ...scanCodexSessions(new Set())]
+    for (const s of found) {
       if (!wanted.has(s.chatId) || imported.has(s.chatId)) continue
       const project = store.projectByPath(s.cwd) ?? store.addProject(s.cwd)
       const thread = store.createThread({
@@ -413,6 +434,7 @@ const handlers: Record<string, Handler> = {
         title: s.title,
         chatId: s.chatId,
         cwd: s.cwd,
+        cli: s.cli,
         mode: 'agent',
         source: 'cli',
         createdAt: s.createdAt || Date.now(),
@@ -485,6 +507,7 @@ function remoteHandlers(): Record<string, Handler> {
     const safe: Partial<Settings> = { ...patch }
     for (const key of REMOTE_ONLY_DESKTOP_SETTINGS) delete safe[key]
     if (!safe.apiKey) delete safe.apiKey
+    if (!safe.codexApiKey) delete safe.codexApiKey
     return remoteSafeSettings((await handlers['settings:update'](safe)) as Settings)
   }
   return out
@@ -561,6 +584,39 @@ async function applyPublicTunnel(): Promise<void> {
   }
 }
 
+async function cursorModelList(): Promise<ModelInfo[]> {
+  const cli = resolveCli(store.settings.agentPath)
+  if (!cli) return [{ id: 'auto', label: 'Auto' }]
+  const apiKey = resolveApiKey(store.settings.apiKey)
+  const res = await runCliOnce(cli, ['models'], 60_000, apiKey)
+  const models = mergeModelLists(parseModels(res.stdout), loadCursorModelCatalog())
+  return models.length ? models : [{ id: 'auto', label: 'Auto' }]
+}
+
+async function codexModelList(): Promise<ModelInfo[]> {
+  try {
+    const listed = await listCodexModels(store.settings.codexPath, resolveCodexApiKey(store.settings.codexApiKey))
+    return listed.models
+  } catch (err) {
+    console.error('[codex] model list failed', err)
+    return []
+  }
+}
+
+async function codexInfo(): Promise<{ found: boolean; path?: string; version?: string; status?: string; hasApiKey?: boolean; bundled?: boolean }> {
+  const codex = resolveCodex(store.settings.codexPath)
+  if (!codex) return { found: false }
+  const [version, status] = await Promise.all([codexVersion(codex), codexStatus(codex)])
+  return {
+    found: true,
+    path: codex.display,
+    version,
+    status,
+    hasApiKey: !!resolveCodexApiKey(store.settings.codexApiKey),
+    bundled: codex.bundled
+  }
+}
+
 if (process.env.AGENT_DESKTOP_USER_DATA) app.setPath('userData', process.env.AGENT_DESKTOP_USER_DATA)
 // Chromium locks GPUCache under sessionData. A second window sharing that directory fails with
 // "Unable to move the cache" / "Gpu Cache Creation failed". App data stays in userData.
@@ -570,7 +626,7 @@ if (isWin) app.setAppUserModelId(app.isPackaged ? 'dev.agentdesktop.app' : proce
 app.whenReady().then(() => {
   store = new Store()
   try {
-    syncManagedSkills(store.settings.skills)
+    syncAllManagedSkills(store.settings.skills)
   } catch (err) {
     console.error('[skills] sync failed', err)
   }

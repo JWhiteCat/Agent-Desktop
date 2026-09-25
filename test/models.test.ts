@@ -130,7 +130,8 @@ describe('model picker', () => {
     const models = grokModels()
     const favorites = ['grok-4.7']
     expect(modelForChat(models, favorites, 'auto', GROK_47_500K_HIGH_FAST)).toBe(GROK_47_500K_HIGH_FAST)
-    expect(modelForChat(models, [], 'auto', 'gpt-5')).toBe('gpt-5')
+    expect(modelForChat(models, [], 'auto', 'gpt-5')).toBe('auto')
+    expect(modelForChat([{ id: 'auto', label: 'Auto' }], [], 'auto', 'gpt-5')).toBe('gpt-5')
     const other = 'other[context=500k,reasoning_effort=high,fast=true]'
     expect(modelForChat([...models, { id: other, label: 'Other 500K High Fast' }], favorites, other)).toBe(GROK_47_500K_HIGH_FAST)
   })

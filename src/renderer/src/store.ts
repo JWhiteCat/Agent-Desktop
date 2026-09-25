@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react'
-import type { AgentMode, AppState, Item, ModelInfo, QuestionAnswer, Settings, ThreadMeta } from '@shared/types'
+import type { AgentMode, AppState, CliProvider, Item, ModelInfo, QuestionAnswer, Settings, ThreadMeta } from '@shared/types'
 import { findVariant, groupModels, pickVariant, wantFrom } from './lib/models'
 
 export type View = { kind: 'home'; projectId?: string } | { kind: 'thread'; id: string }
@@ -9,6 +9,7 @@ export interface UIState {
   items: Record<string, Item[] | undefined>
   view: View
   models: ModelInfo[]
+  modelsByCli: Record<CliProvider, ModelInfo[]>
   toast?: { id: number; text: string; level: 'info' | 'error' }
   lastProjectId?: string
 }
@@ -19,7 +20,8 @@ let state: UIState = {
   app: { projects: [], threads: [], settings: {} as AppState['settings'], running: [] },
   items: {},
   view: { kind: 'home' },
-  models: [{ id: 'auto', label: 'Auto' }]
+  models: [{ id: 'auto', label: 'Auto' }],
+  modelsByCli: { cursor: [{ id: 'auto', label: 'Auto' }], codex: [] }
 }
 const listeners = new Set<Listener>()
 
@@ -46,9 +48,19 @@ export function useStore<T>(selector: (s: UIState) => T): T {
 const LAST_PROJECT_KEY = 'agent-desktop:lastProject'
 const LEGACY_MODEL_KEY = 'agent-desktop:model'
 
+function inCatalog(models: ModelInfo[], id: string | undefined): boolean {
+  if (!id) return false
+  if (models.some((model) => model.id === id || model.legacySlug === id)) return true
+  return !!findVariant(groupModels(models), id)
+}
+
 /** Model shown for a new chat in a project: that project's last choice, otherwise the global default. */
 export function modelForChat(models: ModelInfo[], favoriteBases: string[] | undefined, settingsDefault?: string, projectModel?: string): string {
-  return resolveModel(models, favoriteBases, projectModel || settingsDefault || 'auto')
+  const loaded = models.some((model) => model.id !== 'auto')
+  if (!loaded) return projectModel || settingsDefault || models[0]?.id || 'auto'
+  const fallback = inCatalog(models, settingsDefault) ? settingsDefault! : (models.find((model) => model.id !== 'auto')?.id ?? models[0].id)
+  const preferred = inCatalog(models, projectModel) ? projectModel! : fallback
+  return resolveModel(models, favoriteBases, preferred)
 }
 
 function resolveModel(models: ModelInfo[], favoriteBases: string[] | undefined, preferred: string): string {
@@ -71,15 +83,18 @@ function sameModel(models: ModelInfo[], a: string, b: string): boolean {
   return !!left && !!right && left.id === right.id
 }
 
-export function rememberModel(projectId: string, model: string, previous?: string): void {
+export function rememberModel(projectId: string, model: string, previous?: string, cli?: CliProvider): void {
   const project = state.app.projects.find((p) => p.id === projectId)
   if (!project || project.model === model) return
-  const canonicalizing = previous !== undefined && sameModel(state.models, previous, model)
+  const provider: CliProvider = cli ?? (state.app.settings.cliProvider === 'codex' ? 'codex' : 'cursor')
+  const models = state.modelsByCli[provider] ?? state.models
+  const settingsDefault = provider === 'codex' ? state.app.settings.codexDefaultModel : state.app.settings.defaultModel
+  const canonicalizing = previous !== undefined && sameModel(models, previous, model)
   if (canonicalizing) {
-    if (!project.model || !sameModel(state.models, project.model, model)) return
+    if (!project.model || !sameModel(models, project.model, model)) return
   } else if (!project.model) {
-    const fallback = modelForChat(state.models, state.app.settings.favoriteModels, state.app.settings.defaultModel)
-    if (sameModel(state.models, model, fallback)) return
+    const fallback = modelForChat(models, state.app.settings.favoriteModels, settingsDefault)
+    if (sameModel(models, model, fallback)) return
   }
   setState((s) => ({
     app: {
@@ -91,6 +106,12 @@ export function rememberModel(projectId: string, model: string, previous?: strin
 }
 
 export function setDefaultModel(model: string): void {
+  if (state.app.settings.cliProvider === 'codex') {
+    if (state.app.settings.codexDefaultModel === model) return
+    setState((s) => ({ app: { ...s.app, settings: { ...s.app.settings, codexDefaultModel: model } } }))
+    void window.api.updateSettings({ codexDefaultModel: model })
+    return
+  }
   if (state.app.settings.defaultModel === model) return
   setState((s) => ({ app: { ...s.app, settings: { ...s.app.settings, defaultModel: model } } }))
   void window.api.updateSettings({ defaultModel: model })
@@ -100,8 +121,11 @@ export function setFavoriteModels(bases: string[]): void {
   const patch: Partial<Settings> = { favoriteModels: bases }
   const projectPatches: { id: string; model: string }[] = []
   if (bases.length) {
-    const groups = groupModels(state.models)
+    const provider: CliProvider = state.app.settings.cliProvider === 'codex' ? 'codex' : 'cursor'
+    const catalog = state.modelsByCli[provider] ?? state.models
+    const groups = groupModels(catalog)
     const snap = (modelId: string): string | undefined => {
+      if (!inCatalog(catalog, modelId)) return undefined
       const current = findVariant(groups, modelId)
       if (current && bases.includes(current.base)) return undefined
       const group = groups.find((g) => bases.includes(g.base))
@@ -109,8 +133,11 @@ export function setFavoriteModels(bases: string[]): void {
       const next = pickVariant(group, wantFrom(current)).id
       return next === modelId ? undefined : next
     }
-    const snappedDefault = snap(state.app.settings.defaultModel || 'auto')
-    if (snappedDefault) patch.defaultModel = snappedDefault
+    const snappedDefault = snap(provider === 'codex' ? state.app.settings.codexDefaultModel : state.app.settings.defaultModel || 'auto')
+    if (snappedDefault) {
+      if (provider === 'codex') patch.codexDefaultModel = snappedDefault
+      else patch.defaultModel = snappedDefault
+    }
     for (const project of state.app.projects) {
       if (!project.model) continue
       const next = snap(project.model)
@@ -180,22 +207,49 @@ export async function initStore(): Promise<void> {
 
 const MODELS_KEY = 'agent-desktop:models'
 
-export async function loadModels(refresh = false): Promise<void> {
+function cacheKey(cli: CliProvider): string {
+  return cli === 'cursor' ? MODELS_KEY : `${MODELS_KEY}:${cli}`
+}
+
+function readModelCache(cli: CliProvider): ModelInfo[] | null {
+  try {
+    const cached = JSON.parse(localStorage.getItem(cacheKey(cli)) ?? 'null') as ModelInfo[] | null
+    return cached?.length ? cached : null
+  } catch {
+    return null
+  }
+}
+
+function publishModels(cli: CliProvider, list: ModelInfo[]): void {
+  const modelsByCli = { ...state.modelsByCli, [cli]: list }
+  const seen = new Set<string>()
+  const models = [...modelsByCli.cursor, ...modelsByCli.codex].filter((model) => {
+    if (seen.has(model.id)) return false
+    seen.add(model.id)
+    return true
+  })
+  setState({ modelsByCli, models })
+}
+
+export async function loadModels(refresh = false, only?: CliProvider): Promise<void> {
+  const targets: CliProvider[] = only ? [only] : ['cursor', 'codex']
   if (!refresh) {
-    try {
-      const cached = JSON.parse(localStorage.getItem(MODELS_KEY) ?? 'null') as ModelInfo[] | null
-      if (cached?.length) setState({ models: cached })
-    } catch {
-      /* ignore corrupt cache */
+    for (const cli of targets) {
+      const cached = readModelCache(cli)
+      if (cached) publishModels(cli, cached)
     }
   }
-  try {
-    const models = await window.api.listModels(refresh)
-    setState({ models })
-    if (models.length > 1) localStorage.setItem(MODELS_KEY, JSON.stringify(models))
-  } catch {
-    /* keep defaults */
-  }
+  await Promise.all(
+    targets.map(async (cli) => {
+      try {
+        const models = await window.api.listModels(refresh, cli)
+        publishModels(cli, models)
+        if (models.length > (cli === 'cursor' ? 1 : 0)) localStorage.setItem(cacheKey(cli), JSON.stringify(models))
+      } catch {
+        /* keep the cached list */
+      }
+    })
+  )
 }
 
 let toastSeq = 0

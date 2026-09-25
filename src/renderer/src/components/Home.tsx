@@ -16,7 +16,8 @@ export function Home({ projectId, onOpenImport }: { projectId?: string; onOpenIm
   const projects = useStore((s) => s.app.projects)
   const threads = useStore((s) => s.app.threads)
   const settings = useStore((s) => s.app.settings)
-  const models = useStore((s) => s.models)
+  const cli = settings.cliProvider === 'codex' ? 'codex' : 'cursor'
+  const models = useStore((s) => s.modelsByCli[cli] ?? s.models)
   const project = projects.find((p) => p.id === projectId) ?? projects[0]
   const composer = useRef<ComposerHandle>(null)
   const [pickerOpen, setPickerOpen] = useState(false)
@@ -102,8 +103,14 @@ export function Home({ projectId, onOpenImport }: { projectId?: string; onOpenIm
               key={project.id}
               ref={composer}
               projectId={project.id}
-              showWorktree
-              initial={{ model: modelForChat(models, settings.favoriteModels, settings.defaultModel, project.model), mode: settings.defaultMode, force: settings.force, worktree: false }}
+              cli={cli}
+              showWorktree={cli !== 'codex'}
+              initial={{
+                model: modelForChat(models, settings.favoriteModels, cli === 'codex' ? settings.codexDefaultModel : settings.defaultModel, project.model),
+                mode: settings.defaultMode,
+                force: settings.force,
+                worktree: false
+              }}
               placeholder={`在 ${project.name} 中让 Agent 做点什么…`}
               onSend={async (text, opts) => {
                 await startThread(project.id, text, opts)

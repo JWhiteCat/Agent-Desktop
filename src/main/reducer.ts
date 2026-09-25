@@ -58,6 +58,8 @@ export class StreamReducer {
   private assistant?: AssistantItem
   private thinking?: ThinkingItem
   private tools = new Map<string, ToolItem>()
+  /** One Codex plan card per turn, updated by `plan` and `plan_update`. */
+  private planCallId?: string
   private sawDelta = false
   init: InitInfo = {}
   gotResult = false
@@ -124,6 +126,10 @@ export class StreamReducer {
         if (usage) this.lastUsage = usage
         return []
       }
+      case 'plan_update':
+        return this.onPlanMarkdown(update?.plan)
+      case 'plan':
+        return this.onPlanEntries(update?.entries)
       default:
         return []
     }
@@ -157,6 +163,56 @@ export class StreamReducer {
       }
     }
     return changed
+  }
+
+  private onPlanMarkdown(plan: any): Item[] {
+    const text = typeof plan?.content === 'string' ? plan.content : ''
+    if (!text.trim()) return []
+    const meta = planHeading(text)
+    return this.upsertPlan({ plan: text, name: meta.name, overview: meta.overview })
+  }
+
+  private onPlanEntries(entries: unknown): Item[] {
+    if (!Array.isArray(entries) || entries.length === 0) return []
+    const todos = entries.map((entry, index) => {
+      const row = entry && typeof entry === 'object' ? (entry as { content?: unknown; status?: unknown }) : {}
+      return { id: String(index), content: String(row.content ?? ''), status: String(row.status ?? 'pending') }
+    })
+    return this.upsertPlan({ todos })
+  }
+
+  private upsertPlan(patch: { plan?: string; name?: string; overview?: string; todos?: unknown[] }): Item[] {
+    const callId = this.planCallId ?? 'codex-plan'
+    this.planCallId = callId
+    let item = this.tools.get(callId)
+    const prev = item?.args && typeof item.args === 'object' ? item.args : {}
+    const args = {
+      ...prev,
+      ...(patch.name ? { name: patch.name } : {}),
+      ...(patch.overview ? { overview: patch.overview } : {}),
+      ...(patch.plan ? { plan: patch.plan } : {}),
+      ...(patch.todos ? { todos: patch.todos } : {})
+    }
+    if (!item) {
+      item = {
+        id: newId(),
+        kind: 'tool',
+        callId,
+        tool: 'createPlan',
+        args,
+        status: 'success',
+        startedAt: Date.now(),
+        endedAt: Date.now()
+      }
+      this.tools.set(callId, item)
+      this.items.push(item)
+      return [item]
+    }
+    item.tool = 'createPlan'
+    item.args = args
+    item.status = 'success'
+    item.endedAt = Date.now()
+    return [item]
   }
 
   private onThinking(ev: any): Item[] {
@@ -309,9 +365,20 @@ function argsFrom(update: any): Record<string, unknown> {
   return raw
 }
 
+function planHeading(markdown: string): { name?: string; overview?: string } {
+  const heading = markdown.match(/^#{1,2}\s+(.+)$/m)?.[1]?.trim()
+  const overview = markdown
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => line && !line.startsWith('#') && !line.startsWith('-') && !line.startsWith('*'))
+  return { name: heading, overview: overview?.slice(0, 240) }
+}
+
 function toolNameFrom(update: any, args: Record<string, unknown>): string {
   if (typeof args.command === 'string') return 'shell'
-  if (typeof args.plan === 'string' || args._toolName === 'createPlan') return 'createPlan'
+  const rawName = String(args._toolName ?? args.name ?? update?.title ?? '')
+  const compactName = rawName.toLowerCase().replace(/[^a-z0-9]/g, '')
+  if (typeof args.plan === 'string' || compactName === 'createplan' || compactName === 'updateplan') return 'createPlan'
   if (typeof args.globPattern === 'string' || typeof args.glob_pattern === 'string') return 'glob'
   const kind = String(update.kind ?? '')
   const mapped: Record<string, string> = {

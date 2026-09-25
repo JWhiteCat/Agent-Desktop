@@ -142,4 +142,26 @@ describe('StreamReducer', () => {
     reducer.handleAcp({ sessionUpdate: 'agent_message_chunk', content: { text: 'k' } })
     expect(assistantText(items)).toBe('ok')
   })
+
+  it('turns Codex plan updates into one plan card', () => {
+    const items: Item[] = []
+    const reducer = new StreamReducer(items)
+    reducer.handleAcp({
+      sessionUpdate: 'plan_update',
+      plan: { type: 'markdown', planId: 'p1', content: '# 方案\n\n先看结构' }
+    })
+    reducer.handleAcp({ sessionUpdate: 'plan', entries: [{ content: '读代码', status: 'pending' }] })
+    reducer.handleAcp({
+      sessionUpdate: 'tool_call',
+      toolCallId: 'call-1',
+      title: 'update_plan',
+      status: 'completed',
+      rawInput: { plan: '# 另一份' }
+    })
+    const plans = items.filter((item): item is ToolItem => item.kind === 'tool' && item.tool === 'createPlan')
+    expect(plans).toHaveLength(2)
+    expect(plans[0].args).toMatchObject({ name: '方案', overview: '先看结构', plan: '# 方案\n\n先看结构' })
+    expect(plans[0].args.todos).toEqual([{ id: '0', content: '读代码', status: 'pending' }])
+    expect(plans[1].args).toMatchObject({ plan: '# 另一份' })
+  })
 })

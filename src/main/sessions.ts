@@ -1,12 +1,14 @@
 import type { ChildProcess } from 'node:child_process'
 import fs from 'node:fs'
 import { enabledSkillFingerprint, toAcpMcpServers } from '@shared/agent-config'
-import type { AgentEvent, Item, QuestionAnswer, QuestionItem, SendRequest } from '@shared/types'
+import type { AgentEvent, CliProvider, Item, QuestionAnswer, QuestionItem, SendRequest } from '@shared/types'
+import { threadCli } from '@shared/types'
 import { normalizeTurnUsage } from '@shared/turn-usage'
 import { normalizeQuestions } from '@shared/questions'
-import { AcpConnection, MethodNotFound, permissionResult, planModePrompt } from './acp'
+import { AcpConnection, codexPlanModePrompt, MethodNotFound, permissionResult, planModePrompt } from './acp'
 import { killTree, resolveApiKey, resolveCli, spawnCli, stripAnsi, type ResolvedCli } from './cli'
-import { syncManagedSkills } from './skills'
+import { codexAsCli, codexModeId, resolveCodex, resolveCodexApiKey, spawnCodexAcp, type ResolvedCodex } from './codex'
+import { syncAllManagedSkills } from './skills'
 import { newId } from './id'
 import { StreamReducer } from './reducer'
 import type { Store } from './store'
@@ -20,6 +22,7 @@ interface PendingQuestion {
 interface AgentProc {
   child: ChildProcess
   acp: AcpConnection
+  provider: CliProvider
   sessionId: string
   cwd: string
   fingerprint: string
@@ -93,22 +96,23 @@ export class SessionManager {
     const project = this.store.project(thread.projectId)
     if (!project) throw new Error('项目不存在')
     const settings = this.store.settings
-    const cli = resolveCli(settings.agentPath)
-    if (!cli) throw new Error('未找到 Cursor CLI（agent）。请先安装，或在设置中指定路径。')
-    const apiKey = resolveApiKey(settings.apiKey)
+    const provider = threadCli(thread)
+    const launch = resolveLaunch(provider, settings.agentPath, settings.codexPath)
+    if (!launch) throw new Error(`未找到 ${cliLabel(provider)}。请先安装，或在设置中指定路径。`)
+    const apiKey = provider === 'codex' ? resolveCodexApiKey(settings.codexApiKey) : resolveApiKey(settings.apiKey)
 
     const cwd = thread.cwd && fs.existsSync(thread.cwd) ? thread.cwd : project.path
     if (!fs.existsSync(cwd)) throw new Error(`项目目录不存在：${cwd}`)
 
     const mcpServers = toAcpMcpServers(settings.mcpServers)
-    const fingerprint = procFingerprint(cli, cwd, settings.sandbox, req.force, apiKey, mcpServers, enabledSkillFingerprint(settings.skills))
+    const fingerprint = procFingerprint(launch.cli, provider, cwd, settings.sandbox, req.force, apiKey, mcpServers, enabledSkillFingerprint(settings.skills))
     let proc = this.agents.get(thread.id)
     const reusable = !!proc && this.canReuse(proc, fingerprint)
     if (proc && !reusable) {
       this.discard(thread.id)
       proc = undefined
     }
-    if (!proc) syncManagedSkills(settings.skills)
+    if (!proc) syncAllManagedSkills(settings.skills)
 
     const items = this.store.items(thread.id)
     const userItem: Item = { id: newId(), kind: 'user', text: req.prompt, createdAt: Date.now() }
@@ -124,14 +128,8 @@ export class SessionManager {
     })
 
     if (!proc) {
-      const args = ['--trust']
-      if (req.model && req.model !== 'auto') args.push('--model', req.model)
-      if (req.mode !== 'agent') args.push('--mode', req.mode)
-      if (req.force) args.push('--force')
-      if (settings.sandbox !== 'default') args.push('--sandbox', settings.sandbox)
-      if (!thread.chatId && req.worktree) args.push('--worktree')
-      args.push('--workspace', cwd, 'acp')
-      proc = this.openProc(thread.id, cli, args, cwd, apiKey, fingerprint)
+      const args = provider === 'cursor' ? cursorArgs(req, settings.sandbox, cwd, !!thread.chatId) : []
+      proc = this.openProc(thread.id, provider, launch, args, cwd, apiKey, fingerprint)
     }
     proc.force = req.force
 
@@ -153,7 +151,7 @@ export class SessionManager {
 
     const turn = reusable
       ? this.continueSession(thread.id, run, req)
-      : this.drive(thread.id, run, req, cwd, thread.chatId, !apiKey, mcpServers)
+      : this.drive(thread.id, run, req, cwd, thread.chatId, provider, apiKey, mcpServers)
     void turn.catch((err) => {
       if (run.settled) return
       if (!run.stopped) run.failText = err instanceof Error ? err.message : String(err)
@@ -223,16 +221,18 @@ export class SessionManager {
 
   private openProc(
     threadId: string,
-    cli: ResolvedCli,
+    provider: CliProvider,
+    launch: AgentLaunch,
     args: string[],
     cwd: string,
     apiKey: string,
     fingerprint: string
   ): AgentProc {
-    const child = spawnCli(cli, args, cwd, 'pipe', apiKey)
+    const child = provider === 'codex' && launch.codex ? spawnCodexAcp(launch.codex, cwd, apiKey) : spawnCli(launch.cli, args, cwd, 'pipe', apiKey)
     const proc: AgentProc = {
       child,
       acp: undefined as unknown as AcpConnection,
+      provider,
       sessionId: '',
       cwd,
       fingerprint,
@@ -259,7 +259,7 @@ export class SessionManager {
         ) {
           return
         }
-        if (run.mode === 'plan' && leftPlanMode(params?.update, run.switchCalls)) {
+        if (proc.provider === 'cursor' && run.mode === 'plan' && leftPlanMode(params?.update, run.switchCalls)) {
           proc.acp.request('session/set_mode', { sessionId: proc.sessionId, modeId: 'plan' }).catch(() => undefined)
         }
         const changed = run.reducer.handleAcp(params?.update)
@@ -310,20 +310,27 @@ export class SessionManager {
     run: Run,
     req: SendRequest,
     cwd: string,
-    chatId?: string,
-    useLogin = false,
+    chatId: string | undefined,
+    provider: CliProvider,
+    apiKey: string,
     mcpServers: Record<string, unknown>[] = []
   ): Promise<void> {
     const { proc } = run
     const acp = proc.acp
     await acp.request('initialize', {
       protocolVersion: 1,
-      clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
+      clientCapabilities: {
+        fs: { readTextFile: false, writeTextFile: false },
+        terminal: false,
+        ...(provider === 'codex' ? { plan: {} } : {})
+      },
       clientInfo: { name: 'agent-desktop', version: '0.1.0' }
     })
-    // API key auth is `--api-key` at process start. `cursor_login` clears stored API-key
-    // credentials, so it only runs when no key is configured.
-    if (useLogin) await acp.request('authenticate', { methodId: 'cursor_login' })
+    // Cursor API key auth is `--api-key` at process start. `cursor_login` clears stored
+    // API-key credentials, so it only runs when no key is configured.
+    if (provider === 'cursor' && !apiKey) await acp.request('authenticate', { methodId: 'cursor_login' })
+    if (provider === 'codex' && apiKey) await acp.request('authenticate', { methodId: 'api-key' })
+    if (provider === 'codex' && !apiKey) await acp.request('authenticate', { methodId: 'chat-gpt' })
 
     let sessionId = chatId
     if (sessionId) {
@@ -331,7 +338,7 @@ export class SessionManager {
     } else {
       const created = await acp.request('session/new', { cwd, mcpServers })
       sessionId = created?.sessionId
-      if (!sessionId) throw new Error('Cursor CLI 没有返回会话 id')
+      if (!sessionId) throw new Error(`${cliLabel(provider)} 没有返回会话 id`)
     }
     proc.sessionId = sessionId
     proc.ready = true
@@ -345,6 +352,10 @@ export class SessionManager {
   }
 
   private async applySessionOptions(proc: AgentProc, req: SendRequest): Promise<void> {
+    if (proc.provider === 'codex') {
+      await this.applyCodexOptions(proc, req)
+      return
+    }
     const { acp, sessionId } = proc
     try {
       await acp.request('session/set_mode', { sessionId, modeId: req.mode })
@@ -360,9 +371,50 @@ export class SessionManager {
     }
   }
 
+  private async applyCodexOptions(proc: AgentProc, req: SendRequest): Promise<void> {
+    const { acp, sessionId } = proc
+    const modeId = codexModeId(req.mode, req.force, this.store.settings.sandbox)
+    try {
+      await acp.request('session/set_mode', { sessionId, modeId })
+    } catch {
+      /* the next prompt still runs in whatever mode the process started with */
+    }
+    try {
+      await acp.request('session/set_config_option', {
+        sessionId,
+        configId: 'collaboration_mode',
+        value: req.mode === 'plan' ? 'plan' : 'default'
+      })
+    } catch {
+      /* older adapters ignore the collaboration mode option */
+    }
+    await this.applyCodexModel(proc, req.model)
+  }
+
+  private async applyCodexModel(proc: AgentProc, model: string): Promise<void> {
+    if (!model || model === 'auto') return
+    const bracket = model.match(/^([^[]+)\[([^\]]+)\]$/)
+    const id = bracket?.[1] ?? model
+    try {
+      await proc.acp.request('session/set_config_option', { sessionId: proc.sessionId, configId: 'model', value: id })
+    } catch {
+      /* keep the session's current model */
+    }
+    if (!bracket?.[2]) return
+    try {
+      await proc.acp.request('session/set_config_option', {
+        sessionId: proc.sessionId,
+        configId: 'reasoning_effort',
+        value: bracket[2]
+      })
+    } catch {
+      /* the model keeps its default effort */
+    }
+  }
+
   private async runPrompt(threadId: string, run: Run, req: SendRequest): Promise<void> {
     const started = Date.now()
-    const text = req.mode === 'plan' ? planModePrompt(req.prompt) : req.prompt
+    const text = req.mode !== 'plan' ? req.prompt : run.proc.provider === 'codex' ? codexPlanModePrompt(req.prompt) : planModePrompt(req.prompt)
     const result = await run.proc.acp.request('session/prompt', {
       sessionId: run.proc.sessionId,
       prompt: [{ type: 'text', text }]
@@ -410,7 +462,7 @@ export class SessionManager {
     if (run.stopped) {
       changed.push(r.push({ id: newId(), kind: 'notice', level: 'info', text: '已停止' }))
     } else if (spawnError) {
-      changed.push(r.push({ id: newId(), kind: 'notice', level: 'error', text: `无法启动 Cursor CLI：${spawnError.message}` }))
+      changed.push(r.push({ id: newId(), kind: 'notice', level: 'error', text: `无法启动 ${cliLabel(run.proc.provider)}：${spawnError.message}` }))
     } else if (!r.gotResult) {
       const detail = [run.failText, stripAnsi(run.proc.stderr).trim()].filter(Boolean).join('\n').slice(-4000)
       changed.push(
@@ -418,7 +470,7 @@ export class SessionManager {
           id: newId(),
           kind: 'notice',
           level: 'error',
-          text: detail || `Cursor CLI 意外退出（退出码 ${code ?? '未知'}）`
+          text: detail || `${cliLabel(run.proc.provider)} 意外退出（退出码 ${code ?? '未知'}）`
         })
       )
     }
@@ -457,7 +509,7 @@ export class SessionManager {
   }
 
   private onIdleAcpRequest(proc: AgentProc, method: string, params: any): Promise<unknown> {
-    if (method === 'cursor/ask_question') return Promise.resolve({ outcome: { outcome: 'skipped', reason: 'idle' } })
+    if (method === 'cursor/ask_question' || isQuestionParams(params)) return Promise.resolve({ outcome: { outcome: 'skipped', reason: 'idle' } })
     if (method === 'cursor/create_plan') return Promise.resolve({ outcome: { outcome: 'accepted' } })
     if (method === 'session/request_permission') {
       const options: { optionId?: string; kind?: string }[] = Array.isArray(params?.options) ? params.options : []
@@ -467,7 +519,7 @@ export class SessionManager {
   }
 
   private onAcpRequest(threadId: string, run: Run, method: string, params: any): Promise<unknown> {
-    if (method === 'cursor/ask_question') return this.answerAskQuestion(threadId, run, params)
+    if (method === 'cursor/ask_question' || isQuestionParams(params)) return this.answerAskQuestion(threadId, run, params)
     if (method === 'cursor/create_plan') return Promise.resolve({ outcome: { outcome: 'accepted' } })
     if (method === 'session/request_permission') return this.answerPermission(threadId, run, params)
     return Promise.reject(new MethodNotFound(method))
@@ -560,6 +612,7 @@ export class SessionManager {
 
 function procFingerprint(
   cli: ResolvedCli,
+  provider: CliProvider,
   cwd: string,
   sandbox: string,
   force: boolean,
@@ -567,7 +620,40 @@ function procFingerprint(
   mcpServers: unknown,
   skills: unknown
 ): string {
-  return JSON.stringify([cli.command, cli.prefixArgs, cwd, sandbox, force ? 1 : 0, apiKey, mcpServers, skills])
+  return JSON.stringify([provider, cli.command, cli.prefixArgs, cwd, sandbox, force ? 1 : 0, apiKey, mcpServers, skills])
+}
+
+interface AgentLaunch {
+  cli: ResolvedCli
+  codex?: ResolvedCodex
+}
+
+function resolveLaunch(provider: CliProvider, agentPath: string, codexPath: string): AgentLaunch | undefined {
+  if (provider === 'codex') {
+    const codex = resolveCodex(codexPath)
+    return codex ? { cli: codexAsCli(codex), codex } : undefined
+  }
+  const cli = resolveCli(agentPath)
+  return cli ? { cli } : undefined
+}
+
+function cursorArgs(req: SendRequest, sandbox: 'default' | 'enabled' | 'disabled', cwd: string, hasChat: boolean): string[] {
+  const args = ['--trust']
+  if (req.model && req.model !== 'auto') args.push('--model', req.model)
+  if (req.mode !== 'agent') args.push('--mode', req.mode)
+  if (req.force) args.push('--force')
+  if (sandbox !== 'default') args.push('--sandbox', sandbox)
+  if (!hasChat && req.worktree) args.push('--worktree')
+  args.push('--workspace', cwd, 'acp')
+  return args
+}
+
+function cliLabel(provider: CliProvider): string {
+  return provider === 'codex' ? 'Codex CLI' : 'Cursor CLI'
+}
+
+function isQuestionParams(params: any): boolean {
+  return Array.isArray(params?.questions) && params.questions.some((q: any) => q && typeof q === 'object' && ('prompt' in q || 'options' in q))
 }
 
 /**

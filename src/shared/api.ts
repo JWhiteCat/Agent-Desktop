@@ -2,6 +2,8 @@ import type {
   AgentEvent,
   AgentMode,
   AppState,
+  CliInfo,
+  CliProvider,
   CliSession,
   GitDiff,
   Item,
@@ -43,9 +45,9 @@ export interface DesktopApi {
   answerQuestion(threadId: string, questionId: string, answers: QuestionAnswer[] | null): Promise<void>
   updateSettings(patch: Partial<Settings>): Promise<Settings>
   usageSummary(period: UsageWindow): Promise<UsageReport>
-  listModels(refresh?: boolean): Promise<ModelInfo[]>
-  cliInfo(): Promise<{ found: boolean; path?: string; version?: string; status?: string; hasApiKey?: boolean }>
-  login(): Promise<string>
+  listModels(refresh?: boolean, provider?: CliProvider): Promise<ModelInfo[]>
+  cliInfo(provider?: CliProvider): Promise<CliInfo>
+  login(provider?: CliProvider): Promise<string>
   scanCliSessions(): Promise<CliSession[]>
   importCliSessions(chatIds: string[]): Promise<number>
   gitDiff(cwd: string): Promise<GitDiff>

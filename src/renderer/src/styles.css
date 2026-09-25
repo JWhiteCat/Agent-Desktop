@@ -470,6 +470,9 @@ select {
   background: var(--accent);
 }
 
+.thread-row > .badge {
+  flex: none;
+}
 .badge {
   display: inline-flex;
   align-items: center;

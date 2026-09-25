@@ -48,6 +48,10 @@ export class Store {
       settings: {
         ...DEFAULT_SETTINGS,
         ...loaded?.settings,
+        cliProvider: loaded?.settings?.cliProvider === 'codex' ? 'codex' : 'cursor',
+        codexPath: typeof loaded?.settings?.codexPath === 'string' ? loaded.settings.codexPath : '',
+        codexApiKey: typeof loaded?.settings?.codexApiKey === 'string' ? loaded.settings.codexApiKey : '',
+        codexDefaultModel: typeof loaded?.settings?.codexDefaultModel === 'string' ? loaded.settings.codexDefaultModel : '',
         favoriteModels: Array.isArray(loaded?.settings?.favoriteModels) ? loaded.settings.favoriteModels : [],
         mcpServers: normalizeMcpServers(loaded?.settings?.mcpServers),
         skills: normalizeSkills(loaded?.settings?.skills)

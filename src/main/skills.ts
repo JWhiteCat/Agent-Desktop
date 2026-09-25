@@ -12,6 +12,18 @@ export function userSkillsDir(): string {
   return path.join(os.homedir(), '.cursor', 'skills')
 }
 
+/** Current Codex user skills, plus the older ~/.codex/skills location. */
+export function codexSkillsDirs(): string[] {
+  const home = os.homedir()
+  return [path.join(home, '.agents', 'skills'), path.join(home, '.codex', 'skills')]
+}
+
+/** Writes one settings list to Cursor and both Codex skill directories. */
+export function syncAllManagedSkills(skills: SkillConfig[] | undefined): void {
+  syncManagedSkills(skills, userSkillsDir())
+  for (const dir of codexSkillsDirs()) syncManagedSkills(skills, dir)
+}
+
 /**
  * Writes enabled skills into `~/.cursor/skills/<name>/SKILL.md`.
  * Only directories that contain this app's marker file are replaced or removed.
@@ -27,7 +39,7 @@ export function syncManagedSkills(skills: SkillConfig[] | undefined, root = user
     const name = skill.name.trim()
     const kind = dirKind(path.join(root, name))
     if (kind === 'other' || (kind === 'dir' && !isManaged(path.join(root, name)))) {
-      throw new SkillSyncError(`无法写入 Skill「${name}」：~/.cursor/skills/${name} 已存在，且不是本应用创建的`)
+      throw new SkillSyncError(`无法写入 Skill「${name}」：${path.join(root, name)} 已存在，且不是本应用创建的`)
     }
   }
 

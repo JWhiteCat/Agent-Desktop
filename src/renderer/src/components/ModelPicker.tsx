@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import type { CliProvider } from '@shared/types'
 import { loadModels, useStore } from '../store'
 import {
   contextChoices,
@@ -18,8 +19,10 @@ import { Popover } from './Menu'
 
 const NO_FAVORITES: string[] = []
 
-export function ModelPicker({ value, onChange }: { value: string; onChange: (id: string) => void }) {
-  const models = useStore((s) => s.models)
+export function ModelPicker({ value, onChange, cli }: { value: string; onChange: (id: string) => void; cli?: CliProvider }) {
+  const settingsCli = useStore((s) => (s.app.settings.cliProvider === 'codex' ? 'codex' : 'cursor'))
+  const provider = cli ?? settingsCli
+  const models = useStore((s) => s.modelsByCli[provider] ?? s.models)
   const favoriteModels = useStore((s) => s.app.settings.favoriteModels)
   const favorites = favoriteModels ?? NO_FAVORITES
   const groups = useMemo(() => groupModels(models), [models])
@@ -101,7 +104,7 @@ export function ModelPicker({ value, onChange }: { value: string; onChange: (id:
             title="刷新模型列表"
             onClick={async () => {
               setRefreshing(true)
-              await loadModels(true)
+              await loadModels(true, provider)
               setRefreshing(false)
             }}
           >

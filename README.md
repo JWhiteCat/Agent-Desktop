@@ -1,8 +1,8 @@
 # Agent Desktop
 
-面向 [Cursor CLI](https://cursor.com/cli)（`agent`）的桌面客户端。按项目组织多段对话，流式展示思考、工具调用和回复，并保留本地历史。
+面向 [Cursor CLI](https://cursor.com/cli)（`agent`）和 [Codex CLI](https://github.com/openai/codex)（`codex`）的桌面客户端。按项目组织多段对话，流式展示思考、工具调用和回复，并保留本地历史。
 
-应用本身不调用模型。它启动本机已安装的 Cursor CLI，把提示词交给 CLI，再把 `stream-json` 输出画成对话界面。
+应用本身不调用模型。它启动本机的 Cursor CLI 或 Codex CLI，把提示词交给 CLI，再把协议输出画成对话界面。新建对话用设置里选中的 CLI，并记住这个选择；已有对话继续用创建时的 CLI。
 
 ## 功能
 
@@ -14,18 +14,18 @@
 - 变更面板：查看当前工作目录的分支、状态和 diff
 - 一轮任务结束后，在回复下方列出本轮修改的文件，点开可看 diff
 - 任务结束时，回复下方显示本轮耗时、token、使用的模型，以及按公开标价估算的费用
-- 从 `~/.cursor/chats` 导入 CLI 历史，并按工作目录归入项目
+- 从 `~/.cursor/chats` 和 `~/.codex/sessions` 导入 CLI 历史，并按工作目录归入项目
 - 已有会话用 `--resume` 续聊；也可从 CLI 存储同步回本地
 - 任务结束时发送系统通知，点击通知回到该对话
 - 主题：跟随系统、深色、浅色
-- 设置按左侧分类切换：Cursor CLI、MCP、Skill、模型、用量、默认值、通知、远程控制、外观与历史
+- 设置按左侧分类切换：CLI、MCP、Skill、模型、用量、默认值、通知、远程控制、外观与历史。CLI 页可分别检测 Cursor 与 Codex、填写路径和 API Key、登录
 - 用量：按最近 1 天、7 天、30 天汇总 token，并分页列出全部历史会话的模型和累计消耗。费用用 [Cursor 公开标价](https://cursor.com/docs/models-and-pricing) 估算。Auto 和价目表没有的模型显示为未定价
 - 远程控制：局域网扫码，或经 SSH 反向隧道从公网打开同一页面
 
 ## 环境要求
 
 - Node.js 22.12 或更高版本
-- 已配置 API Key，或已通过浏览器登录的 Cursor CLI
+- 至少一种 CLI：已配置 API Key 或已登录的 Cursor CLI，或 Codex CLI（找不到本机 `codex` 时使用应用内置的 Codex）
 - 变更面板需要本机可执行 `git`
 
 安装 Cursor CLI：
@@ -40,16 +40,26 @@ irm 'https://cursor.com/install?win32=true' | iex
 curl https://cursor.com/install -fsS | bash
 ```
 
+安装 Codex CLI：
+
+```bash
+npm install -g @openai/codex
+```
+
+也可以不单独安装。应用通过 `@agentclientprotocol/codex-acp` 驱动 Codex；设置里的路径为空且 PATH 上没有 `codex` 时，使用适配器自带的 Codex，设置里会写明「使用内置 Codex」。
+
 应用会自动查找 CLI：
 
-| 系统 | 默认位置 |
-| --- | --- |
-| Windows | `%LOCALAPPDATA%\cursor-agent` |
-| macOS / Linux | `~/.local/bin/agent`、`/usr/local/bin/agent`、`/opt/homebrew/bin/agent` |
+| 系统 | Cursor | Codex |
+| --- | --- | --- |
+| Windows | `%LOCALAPPDATA%\cursor-agent` | PATH 上的 `codex` |
+| macOS / Linux | `~/.local/bin/agent`、`/usr/local/bin/agent`、`/opt/homebrew/bin/agent` | `~/.local/bin/codex`、`/usr/local/bin/codex`、`/opt/homebrew/bin/codex`，以及 PATH |
 
 找不到时，在设置里填可执行文件或安装目录。
 
-认证优先使用 [Cursor API Key](https://cursor.com/dashboard/api)（设置中的 Key 优先于环境变量 `CURSOR_API_KEY`）。没有 Key 时使用 `agent login` 保存的浏览器登录。
+Cursor 认证优先使用 [Cursor API Key](https://cursor.com/dashboard/api)（设置中的 Key 优先于环境变量 `CURSOR_API_KEY`）。没有 Key 时使用 `agent login` 保存的浏览器登录。
+
+Codex 认证优先使用设置中的 Key，其次是 `CODEX_API_KEY`，再次是 `OPENAI_API_KEY`。都没有时使用 ChatGPT 登录。
 
 ## 开发
 
@@ -70,7 +80,7 @@ Windows 也可以双击 `start.bat`，效果相同。
 | `npm run preview` | 预览编译结果 |
 | `npm run dist` | 打包安装包到 `release/` |
 
-`npm test` 不访问 Cursor CLI。`npm run test:live` 才会在临时空目录里用 Ask 模式调用 `grok-4.7[context=500k,reasoning_effort=high,fast=true]`，提示只有一句 `Reply with exactly ok`。需要本机已登录或已设置 `CURSOR_API_KEY`。High 仍会有少量思考 token。
+`npm test` 不访问 Cursor CLI，也不访问 Codex。`npm run test:live` 才会在临时空目录里用 Ask 模式调用 `grok-4.7[context=500k,reasoning_effort=high,fast=true]`，提示只有一句 `Reply with exactly ok`。需要本机已登录或已设置 `CURSOR_API_KEY`。High 仍会有少量思考 token。
 
 打包目标：Windows NSIS、macOS DMG、Linux AppImage。
 
@@ -100,10 +110,10 @@ Windows 也可以双击 `start.bat`，效果相同。
 
 ## Plan 模式
 
-Cursor 不给 ACP 客户端提供 AskQuestion 工具，所以 Plan 模式的每条消息前会附一段说明（用 `<agent_desktop_client>` 标签包住，导入 CLI 历史时会去掉），让模型这样工作：
+Cursor 不给 ACP 客户端提供 AskQuestion 工具。Codex 的 Plan 是协作模式（`collaboration_mode=plan`），审批模式仍是只读，不是 Cursor 的 `modeId: plan`。两种 CLI 的 Plan 消息前都会附一段说明（用 `<agent_desktop_client>` 标签包住，导入 CLI 历史时会去掉），让模型这样工作：
 
 - 需要你做选择时，模型输出一个 ```` ```questions ```` 代码块（JSON）。界面把它画成选项卡片，点选后按“继续”，选择结果会作为下一条消息发出；“跳过”则让模型按自己的判断继续。只有最新一轮的卡片可以提交。
-- 需求清楚后，模型用 CreatePlan 生成计划。界面显示计划卡片：名称、概要、待办和可展开的完整计划，以及“打开计划文件”（`~/.cursor/plans/*.plan.md`）。
+- 需求清楚后，Cursor 用 CreatePlan 生成计划，Codex 用计划工具给出名称、概要和 Markdown 正文。界面显示计划卡片：名称、概要、待办和可展开的完整计划。Cursor 还会提供“打开计划文件”（`~/.cursor/plans/*.plan.md`）；Codex 没有这份文件时不显示该按钮。
 - 点“执行计划”会把输入框切到 Agent 模式，并发送一条按计划实施的消息。只有最新的计划显示这个按钮。
 
 ACP 下 CLI 会自动批准模型发起的 SwitchMode，且不通知客户端。Plan 模式的一轮里如果模型自己切了模式，应用会立刻把会话模式设回 Plan，避免它直接开始改文件。
@@ -112,13 +122,13 @@ ACP 下 CLI 会自动批准模型发起的 SwitchMode，且不通知客户端。
 
 在设置中添加 MCP 服务器。启用后，新建或恢复会话时会把它们放进 ACP 的 `mcpServers`（stdio、HTTP 或 SSE）。这份列表存在应用自己的 `state.json` 里，不会改写 `~/.cursor/mcp.json`。
 
-启用的 Skill 会写成 `~/.cursor/skills/<名称>/SKILL.md`。名称只能是小写字母、数字和连字符，并且需要一段描述，CLI 会按描述决定是否使用。停用或删除时，只移除本应用创建的目录。同名且不是本应用创建的目录会保留，保存时会提示无法覆盖。
+启用的 Skill 会写成 `~/.cursor/skills/<名称>/SKILL.md`，并同时写到 Codex 的 `~/.agents/skills/<名称>/SKILL.md` 和 `~/.codex/skills/<名称>/SKILL.md`。名称只能是小写字母、数字和连字符，并且需要一段描述，CLI 会按描述决定是否使用。停用或删除时，只移除本应用创建的目录。同名且不是本应用创建的目录会保留，保存时会提示无法覆盖。
 
 修改 MCP 或 Skill 后，空闲的 CLI 进程会退出。下一条消息才会用上新配置。
 
 ## 用量
 
-设置里的「用量」按最近 1 天、7 天和 30 天汇总本机对话的 token，并按模型列出估算费用。模型名用短名称，例如「Grok 4.7 500K High Fast」，不显示完整参数串。下方的会话列表包含全部历史对话，每行显示用过的模型、累计 token 和费用，不受上面的天数限制；超过 20 条时翻页。没有 token 记录的对话也会列出，费用留空。每一轮结束时，回复下方也会显示该轮的耗时、token、使用的模型和估算费用。Token 来自 CLI 在回合结束时给出的用量：输入里已经扣除缓存，缓存读写单独计数。费用是 Cursor 公开标价（美元 / 百万 token），不是套餐里还剩多少，也不含 Teams 的 Token Rate。不足 1 美分时显示到小数点后四位。Auto 和价目表没有的模型只显示 token，费用写为「未定价」。上方合计里，分叉复制的同一轮只计一次；会话列表按各对话自己的记录累计，所以同一轮会同时出现在原对话和分叉里。
+设置里的「用量」按最近 1 天、7 天和 30 天汇总本机对话的 token，并按模型列出估算费用。模型名用短名称，例如「Grok 4.7 500K High Fast」，不显示完整参数串。下方的会话列表包含全部历史对话，每行显示用过的模型、累计 token 和费用，不受上面的天数限制；超过 20 条时翻页。没有 token 记录的对话也会列出，费用留空。每一轮结束时，回复下方也会显示该轮的耗时、token、使用的模型和估算费用。Token 来自 CLI 在回合结束时给出的用量：输入里已经扣除缓存，缓存读写单独计数。Cursor 模型用 Cursor 公开标价，Codex 的 GPT 模型用同一份已收录的公开 token 标价（美元 / 百万 token）。这不是套餐里还剩多少，也不含 Teams 的 Token Rate。不足 1 美分时显示到小数点后四位。Auto 和价目表没有的模型只显示 token，费用写为「未定价」。上方合计里，分叉复制的同一轮只计一次；会话列表按各对话自己的记录累计，所以同一轮会同时出现在原对话和分叉里。
 
 ## 远程控制
 
@@ -145,7 +155,7 @@ ACP 下 CLI 会自动批准模型发起的 SwitchMode，且不通知客户端。
 | macOS | `~/Library/Application Support/Agent Desktop/data` |
 | Linux | `~/.config/Agent Desktop/data` |
 
-`state.json` 保存项目、对话列表和设置（含 MCP 服务器与 Skill 正文）；每段对话的消息在 `threads/` 里。CLI 自己的会话记录仍在 `~/.cursor/chats`，本应用只读取和续接，不改写那份存储。启用的 Skill 另外写在 `~/.cursor/skills`。
+`state.json` 保存项目、对话列表和设置（含 MCP 服务器、Skill 正文，以及默认 CLI）。每段对话记住自己用的是 Cursor 还是 Codex。每段对话的消息在 `threads/` 里。Cursor 的会话记录仍在 `~/.cursor/chats`，Codex 的在 `~/.codex/sessions`。本应用只读取和续接，不改写那份存储。启用的 Skill 写在 `~/.cursor/skills`，以及 `~/.agents/skills` 和 `~/.codex/skills`。Codex 对话不使用 git worktree；分叉只复制本机消息，之后的发送从新的 Codex 会话开始。
 
 开发时可用环境变量 `AGENT_DESKTOP_USER_DATA` 指定另一份 userData 目录。
 
