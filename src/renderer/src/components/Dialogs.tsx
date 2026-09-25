@@ -55,15 +55,25 @@ function Modal({
 
 function FavoriteModels({ provider }: { provider: CliProvider }) {
   const models = useStore((s) => s.modelsByCli[provider] ?? (provider === 'cursor' ? s.models : []))
+  const modelError = useStore((s) => s.modelErrorByCli[provider])
   const favoriteModels = useStore((s) => favoritesFor(s.app.settings, provider))
   const groups = useMemo(() => groupModels(models), [models])
   const [q, setQ] = useState('')
   const [refreshing, setRefreshing] = useState(false)
+  const [loading, setLoading] = useState(false)
   const selected = useMemo(() => new Set(favoriteModels), [favoriteModels])
 
   useEffect(() => {
     const thin = provider === 'cursor' ? models.length <= 1 : models.length === 0
-    if (thin) void loadModels(false, provider)
+    if (!thin) return
+    let cancel = false
+    setLoading(true)
+    void loadModels(false, provider).finally(() => {
+      if (!cancel) setLoading(false)
+    })
+    return () => {
+      cancel = true
+    }
   }, [provider, models.length])
 
   const filtered = useMemo(() => {
@@ -126,7 +136,9 @@ function FavoriteModels({ provider }: { provider: CliProvider }) {
             {g.base !== g.name && <span className="favorite-base">{g.base}</span>}
           </label>
         ))}
-        {filtered.length === 0 && <div className="empty-hint">{groups.length ? '无匹配模型' : '尚未加载模型'}</div>}
+        {filtered.length === 0 && (
+          <div className="empty-hint">{groups.length ? '无匹配模型' : loading || refreshing ? '正在加载模型…' : modelError || '尚未加载模型'}</div>
+        )}
       </div>
     </div>
   )
@@ -692,12 +704,11 @@ function CliCard({
   )
 }
 
-function ModelCliSettings({ provider, title }: { provider: CliProvider; title: string }) {
+function ModelCliSettings({ provider }: { provider: CliProvider }) {
   const settings = useStore((s) => s.app.settings)
   const models = useStore((s) => s.modelsByCli[provider] ?? (provider === 'cursor' ? s.models : []))
   return (
-    <section className="settings-section">
-      <h4>{title}</h4>
+    <>
       <FavoriteModels provider={provider} />
       <Field label="默认模型" desc="每个项目会记住自己上次在这个 CLI 里选的模型。这里只给还没单独选过的项目用。勾选常用模型后，这里也只列出常用模型。">
         <ModelPicker
@@ -706,13 +717,14 @@ function ModelCliSettings({ provider, title }: { provider: CliProvider; title: s
           onChange={(model) => setDefaultModel(model, provider)}
         />
       </Field>
-    </section>
+    </>
   )
 }
 
 export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void; onOpenImport: () => void }) {
   const settings = useStore((s) => s.app.settings)
   const cli = settings.cliProvider === 'codex' ? 'codex' : 'cursor'
+  const [modelCli, setModelCli] = useState<CliProvider>(cli)
   const [tab, setTab] = useState<SettingsTab>('cli')
   const tabs = SETTINGS_TABS.filter((item) => item.id !== 'remote' || !window.api.isRemote)
 
@@ -805,10 +817,23 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
       )}
 
       {tab === 'models' && (
-        <>
-          <ModelCliSettings provider="cursor" title="Cursor" />
-          <ModelCliSettings provider="codex" title="Codex" />
-        </>
+        <section className="settings-section">
+          <div className="usage-periods" role="tablist" aria-label="模型来源">
+            {(['cursor', 'codex'] as const).map((id) => (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                aria-selected={modelCli === id}
+                className={`usage-period ${modelCli === id ? 'active' : ''}`}
+                onClick={() => setModelCli(id)}
+              >
+                {id === 'cursor' ? 'Cursor' : 'Codex'}
+              </button>
+            ))}
+          </div>
+          <ModelCliSettings provider={modelCli} />
+        </section>
       )}
 
       {tab === 'usage' && <UsageSettings />}

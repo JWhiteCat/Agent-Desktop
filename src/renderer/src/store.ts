@@ -10,6 +10,7 @@ export interface UIState {
   view: View
   models: ModelInfo[]
   modelsByCli: Record<CliProvider, ModelInfo[]>
+  modelErrorByCli: Record<CliProvider, string>
   toast?: { id: number; text: string; level: 'info' | 'error' }
   lastProjectId?: string
 }
@@ -21,7 +22,8 @@ let state: UIState = {
   items: {},
   view: { kind: 'home' },
   models: [{ id: 'auto', label: 'Auto' }],
-  modelsByCli: { cursor: [{ id: 'auto', label: 'Auto' }], codex: [] }
+  modelsByCli: { cursor: [{ id: 'auto', label: 'Auto' }], codex: [] },
+  modelErrorByCli: { cursor: '', codex: '' }
 }
 const listeners = new Set<Listener>()
 
@@ -314,11 +316,18 @@ export async function loadModels(refresh = false, only?: CliProvider): Promise<v
         const models = await window.api.listModels(refresh, cli)
         publishModels(cli, models)
         if (models.length > (cli === 'cursor' ? 1 : 0)) localStorage.setItem(cacheKey(cli), JSON.stringify(models))
-      } catch {
-        /* keep the cached list */
+        setModelError(cli, '')
+      } catch (err) {
+        const loaded = (state.modelsByCli[cli]?.length ?? 0) > (cli === 'cursor' ? 1 : 0)
+        setModelError(cli, loaded ? '' : errorText(err))
       }
     })
   )
+}
+
+function setModelError(cli: CliProvider, message: string): void {
+  if (state.modelErrorByCli[cli] === message) return
+  setState((s) => ({ modelErrorByCli: { ...s.modelErrorByCli, [cli]: message } }))
 }
 
 let toastSeq = 0

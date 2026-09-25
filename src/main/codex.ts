@@ -115,11 +115,13 @@ export interface CodexModelList {
 /** Reads the model select (and reasoning efforts) from a short-lived ACP session. */
 export async function listCodexModels(customPath: string, apiKey: string): Promise<CodexModelList> {
   const codex = resolveCodex(customPath)
-  if (!codex) return { models: [] }
+  if (!codex) throw new Error('未找到 Codex CLI')
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-desktop-codex-'))
   const child = spawnCodexAcp(codex, cwd, apiKey)
   const acp = new AcpConnection(child)
   let sessionId = ''
+  // stderr is a pipe. Leaving it unread fills the buffer and the CLI blocks until the list times out.
+  child.stderr?.resume()
   try {
     return await new Promise<CodexModelList>((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -147,7 +149,9 @@ export async function listCodexModels(customPath: string, apiKey: string): Promi
           const created = await acp.request('session/new', { cwd, mcpServers: [] })
           sessionId = String(created?.sessionId ?? '')
           clearTimeout(timer)
-          resolve(modelsFromConfig(created?.configOptions))
+          const listed = modelsFromSession(created)
+          if (!listed.models.length) throw new Error('Codex 没有返回模型')
+          resolve(listed)
         } catch (err) {
           clearTimeout(timer)
           reject(err)
@@ -157,7 +161,12 @@ export async function listCodexModels(customPath: string, apiKey: string): Promi
   } finally {
     killTree(child)
     if (sessionId) forgetRollout(sessionId)
-    fs.rmSync(cwd, { recursive: true, force: true })
+    // A throw here replaces the model list with a rejection. Windows often still has the temp dir open.
+    try {
+      fs.rmSync(cwd, { recursive: true, force: true })
+    } catch {
+      /* the probe directory can be removed later */
+    }
   }
 }
 
@@ -166,6 +175,18 @@ interface ConfigOption {
   currentValue?: string
   options?: { value?: string; name?: string }[]
   _meta?: { jetbrains?: { air?: { recommendedValue?: string } } }
+}
+
+/** Prefers config selects, then the legacy `models.availableModels` list on the same response. */
+export function modelsFromSession(created: { configOptions?: unknown; models?: unknown } | null | undefined): CodexModelList {
+  const fromConfig = modelsFromConfig(created?.configOptions)
+  if (fromConfig.models.length) return fromConfig
+  const available =
+    created?.models && typeof created.models === 'object' && Array.isArray((created.models as { availableModels?: unknown }).availableModels)
+      ? (created.models as { availableModels: { modelId?: string; name?: string }[] }).availableModels
+      : []
+  const models = available.filter((model) => model?.modelId).map((model) => ({ id: String(model.modelId), label: String(model.name || model.modelId) }))
+  return { models }
 }
 
 /** Expands Codex model and reasoning-effort selects into picker ids like `gpt-5.4[high]`. */

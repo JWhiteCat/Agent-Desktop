@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { catalogFromStorageJson, mergeModelLists } from '../src/shared/model-catalog'
 import { modelForChat, pruneFavoriteList } from '../src/renderer/src/store'
-import { describeModel, findVariant, groupModels, modelCaption, pickVariant } from '../src/renderer/src/lib/models'
+import { describeModel, findVariant, groupModels, listedModelGroups, modelCaption, pickVariant } from '../src/renderer/src/lib/models'
 import type { ModelInfo } from '../src/shared/types'
 import { GROK_47_500K_HIGH_FAST } from './grok-model'
 
@@ -122,6 +122,13 @@ describe('model picker', () => {
     expect(modelCaption([], 'grok-4.7[context=256k,reasoning_effort=high,fast=false]')).toBe('Grok 4.7 256K High')
     expect(modelCaption([], 'composer-2.5[fast=true]')).toBe('Composer 2.5 Fast')
     expect(modelCaption([], 'auto')).toBe('Auto')
+    const codex = groupModels([
+      { id: 'gpt-5.4[high]', label: '5.4 high' },
+      { id: 'gpt-5.4[low]', label: '5.4 low' }
+    ])
+    expect(codex[0].variants.map((variant) => variant.effort)).toEqual(['high', 'low'])
+    expect(listedModelGroups(codex, ['grok-4.7'])).toBe(codex)
+    expect(listedModelGroups(codex, ['gpt-5.4'])).toEqual(codex)
     expect(pickVariant(grok!, { context: '500K', effort: 'high', fast: false }).id).toBe(GROK_500K_HIGH)
     expect(findVariant(groups, 'grok-4.7-high-fast')?.id).toBe(GROK_256K_HIGH_FAST)
   })

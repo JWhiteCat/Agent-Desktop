@@ -63,6 +63,11 @@ function formatContext(raw: string): string {
 function parseBracket(id: string): { base: string; context?: string; effort?: string; thinking: boolean; fast: boolean } | undefined {
   const match = id.match(/^([^[]+)\[([^\]]+)\]$/)
   if (!match) return undefined
+  // Codex ids are `model[effort]`, without `key=value` parameters.
+  if (!match[2].includes('=')) {
+    const effort = match[2].trim()
+    return { base: match[1], effort: effort || undefined, thinking: false, fast: false }
+  }
   const params = new Map<string, string>()
   for (const part of match[2].split(',')) {
     const eq = part.indexOf('=')
@@ -185,6 +190,8 @@ export function groupModels(models: ModelInfo[]): ModelGroup[] {
 export function listedModelGroups(groups: ModelGroup[], favoriteBases: string[], selectedBase?: string): ModelGroup[] {
   if (!favoriteBases.length) return groups
   const allowed = new Set(favoriteBases)
+  // Favorites saved for the other CLI match nothing here. Showing none looks like a failed load.
+  if (!groups.some((group) => allowed.has(group.base))) return groups
   return groups.filter((group) => allowed.has(group.base) || group.base === selectedBase)
 }
 

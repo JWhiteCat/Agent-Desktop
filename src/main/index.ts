@@ -594,13 +594,7 @@ async function cursorModelList(): Promise<ModelInfo[]> {
 }
 
 async function codexModelList(): Promise<ModelInfo[]> {
-  try {
-    const listed = await listCodexModels(store.settings.codexPath, resolveCodexApiKey(store.settings.codexApiKey))
-    return listed.models
-  } catch (err) {
-    console.error('[codex] model list failed', err)
-    return []
-  }
+  return (await listCodexModels(store.settings.codexPath, resolveCodexApiKey(store.settings.codexApiKey))).models
 }
 
 async function codexInfo(): Promise<{ found: boolean; path?: string; version?: string; status?: string; hasApiKey?: boolean; bundled?: boolean }> {

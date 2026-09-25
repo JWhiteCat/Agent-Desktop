@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { codexPlanModePrompt } from '../src/main/acp'
 import { transcriptItems } from '../src/main/codex-history'
-import { codexModeId, modelsFromConfig, resolveCodexAcpEntry } from '../src/main/codex'
+import { codexModeId, modelsFromConfig, modelsFromSession, resolveCodexAcpEntry } from '../src/main/codex'
 
 describe('codex mode and models', () => {
   it('maps Ask and Plan to read-only, and keeps full access behind the sandbox switch', () => {
@@ -32,6 +32,14 @@ describe('codex mode and models', () => {
     expect(listed.recommended).toBe('gpt-5.4[high]')
     expect(listed.models[0]).toEqual({ id: 'gpt-5.4[high]', label: '5.4 high' })
     expect(listed.models.map((model) => model.id)).toEqual(['gpt-5.4[high]', 'gpt-5.4-mini[low]', 'gpt-5.4-mini[high]', 'gpt-5.4[low]'])
+  })
+
+  it('reads the legacy availableModels list when config options are empty', () => {
+    const listed = modelsFromSession({
+      configOptions: [],
+      models: { availableModels: [{ modelId: 'gpt-5.4[high]', name: '5.4 (high)' }] }
+    })
+    expect(listed.models).toEqual([{ id: 'gpt-5.4[high]', label: '5.4 (high)' }])
   })
 
   it('finds the bundled ACP adapter', () => {

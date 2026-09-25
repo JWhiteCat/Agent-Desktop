@@ -23,6 +23,7 @@ export function ModelPicker({ value, onChange, cli }: { value: string; onChange:
   const models = useStore((s) => s.modelsByCli[provider] ?? s.models)
   const favorites = useStore((s) => favoritesFor(s.app.settings, provider))
   const groups = useMemo(() => groupModels(models), [models])
+  const favoritesApply = favorites.some((base) => groups.some((group) => group.base === base))
   const summary = useMemo(() => describeModel(groups, value), [groups, value])
   const selected = useMemo(() => findVariant(groups, value), [groups, value])
   const listed = useMemo(() => listedModelGroups(groups, favorites, selected?.base), [groups, favorites, selected?.base])
@@ -89,7 +90,7 @@ export function ModelPicker({ value, onChange, cli }: { value: string; onChange:
         <div className="model-search">
           <input
             ref={search}
-            placeholder={favorites.length ? '搜索常用模型' : '搜索模型'}
+            placeholder={favoritesApply ? '搜索常用模型' : '搜索模型'}
             value={q}
             onChange={(e) => setQ(e.target.value)}
             onKeyDown={(e) => {
@@ -108,16 +109,16 @@ export function ModelPicker({ value, onChange, cli }: { value: string; onChange:
             <IconRefresh size={13} className={refreshing ? 'spin' : ''} />
           </button>
         </div>
-        {favorites.length > 0 && <div className="model-scope">仅常用模型</div>}
+        {favoritesApply && <div className="model-scope">仅常用模型</div>}
         <div className="model-list" ref={list}>
           {filtered.map((g) => (
             <button key={g.base} className={`menu-item ${g.base === selectedGroup?.base ? 'selected' : ''}`} onClick={() => chooseGroup(g)}>
               <span className="menu-label">{g.name}</span>
-              {favorites.length > 0 && g.base === selected?.base && !favorites.includes(g.base) && <span className="menu-hint">当前</span>}
+              {favoritesApply && g.base === selected?.base && !favorites.includes(g.base) && <span className="menu-hint">当前</span>}
               {g.base === selectedGroup?.base && <span className="menu-check">✓</span>}
             </button>
           ))}
-          {filtered.length === 0 && <div className="empty-hint">{q.trim() ? '无匹配模型' : favorites.length ? '没有可用的常用模型' : '无匹配模型'}</div>}
+          {filtered.length === 0 && <div className="empty-hint">{q.trim() ? '无匹配模型' : favoritesApply ? '没有可用的常用模型' : '无匹配模型'}</div>}
         </div>
         {selected && selectedGroup && (contexts.length > 0 || efforts.length > 0 || showSpeed) && (
           <div className="model-params">
