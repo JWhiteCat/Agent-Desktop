@@ -232,7 +232,7 @@ function registerIpc(): void {
     broadcastState()
   })
   ipcMain.handle('project:remove', (_e, id: string) => {
-    for (const t of store.threads.filter((t) => t.projectId === id)) sessions.stop(t.id)
+    for (const t of store.threads.filter((t) => t.projectId === id)) sessions.dispose(t.id)
     store.removeProject(id)
     broadcastState()
   })
@@ -252,7 +252,7 @@ function registerIpc(): void {
     broadcastState()
   })
   ipcMain.handle('thread:delete', (_e, id: string) => {
-    sessions.stop(id)
+    sessions.dispose(id)
     store.deleteThread(id)
     broadcastState()
   })
@@ -289,6 +289,7 @@ function registerIpc(): void {
     const s = store.updateSettings(patch)
     if (patch.theme) applyTheme(patch.theme)
     if (patch.agentPath !== undefined || patch.apiKey !== undefined) modelsCache = null
+    if (patch.agentPath !== undefined || patch.apiKey !== undefined || patch.sandbox !== undefined) sessions.dropIdle()
     broadcastState()
     return s
   })

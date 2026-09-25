@@ -2,7 +2,7 @@ import type { ChildProcess } from 'node:child_process'
 import fs from 'node:fs'
 import type { AgentEvent, Item, QuestionAnswer, QuestionItem, SendRequest } from '@shared/types'
 import { AcpConnection, MethodNotFound, normalizeQuestions, permissionResult } from './acp'
-import { killTree, resolveApiKey, resolveCli, spawnCli, stripAnsi } from './cli'
+import { killTree, resolveApiKey, resolveCli, spawnCli, stripAnsi, type ResolvedCli } from './cli'
 import { newId } from './id'
 import { StreamReducer } from './reducer'
 import type { Store } from './store'
@@ -12,19 +12,34 @@ interface PendingQuestion {
   resolve: (decision: QuestionAnswer[] | 'skip' | 'cancel') => void
 }
 
-interface Run {
+/** One `agent acp` process kept alive so the next message skips startup and session/load. */
+interface AgentProc {
   child: ChildProcess
+  acp: AcpConnection
+  sessionId: string
+  cwd: string
+  fingerprint: string
+  stderr: string
+  ready: boolean
+  /** Set when this process is being torn down and must not be reused. */
+  dying: boolean
+  force: boolean
+}
+
+interface Run {
+  proc: AgentProc
   reducer: StreamReducer
   stopped: boolean
   pending: Map<string, Item>
   flushTimer?: NodeJS.Timeout
-  acp?: AcpConnection
-  sessionId?: string
   /** Ignore session/update events while session/load replays history. */
   acceptUpdates: boolean
   pendingQuestion?: PendingQuestion
   force: boolean
   failText?: string
+  /** Terminal UI state for this turn has already been published. */
+  settled: boolean
+  killTimer?: NodeJS.Timeout
 }
 
 export interface RunFinished {
@@ -42,8 +57,12 @@ export function titleFrom(prompt: string): string {
   return line.length > 48 ? `${line.slice(0, 48)}…` : line
 }
 
+const CANCEL_KILL_MS = 5000
+
 export class SessionManager {
   private runs = new Map<string, Run>()
+  /** Idle CLI processes, keyed by thread id. Not included in `running()`. */
+  private agents = new Map<string, AgentProc>()
 
   constructor(
     private readonly store: Store,
@@ -74,13 +93,13 @@ export class SessionManager {
     const cwd = thread.cwd && fs.existsSync(thread.cwd) ? thread.cwd : project.path
     if (!fs.existsSync(cwd)) throw new Error(`项目目录不存在：${cwd}`)
 
-    const args = ['--trust']
-    if (req.model && req.model !== 'auto') args.push('--model', req.model)
-    if (req.mode !== 'agent') args.push('--mode', req.mode)
-    if (req.force) args.push('--force')
-    if (settings.sandbox !== 'default') args.push('--sandbox', settings.sandbox)
-    if (!thread.chatId && req.worktree) args.push('--worktree')
-    args.push('--workspace', cwd, 'acp')
+    const fingerprint = procFingerprint(cli, cwd, settings.sandbox, req.force, apiKey)
+    let proc = this.agents.get(thread.id)
+    const reusable = !!proc && this.canReuse(proc, fingerprint)
+    if (proc && !reusable) {
+      this.discard(thread.id)
+      proc = undefined
+    }
 
     const items = this.store.items(thread.id)
     const userItem: Item = { id: newId(), kind: 'user', text: req.prompt, createdAt: Date.now() }
@@ -95,93 +114,39 @@ export class SessionManager {
       archived: false
     })
 
-    const child = spawnCli(cli, args, cwd, 'pipe', apiKey)
+    if (!proc) {
+      const args = ['--trust']
+      if (req.model && req.model !== 'auto') args.push('--model', req.model)
+      if (req.mode !== 'agent') args.push('--mode', req.mode)
+      if (req.force) args.push('--force')
+      if (settings.sandbox !== 'default') args.push('--sandbox', settings.sandbox)
+      if (!thread.chatId && req.worktree) args.push('--worktree')
+      args.push('--workspace', cwd, 'acp')
+      proc = this.openProc(thread.id, cli, args, cwd, apiKey, fingerprint)
+    }
+    proc.force = req.force
+
     const run: Run = {
-      child,
+      proc,
       reducer: new StreamReducer(items),
       stopped: false,
       pending: new Map(),
       acceptUpdates: false,
-      force: req.force
+      force: req.force,
+      settled: false
     }
     this.runs.set(thread.id, run)
     this.queue(thread.id, run, [userItem])
     this.emit({ type: 'running', threadId: thread.id, running: true })
     this.onStateChange()
 
-    let stderr = ''
-    child.stderr?.setEncoding('utf8')
-    child.stderr?.on('data', (chunk: string) => {
-      stderr = (stderr + chunk).slice(-8000)
-    })
-
-    const acp = new AcpConnection(child)
-    run.acp = acp
-    acp.start({
-      onNotification: (method, params) => {
-        if (method !== 'session/update' || !run.acceptUpdates) return
-        const changed = run.reducer.handleAcp(params?.update)
-        if (changed.length) this.queue(thread.id, run, changed)
-      },
-      onRequest: (method, params) => this.onAcpRequest(thread.id, run, method, params)
-    })
-
-    const finish = (code: number | null, spawnError?: Error): void => {
-      if (!this.runs.has(thread.id)) return
-      this.settleQuestion(run, 'cancel')
-      const r = run.reducer
-      const changed: Item[] = [...r.closeSegments(), ...r.abortRunningTools(), ...abandonQuestions(items)]
-      if (run.stopped) {
-        changed.push(r.push({ id: newId(), kind: 'notice', level: 'info', text: '已停止' }))
-      } else if (spawnError) {
-        changed.push(r.push({ id: newId(), kind: 'notice', level: 'error', text: `无法启动 Cursor CLI：${spawnError.message}` }))
-      } else if (!r.gotResult) {
-        const detail = [run.failText, stripAnsi(stderr).trim()].filter(Boolean).join('\n').slice(-4000)
-        changed.push(
-          r.push({
-            id: newId(),
-            kind: 'notice',
-            level: 'error',
-            text: detail || `Cursor CLI 意外退出（退出码 ${code ?? '未知'}）`
-          })
-        )
-      }
-      this.queue(thread.id, run, changed)
-      this.flushPending(thread.id, run)
-      this.runs.delete(thread.id)
-
-      const preview = r.lastAssistantText.replace(/\s+/g, ' ').trim().slice(0, 120)
-      const updated = this.store.updateThread(thread.id, {
-        updatedAt: Date.now(),
-        syncedAt: Date.now(),
-        unread: true,
-        ...(preview ? { preview } : {})
-      })
-      this.store.markItemsDirty(thread.id)
-      this.emit({ type: 'running', threadId: thread.id, running: false })
-      this.onStateChange()
-      const result = [...items].reverse().find((it) => it.kind === 'result')
-      const failed = !!spawnError || !r.gotResult || (result?.kind === 'result' && result.isError)
-      let summary = preview
-      if (failed && !summary) {
-        const notice = [...items].reverse().find((it) => it.kind === 'notice' && it.level === 'error')
-        if (notice?.kind === 'notice') summary = notice.text.replace(/\s+/g, ' ').trim().slice(0, 120)
-      }
-      this.onFinished({
-        threadId: thread.id,
-        title: updated?.title || thread.title,
-        stopped: run.stopped,
-        failed,
-        preview: summary
-      })
-    }
-
-    child.on('error', (err) => finish(null, err))
-    child.on('close', (code) => finish(code))
-
-    void this.drive(thread.id, run, acp, req, cwd, thread.chatId, !apiKey).catch((err) => {
+    const turn = reusable
+      ? this.continueSession(thread.id, run, req)
+      : this.drive(thread.id, run, req, cwd, thread.chatId, !apiKey)
+    void turn.catch((err) => {
+      if (run.settled) return
       if (!run.stopped) run.failText = err instanceof Error ? err.message : String(err)
-      killTree(child)
+      this.killProc(run.proc)
     })
   }
 
@@ -193,28 +158,141 @@ export class SessionManager {
     pending.resolve(answers ?? 'skip')
   }
 
+  /** Cancel the current turn and keep the CLI process for the next message. */
   stop(threadId: string): void {
     const run = this.runs.get(threadId)
     if (!run) return
     run.stopped = true
     this.settleQuestion(run, 'cancel')
-    if (run.sessionId) run.acp?.notify('session/cancel', { sessionId: run.sessionId })
-    killTree(run.child)
+    if (run.proc.ready && run.proc.sessionId) {
+      run.proc.acp.notify('session/cancel', { sessionId: run.proc.sessionId })
+      if (!run.killTimer) {
+        run.killTimer = setTimeout(() => {
+          run.killTimer = undefined
+          if (this.runs.get(threadId) !== run || run.settled) return
+          this.killProc(run.proc)
+        }, CANCEL_KILL_MS)
+      }
+      return
+    }
+    this.killProc(run.proc)
+  }
+
+  /** Kill the CLI process for this thread. Used when the thread or app is going away. */
+  dispose(threadId: string): void {
+    const run = this.runs.get(threadId)
+    if (run) {
+      run.stopped = true
+      if (run.killTimer) {
+        clearTimeout(run.killTimer)
+        run.killTimer = undefined
+      }
+      this.settleQuestion(run, 'cancel')
+      this.killProc(run.proc)
+      return
+    }
+    this.discard(threadId)
   }
 
   stopAll(): void {
-    for (const id of this.runs.keys()) this.stop(id)
+    for (const id of [...this.runs.keys()]) this.dispose(id)
+    for (const id of [...this.agents.keys()]) this.discard(id)
+  }
+
+  /** Drop idle processes after CLI path, API key, or sandbox changes. */
+  dropIdle(): void {
+    for (const id of [...this.agents.keys()]) {
+      if (!this.runs.has(id)) this.discard(id)
+    }
+  }
+
+  private canReuse(proc: AgentProc, fingerprint: string): boolean {
+    return proc.ready && !proc.dying && proc.child.exitCode === null && proc.fingerprint === fingerprint
+  }
+
+  private openProc(
+    threadId: string,
+    cli: ResolvedCli,
+    args: string[],
+    cwd: string,
+    apiKey: string,
+    fingerprint: string
+  ): AgentProc {
+    const child = spawnCli(cli, args, cwd, 'pipe', apiKey)
+    const proc: AgentProc = {
+      child,
+      acp: undefined as unknown as AcpConnection,
+      sessionId: '',
+      cwd,
+      fingerprint,
+      stderr: '',
+      ready: false,
+      dying: false,
+      force: false
+    }
+    const acp = new AcpConnection(child)
+    proc.acp = acp
+    child.stderr?.setEncoding('utf8')
+    child.stderr?.on('data', (chunk: string) => {
+      proc.stderr = (proc.stderr + chunk).slice(-8000)
+    })
+    acp.start({
+      onNotification: (method, params) => {
+        const run = this.runs.get(threadId)
+        if (!run || run.proc !== proc || method !== 'session/update' || !run.acceptUpdates) return
+        const changed = run.reducer.handleAcp(params?.update)
+        if (changed.length) this.queue(threadId, run, changed)
+      },
+      onRequest: (method, params) => {
+        const run = this.runs.get(threadId)
+        if (run && run.proc === proc) return this.onAcpRequest(threadId, run, method, params)
+        return this.onIdleAcpRequest(proc, method, params)
+      }
+    })
+    child.on('error', (err) => {
+      const run = this.runs.get(threadId)
+      if (run?.proc === proc) this.endRun(threadId, run, null, err)
+    })
+    child.on('close', (code) => {
+      if (this.agents.get(threadId) === proc) this.agents.delete(threadId)
+      const run = this.runs.get(threadId)
+      if (run?.proc === proc) this.endRun(threadId, run, code)
+    })
+    return proc
+  }
+
+  private killProc(proc: AgentProc): void {
+    proc.dying = true
+    for (const [id, kept] of this.agents) {
+      if (kept === proc) this.agents.delete(id)
+    }
+    killTree(proc.child)
+  }
+
+  private discard(threadId: string): void {
+    const proc = this.agents.get(threadId)
+    if (!proc) return
+    this.killProc(proc)
+  }
+
+  private async continueSession(threadId: string, run: Run, req: SendRequest): Promise<void> {
+    run.reducer.init = { sessionId: run.proc.sessionId, cwd: run.proc.cwd, model: req.model }
+    await this.applySessionOptions(run.proc, req)
+    if (!this.runs.has(threadId) || run.settled) return
+    run.acceptUpdates = true
+    await this.runPrompt(threadId, run, req.prompt)
   }
 
   private async drive(
     threadId: string,
     run: Run,
-    acp: AcpConnection,
     req: SendRequest,
     cwd: string,
     chatId?: string,
     useLogin = false
   ): Promise<void> {
+    const { proc } = run
+    const acp = proc.acp
     await acp.request('initialize', {
       protocolVersion: 1,
       clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
@@ -232,31 +310,40 @@ export class SessionManager {
       sessionId = created?.sessionId
       if (!sessionId) throw new Error('Cursor CLI 没有返回会话 id')
     }
-    run.sessionId = sessionId
+    proc.sessionId = sessionId
+    proc.ready = true
     run.reducer.init = { sessionId, cwd, model: req.model }
     this.store.updateThread(threadId, { chatId: sessionId, cwd })
     this.onStateChange()
+    await this.applySessionOptions(proc, req)
+    if (!this.runs.has(threadId) || run.settled) return
+    run.acceptUpdates = true
+    await this.runPrompt(threadId, run, req.prompt)
+  }
 
+  private async applySessionOptions(proc: AgentProc, req: SendRequest): Promise<void> {
+    const { acp, sessionId } = proc
     try {
       await acp.request('session/set_mode', { sessionId, modeId: req.mode })
     } catch {
       /* --mode on the process is the fallback */
     }
-    if (req.model && req.model !== 'auto') {
+    if (req.model) {
       try {
         await acp.request('session/set_model', { sessionId, modelId: req.model })
       } catch {
-        /* --model on the process is the fallback */
+        /* --model on the process is the fallback when it is not "auto" */
       }
     }
+  }
 
-    run.acceptUpdates = true
+  private async runPrompt(threadId: string, run: Run, prompt: string): Promise<void> {
     const started = Date.now()
-    const result = await acp.request('session/prompt', {
-      sessionId,
-      prompt: [{ type: 'text', text: req.prompt }]
+    const result = await run.proc.acp.request('session/prompt', {
+      sessionId: run.proc.sessionId,
+      prompt: [{ type: 'text', text: prompt }]
     })
-    if (!this.runs.has(threadId)) return
+    if (!this.runs.has(threadId) || run.settled) return
     const stop = String(result?.stopReason ?? 'end_turn')
     run.reducer.gotResult = true
     const usage = result?.usage
@@ -278,15 +365,85 @@ export class SessionManager {
       })
     )
     this.queue(threadId, run, changed)
-    // `agent acp` stays up after a turn and often ignores stdin EOF, which
-    // left the thread stuck on "running" after the task had already finished.
-    // This app runs one prompt per process, so close the CLI now.
-    try {
-      run.child.stdin?.end()
-    } catch {
-      /* already closed */
+    // The CLI stays up after a turn. Parking it avoids the next message paying
+    // for process startup and session/load. A later close still ends the turn.
+    this.endRun(threadId, run, null)
+  }
+
+  private endRun(threadId: string, run: Run, code: number | null, spawnError?: Error): void {
+    if (run.settled) return
+    run.settled = true
+    if (run.killTimer) {
+      clearTimeout(run.killTimer)
+      run.killTimer = undefined
     }
-    killTree(run.child)
+    this.settleQuestion(run, 'cancel')
+    if (!this.store.thread(threadId)) {
+      this.runs.delete(threadId)
+      this.killProc(run.proc)
+      return
+    }
+
+    const r = run.reducer
+    const items = this.store.items(threadId)
+    const changed: Item[] = [...r.closeSegments(), ...r.abortRunningTools(), ...abandonQuestions(items)]
+    if (run.stopped) {
+      changed.push(r.push({ id: newId(), kind: 'notice', level: 'info', text: '已停止' }))
+    } else if (spawnError) {
+      changed.push(r.push({ id: newId(), kind: 'notice', level: 'error', text: `无法启动 Cursor CLI：${spawnError.message}` }))
+    } else if (!r.gotResult) {
+      const detail = [run.failText, stripAnsi(run.proc.stderr).trim()].filter(Boolean).join('\n').slice(-4000)
+      changed.push(
+        r.push({
+          id: newId(),
+          kind: 'notice',
+          level: 'error',
+          text: detail || `Cursor CLI 意外退出（退出码 ${code ?? '未知'}）`
+        })
+      )
+    }
+    this.queue(threadId, run, changed)
+    this.flushPending(threadId, run)
+    this.runs.delete(threadId)
+
+    const keep = !run.proc.dying && !spawnError && r.gotResult && run.proc.child.exitCode === null
+    if (keep) this.agents.set(threadId, run.proc)
+    else this.killProc(run.proc)
+
+    const preview = r.lastAssistantText.replace(/\s+/g, ' ').trim().slice(0, 120)
+    const updated = this.store.updateThread(threadId, {
+      updatedAt: Date.now(),
+      syncedAt: Date.now(),
+      unread: true,
+      ...(preview ? { preview } : {})
+    })
+    this.store.markItemsDirty(threadId)
+    this.emit({ type: 'running', threadId, running: false })
+    this.onStateChange()
+    const result = [...items].reverse().find((it) => it.kind === 'result')
+    const failed = !!spawnError || !r.gotResult || (result?.kind === 'result' && result.isError)
+    let summary = preview
+    if (failed && !summary) {
+      const notice = [...items].reverse().find((it) => it.kind === 'notice' && it.level === 'error')
+      if (notice?.kind === 'notice') summary = notice.text.replace(/\s+/g, ' ').trim().slice(0, 120)
+    }
+    this.onFinished({
+      threadId,
+      title: updated?.title || DEFAULT_TITLE,
+      stopped: run.stopped,
+      failed,
+      preview: summary
+    })
+  }
+
+  private onIdleAcpRequest(proc: AgentProc, method: string, params: any): Promise<unknown> {
+    if (method === 'cursor/ask_question') return Promise.resolve({ outcome: { outcome: 'skipped', reason: 'idle' } })
+    if (method === 'cursor/create_plan') return Promise.resolve({ outcome: { outcome: 'accepted' } })
+    if (method === 'session/request_permission') {
+      const options: { optionId?: string; kind?: string }[] = Array.isArray(params?.options) ? params.options : []
+      return Promise.resolve(permissionResult(options, proc.force))
+    }
+    return Promise.reject(new MethodNotFound(method))
   }
 
   private onAcpRequest(threadId: string, run: Run, method: string, params: any): Promise<unknown> {
@@ -379,6 +536,10 @@ export class SessionManager {
     this.emit({ type: 'items', threadId, items: [...run.pending.values()] })
     run.pending.clear()
   }
+}
+
+function procFingerprint(cli: ResolvedCli, cwd: string, sandbox: string, force: boolean, apiKey: string): string {
+  return JSON.stringify([cli.command, cli.prefixArgs, cwd, sandbox, force ? 1 : 0, apiKey])
 }
 
 function abandonQuestions(items: Item[]): Item[] {
