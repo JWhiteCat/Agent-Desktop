@@ -8,7 +8,7 @@
 
 - 多项目侧边栏：添加、重命名、排序、搜索对话
 - 分叉对话：整段复制，或从某条消息截断后另开一支，原对话保持不变
-- 三种模式：Agent（可改文件、执行命令）、Plan（只读方案）、Ask（只读问答）
+- 三种模式：Agent（可改文件、执行命令）、Plan（只读方案，可点选回答提问、一键执行计划）、Ask（只读问答）
 - 模型选择：常用模型、上下文长度、思考强度、Fast
 - 新对话可在隔离的 git worktree 中运行
 - 变更面板：查看当前工作目录的分支、状态和 diff
@@ -95,6 +95,16 @@ Windows 也可以双击 `start.bat`，效果相同。
 
 输入框里还可以切换完全访问（`--force`）和沙箱（`--sandbox`）。完全访问会让 CLI 在不逐条确认的情况下执行命令。
 
+## Plan 模式
+
+Cursor 不给 ACP 客户端提供 AskQuestion 工具，所以 Plan 模式的每条消息前会附一段说明（用 `<agent_desktop_client>` 标签包住，导入 CLI 历史时会去掉），让模型这样工作：
+
+- 需要你做选择时，模型输出一个 ```` ```questions ```` 代码块（JSON）。界面把它画成选项卡片，点选后按“继续”，选择结果会作为下一条消息发出；“跳过”则让模型按自己的判断继续。只有最新一轮的卡片可以提交。
+- 需求清楚后，模型用 CreatePlan 生成计划。界面显示计划卡片：名称、概要、待办和可展开的完整计划，以及“打开计划文件”（`~/.cursor/plans/*.plan.md`）。
+- 点“执行计划”会把输入框切到 Agent 模式，并发送一条按计划实施的消息。只有最新的计划显示这个按钮。
+
+ACP 下 CLI 会自动批准模型发起的 SwitchMode，且不通知客户端。Plan 模式的一轮里如果模型自己切了模式，应用会立刻把会话模式设回 Plan，避免它直接开始改文件。
+
 ## MCP 与 Skill
 
 在设置中添加 MCP 服务器。启用后，新建或恢复会话时会把它们放进 ACP 的 `mcpServers`（stdio、HTTP 或 SSE）。这份列表存在应用自己的 `state.json` 里，不会改写 `~/.cursor/mcp.json`。
@@ -135,5 +145,5 @@ Windows 也可以双击 `start.bat`，效果相同。
 src/main      Electron 主进程：窗口、CLI 进程、持久化、git diff、局域网远程服务（remote.ts）
 src/preload   渲染进程可用的安全 API
 src/renderer  React 界面
-src/shared    主进程与界面共用的类型
+src/shared    主进程与界面共用的类型和解析（如 Plan 模式的提问块）
 ```

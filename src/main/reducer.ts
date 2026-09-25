@@ -320,7 +320,7 @@ function argsFrom(update: any): Record<string, unknown> {
 
 function toolNameFrom(update: any, args: Record<string, unknown>): string {
   if (typeof args.command === 'string') return 'shell'
-  if (typeof args.plan === 'string') return 'createPlan'
+  if (typeof args.plan === 'string' || args._toolName === 'createPlan') return 'createPlan'
   if (typeof args.globPattern === 'string' || typeof args.glob_pattern === 'string') return 'glob'
   const kind = String(update.kind ?? '')
   const mapped: Record<string, string> = {

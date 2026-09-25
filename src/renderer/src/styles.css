@@ -1178,6 +1178,66 @@ select {
   color: var(--muted);
   font-size: 12px;
 }
+.question-loading {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.plan-card {
+  margin: 8px 0 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  background: var(--bg-elev);
+}
+.plan-card.failed {
+  border-color: var(--red, var(--border-strong));
+}
+.plan-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.plan-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.plan-overview {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.plan-todos {
+  margin-top: 8px;
+}
+.plan-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+  padding: 2px 6px 2px 2px;
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.plan-toggle:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+.plan-body {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+  max-height: 480px;
+  overflow: auto;
+}
+.plan-error {
+  margin-top: 8px;
+  color: var(--red, var(--muted));
+  font-size: 12.5px;
+}
 .step-head {
   display: inline-flex;
   align-items: center;

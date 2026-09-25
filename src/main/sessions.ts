@@ -2,7 +2,8 @@ import type { ChildProcess } from 'node:child_process'
 import fs from 'node:fs'
 import { enabledSkillFingerprint, toAcpMcpServers } from '@shared/agent-config'
 import type { AgentEvent, Item, QuestionAnswer, QuestionItem, SendRequest } from '@shared/types'
-import { AcpConnection, MethodNotFound, normalizeQuestions, permissionResult } from './acp'
+import { normalizeQuestions } from '@shared/questions'
+import { AcpConnection, MethodNotFound, permissionResult, planModePrompt } from './acp'
 import { killTree, resolveApiKey, resolveCli, spawnCli, stripAnsi, type ResolvedCli } from './cli'
 import { syncManagedSkills } from './skills'
 import { newId } from './id'
@@ -38,6 +39,9 @@ interface Run {
   acceptUpdates: boolean
   pendingQuestion?: PendingQuestion
   force: boolean
+  mode: SendRequest['mode']
+  /** SwitchMode tool calls seen this turn; their completion carries no kind. */
+  switchCalls: Set<string>
   failText?: string
   /** Terminal UI state for this turn has already been published. */
   settled: boolean
@@ -137,6 +141,8 @@ export class SessionManager {
       pending: new Map(),
       acceptUpdates: false,
       force: req.force,
+      mode: req.mode,
+      switchCalls: new Set(),
       settled: false
     }
     this.runs.set(thread.id, run)
@@ -244,6 +250,9 @@ export class SessionManager {
       onNotification: (method, params) => {
         const run = this.runs.get(threadId)
         if (!run || run.proc !== proc || method !== 'session/update' || !run.acceptUpdates) return
+        if (run.mode === 'plan' && leftPlanMode(params?.update, run.switchCalls)) {
+          proc.acp.request('session/set_mode', { sessionId: proc.sessionId, modeId: 'plan' }).catch(() => undefined)
+        }
         const changed = run.reducer.handleAcp(params?.update)
         if (changed.length) this.queue(threadId, run, changed)
       },
@@ -284,7 +293,7 @@ export class SessionManager {
     await this.applySessionOptions(run.proc, req)
     if (!this.runs.has(threadId) || run.settled) return
     run.acceptUpdates = true
-    await this.runPrompt(threadId, run, req.prompt)
+    await this.runPrompt(threadId, run, req)
   }
 
   private async drive(
@@ -323,7 +332,7 @@ export class SessionManager {
     await this.applySessionOptions(proc, req)
     if (!this.runs.has(threadId) || run.settled) return
     run.acceptUpdates = true
-    await this.runPrompt(threadId, run, req.prompt)
+    await this.runPrompt(threadId, run, req)
   }
 
   private async applySessionOptions(proc: AgentProc, req: SendRequest): Promise<void> {
@@ -342,11 +351,12 @@ export class SessionManager {
     }
   }
 
-  private async runPrompt(threadId: string, run: Run, prompt: string): Promise<void> {
+  private async runPrompt(threadId: string, run: Run, req: SendRequest): Promise<void> {
     const started = Date.now()
+    const text = req.mode === 'plan' ? planModePrompt(req.prompt) : req.prompt
     const result = await run.proc.acp.request('session/prompt', {
       sessionId: run.proc.sessionId,
-      prompt: [{ type: 'text', text: prompt }]
+      prompt: [{ type: 'text', text }]
     })
     if (!this.runs.has(threadId) || run.settled) return
     const stop = String(result?.stopReason ?? 'end_turn')
@@ -553,6 +563,20 @@ function procFingerprint(
   skills: unknown
 ): string {
   return JSON.stringify([cli.command, cli.prefixArgs, cwd, sandbox, force ? 1 : 0, apiKey, mcpServers, skills])
+}
+
+/**
+ * The CLI approves SwitchMode on its own in ACP and sends no mode update, so a plan turn
+ * would silently turn into an editing turn. Seeing the switch finish is the only signal.
+ */
+export function leftPlanMode(update: any, switchCalls: Set<string>): boolean {
+  if (update?.sessionUpdate === 'current_mode_update') return update.currentModeId !== 'plan'
+  if (update?.sessionUpdate !== 'tool_call' && update?.sessionUpdate !== 'tool_call_update') return false
+  const id = String(update.toolCallId ?? '')
+  if (update.kind === 'switch_mode') switchCalls.add(id)
+  if (update.status !== 'completed' || !switchCalls.has(id)) return false
+  switchCalls.delete(id)
+  return true
 }
 
 function abandonQuestions(items: Item[]): Item[] {

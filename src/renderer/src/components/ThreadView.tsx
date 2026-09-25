@@ -1,10 +1,11 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { AssistantItem, Item, ResultItem, ThreadMeta, UserItem } from '@shared/types'
+import type { AssistantItem, Item, ResultItem, ThreadMeta, ToolItem, UserItem } from '@shared/types'
 import { duration, shortPath } from '../lib/format'
+import { planPath, planUriOf } from '../lib/tools'
 import { forkThread, modelForChat, sendMessage, useStore } from '../store'
 import { Composer, type ComposerHandle } from './Composer'
 import { IconBranch, IconChevronDown, IconChevronRight, IconCursor, IconDiff, IconFolder, Spinner } from './icons'
-import { ResultFooter, StepItem, UserMessage } from './Items'
+import { ResultFooter, StepItem, TurnActionsProvider, UserMessage, type TurnActions } from './Items'
 
 interface Turn {
   key: string
@@ -72,7 +73,8 @@ function TurnView({
     )
   }
 
-  const keepVisible = (s: Item, i: number) => s.kind === 'question' || s.kind === 'notice' || i === lastAssistantIdx
+  const keepVisible = (s: Item, i: number) =>
+    s.kind === 'question' || s.kind === 'notice' || (s.kind === 'tool' && s.tool === 'createPlan') || i === lastAssistantIdx
   const intermediate = turn.steps.filter((s, i) => !keepVisible(s, i))
   const trailing = turn.steps.filter((s, i) => keepVisible(s, i))
   const workMs =
@@ -127,6 +129,33 @@ export function ThreadView({ thread, changesOpen, onToggleChanges }: Props) {
   const [editingTitle, setEditingTitle] = useState(false)
 
   const turns = useMemo(() => groupTurns(items ?? []), [items])
+  const latestPlan = useMemo(() => {
+    const list = items ?? []
+    for (let i = list.length - 1; i >= 0; i--) {
+      const it = list[i]
+      if (it.kind === 'tool' && it.tool === 'createPlan') return it
+    }
+    return undefined
+  }, [items])
+
+  const idleActions = useMemo<TurnActions>(
+    () => ({
+      reply: (text) => composer.current?.send(text),
+      buildPlan: (plan: ToolItem) => {
+        const uri = planUriOf(plan)
+        const name = typeof plan.args?.name === 'string' && plan.args.name ? plan.args.name : '上面的计划'
+        const text = [`按照计划「${name}」开始实施。`, uri ? `计划文件：${planPath(uri)}` : '', '按计划里的待办逐项完成，完成后简要汇报改动。']
+          .filter(Boolean)
+          .join('\n')
+        stick.current = true
+        return composer.current?.send(text, { mode: 'agent' })
+      },
+      planId: latestPlan?.id
+    }),
+    [latestPlan?.id]
+  )
+  const noActions = useMemo<TurnActions>(() => ({}), [])
+  const olderActions = useMemo<TurnActions>(() => ({ buildPlan: idleActions.buildPlan, planId: idleActions.planId }), [idleActions])
 
   useLayoutEffect(() => {
     stick.current = true
@@ -216,15 +245,20 @@ export function ThreadView({ thread, changesOpen, onToggleChanges }: Props) {
               <Spinner />
             </div>
           )}
-          {turns.map((t, i) => (
-            <TurnView
-              key={t.key}
-              turn={t}
-              threadId={thread.id}
-              live={running && i === turns.length - 1}
-              onFork={running ? undefined : (itemId) => void forkThread(thread.id, itemId)}
-            />
-          ))}
+          {turns.map((t, i) => {
+            const last = i === turns.length - 1
+            const actions = running ? noActions : last ? idleActions : olderActions
+            return (
+              <TurnActionsProvider key={t.key} value={actions}>
+                <TurnView
+                  turn={t}
+                  threadId={thread.id}
+                  live={running && last}
+                  onFork={running ? undefined : (itemId) => void forkThread(thread.id, itemId)}
+                />
+              </TurnActionsProvider>
+            )
+          })}
           {items && items.length === 0 && !running && <div className="center-hint muted">发送第一条消息开始对话</div>}
         </div>
       </div>

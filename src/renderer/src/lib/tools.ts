@@ -107,6 +107,19 @@ export function toolDiff(item: ToolItem): string | undefined {
   return typeof s?.diffString === 'string' ? s.diffString : undefined
 }
 
+/** CreatePlan reports the saved file as progress text: `Plan saved to file:///…plan.md`. */
+export function planUriOf(item: ToolItem): string | undefined {
+  const r = item.result
+  const text = [successOf(item)?.stdout, typeof r === 'string' ? r : undefined, item.args?.planUri].filter((s) => typeof s === 'string').join('\n')
+  return text.match(/(file:\/\/\S+?\.plan\.md|[A-Za-z]:[\\/]\S+?\.plan\.md|\/\S+?\.plan\.md)/)?.[1]
+}
+
+export function planPath(uri: string): string {
+  if (!uri.startsWith('file://')) return uri
+  const p = decodeURIComponent(uri.replace(/^file:\/\//, ''))
+  return /^\/[A-Za-z]:/.test(p) ? p.slice(1).replace(/\//g, '\\') : p
+}
+
 export function toolPath(item: ToolItem): string | undefined {
   return pick(item.args ?? {}, 'path', 'targetFile', 'filePath', 'file') ?? patchPath(item.args) ?? successOf(item)?.path
 }

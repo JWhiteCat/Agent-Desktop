@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { normalizeQuestions, permissionResult } from '../src/main/acp'
+import { formatAnswers, normalizeQuestions, parseQuestionBlock } from '@shared/questions'
+import { permissionResult, planModePrompt } from '../src/main/acp'
 import { parseModels, resolveApiKey, stripAnsi } from '../src/main/cli'
+import { leftPlanMode } from '../src/main/sessions'
 
 const previousKey = process.env.CURSOR_API_KEY
 
@@ -47,6 +49,38 @@ describe('acp questions', () => {
     expect(questions).toEqual([
       { id: 'q1', prompt: '继续？', options: [{ id: 'yes', label: '是' }], allowMultiple: false }
     ])
+  })
+
+  it('parses a questions block and formats the picks as a reply', () => {
+    const set = parseQuestionBlock(
+      JSON.stringify({
+        title: '语言',
+        questions: [{ id: 'lang', prompt: '用什么语言？', options: [{ id: 'py', label: 'Python' }, 'Node'] }]
+      })
+    )
+    expect(set?.questions[0].options).toEqual([
+      { id: 'py', label: 'Python' },
+      { id: 'o1', label: 'Node' }
+    ])
+    expect(formatAnswers(set!, [{ questionId: 'lang', selectedOptionIds: ['o1'] }])).toBe('我的选择：\n- 用什么语言？：Node')
+    expect(parseQuestionBlock('{"questions":[{"prompt":"半截')).toBeUndefined()
+  })
+
+  it('adds the client hint to plan prompts inside a tag', () => {
+    const text = planModePrompt('做个待办工具')
+    expect(text.endsWith('做个待办工具')).toBe(true)
+    expect(text).toMatch(/^<agent_desktop_client>[\s\S]*```questions[\s\S]*<\/agent_desktop_client>/)
+  })
+
+  it('notices when a plan turn switches mode on its own', () => {
+    const calls = new Set<string>()
+    const id = 'tool_switch'
+    expect(leftPlanMode({ sessionUpdate: 'tool_call', toolCallId: id, kind: 'switch_mode', status: 'pending' }, calls)).toBe(false)
+    expect(leftPlanMode({ sessionUpdate: 'tool_call_update', toolCallId: id, rawInput: { targetModeId: 'agent' } }, calls)).toBe(false)
+    expect(leftPlanMode({ sessionUpdate: 'tool_call_update', toolCallId: 'other', status: 'completed' }, calls)).toBe(false)
+    expect(leftPlanMode({ sessionUpdate: 'tool_call_update', toolCallId: id, status: 'completed' }, calls)).toBe(true)
+    expect(leftPlanMode({ sessionUpdate: 'current_mode_update', currentModeId: 'plan' }, calls)).toBe(false)
+    expect(leftPlanMode({ sessionUpdate: 'current_mode_update', currentModeId: 'agent' }, calls)).toBe(true)
   })
 
   it('picks allow-always when force is on', () => {

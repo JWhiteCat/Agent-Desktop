@@ -1,5 +1,5 @@
 import type { ChildProcess } from 'node:child_process'
-import type { QuestionPrompt } from '@shared/types'
+import { QUESTION_BLOCK_LANG } from '@shared/questions'
 
 export class MethodNotFound extends Error {
   readonly code = -32601
@@ -112,29 +112,23 @@ export class AcpConnection {
   }
 }
 
-export function normalizeQuestions(raw: unknown): QuestionPrompt[] {
-  if (!Array.isArray(raw)) return []
-  const questions: QuestionPrompt[] = []
-  raw.forEach((q, i) => {
-    if (!q || typeof q !== 'object') return
-    const prompt = String((q as { prompt?: unknown }).prompt ?? '').trim()
-    const options = Array.isArray((q as { options?: unknown }).options)
-      ? (q as { options: any[] }).options
-          .map((o, j) => ({
-            id: String(o?.id ?? `o${j}`),
-            label: String(o?.label ?? o?.name ?? o?.id ?? '').trim()
-          }))
-          .filter((o) => o.id && o.label)
-      : []
-    if (!prompt || options.length === 0) return
-    questions.push({
-      id: String((q as { id?: unknown }).id ?? `q${i}`),
-      prompt,
-      options,
-      allowMultiple: !!((q as { allowMultiple?: unknown }).allowMultiple || (q as { allow_multiple?: unknown }).allow_multiple)
-    })
-  })
-  return questions
+/**
+ * Cursor does not offer AskQuestion to ACP clients, so plan-mode questions arrive as a fenced
+ * block the renderer turns into a picker. Wrapped in a tag so CLI history import drops it.
+ */
+const PLAN_CLIENT_HINT = `<agent_desktop_client>
+You are running inside the Agent Desktop client. The AskQuestion tool is not available here; do not look for it.
+When you need the user to choose between options, do not list the options as plain text. Output one fenced code block with the language "${QUESTION_BLOCK_LANG}" whose body is JSON, then end your turn and wait:
+\`\`\`${QUESTION_BLOCK_LANG}
+{"title":"short title","questions":[{"id":"q1","prompt":"question text","allowMultiple":false,"options":[{"id":"a","label":"option text"},{"id":"b","label":"option text"}]}]}
+\`\`\`
+Write the prompts and labels in the user's language. The user's picks arrive as the next message.
+Ask before planning: a turn that contains a questions block must not call CreatePlan.
+Once the requirements are clear, deliver the plan with the CreatePlan tool. Stay in plan mode: never call SwitchMode and never edit files. The user starts implementation from the client with an "execute plan" button.
+</agent_desktop_client>`
+
+export function planModePrompt(prompt: string): string {
+  return `${PLAN_CLIENT_HINT}\n\n${prompt}`
 }
 
 export function permissionResult(options: { optionId?: string; kind?: string }[], force: boolean): { outcome: { outcome: string; optionId?: string } } {

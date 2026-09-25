@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { titleFrom } from '../src/main/sessions'
 import { parseUnifiedDiff } from '../src/renderer/src/lib/diff'
 import { basename, duration, relativePath, relativeTime, shortPath } from '../src/renderer/src/lib/format'
-import { summarizeTool } from '../src/renderer/src/lib/tools'
+import { planPath, planUriOf, summarizeTool } from '../src/renderer/src/lib/tools'
 import type { ToolItem } from '../src/shared/types'
 
 describe('format', () => {
@@ -44,6 +44,23 @@ describe('tools and diffs', () => {
     expect(files).toEqual([
       { path: 'a.ts', lines: ['@@ -1 +1 @@', '-old', '+new'], added: 1, removed: 1 }
     ])
+  })
+
+  it('finds the CreatePlan file from its progress text', () => {
+    const plan: ToolItem = {
+      id: '2',
+      kind: 'tool',
+      callId: 'p',
+      tool: 'createPlan',
+      args: { name: '待办', plan: '# 计划' },
+      status: 'success',
+      startedAt: 1,
+      result: { success: { stdout: 'Plan saved to file:///C:/Users/me/.cursor/plans/Python%20CLI-819cf0af.plan.md' } }
+    }
+    const uri = planUriOf(plan)
+    expect(uri).toBe('file:///C:/Users/me/.cursor/plans/Python%20CLI-819cf0af.plan.md')
+    expect(planPath(uri!)).toBe('C:\\Users\\me\\.cursor\\plans\\Python CLI-819cf0af.plan.md')
+    expect(planPath('file:///home/me/.cursor/plans/a.plan.md')).toBe('/home/me/.cursor/plans/a.plan.md')
   })
 })
 

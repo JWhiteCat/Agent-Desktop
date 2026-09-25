@@ -1,11 +1,12 @@
-import { isValidElement, memo, useState } from 'react'
+import { createContext, isValidElement, memo, useContext, useMemo, useState } from 'react'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import type { Item, NoticeItem, QuestionItem, QuestionPrompt, ResultItem, ThinkingItem, ToolItem, UserItem } from '@shared/types'
+import { formatAnswers, parseQuestionBlock, QUESTION_BLOCK_LANG } from '@shared/questions'
+import type { Item, NoticeItem, QuestionAnswer, QuestionItem, QuestionPrompt, ResultItem, ThinkingItem, ToolItem, UserItem } from '@shared/types'
 import { answerQuestion } from '../store'
 import { compactNumber, duration } from '../lib/format'
 import { DiffLines, parseUnifiedDiff } from '../lib/diff'
-import { errorOf, successOf, summarizeTool, toolDiff, type ToolKind } from '../lib/tools'
+import { errorOf, planPath, planUriOf, successOf, summarizeTool, toolDiff, type ToolKind } from '../lib/tools'
 import {
   IconBrain,
   IconBranch,
@@ -44,6 +45,20 @@ function CopyButton({ text, className }: { text: string; className?: string }) {
   )
 }
 
+function CodeBlock({ lang, text }: { lang?: string; text: string }) {
+  return (
+    <div className="code-block">
+      <div className="code-head">
+        <span>{lang ?? 'text'}</span>
+        <CopyButton text={text} />
+      </div>
+      <pre>
+        <code>{text}</code>
+      </pre>
+    </div>
+  )
+}
+
 const mdComponents: Components = {
   a: ({ href, children }) => (
     <a
@@ -60,17 +75,8 @@ const mdComponents: Components = {
     const code = isValidElement<{ className?: string; children?: React.ReactNode }>(children) ? children.props : undefined
     const text = String(code?.children ?? '').replace(/\n$/, '')
     const lang = /language-([\w+-]+)/.exec(code?.className ?? '')?.[1]
-    return (
-      <div className="code-block">
-        <div className="code-head">
-          <span>{lang ?? 'text'}</span>
-          <CopyButton text={text} />
-        </div>
-        <pre>
-          <code>{text}</code>
-        </pre>
-      </div>
-    )
+    if (lang === QUESTION_BLOCK_LANG) return <QuestionBlock body={text} />
+    return <CodeBlock lang={lang} text={text} />
   },
   code: ({ children }) => <code className="inline-code">{children}</code>,
   table: ({ children }) => (
@@ -118,10 +124,14 @@ export function UserMessage({ item, onFork }: { item: UserItem; onFork?: () => v
 }
 
 export function AssistantMessage({ text, streaming, onFork }: { text: string; streaming?: boolean; onFork?: () => void }) {
+  const actions = useContext(TurnActionsContext)
+  const value = useMemo(() => ({ ...actions, streaming }), [actions, streaming])
   return (
     <div className="msg-assistant-wrap">
       <div className={`msg-assistant ${streaming ? 'streaming' : ''}`}>
-        <Markdown text={text} />
+        <TurnActionsContext.Provider value={value}>
+          <Markdown text={text} />
+        </TurnActionsContext.Provider>
       </div>
       {onFork && !streaming && (
         <div className="msg-actions">
@@ -261,18 +271,39 @@ export function ResultFooter({ item, text }: { item: ResultItem; text?: string }
   )
 }
 
-export function QuestionCard({ item, threadId }: { item: QuestionItem; threadId: string }) {
+/** Actions that only make sense on the newest part of an idle thread. */
+export interface TurnActions {
+  /** Sends a reply in the current mode. */
+  reply?: (text: string) => Promise<void> | void
+  /** Starts implementing a CreatePlan result in agent mode. */
+  buildPlan?: (item: ToolItem) => Promise<void> | void
+  /** The CreatePlan item that `buildPlan` applies to. */
+  planId?: string
+}
+
+const TurnActionsContext = createContext<TurnActions & { streaming?: boolean }>({})
+
+interface QuestionFormProps {
+  title?: string
+  questions: QuestionPrompt[]
+  answers?: QuestionAnswer[]
+  /** Shown instead of the buttons once the form can no longer be submitted. */
+  status?: string
+  onSubmit?: (answers: QuestionAnswer[]) => Promise<void> | void
+  onSkip?: () => Promise<void> | void
+}
+
+function QuestionForm({ title, questions, answers, status, onSubmit, onSkip }: QuestionFormProps) {
   const [selected, setSelected] = useState<Record<string, string[]>>(() => {
     const init: Record<string, string[]> = {}
-    for (const answer of item.answers ?? []) init[answer.questionId] = answer.selectedOptionIds
+    for (const answer of answers ?? []) init[answer.questionId] = answer.selectedOptionIds
     return init
   })
   const [sending, setSending] = useState(false)
-  const locked = item.status !== 'pending' || sending
-  const chosen = item.status === 'answered' ? item.answers : undefined
+  const locked = !onSubmit || sending
 
   const picked = (questionId: string): string[] => {
-    if (chosen) return chosen.find((a) => a.questionId === questionId)?.selectedOptionIds ?? []
+    if (answers) return answers.find((a) => a.questionId === questionId)?.selectedOptionIds ?? []
     return selected[questionId] ?? []
   }
 
@@ -285,33 +316,31 @@ export function QuestionCard({ item, threadId }: { item: QuestionItem; threadId:
     })
   }
 
-  const complete = item.questions.every((q) => picked(q.id).length > 0)
+  const complete = questions.every((q) => picked(q.id).length > 0)
 
-  const submit = async () => {
-    if (locked || !complete) return
-    const answers = item.questions.map((q) => ({ questionId: q.id, selectedOptionIds: picked(q.id) }))
+  const run = async (action: () => Promise<void> | void) => {
     setSending(true)
     try {
-      await answerQuestion(threadId, item.id, answers)
+      await action()
     } catch {
       setSending(false)
     }
   }
 
-  const skip = async () => {
-    if (locked) return
-    setSending(true)
-    try {
-      await answerQuestion(threadId, item.id, null)
-    } catch {
-      setSending(false)
-    }
+  const submit = () => {
+    if (locked || !complete || !onSubmit) return
+    void run(() => onSubmit(questions.map((q) => ({ questionId: q.id, selectedOptionIds: picked(q.id) }))))
+  }
+
+  const skip = () => {
+    if (locked || !onSkip) return
+    void run(onSkip)
   }
 
   return (
     <div className={`question-card ${locked ? 'locked' : ''}`}>
-      <div className="question-title">{item.title || '需要你的选择'}</div>
-      {item.questions.map((q) => (
+      <div className="question-title">{title || '需要你的选择'}</div>
+      {questions.map((q) => (
         <div key={q.id} className="question-block">
           <div className="question-prompt">
             {q.prompt}
@@ -337,20 +366,128 @@ export function QuestionCard({ item, threadId }: { item: QuestionItem; threadId:
           </div>
         </div>
       ))}
-      {item.status === 'pending' ? (
+      {onSubmit ? (
         <div className="question-actions">
           <button type="button" className="question-submit" disabled={!complete || sending} onClick={submit}>
             {sending ? '提交中' : '继续'}
           </button>
-          <button type="button" className="question-skip" disabled={sending} onClick={skip}>
-            跳过
-          </button>
+          {onSkip && (
+            <button type="button" className="question-skip" disabled={sending} onClick={skip}>
+              跳过
+            </button>
+          )}
         </div>
       ) : (
-        <div className="question-status">{item.status === 'answered' ? '已提交' : '已跳过'}</div>
+        status && <div className="question-status">{status}</div>
       )}
     </div>
   )
+}
+
+export function QuestionCard({ item, threadId }: { item: QuestionItem; threadId: string }) {
+  const pending = item.status === 'pending'
+  return (
+    <QuestionForm
+      title={item.title}
+      questions={item.questions}
+      answers={item.status === 'answered' ? item.answers : undefined}
+      status={pending ? undefined : item.status === 'answered' ? '已提交' : '已跳过'}
+      onSubmit={pending ? (answers) => answerQuestion(threadId, item.id, answers) : undefined}
+      onSkip={pending ? () => answerQuestion(threadId, item.id, null) : undefined}
+    />
+  )
+}
+
+/** A ```questions block from the model, answered by sending the picks as the next message. */
+function QuestionBlock({ body }: { body: string }) {
+  const { reply, streaming } = useContext(TurnActionsContext)
+  const set = useMemo(() => parseQuestionBlock(body), [body])
+  if (!set) {
+    if (streaming) return <div className="question-card locked question-loading">正在准备问题…</div>
+    return <CodeBlock lang={QUESTION_BLOCK_LANG} text={body} />
+  }
+  return (
+    <QuestionForm
+      title={set.title}
+      questions={set.questions}
+      status={reply || streaming ? undefined : '已回答'}
+      onSubmit={reply ? (answers) => reply(formatAnswers(set, answers)) : undefined}
+      onSkip={reply ? () => reply('这些问题先跳过，按你的判断继续。') : undefined}
+    />
+  )
+}
+
+function PlanCard({ item }: { item: ToolItem }) {
+  const { buildPlan, planId } = useContext(TurnActionsContext)
+  const [open, setOpen] = useState(false)
+  const [starting, setStarting] = useState(false)
+  const a = typeof item.args === 'object' && item.args ? item.args : {}
+  const plan = typeof a.plan === 'string' ? a.plan.trim() : ''
+  const todos: any[] = Array.isArray(a.todos) ? a.todos : []
+  const uri = planUriOf(item)
+  const running = item.status === 'running'
+  const canBuild = !!buildPlan && planId === item.id && item.status === 'success'
+
+  const build = async () => {
+    if (!buildPlan || starting) return
+    setStarting(true)
+    try {
+      await buildPlan(item)
+    } catch {
+      setStarting(false)
+    }
+  }
+
+  return (
+    <div className={`plan-card ${item.status === 'error' ? 'failed' : ''}`}>
+      <div className="plan-head">
+        <span className="step-icon">{running ? <Spinner size={12} /> : <IconList size={14} />}</span>
+        <span className="plan-title">{a.name || (running ? '正在制定计划' : '计划')}</span>
+        {uri && !window.api.isRemote && (
+          <button className="icon-btn tiny" title="打开计划文件" onClick={() => window.api.openPath(planPath(uri))}>
+            <IconFile size={13} />
+          </button>
+        )}
+      </div>
+      {a.overview && <div className="plan-overview">{a.overview}</div>}
+      {todos.length > 0 && (
+        <div className="todo-list plan-todos">
+          {todos.map((t, i) => (
+            <div key={t.id ?? i} className={`todo ${String(t.status ?? '').toLowerCase()}`}>
+              <span className="todo-box">{/complete/i.test(t.status) ? '✓' : ''}</span>
+              <span>{t.content ?? t.title ?? String(t.id ?? '')}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {plan && (
+        <>
+          <button className="plan-toggle" onClick={() => setOpen((o) => !o)}>
+            {open ? <IconChevronDown size={12} /> : <IconChevronRight size={12} />}
+            <span>{open ? '收起计划' : '查看完整计划'}</span>
+          </button>
+          {open && (
+            <div className="plan-body">
+              <Markdown text={plan} />
+            </div>
+          )}
+        </>
+      )}
+      {item.status === 'error' && <div className="plan-error">{errorOf(item) ?? '计划创建失败'}</div>}
+      {canBuild && (
+        <div className="question-actions">
+          <button type="button" className="question-submit" disabled={starting} onClick={build}>
+            {starting ? '正在启动' : '执行计划'}
+          </button>
+          <span className="muted small">切换到 Agent 模式按计划实施</span>
+        </div>
+      )}
+    </div>
+  )
+}
+
+export function TurnActionsProvider({ value, children }: { value: TurnActions & { streaming?: boolean }; children: React.ReactNode }) {
+  return <TurnActionsContext.Provider value={value}>{children}</TurnActionsContext.Provider>
 }
 
 export function StepItem({
@@ -370,7 +507,7 @@ export function StepItem({
     case 'thinking':
       return <ThinkingBlock item={item} />
     case 'tool':
-      return <ToolRow item={item} />
+      return item.tool === 'createPlan' ? <PlanCard item={item} /> : <ToolRow item={item} />
     case 'question':
       return threadId ? <QuestionCard item={item} threadId={threadId} /> : null
     case 'notice':

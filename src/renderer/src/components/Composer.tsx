@@ -14,6 +14,8 @@ export const MODES: { id: AgentMode; label: string; desc: string }[] = [
 export interface ComposerHandle {
   focus: () => void
   setText: (t: string) => void
+  /** Sends `text` without touching the draft. `patch` also becomes the composer's new selection. */
+  send: (text: string, patch?: Partial<SendOptions>) => Promise<void>
 }
 
 interface Props {
@@ -44,6 +46,17 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
     setText: (t) => {
       setText(t)
       requestAnimationFrame(() => ta.current?.focus())
+    },
+    send: async (value, patch) => {
+      if (running || disabled || sending) throw new Error('当前不能发送')
+      const next = patch ? { ...opts, ...patch } : opts
+      if (patch) setOpts(next)
+      setSending(true)
+      try {
+        await props.onSend(value, next)
+      } finally {
+        setSending(false)
+      }
     }
   }))
 
