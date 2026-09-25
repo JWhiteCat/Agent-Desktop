@@ -310,6 +310,7 @@ const handlers: Record<string, Handler> = {
       title: t.title,
       project: store.project(t.projectId)?.name,
       model: t.model,
+      updatedAt: t.updatedAt,
       items: store.items(t.id)
     }))
     return { summary: summarizeUsage(threads, period), sessions: listSessionUsage(threads) }

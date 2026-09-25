@@ -35,18 +35,25 @@ export interface UsageSummary {
   models: UsageModelRow[]
 }
 
+export interface UsageSessionModel {
+  id: string
+  label: string
+}
+
 export interface UsageSessionRow {
   threadId: string
   title: string
   project?: string
-  /** Time of the latest counted turn. */
+  /** Models used on counted turns, or the session model when none were recorded. */
+  models: UsageSessionModel[]
+  /** Time of the latest counted turn, or the session's last update. */
   at: number
   turns: number
   inputTokens: number
   outputTokens: number
   cacheReadTokens: number
   cacheWriteTokens: number
-  /** Sum of priced turns. Null when every turn on the session is unpriced. */
+  /** Sum of priced turns. Null when every counted turn is unpriced, or the session has no usage. */
   costUsd: number | null
 }
 
@@ -60,6 +67,7 @@ export interface UsageThread {
   title?: string
   project?: string
   model?: string
+  updatedAt?: number
   items: Item[]
 }
 
@@ -114,18 +122,30 @@ function collectTurns(threads: UsageThread[]): Turn[] {
   return turns
 }
 
-/** Lifetime totals for each session that recorded usage. Not filtered by the summary window. */
+function sessionModels(ids: string[]): UsageSessionModel[] {
+  const models: UsageSessionModel[] = []
+  const seen = new Set<string>()
+  for (const id of ids) {
+    const model = id.trim()
+    if (!model || seen.has(model)) continue
+    seen.add(model)
+    models.push({ id: model, label: quoteModel(model, {}).label })
+  }
+  return models
+}
+
+/** Lifetime totals for every saved session. Not filtered by the summary window. */
 export function listSessionUsage(threads: UsageThread[]): UsageSessionRow[] {
   const rows: UsageSessionRow[] = []
   for (const thread of threads) {
     if (!thread.id) continue
     const turns = turnsOf(thread)
-    if (!turns.length) continue
     const row: UsageSessionRow = {
       threadId: thread.id,
       title: thread.title?.trim() || '未命名',
       project: thread.project?.trim() || undefined,
-      at: 0,
+      models: [],
+      at: thread.updatedAt ?? 0,
       turns: 0,
       inputTokens: 0,
       outputTokens: 0,
@@ -147,7 +167,8 @@ export function listSessionUsage(threads: UsageThread[]): UsageSessionRow[] {
       if (quote.costUsd == null) unpriced += 1
       else priced += quote.costUsd
     }
-    row.costUsd = unpriced === row.turns ? null : priced
+    row.models = sessionModels(turns.length ? turns.map((turn) => turn.model) : [thread.model ?? ''])
+    row.costUsd = !turns.length || unpriced === row.turns ? null : priced
     rows.push(row)
   }
   rows.sort((a, b) => b.at - a.at)

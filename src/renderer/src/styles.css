@@ -1727,9 +1727,19 @@ select {
   white-space: nowrap;
 }
 .usage-table th:first-child,
-.usage-table td:first-child {
+.usage-table td:first-child,
+.usage-table th.usage-model,
+.usage-table td.usage-model {
   text-align: left;
   white-space: normal;
+}
+.usage-pager {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 12px;
 }
 .usage-table tr:last-child td {
   border-bottom: 0;

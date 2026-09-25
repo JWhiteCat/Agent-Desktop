@@ -131,6 +131,7 @@ describe('session usage', () => {
       threadId: 't1',
       title: '长对话',
       project: 'AgentDesktop',
+      models: [{ id: 'grok-4.7', label: 'Grok 4.7' }],
       at: now - 2 * hour,
       turns: 2,
       inputTokens: 2000,
@@ -159,15 +160,39 @@ describe('session usage', () => {
     expect(rows.every((row) => row.turns === 1 && row.inputTokens === 1000)).toBe(true)
   })
 
-  it('leaves an unpriced session unpriced and skips sessions with no usage', () => {
+  it('keeps every session, including ones with no usage, and lists each model used', () => {
     const at = now - hour
     const rows = listSessionUsage([
-      { id: 'empty', title: '空', items: [user(at)] },
-      { id: 'auto', title: '  ', items: [user(at), result({ id: 'only', model: 'auto', createdAt: at, usage })] }
+      { id: 'empty', title: '空', model: 'gpt-5.4', updatedAt: at - hour, items: [user(at)] },
+      {
+        id: 'mixed',
+        title: '  ',
+        items: [
+          user(at, 'u1'),
+          result({ id: 'priced', usageId: '1', model: 'grok-4.7', createdAt: at, usage }),
+          user(at, 'u2'),
+          result({ id: 'auto', usageId: '2', model: 'auto', createdAt: at, usage })
+        ]
+      }
     ])
-    expect(rows).toEqual([
-      expect.objectContaining({ threadId: 'auto', title: '未命名', turns: 1, costUsd: null })
-    ])
+    expect(rows.map((row) => row.threadId)).toEqual(['mixed', 'empty'])
+    expect(rows[0]).toMatchObject({
+      title: '未命名',
+      turns: 2,
+      models: [
+        { id: 'grok-4.7', label: 'Grok 4.7' },
+        { id: 'auto', label: 'Auto' }
+      ]
+    })
+    expect(rows[0].costUsd).toBeGreaterThan(0)
+    expect(rows[1]).toMatchObject({
+      title: '空',
+      turns: 0,
+      inputTokens: 0,
+      costUsd: null,
+      at: at - hour,
+      models: [{ id: 'gpt-5.4', label: 'GPT-5.4' }]
+    })
   })
 
   it('sorts sessions by the latest usage time', () => {
