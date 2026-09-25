@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { AssistantItem, Item, ResultItem, ThreadMeta, UserItem } from '@shared/types'
 import { duration, shortPath } from '../lib/format'
-import { modelForChat, sendMessage, useStore } from '../store'
+import { forkThread, modelForChat, sendMessage, useStore } from '../store'
 import { Composer, type ComposerHandle } from './Composer'
 import { IconBranch, IconChevronDown, IconChevronRight, IconCursor, IconDiff, IconFolder, Spinner } from './icons'
 import { ResultFooter, StepItem, UserMessage } from './Items'
@@ -32,7 +32,17 @@ function groupTurns(items: Item[]): Turn[] {
   return turns
 }
 
-function TurnView({ turn, live, threadId }: { turn: Turn; live: boolean; threadId: string }) {
+function TurnView({
+  turn,
+  live,
+  threadId,
+  onFork
+}: {
+  turn: Turn
+  live: boolean
+  threadId: string
+  onFork?: (itemId: string) => void
+}) {
   const [expanded, setExpanded] = useState(false)
   const lastAssistantIdx = useMemo(() => {
     for (let i = turn.steps.length - 1; i >= 0; i--) if (turn.steps[i].kind === 'assistant') return i
@@ -75,7 +85,7 @@ function TurnView({ turn, live, threadId }: { turn: Turn; live: boolean; threadI
 
   return (
     <div className="turn">
-      {turn.user && <UserMessage item={turn.user} />}
+      {turn.user && <UserMessage item={turn.user} onFork={onFork ? () => onFork(turn.user!.id) : undefined} />}
       {intermediate.length > 0 && (
         <div className="worked">
           <button className="worked-toggle" onClick={() => setExpanded((e) => !e)}>
@@ -87,7 +97,12 @@ function TurnView({ turn, live, threadId }: { turn: Turn; live: boolean; threadI
         </div>
       )}
       {(expanded ? turn.steps : trailing).map((s) => (
-        <StepItem key={s.id} item={s} threadId={threadId} />
+        <StepItem
+          key={s.id}
+          item={s}
+          threadId={threadId}
+          onFork={onFork && s.kind === 'assistant' ? () => onFork(s.id) : undefined}
+        />
       ))}
       {turn.result && <ResultFooter item={turn.result} text={finalText} />}
     </div>
@@ -168,6 +183,9 @@ export function ThreadView({ thread, changesOpen, onToggleChanges }: Props) {
         </div>
         <div className="header-actions no-drag">
           {thread.modelLabel && <span className="muted small model-label">{thread.modelLabel}</span>}
+          <button className="icon-btn" title="分叉对话（/fork）" disabled={running || !items?.length} onClick={() => void forkThread(thread.id)}>
+            <IconBranch />
+          </button>
           <button className="icon-btn" title={`在文件管理器中打开 ${shortPath(cwd)}`} onClick={() => window.api.openPath(cwd)}>
             <IconFolder />
           </button>
@@ -195,7 +213,13 @@ export function ThreadView({ thread, changesOpen, onToggleChanges }: Props) {
             </div>
           )}
           {turns.map((t, i) => (
-            <TurnView key={t.key} turn={t} threadId={thread.id} live={running && i === turns.length - 1} />
+            <TurnView
+              key={t.key}
+              turn={t}
+              threadId={thread.id}
+              live={running && i === turns.length - 1}
+              onFork={running ? undefined : (itemId) => void forkThread(thread.id, itemId)}
+            />
           ))}
           {items && items.length === 0 && !running && <div className="center-hint muted">发送第一条消息开始对话</div>}
         </div>
@@ -210,6 +234,10 @@ export function ThreadView({ thread, changesOpen, onToggleChanges }: Props) {
           initial={{ model: thread.model || modelForChat(models, settings.favoriteModels, settings.defaultModel, project?.model), mode: thread.mode, force: settings.force }}
           placeholder={thread.chatId ? '继续对话…' : '描述任务，Enter 发送，Shift+Enter 换行'}
           onSend={(text, opts) => {
+            if (text.trim() === '/fork') {
+              void forkThread(thread.id)
+              return
+            }
             stick.current = true
             return sendMessage(thread.id, text, opts)
           }}

@@ -229,6 +229,22 @@ export async function openThread(id: string): Promise<void> {
   if (thread?.unread) window.api.updateThread(id, { unread: false })
 }
 
+export async function forkThread(threadId: string, throughItemId?: string): Promise<void> {
+  try {
+    const result = await window.api.forkThread(threadId, throughItemId)
+    const thread = result.thread
+    setState((s) => ({
+      app: s.app.threads.some((t) => t.id === thread.id) ? s.app : { ...s.app, threads: [...s.app.threads, thread] },
+      items: { ...s.items, [thread.id]: result.items },
+      view: { kind: 'thread', id: thread.id }
+    }))
+    rememberProject(thread.projectId)
+    toast(`已分叉为「${thread.title}」`)
+  } catch (err) {
+    toast(errorText(err), 'error')
+  }
+}
+
 export async function syncThreadFromCli(id: string): Promise<void> {
   try {
     const items = await window.api.syncFromCli(id)

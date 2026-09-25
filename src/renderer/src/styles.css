@@ -941,8 +941,16 @@ select {
   transition: opacity 0.15s;
   margin-top: 2px;
 }
-.msg-user:hover .msg-actions {
+.msg-user:hover .msg-actions,
+.msg-user:focus-within .msg-actions,
+.msg-assistant-wrap:hover .msg-actions,
+.msg-assistant-wrap:focus-within .msg-actions {
   opacity: 1;
+}
+.msg-assistant-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
 }
 
 .msg-assistant {

@@ -8,6 +8,7 @@ import { DiffLines, parseUnifiedDiff } from '../lib/diff'
 import { errorOf, successOf, summarizeTool, toolDiff, type ToolKind } from '../lib/tools'
 import {
   IconBrain,
+  IconBranch,
   IconCheck,
   IconChevronDown,
   IconChevronRight,
@@ -89,21 +90,44 @@ export const Markdown = memo(function Markdown({ text }: { text: string }) {
   )
 })
 
-export function UserMessage({ item }: { item: UserItem }) {
+function ForkButton({ onFork }: { onFork: () => void }) {
+  return (
+    <button
+      className="icon-btn tiny"
+      title="从这里分叉"
+      onClick={(e) => {
+        e.stopPropagation()
+        onFork()
+      }}
+    >
+      <IconBranch size={13} />
+    </button>
+  )
+}
+
+export function UserMessage({ item, onFork }: { item: UserItem; onFork?: () => void }) {
   return (
     <div className="msg-user">
       <div className="bubble">{item.text}</div>
       <div className="msg-actions">
         <CopyButton text={item.text} />
+        {onFork && <ForkButton onFork={onFork} />}
       </div>
     </div>
   )
 }
 
-export function AssistantMessage({ text, streaming }: { text: string; streaming?: boolean }) {
+export function AssistantMessage({ text, streaming, onFork }: { text: string; streaming?: boolean; onFork?: () => void }) {
   return (
-    <div className={`msg-assistant ${streaming ? 'streaming' : ''}`}>
-      <Markdown text={text} />
+    <div className="msg-assistant-wrap">
+      <div className={`msg-assistant ${streaming ? 'streaming' : ''}`}>
+        <Markdown text={text} />
+      </div>
+      {onFork && !streaming && (
+        <div className="msg-actions">
+          <ForkButton onFork={onFork} />
+        </div>
+      )}
     </div>
   )
 }
@@ -329,10 +353,20 @@ export function QuestionCard({ item, threadId }: { item: QuestionItem; threadId:
   )
 }
 
-export function StepItem({ item, streaming, threadId }: { item: Item; streaming?: boolean; threadId?: string }) {
+export function StepItem({
+  item,
+  streaming,
+  threadId,
+  onFork
+}: {
+  item: Item
+  streaming?: boolean
+  threadId?: string
+  onFork?: () => void
+}) {
   switch (item.kind) {
     case 'assistant':
-      return <AssistantMessage text={item.text} streaming={streaming} />
+      return <AssistantMessage text={item.text} streaming={streaming} onFork={onFork} />
     case 'thinking':
       return <ThinkingBlock item={item} />
     case 'tool':

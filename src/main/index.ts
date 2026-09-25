@@ -3,11 +3,12 @@ import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import type { AgentEvent, AgentMode, AppState, Item, ModelInfo, Project, QuestionAnswer, SendRequest, Settings, ThreadMeta } from '@shared/types'
-import { parseModels, resolveCli, runCliOnce } from './cli'
+import { parseModels, resolveApiKey, resolveCli, runCliOnce } from './cli'
 import { loadCursorModelCatalog } from './model-catalog'
 import { mergeModelLists } from '@shared/model-catalog'
 import { gitDiff } from './git'
-import { cliChatUpdatedAt, readCliTranscript, scanCliSessions, UNTITLED } from './history'
+import { materializeCliFork, planCliFork } from './fork'
+import { cliChatUpdatedAt, findChatDir, readCliTranscript, scanCliSessions, UNTITLED } from './history'
 import { DEFAULT_TITLE, SessionManager, titleFrom, type RunFinished } from './sessions'
 import { newId } from './id'
 import { Store } from './store'
@@ -123,6 +124,77 @@ function previewOf(items: Item[]): string | undefined {
   return undefined
 }
 
+const FORK_NOTICE = '未能复制 Cursor CLI 的会话上下文，之后发送的消息会从新会话开始。'
+
+function forkTitle(title: string, projectId: string): string {
+  const base = title.replace(/^\(\d+\)\s+/, '')
+  const taken = new Set(store.threads.filter((t) => t.projectId === projectId).map((t) => t.title))
+  let n = 1
+  while (taken.has(`(${n}) ${base}`)) n++
+  return `(${n}) ${base}`
+}
+
+function cloneItems(items: Item[]): Item[] {
+  const cloned = structuredClone(items) as Item[]
+  for (const it of cloned) {
+    it.id = newId()
+    if (it.kind === 'question' && it.status === 'pending') it.status = 'skipped'
+    if (it.kind === 'tool' && it.status === 'running') it.status = 'error'
+    if (it.kind === 'thinking' && !it.done) it.done = true
+  }
+  return cloned
+}
+
+/** Copies a conversation into a new thread. `throughItemId` keeps history only up to that message. */
+function forkThread(id: string, throughItemId?: string): { thread: ThreadMeta; items: Item[] } {
+  if (sessions.isRunning(id)) throw new Error('对话正在运行，请稍后再分叉')
+  const src = store.thread(id)
+  if (!src) throw new Error('对话不存在')
+  const items = store.items(id)
+  const cut = throughItemId ? items.findIndex((it) => it.id === throughItemId) : items.length - 1
+  if (cut < 0) throw new Error('找不到要分叉的消息')
+  const prefix = items.slice(0, cut + 1)
+  if (!prefix.some((it) => it.kind === 'user' || it.kind === 'assistant')) throw new Error('没有可以分叉的内容')
+
+  const cloned = cloneItems(prefix)
+  const title = forkTitle(src.title, src.projectId)
+  let chatId: string | undefined
+  let cwd = src.cwd
+  if (src.chatId) {
+    const dir = findChatDir(src.chatId)
+    const plan = dir ? planCliFork(dir, items, throughItemId) : { extraBlobs: [], linked: false }
+    if (!dir || !plan.linked) {
+      cloned.push({ id: newId(), kind: 'notice', level: 'info', text: FORK_NOTICE })
+    } else {
+      try {
+        const made = materializeCliFork(dir, plan, title)
+        chatId = made.chatId
+        if (made.cwd) cwd = made.cwd
+      } catch (err) {
+        console.error('[fork] copy failed', err)
+        cloned.push({ id: newId(), kind: 'notice', level: 'info', text: FORK_NOTICE })
+      }
+    }
+  }
+
+  const thread = store.createThread({
+    projectId: src.projectId,
+    title,
+    chatId,
+    cwd,
+    model: src.model,
+    modelLabel: src.modelLabel,
+    mode: src.mode,
+    worktree: src.worktree,
+    preview: previewOf(cloned),
+    source: 'app',
+    ...(chatId ? { syncedAt: Date.now() } : {})
+  })
+  store.setItems(thread.id, cloned)
+  broadcastState()
+  return { thread, items: cloned }
+}
+
 /** Replaces a thread's local items with the transcript stored by the CLI. */
 function syncFromCli(threadId: string): Item[] | undefined {
   const t = store.thread(threadId)
@@ -198,6 +270,7 @@ function registerIpc(): void {
     }
     return store.items(id)
   })
+  ipcMain.handle('thread:fork', (_e, id: string, throughItemId?: string) => forkThread(id, throughItemId))
   ipcMain.handle('thread:syncFromCli', (_e, id: string) => {
     if (sessions.isRunning(id)) throw new Error('对话正在运行，请稍后再同步')
     const items = syncFromCli(id)
@@ -215,7 +288,7 @@ function registerIpc(): void {
   ipcMain.handle('settings:update', (_e, patch: Partial<Settings>) => {
     const s = store.updateSettings(patch)
     if (patch.theme) applyTheme(patch.theme)
-    if (patch.agentPath !== undefined) modelsCache = null
+    if (patch.agentPath !== undefined || patch.apiKey !== undefined) modelsCache = null
     broadcastState()
     return s
   })
@@ -224,7 +297,8 @@ function registerIpc(): void {
     if (modelsCache && !refresh) return modelsCache
     const cli = resolveCli(store.settings.agentPath)
     if (!cli) return [{ id: 'auto', label: 'Auto' }]
-    const res = await runCliOnce(cli, ['models'])
+    const apiKey = resolveApiKey(store.settings.apiKey)
+    const res = await runCliOnce(cli, ['models'], 60_000, apiKey)
     const models = mergeModelLists(parseModels(res.stdout), loadCursorModelCatalog())
     if (models.length) modelsCache = models
     return models.length ? models : [{ id: 'auto', label: 'Auto' }]
@@ -233,20 +307,25 @@ function registerIpc(): void {
   ipcMain.handle('cli:info', async () => {
     const cli = resolveCli(store.settings.agentPath)
     if (!cli) return { found: false }
-    const [version, status] = await Promise.all([runCliOnce(cli, ['--version']), runCliOnce(cli, ['status'])])
+    const apiKey = resolveApiKey(store.settings.apiKey)
+    const version = await runCliOnce(cli, ['--version'])
+    if (!apiKey) {
+      return {
+        found: true,
+        path: cli.display,
+        version: version.stdout.trim() || version.stderr.trim(),
+        status: '未配置 API Key。请在下方填写，或设置环境变量 CURSOR_API_KEY。',
+        hasApiKey: false
+      }
+    }
+    const status = await runCliOnce(cli, ['status'], 60_000, apiKey)
     return {
       found: true,
       path: cli.display,
       version: version.stdout.trim() || version.stderr.trim(),
-      status: (status.stdout + status.stderr).trim()
+      status: (status.stdout + status.stderr).trim(),
+      hasApiKey: true
     }
-  })
-
-  ipcMain.handle('cli:login', async () => {
-    const cli = resolveCli(store.settings.agentPath)
-    if (!cli) throw new Error('未找到 Cursor CLI')
-    const res = await runCliOnce(cli, ['login'], 5 * 60_000)
-    return (res.stdout + res.stderr).trim()
   })
 
   ipcMain.handle('cli:scan', () => {

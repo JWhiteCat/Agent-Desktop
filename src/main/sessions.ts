@@ -2,7 +2,7 @@ import type { ChildProcess } from 'node:child_process'
 import fs from 'node:fs'
 import type { AgentEvent, Item, QuestionAnswer, QuestionItem, SendRequest } from '@shared/types'
 import { AcpConnection, MethodNotFound, normalizeQuestions, permissionResult } from './acp'
-import { killTree, resolveCli, spawnCli, stripAnsi } from './cli'
+import { killTree, resolveApiKey, resolveCli, spawnCli, stripAnsi } from './cli'
 import { newId } from './id'
 import { StreamReducer } from './reducer'
 import type { Store } from './store'
@@ -69,6 +69,8 @@ export class SessionManager {
     const settings = this.store.settings
     const cli = resolveCli(settings.agentPath)
     if (!cli) throw new Error('未找到 Cursor CLI（agent）。请先安装，或在设置中指定路径。')
+    const apiKey = resolveApiKey(settings.apiKey)
+    if (!apiKey) throw new Error('未配置 Cursor API Key。请在设置中填写，或设置环境变量 CURSOR_API_KEY。')
 
     const cwd = thread.cwd && fs.existsSync(thread.cwd) ? thread.cwd : project.path
     if (!fs.existsSync(cwd)) throw new Error(`项目目录不存在：${cwd}`)
@@ -94,7 +96,7 @@ export class SessionManager {
       archived: false
     })
 
-    const child = spawnCli(cli, args, cwd, 'pipe')
+    const child = spawnCli(cli, args, cwd, 'pipe', apiKey)
     const run: Run = {
       child,
       reducer: new StreamReducer(items),
@@ -211,7 +213,8 @@ export class SessionManager {
       clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
       clientInfo: { name: 'agent-desktop', version: '0.1.0' }
     })
-    await acp.request('authenticate', { methodId: 'cursor_login' })
+    // `--api-key` is applied at process start. `cursor_login` clears stored API-key
+    // credentials and opens a browser login, so it must not run for key auth.
 
     let sessionId = chatId
     if (sessionId) {

@@ -114,6 +114,8 @@ export type Item = UserItem | AssistantItem | ThinkingItem | ToolItem | ResultIt
 
 export interface Settings {
   agentPath: string
+  /** Cursor user API key. Empty uses the CURSOR_API_KEY environment variable. */
+  apiKey: string
   defaultModel: string
   /** Model group bases shown in the chat picker. Empty means show every model. */
   favoriteModels: string[]
@@ -172,6 +174,7 @@ export type AgentEvent =
 
 export const DEFAULT_SETTINGS: Settings = {
   agentPath: '',
+  apiKey: '',
   defaultModel: 'auto',
   favoriteModels: [],
   defaultMode: 'agent',

@@ -1,9 +1,10 @@
 import { forwardRef, useEffect, useMemo, useRef, useState } from 'react'
 import type { Project, ThreadMeta } from '@shared/types'
 import { relativeTime } from '../lib/format'
-import { addProjectInteractive, goHome, openThread, setState, syncThreadFromCli, toast, useStore } from '../store'
+import { addProjectInteractive, forkThread, goHome, openThread, setState, syncThreadFromCli, toast, useStore } from '../store'
 import {
   IconArchive,
+  IconBranch,
   IconChevronDown,
   IconChevronRight,
   IconCompose,
@@ -318,6 +319,13 @@ function ThreadRow(props: {
   const { thread: t, active, running, editing } = props
   const menu: MenuEntry[] = [
     { label: '重命名', icon: <IconEdit size={14} />, onSelect: props.onEdit },
+    {
+      label: '分叉对话',
+      icon: <IconBranch size={14} />,
+      disabled: running,
+      hint: running ? '运行中' : undefined,
+      onSelect: () => void forkThread(t.id)
+    },
     { label: t.pinned ? '取消置顶' : '置顶', icon: <IconPin size={14} />, onSelect: () => window.api.updateThread(t.id, { pinned: !t.pinned }) },
     {
       label: t.archived ? '取消归档' : '归档',

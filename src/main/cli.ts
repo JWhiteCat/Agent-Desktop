@@ -77,8 +77,17 @@ export function resolveCli(customPath: string): ResolvedCli | undefined {
   return hit ? { command: hit, prefixArgs: [], display: hit } : undefined
 }
 
-function cliEnv(): NodeJS.ProcessEnv {
+/** Settings value wins. Otherwise the process environment. */
+export function resolveApiKey(configured: string | undefined): string {
+  const fromSettings = configured?.trim() ?? ''
+  if (fromSettings) return fromSettings
+  return process.env.CURSOR_API_KEY?.trim() ?? ''
+}
+
+function cliEnv(apiKey?: string): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env, CURSOR_INVOKED_AS: 'agent', NO_COLOR: '1', FORCE_COLOR: '0' }
+  const key = apiKey?.trim()
+  if (key) env.CURSOR_API_KEY = key
   if (!env.NODE_COMPILE_CACHE && isWin && env.LOCALAPPDATA) {
     env.NODE_COMPILE_CACHE = path.join(env.LOCALAPPDATA, 'cursor-compile-cache')
   }
@@ -89,10 +98,17 @@ function cliEnv(): NodeJS.ProcessEnv {
   return env
 }
 
-export function spawnCli(cli: ResolvedCli, args: string[], cwd: string, stdin: 'ignore' | 'pipe' = 'ignore'): ChildProcess {
-  return spawn(cli.command, [...cli.prefixArgs, ...args], {
+export function spawnCli(
+  cli: ResolvedCli,
+  args: string[],
+  cwd: string,
+  stdin: 'ignore' | 'pipe' = 'ignore',
+  apiKey?: string
+): ChildProcess {
+  const key = apiKey?.trim()
+  return spawn(cli.command, [...cli.prefixArgs, ...(key ? ['--api-key', key] : []), ...args], {
     cwd,
-    env: cliEnv(),
+    env: cliEnv(key),
     stdio: [stdin, 'pipe', 'pipe'],
     windowsHide: true
   })
@@ -107,10 +123,11 @@ export function stripAnsi(s: string): string {
 export function runCliOnce(
   cli: ResolvedCli,
   args: string[],
-  timeoutMs = 60_000
+  timeoutMs = 60_000,
+  apiKey?: string
 ): Promise<{ code: number | null; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
-    const child = spawnCli(cli, args, os.homedir())
+    const child = spawnCli(cli, args, os.homedir(), 'ignore', apiKey)
     let stdout = ''
     let stderr = ''
     child.stdout?.on('data', (d) => (stdout += d.toString()))

@@ -127,7 +127,7 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
   const [info, setInfo] = useState<Awaited<ReturnType<typeof window.api.cliInfo>> | null>(null)
   const [checking, setChecking] = useState(false)
   const [agentPath, setAgentPath] = useState(settings.agentPath)
-  const [loggingIn, setLoggingIn] = useState(false)
+  const [apiKey, setApiKey] = useState(settings.apiKey ?? '')
 
   const check = async () => {
     setChecking(true)
@@ -176,26 +176,26 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
             <button className="btn" onClick={check} disabled={checking}>
               <IconRefresh size={13} className={checking ? 'spin' : ''} /> 重新检测
             </button>
-            <button
-              className="btn"
-              disabled={!info?.found || loggingIn}
-              onClick={async () => {
-                setLoggingIn(true)
-                try {
-                  const out = await window.api.login()
-                  toast(out.split('\n').pop() || '登录流程已结束')
-                  check()
-                } catch (err) {
-                  toast(errorText(err), 'error')
-                } finally {
-                  setLoggingIn(false)
-                }
-              }}
-            >
-              {loggingIn ? <Spinner size={12} /> : null} 登录 / 重新登录
-            </button>
           </div>
         </div>
+        <Field label="API Key" desc="Cursor CLI 使用 API Key 认证，不再走浏览器登录。留空则使用环境变量 CURSOR_API_KEY。可在 cursor.com/dashboard/api 创建。">
+          <input
+            className="input"
+            type="password"
+            value={apiKey}
+            placeholder="留空使用 CURSOR_API_KEY"
+            autoComplete="off"
+            spellCheck={false}
+            onChange={(e) => setApiKey(e.target.value)}
+            onBlur={async () => {
+              if (apiKey !== (settings.apiKey ?? '')) {
+                await update({ apiKey })
+                check()
+                loadModels(true)
+              }
+            }}
+          />
+        </Field>
         <Field label="CLI 路径" desc="留空自动检测；可填 agent 可执行文件或安装目录">
           <input
             className="input"
