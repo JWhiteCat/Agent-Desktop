@@ -128,6 +128,7 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
   const [checking, setChecking] = useState(false)
   const [agentPath, setAgentPath] = useState(settings.agentPath)
   const [apiKey, setApiKey] = useState(settings.apiKey ?? '')
+  const [loggingIn, setLoggingIn] = useState(false)
 
   const check = async () => {
     setChecking(true)
@@ -176,9 +177,27 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
             <button className="btn" onClick={check} disabled={checking}>
               <IconRefresh size={13} className={checking ? 'spin' : ''} /> 重新检测
             </button>
+            <button
+              className="btn"
+              disabled={!info?.found || loggingIn}
+              onClick={async () => {
+                setLoggingIn(true)
+                try {
+                  const out = await window.api.login()
+                  toast(out.split('\n').pop() || '登录流程已结束')
+                  check()
+                } catch (err) {
+                  toast(errorText(err), 'error')
+                } finally {
+                  setLoggingIn(false)
+                }
+              }}
+            >
+              {loggingIn ? <Spinner size={12} /> : null} 登录 / 重新登录
+            </button>
           </div>
         </div>
-        <Field label="API Key" desc="Cursor CLI 使用 API Key 认证，不再走浏览器登录。留空则使用环境变量 CURSOR_API_KEY。可在 cursor.com/dashboard/api 创建。">
+        <Field label="API Key" desc="有 Key 时优先使用（设置优先于环境变量 CURSOR_API_KEY）。都没有时使用浏览器登录。可在 cursor.com/dashboard/api 创建。">
           <input
             className="input"
             type="password"

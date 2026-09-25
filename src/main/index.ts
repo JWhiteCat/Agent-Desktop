@@ -308,24 +308,24 @@ function registerIpc(): void {
     const cli = resolveCli(store.settings.agentPath)
     if (!cli) return { found: false }
     const apiKey = resolveApiKey(store.settings.apiKey)
-    const version = await runCliOnce(cli, ['--version'])
-    if (!apiKey) {
-      return {
-        found: true,
-        path: cli.display,
-        version: version.stdout.trim() || version.stderr.trim(),
-        status: '未配置 API Key。请在下方填写，或设置环境变量 CURSOR_API_KEY。',
-        hasApiKey: false
-      }
-    }
-    const status = await runCliOnce(cli, ['status'], 60_000, apiKey)
+    const [version, status] = await Promise.all([
+      runCliOnce(cli, ['--version']),
+      runCliOnce(cli, ['status'], 60_000, apiKey || undefined)
+    ])
     return {
       found: true,
       path: cli.display,
       version: version.stdout.trim() || version.stderr.trim(),
       status: (status.stdout + status.stderr).trim(),
-      hasApiKey: true
+      hasApiKey: !!apiKey
     }
+  })
+
+  ipcMain.handle('cli:login', async () => {
+    const cli = resolveCli(store.settings.agentPath)
+    if (!cli) throw new Error('未找到 Cursor CLI')
+    const res = await runCliOnce(cli, ['login'], 5 * 60_000, false)
+    return (res.stdout + res.stderr).trim()
   })
 
   ipcMain.handle('cli:scan', () => {

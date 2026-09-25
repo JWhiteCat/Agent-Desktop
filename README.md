@@ -20,7 +20,7 @@
 ## 环境要求
 
 - Node.js 22.12 或更高版本
-- 已配置 API Key 的 Cursor CLI（设置里填写，或环境变量 `CURSOR_API_KEY`）
+- 已配置 API Key，或已通过浏览器登录的 Cursor CLI
 - 变更面板需要本机可执行 `git`
 
 安装 Cursor CLI：
@@ -44,7 +44,7 @@ curl https://cursor.com/install -fsS | bash
 
 找不到时，在设置里填可执行文件或安装目录。
 
-认证使用 [Cursor API Key](https://cursor.com/dashboard/api)，通过 `--api-key` 传给 CLI。设置中的 Key 优先于环境变量 `CURSOR_API_KEY`。应用不会调用 `agent login`。
+认证优先使用 [Cursor API Key](https://cursor.com/dashboard/api)（设置中的 Key 优先于环境变量 `CURSOR_API_KEY`）。没有 Key 时使用 `agent login` 保存的浏览器登录。
 
 ## 开发
 

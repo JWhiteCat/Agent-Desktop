@@ -70,7 +70,6 @@ export class SessionManager {
     const cli = resolveCli(settings.agentPath)
     if (!cli) throw new Error('未找到 Cursor CLI（agent）。请先安装，或在设置中指定路径。')
     const apiKey = resolveApiKey(settings.apiKey)
-    if (!apiKey) throw new Error('未配置 Cursor API Key。请在设置中填写，或设置环境变量 CURSOR_API_KEY。')
 
     const cwd = thread.cwd && fs.existsSync(thread.cwd) ? thread.cwd : project.path
     if (!fs.existsSync(cwd)) throw new Error(`项目目录不存在：${cwd}`)
@@ -180,7 +179,7 @@ export class SessionManager {
     child.on('error', (err) => finish(null, err))
     child.on('close', (code) => finish(code))
 
-    void this.drive(thread.id, run, acp, req, cwd, thread.chatId).catch((err) => {
+    void this.drive(thread.id, run, acp, req, cwd, thread.chatId, !apiKey).catch((err) => {
       if (!run.stopped) run.failText = err instanceof Error ? err.message : String(err)
       killTree(child)
     })
@@ -207,14 +206,23 @@ export class SessionManager {
     for (const id of this.runs.keys()) this.stop(id)
   }
 
-  private async drive(threadId: string, run: Run, acp: AcpConnection, req: SendRequest, cwd: string, chatId?: string): Promise<void> {
+  private async drive(
+    threadId: string,
+    run: Run,
+    acp: AcpConnection,
+    req: SendRequest,
+    cwd: string,
+    chatId?: string,
+    useLogin = false
+  ): Promise<void> {
     await acp.request('initialize', {
       protocolVersion: 1,
       clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
       clientInfo: { name: 'agent-desktop', version: '0.1.0' }
     })
-    // `--api-key` is applied at process start. `cursor_login` clears stored API-key
-    // credentials and opens a browser login, so it must not run for key auth.
+    // API key auth is `--api-key` at process start. `cursor_login` clears stored API-key
+    // credentials, so it only runs when no key is configured.
+    if (useLogin) await acp.request('authenticate', { methodId: 'cursor_login' })
 
     let sessionId = chatId
     if (sessionId) {

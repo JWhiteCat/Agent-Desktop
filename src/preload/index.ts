@@ -27,6 +27,7 @@ const api: DesktopApi = {
   updateSettings: (patch) => ipcRenderer.invoke('settings:update', patch),
   listModels: (refresh) => ipcRenderer.invoke('cli:models', refresh),
   cliInfo: () => ipcRenderer.invoke('cli:info'),
+  login: () => ipcRenderer.invoke('cli:login'),
   scanCliSessions: () => ipcRenderer.invoke('cli:scan'),
   importCliSessions: (ids) => ipcRenderer.invoke('cli:import', ids),
   gitDiff: (cwd) => ipcRenderer.invoke('git:diff', cwd),

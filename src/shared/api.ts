@@ -40,6 +40,7 @@ export interface DesktopApi {
   updateSettings(patch: Partial<Settings>): Promise<Settings>
   listModels(refresh?: boolean): Promise<ModelInfo[]>
   cliInfo(): Promise<{ found: boolean; path?: string; version?: string; status?: string; hasApiKey?: boolean }>
+  login(): Promise<string>
   scanCliSessions(): Promise<CliSession[]>
   importCliSessions(chatIds: string[]): Promise<number>
   gitDiff(cwd: string): Promise<GitDiff>

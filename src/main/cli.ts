@@ -84,10 +84,16 @@ export function resolveApiKey(configured: string | undefined): string {
   return process.env.CURSOR_API_KEY?.trim() ?? ''
 }
 
-function cliEnv(apiKey?: string): NodeJS.ProcessEnv {
+function cliEnv(apiKey?: string | false): { env: NodeJS.ProcessEnv; key?: string } {
   const env: NodeJS.ProcessEnv = { ...process.env, CURSOR_INVOKED_AS: 'agent', NO_COLOR: '1', FORCE_COLOR: '0' }
-  const key = apiKey?.trim()
-  if (key) env.CURSOR_API_KEY = key
+  let key: string | undefined
+  if (apiKey === false) {
+    delete env.CURSOR_API_KEY
+    delete env.CURSOR_AUTH_TOKEN
+  } else {
+    key = apiKey?.trim() || undefined
+    if (key) env.CURSOR_API_KEY = key
+  }
   if (!env.NODE_COMPILE_CACHE && isWin && env.LOCALAPPDATA) {
     env.NODE_COMPILE_CACHE = path.join(env.LOCALAPPDATA, 'cursor-compile-cache')
   }
@@ -95,7 +101,7 @@ function cliEnv(apiKey?: string): NodeJS.ProcessEnv {
     const extra = [path.join(os.homedir(), '.local', 'bin'), '/usr/local/bin', '/opt/homebrew/bin']
     env.PATH = [...extra, env.PATH ?? ''].join(path.delimiter)
   }
-  return env
+  return { env, key }
 }
 
 export function spawnCli(
@@ -103,12 +109,12 @@ export function spawnCli(
   args: string[],
   cwd: string,
   stdin: 'ignore' | 'pipe' = 'ignore',
-  apiKey?: string
+  apiKey?: string | false
 ): ChildProcess {
-  const key = apiKey?.trim()
-  return spawn(cli.command, [...cli.prefixArgs, ...(key ? ['--api-key', key] : []), ...args], {
+  const auth = cliEnv(apiKey)
+  return spawn(cli.command, [...cli.prefixArgs, ...(auth.key ? ['--api-key', auth.key] : []), ...args], {
     cwd,
-    env: cliEnv(key),
+    env: auth.env,
     stdio: [stdin, 'pipe', 'pipe'],
     windowsHide: true
   })
@@ -124,7 +130,7 @@ export function runCliOnce(
   cli: ResolvedCli,
   args: string[],
   timeoutMs = 60_000,
-  apiKey?: string
+  apiKey?: string | false
 ): Promise<{ code: number | null; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
     const child = spawnCli(cli, args, os.homedir(), 'ignore', apiKey)
