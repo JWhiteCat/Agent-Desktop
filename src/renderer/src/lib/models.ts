@@ -1,3 +1,4 @@
+import { quoteModel } from '@shared/model-prices'
 import type { ModelInfo } from '@shared/types'
 
 export interface ModelVariant {
@@ -195,6 +196,15 @@ export function findVariant(groups: ModelGroup[], id: string): ModelVariant | un
   const legacy = groups.flatMap((group) => group.variants.filter((v) => v.legacySlug === id))
   if (!legacy.length) return undefined
   return legacy.sort((a, b) => contextSize(a.context ?? '') - contextSize(b.context ?? ''))[0]
+}
+
+/** Readable name for one turn: catalog label when known, otherwise the price-list name. */
+export function modelCaption(groups: ModelGroup[], id: string): string {
+  const summary = describeModel(groups, id)
+  if (summary.name !== id) {
+    return [summary.name, summary.context, summary.effortLabel, summary.fast ? 'Fast' : ''].filter(Boolean).join(' ')
+  }
+  return quoteModel(id, {}).label
 }
 
 export function describeModel(groups: ModelGroup[], id: string): ModelSummary {

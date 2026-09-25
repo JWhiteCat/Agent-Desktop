@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { titleFrom } from '../src/main/sessions'
 import { collectEditedFiles, parseUnifiedDiff } from '../src/renderer/src/lib/diff'
-import { basename, duration, relativePath, relativeTime, shortPath } from '../src/renderer/src/lib/format'
+import { basename, duration, formatUsd, relativePath, relativeTime, shortPath } from '../src/renderer/src/lib/format'
 import { planPath, planUriOf, summarizeTool, toolDiff } from '../src/renderer/src/lib/tools'
 import { unifiedDiff } from '../src/shared/unified-diff'
 import type { ToolItem } from '../src/shared/types'
@@ -16,6 +16,12 @@ describe('format', () => {
     expect(duration(500)).toBe('500ms')
     expect(duration(1500)).toBe('2s')
     expect(duration(65_000)).toBe('1m 5s')
+    expect(formatUsd(null)).toBe('未定价')
+    expect(formatUsd(0)).toBe('$0')
+    expect(formatUsd(0.0026)).toBe('$0.0026')
+    expect(formatUsd(0.001)).toBe('$0.001')
+    expect(formatUsd(0.00001)).toBe('<$0.0001')
+    expect(formatUsd(0.05)).toBe('$0.05')
   })
 
   it('shortens paths relative to a project root', () => {

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import QRCode from 'qrcode'
 import type { CliSession, RemoteInfo, Settings } from '@shared/types'
 import type { UsageSummary, UsageWindow } from '@shared/usage'
-import { compactNumber, relativeTime, shortPath } from '../lib/format'
+import { compactNumber, formatUsd, relativeTime, shortPath } from '../lib/format'
 import { groupModels } from '../lib/models'
 import { errorText, loadModels, modelForChat, setDefaultModel, setFavoriteModels, toast, useStore } from '../store'
 import { ModelPicker } from './ModelPicker'
@@ -264,13 +264,6 @@ const USAGE_PERIODS: { id: UsageWindow; label: string }[] = [
   { id: '7d', label: '7天' },
   { id: '30d', label: '30天' }
 ]
-
-function formatUsd(cost: number | null): string {
-  if (cost == null) return '未定价'
-  if (cost === 0) return '$0'
-  if (cost < 0.01) return '<$0.01'
-  return `$${cost.toFixed(2)}`
-}
 
 function UsageSettings() {
   const [period, setPeriod] = useState<UsageWindow>('7d')

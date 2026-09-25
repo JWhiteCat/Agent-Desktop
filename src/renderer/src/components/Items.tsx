@@ -1,10 +1,12 @@
 import { createContext, isValidElement, memo, useContext, useMemo, useState } from 'react'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { quoteModel } from '@shared/model-prices'
 import { formatAnswers, parseQuestionBlock, QUESTION_BLOCK_LANG } from '@shared/questions'
 import type { Item, NoticeItem, QuestionAnswer, QuestionItem, QuestionPrompt, ResultItem, ThinkingItem, ToolItem, UserItem } from '@shared/types'
-import { answerQuestion } from '../store'
-import { compactNumber, duration } from '../lib/format'
+import { answerQuestion, useStore } from '../store'
+import { compactNumber, duration, formatUsd } from '../lib/format'
+import { groupModels, modelCaption } from '../lib/models'
 import { DiffLines, parseUnifiedDiff } from '../lib/diff'
 import { errorOf, planPath, planUriOf, successOf, summarizeTool, toolDiff, type ToolKind } from '../lib/tools'
 import {
@@ -255,9 +257,14 @@ export function Notice({ item }: { item: NoticeItem }) {
   return <div className={`notice ${item.level}`}>{item.text}</div>
 }
 
-export function ResultFooter({ item, text }: { item: ResultItem; text?: string }) {
+export function ResultFooter({ item, text, fallbackModel }: { item: ResultItem; text?: string; fallbackModel?: string }) {
+  const models = useStore((s) => s.models)
+  const groups = useMemo(() => groupModels(models), [models])
   const u = item.usage
   const tokens = u ? (u.inputTokens ?? 0) + (u.outputTokens ?? 0) + (u.cacheReadTokens ?? 0) + (u.cacheWriteTokens ?? 0) : 0
+  const modelId = item.model || fallbackModel || ''
+  const caption = modelId ? modelCaption(groups, modelId) : ''
+  const quote = modelId && u ? quoteModel(modelId, u) : undefined
   return (
     <div className="result-footer">
       {text && <CopyButton text={text} />}
@@ -265,6 +272,12 @@ export function ResultFooter({ item, text }: { item: ResultItem; text?: string }
       {tokens > 0 && (
         <span title={`输入 ${u?.inputTokens ?? 0} · 输出 ${u?.outputTokens ?? 0} · 缓存读 ${u?.cacheReadTokens ?? 0} · 缓存写 ${u?.cacheWriteTokens ?? 0}`}>
           {compactNumber(tokens)} tokens
+        </span>
+      )}
+      {caption && <span title={caption === modelId ? undefined : modelId}>{caption}</span>}
+      {quote && (
+        <span title={quote.costUsd == null ? 'Auto 和价目表没有的模型未计入费用' : `估算 $${quote.costUsd}（Cursor 公开标价）`}>
+          {formatUsd(quote.costUsd)}
         </span>
       )}
     </div>

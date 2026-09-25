@@ -58,12 +58,14 @@ function TurnView({
   live,
   threadId,
   cwd,
+  fallbackModel,
   onFork
 }: {
   turn: Turn
   live: boolean
   threadId: string
   cwd: string
+  fallbackModel?: string
   onFork?: (itemId: string) => void
 }) {
   const [expanded, setExpanded] = useState(false)
@@ -129,7 +131,7 @@ function TurnView({
         />
       ))}
       <TurnFiles steps={turn.steps} cwd={cwd} />
-      {turn.result && <ResultFooter item={turn.result} text={finalText} />}
+      {turn.result && <ResultFooter item={turn.result} text={finalText} fallbackModel={fallbackModel} />}
     </div>
   )
 }
@@ -277,6 +279,7 @@ export function ThreadView({ thread, changesOpen, onToggleChanges }: Props) {
                   turn={t}
                   threadId={thread.id}
                   cwd={cwd}
+                  fallbackModel={thread.model}
                   live={running && last}
                   onFork={running ? undefined : (itemId) => void forkThread(thread.id, itemId)}
                 />

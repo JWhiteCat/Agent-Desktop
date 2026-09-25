@@ -26,6 +26,17 @@ export function compactNumber(n: number): string {
   return String(n)
 }
 
+/** List-price estimate. Null means the model has no published price. */
+export function formatUsd(cost: number | null): string {
+  if (cost == null) return '未定价'
+  if (cost === 0) return '$0'
+  if (cost < 0.01) {
+    const text = cost.toFixed(4).replace(/0+$/, '').replace(/\.$/, '')
+    return text === '0' ? '<$0.0001' : `$${text}`
+  }
+  return `$${cost.toFixed(2)}`
+}
+
 export function basename(p: string): string {
   return p.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || p
 }

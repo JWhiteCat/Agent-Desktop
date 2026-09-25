@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { catalogFromStorageJson, mergeModelLists } from '../src/shared/model-catalog'
 import { modelForChat } from '../src/renderer/src/store'
-import { describeModel, findVariant, groupModels, pickVariant } from '../src/renderer/src/lib/models'
+import { describeModel, findVariant, groupModels, modelCaption, pickVariant } from '../src/renderer/src/lib/models'
 import type { ModelInfo } from '../src/shared/types'
 import { GROK_47_500K_HIGH_FAST } from './grok-model'
 
@@ -117,6 +117,9 @@ describe('model picker', () => {
       effortLabel: 'High',
       fast: true
     })
+    expect(modelCaption(groups, picked.id)).toBe('Grok 4.7 500K High Fast')
+    expect(modelCaption([], 'composer-2.5[fast=true]')).toBe('Composer 2.5 Fast')
+    expect(modelCaption([], 'auto')).toBe('Auto')
     expect(pickVariant(grok!, { context: '500K', effort: 'high', fast: false }).id).toBe(GROK_500K_HIGH)
     expect(findVariant(groups, 'grok-4.7-high-fast')?.id).toBe(GROK_256K_HIGH_FAST)
   })
