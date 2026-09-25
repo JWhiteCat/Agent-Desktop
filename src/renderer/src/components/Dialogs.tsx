@@ -4,7 +4,7 @@ import type { CliInfo, CliProvider, CliSession, RemoteInfo, Settings } from '@sh
 import type { UsageSessionRow, UsageSummary, UsageWindow } from '@shared/usage'
 import { compactNumber, formatUsd, relativeTime, shortPath } from '../lib/format'
 import { groupModels, modelCaption } from '../lib/models'
-import { errorText, loadModels, modelForChat, setDefaultModel, setFavoriteModels, toast, useStore } from '../store'
+import { defaultModelFor, errorText, favoritesFor, loadModels, modelForChat, setDefaultModel, setFavoriteModels, toast, useStore } from '../store'
 import { ModelPicker } from './ModelPicker'
 import { MODES } from './Composer'
 import { McpSettings, SkillSettings } from './AgentConfigSettings'
@@ -53,20 +53,18 @@ function Modal({
   )
 }
 
-const NO_FAVORITES: string[] = []
-
-function FavoriteModels() {
-  const cli = useStore((s) => (s.app.settings.cliProvider === 'codex' ? 'codex' : 'cursor'))
-  const models = useStore((s) => s.modelsByCli[cli] ?? s.models)
-  const favoriteModels = useStore((s) => s.app.settings.favoriteModels) ?? NO_FAVORITES
+function FavoriteModels({ provider }: { provider: CliProvider }) {
+  const models = useStore((s) => s.modelsByCli[provider] ?? (provider === 'cursor' ? s.models : []))
+  const favoriteModels = useStore((s) => favoritesFor(s.app.settings, provider))
   const groups = useMemo(() => groupModels(models), [models])
   const [q, setQ] = useState('')
   const [refreshing, setRefreshing] = useState(false)
   const selected = useMemo(() => new Set(favoriteModels), [favoriteModels])
 
   useEffect(() => {
-    if (models.length <= 1) void loadModels()
-  }, [models.length])
+    const thin = provider === 'cursor' ? models.length <= 1 : models.length === 0
+    if (thin) void loadModels(false, provider)
+  }, [provider, models.length])
 
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase()
@@ -79,18 +77,18 @@ function FavoriteModels() {
   const allFilteredOn = filteredBases.length > 0 && filteredBases.every((base) => selected.has(base))
 
   const toggle = (base: string) => {
-    setFavoriteModels(selected.has(base) ? favoriteModels.filter((id) => id !== base) : [...favoriteModels, base])
+    setFavoriteModels(selected.has(base) ? favoriteModels.filter((id) => id !== base) : [...favoriteModels, base], provider)
   }
 
   const toggleFiltered = () => {
     if (allFilteredOn) {
       const drop = new Set(filteredBases)
-      setFavoriteModels(favoriteModels.filter((id) => !drop.has(id)))
+      setFavoriteModels(favoriteModels.filter((id) => !drop.has(id)), provider)
       return
     }
     const next = new Set(favoriteModels)
     for (const base of filteredBases) next.add(base)
-    setFavoriteModels([...next])
+    setFavoriteModels([...next], provider)
   }
 
   return (
@@ -101,7 +99,7 @@ function FavoriteModels() {
         <button className="btn" type="button" disabled={!filteredBases.length} onClick={toggleFiltered}>
           {allFilteredOn ? '取消全选' : q.trim() ? '全选筛选' : '全选'}
         </button>
-        <button className="btn" type="button" disabled={!favoriteModels.length} onClick={() => setFavoriteModels([])}>
+        <button className="btn" type="button" disabled={!favoriteModels.length} onClick={() => setFavoriteModels([], provider)}>
           清空
         </button>
         <button
@@ -110,7 +108,7 @@ function FavoriteModels() {
           title="刷新模型列表"
           onClick={async () => {
             setRefreshing(true)
-            await loadModels(true, cli)
+            await loadModels(true, provider)
             setRefreshing(false)
           }}
         >
@@ -694,10 +692,27 @@ function CliCard({
   )
 }
 
+function ModelCliSettings({ provider, title }: { provider: CliProvider; title: string }) {
+  const settings = useStore((s) => s.app.settings)
+  const models = useStore((s) => s.modelsByCli[provider] ?? (provider === 'cursor' ? s.models : []))
+  return (
+    <section className="settings-section">
+      <h4>{title}</h4>
+      <FavoriteModels provider={provider} />
+      <Field label="默认模型" desc="每个项目会记住自己上次在这个 CLI 里选的模型。这里只给还没单独选过的项目用。勾选常用模型后，这里也只列出常用模型。">
+        <ModelPicker
+          cli={provider}
+          value={modelForChat(models, favoritesFor(settings, provider), defaultModelFor(settings, provider))}
+          onChange={(model) => setDefaultModel(model, provider)}
+        />
+      </Field>
+    </section>
+  )
+}
+
 export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void; onOpenImport: () => void }) {
   const settings = useStore((s) => s.app.settings)
   const cli = settings.cliProvider === 'codex' ? 'codex' : 'cursor'
-  const models = useStore((s) => s.modelsByCli[cli] ?? s.models)
   const [tab, setTab] = useState<SettingsTab>('cli')
   const tabs = SETTINGS_TABS.filter((item) => item.id !== 'remote' || !window.api.isRemote)
 
@@ -790,17 +805,10 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
       )}
 
       {tab === 'models' && (
-      <section className="settings-section">
-        <h4>常用模型</h4>
-        <FavoriteModels />
-        <Field label="默认模型" desc="每个项目会记住自己上次选的模型。这里只给还没单独选过的项目用。勾选常用模型后，这里也只列出常用模型">
-          <ModelPicker
-            cli={cli}
-            value={modelForChat(models, settings.favoriteModels, cli === 'codex' ? settings.codexDefaultModel : settings.defaultModel)}
-            onChange={setDefaultModel}
-          />
-        </Field>
-      </section>
+        <>
+          <ModelCliSettings provider="cursor" title="Cursor" />
+          <ModelCliSettings provider="codex" title="Codex" />
+        </>
       )}
 
       {tab === 'usage' && <UsageSettings />}

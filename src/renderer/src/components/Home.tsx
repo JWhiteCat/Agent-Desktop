@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { relativeTime, shortPath } from '../lib/format'
-import { addProjectInteractive, goHome, modelForChat, openThread, startThread, useStore } from '../store'
+import { addProjectInteractive, defaultModelFor, favoritesFor, goHome, modelForChat, openThread, projectModelFor, startThread, useStore } from '../store'
 import { Composer, type ComposerHandle } from './Composer'
 import { IconChevronDown, IconFolder, IconImport, IconPlus } from './icons'
 import { MenuList, Popover } from './Menu'
@@ -106,7 +106,7 @@ export function Home({ projectId, onOpenImport }: { projectId?: string; onOpenIm
               cli={cli}
               showWorktree={cli !== 'codex'}
               initial={{
-                model: modelForChat(models, settings.favoriteModels, cli === 'codex' ? settings.codexDefaultModel : settings.defaultModel, project.model),
+                model: modelForChat(models, favoritesFor(settings, cli), defaultModelFor(settings, cli), projectModelFor(project, cli)),
                 mode: settings.defaultMode,
                 force: settings.force,
                 worktree: false

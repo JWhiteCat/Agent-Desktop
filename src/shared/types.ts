@@ -13,8 +13,10 @@ export interface Project {
   path: string
   createdAt: number
   collapsed?: boolean
-  /** Last model chosen in this project. Unset projects use settings.defaultModel. */
+  /** Last Cursor model chosen in this project. Unset projects use settings.defaultModel. */
   model?: string
+  /** Last Codex model chosen in this project. Unset projects use settings.codexDefaultModel. */
+  codexModel?: string
 }
 
 export interface ThreadMeta {
@@ -170,8 +172,10 @@ export interface Settings {
   defaultModel: string
   /** Default model for new Codex threads. Empty uses the adapter's recommended model. */
   codexDefaultModel: string
-  /** Model group bases shown in the chat picker. Empty means show every model. */
+  /** Cursor model group bases shown in the chat picker. Empty means show every Cursor model. */
   favoriteModels: string[]
+  /** Codex model group bases shown in the chat picker. Empty means show every Codex model. */
+  codexFavoriteModels: string[]
   defaultMode: AgentMode
   force: boolean
   theme: 'system' | 'dark' | 'light'
@@ -275,6 +279,7 @@ export const DEFAULT_SETTINGS: Settings = {
   defaultModel: 'auto',
   codexDefaultModel: '',
   favoriteModels: [],
+  codexFavoriteModels: [],
   defaultMode: 'agent',
   force: false,
   theme: 'system',

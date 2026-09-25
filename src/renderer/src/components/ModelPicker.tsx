@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CliProvider } from '@shared/types'
-import { loadModels, useStore } from '../store'
+import { favoritesFor, loadModels, useStore } from '../store'
 import {
   contextChoices,
   describeModel,
@@ -17,14 +17,11 @@ import {
 import { IconChevronDown, IconRefresh } from './icons'
 import { Popover } from './Menu'
 
-const NO_FAVORITES: string[] = []
-
 export function ModelPicker({ value, onChange, cli }: { value: string; onChange: (id: string) => void; cli?: CliProvider }) {
   const settingsCli = useStore((s) => (s.app.settings.cliProvider === 'codex' ? 'codex' : 'cursor'))
   const provider = cli ?? settingsCli
   const models = useStore((s) => s.modelsByCli[provider] ?? s.models)
-  const favoriteModels = useStore((s) => s.app.settings.favoriteModels)
-  const favorites = favoriteModels ?? NO_FAVORITES
+  const favorites = useStore((s) => favoritesFor(s.app.settings, provider))
   const groups = useMemo(() => groupModels(models), [models])
   const summary = useMemo(() => describeModel(groups, value), [groups, value])
   const selected = useMemo(() => findVariant(groups, value), [groups, value])

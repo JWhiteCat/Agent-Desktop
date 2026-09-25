@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { catalogFromStorageJson, mergeModelLists } from '../src/shared/model-catalog'
-import { modelForChat } from '../src/renderer/src/store'
+import { modelForChat, pruneFavoriteList } from '../src/renderer/src/store'
 import { describeModel, findVariant, groupModels, modelCaption, pickVariant } from '../src/renderer/src/lib/models'
 import type { ModelInfo } from '../src/shared/types'
 import { GROK_47_500K_HIGH_FAST } from './grok-model'
@@ -134,5 +134,13 @@ describe('model picker', () => {
     expect(modelForChat([{ id: 'auto', label: 'Auto' }], [], 'auto', 'gpt-5')).toBe('gpt-5')
     const other = 'other[context=500k,reasoning_effort=high,fast=true]'
     expect(modelForChat([...models, { id: other, label: 'Other 500K High Fast' }], favorites, other)).toBe(GROK_47_500K_HIGH_FAST)
+  })
+
+  it('drops favorite ids that belong to the other CLI', () => {
+    const cursor = new Set(['grok-4.7', 'composer-2.5'])
+    const codex = new Set(['gpt-5.4', 'gpt-5.4-mini'])
+    expect(pruneFavoriteList(['grok-4.7', 'gpt-5.4', 'custom'], cursor, codex)).toEqual(['grok-4.7', 'custom'])
+    expect(pruneFavoriteList(['grok-4.7', 'gpt-5.4'], codex, cursor)).toEqual(['gpt-5.4'])
+    expect(pruneFavoriteList(['grok-4.7', 'gpt-5.4'], cursor, new Set())).toEqual(['grok-4.7', 'gpt-5.4'])
   })
 })

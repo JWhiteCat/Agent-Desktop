@@ -1,10 +1,10 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { AssistantItem, Item, ResultItem, ThreadMeta, ToolItem, UserItem } from '@shared/types'
+import type { AssistantItem, CliProvider, Item, ResultItem, ThreadMeta, ToolItem, UserItem } from '@shared/types'
 import { threadCli } from '@shared/types'
 import { DiffFileView, collectEditedFiles } from '../lib/diff'
 import { duration, shortPath } from '../lib/format'
 import { planPath, planUriOf } from '../lib/tools'
-import { forkThread, modelForChat, sendMessage, useStore } from '../store'
+import { defaultModelFor, favoritesFor, forkThread, modelForChat, projectModelFor, sendMessage, useStore } from '../store'
 import { Composer, type ComposerHandle } from './Composer'
 import { IconBranch, IconChevronDown, IconChevronRight, IconCursor, IconDiff, IconFolder, Spinner } from './icons'
 import { ResultFooter, StepItem, TurnActionsProvider, UserMessage, type TurnActions } from './Items'
@@ -60,6 +60,7 @@ function TurnView({
   threadId,
   cwd,
   fallbackModel,
+  cli,
   onFork
 }: {
   turn: Turn
@@ -67,6 +68,7 @@ function TurnView({
   threadId: string
   cwd: string
   fallbackModel?: string
+  cli: CliProvider
   onFork?: (itemId: string) => void
 }) {
   const [expanded, setExpanded] = useState(false)
@@ -91,7 +93,7 @@ function TurnView({
         {!streamingText && !busy && (
           <div className="working">
             <Spinner size={12} />
-            <span className="shimmer">{turn.steps.length ? '处理中' : '正在启动 Cursor Agent'}</span>
+            <span className="shimmer">{turn.steps.length ? '处理中' : cli === 'codex' ? '正在启动 codex' : '正在启动 agent'}</span>
           </div>
         )}
       </div>
@@ -283,6 +285,7 @@ export function ThreadView({ thread, changesOpen, onToggleChanges }: Props) {
                   threadId={thread.id}
                   cwd={cwd}
                   fallbackModel={thread.model}
+                  cli={cli}
                   live={running && last}
                   onFork={running ? undefined : (itemId) => void forkThread(thread.id, itemId)}
                 />
@@ -301,7 +304,7 @@ export function ThreadView({ thread, changesOpen, onToggleChanges }: Props) {
           running={running}
           cli={cli}
           initial={{
-            model: thread.model || modelForChat(models, settings.favoriteModels, cli === 'codex' ? settings.codexDefaultModel : settings.defaultModel, project?.model),
+            model: thread.model || modelForChat(models, favoritesFor(settings, cli), defaultModelFor(settings, cli), projectModelFor(project, cli)),
             mode: thread.mode,
             force: settings.force
           }}

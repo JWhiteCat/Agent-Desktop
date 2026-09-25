@@ -53,6 +53,11 @@ export class Store {
         codexApiKey: typeof loaded?.settings?.codexApiKey === 'string' ? loaded.settings.codexApiKey : '',
         codexDefaultModel: typeof loaded?.settings?.codexDefaultModel === 'string' ? loaded.settings.codexDefaultModel : '',
         favoriteModels: Array.isArray(loaded?.settings?.favoriteModels) ? loaded.settings.favoriteModels : [],
+        codexFavoriteModels: Array.isArray(loaded?.settings?.codexFavoriteModels)
+          ? loaded.settings.codexFavoriteModels
+          : Array.isArray(loaded?.settings?.favoriteModels)
+            ? loaded.settings.favoriteModels.slice()
+            : [],
         mcpServers: normalizeMcpServers(loaded?.settings?.mcpServers),
         skills: normalizeSkills(loaded?.settings?.skills)
       }
@@ -108,6 +113,9 @@ export class Store {
     const p = this.project(id)
     if (!p) return
     Object.assign(p, patch, { id: p.id })
+    for (const key of Object.keys(patch) as (keyof Project)[]) {
+      if (patch[key] === undefined) delete p[key]
+    }
     this.scheduleSave()
   }
 
