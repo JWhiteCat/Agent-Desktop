@@ -1855,3 +1855,106 @@ select {
   background: var(--red);
   color: #fff;
 }
+
+/* ---------- remote control ---------- */
+
+.remote-card {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+}
+.remote-qr {
+  flex: none;
+  width: 180px;
+  height: 180px;
+  padding: 6px;
+  border-radius: 8px;
+  background: #fff;
+  image-rendering: pixelated;
+}
+.remote-detail {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.remote-link {
+  user-select: text;
+}
+.remote-error {
+  color: var(--red);
+}
+.sidebar-scrim {
+  display: none;
+}
+
+@media (max-width: 720px) {
+  :root {
+    --overlay-w: 0px;
+    --traffic-w: 0px;
+  }
+  body {
+    font-size: 15px;
+  }
+  .sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 100;
+    width: min(86vw, 320px);
+    box-shadow: var(--shadow);
+  }
+  .sidebar-scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 90;
+    background: rgba(0, 0, 0, 0.35);
+  }
+  .app .main-header,
+  .app.sidebar-hidden .main-header {
+    padding-left: 56px;
+    padding-right: 8px;
+  }
+  .model-label {
+    display: none;
+  }
+  .changes {
+    position: fixed;
+    inset: 0;
+    z-index: 80;
+    width: 100%;
+    border-left: 0;
+  }
+  .messages-inner {
+    padding: 12px 14px 24px;
+  }
+  .composer-dock,
+  .home-bottom {
+    padding: 0 10px calc(10px + env(safe-area-inset-bottom));
+  }
+  .composer textarea {
+    font-size: 16px;
+  }
+  .modal-backdrop {
+    align-items: stretch;
+  }
+  .modal,
+  .modal.wide {
+    width: 100vw;
+    max-height: none;
+    height: 100%;
+    border-radius: 0;
+    border: 0;
+  }
+  .field {
+    flex-wrap: wrap;
+  }
+  .remote-card {
+    flex-direction: column;
+    align-items: center;
+  }
+}

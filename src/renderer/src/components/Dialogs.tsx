@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { CliSession, Settings } from '@shared/types'
+import QRCode from 'qrcode'
+import type { CliSession, RemoteInfo, Settings } from '@shared/types'
 import { relativeTime, shortPath } from '../lib/format'
 import { groupModels } from '../lib/models'
 import { errorText, loadModels, modelForChat, setDefaultModel, setFavoriteModels, toast, useStore } from '../store'
@@ -119,6 +120,120 @@ function Field({ label, desc, children }: { label: string; desc?: string; childr
       </div>
       <div className="field-control">{children}</div>
     </div>
+  )
+}
+
+function RemoteSettings() {
+  const settings = useStore((s) => s.app.settings)
+  const view = useStore((s) => s.view)
+  const [info, setInfo] = useState<RemoteInfo | null>(null)
+  const [port, setPort] = useState(String(settings.remotePort))
+  const [urlIndex, setUrlIndex] = useState(0)
+  const [qr, setQr] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    let alive = true
+    window.api.remoteInfo().then((i) => alive && setInfo(i), () => {})
+    return () => {
+      alive = false
+    }
+  }, [settings.remoteEnabled, settings.remotePort, settings.remoteToken])
+
+  const hash = view.kind === 'thread' ? `#thread=${view.id}` : view.projectId ? `#project=${view.projectId}` : ''
+  const base = info?.urls[urlIndex] ?? info?.urls[0]
+  const link = base ? base + hash : ''
+
+  useEffect(() => {
+    if (!link) {
+      setQr('')
+      return
+    }
+    let alive = true
+    QRCode.toDataURL(link, { margin: 1, width: 220 }).then((d) => alive && setQr(d), () => {})
+    return () => {
+      alive = false
+    }
+  }, [link])
+
+  const run = async (fn: () => Promise<unknown>) => {
+    setBusy(true)
+    try {
+      await fn()
+    } catch (err) {
+      toast(errorText(err), 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <>
+      <Field label="启用远程控制" desc="在局域网内提供网页，手机与电脑连同一 Wi-Fi 后扫码即可操作。持有链接即可完全控制本应用，请勿外传">
+        <input
+          type="checkbox"
+          className="toggle"
+          checked={settings.remoteEnabled}
+          disabled={busy}
+          onChange={(e) => run(() => window.api.updateSettings({ remoteEnabled: e.target.checked }))}
+        />
+      </Field>
+      <Field label="端口">
+        <input
+          className="input"
+          inputMode="numeric"
+          value={port}
+          onChange={(e) => setPort(e.target.value.replace(/\D/g, ''))}
+          onBlur={() => {
+            if (port === String(settings.remotePort)) return
+            run(() =>
+              window.api.updateSettings({ remotePort: Number(port) }).catch((err) => {
+                setPort(String(settings.remotePort))
+                throw err
+              })
+            )
+          }}
+        />
+      </Field>
+      {info?.error && <div className="remote-error small">{info.error}</div>}
+      {settings.remoteEnabled && info?.running && (
+        <div className="remote-card">
+          {qr ? <img className="remote-qr" src={qr} alt="远程控制二维码" /> : <div className="remote-qr" />}
+          <div className="remote-detail">
+            {info.urls.length === 0 ? (
+              <div className="muted small">未检测到局域网地址，请确认电脑已连接 Wi-Fi 或有线网络</div>
+            ) : (
+              <>
+                {info.urls.length > 1 && (
+                  <select className="input" value={urlIndex} onChange={(e) => setUrlIndex(Number(e.target.value))}>
+                    {info.urls.map((u, i) => (
+                      <option key={u} value={i}>
+                        {new URL(u).host}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                <div className="mono small break remote-link">{link}</div>
+                <div className="muted small">扫码后打开的是当前正在查看的{view.kind === 'thread' ? '对话' : '项目'}</div>
+              </>
+            )}
+            <div className="row-gap wrap">
+              <button
+                className="btn"
+                disabled={!link}
+                onClick={() => navigator.clipboard.writeText(link).then(() => toast('已复制链接'))}
+              >
+                复制链接
+              </button>
+              <button className="btn" disabled={busy} onClick={() => run(async () => setInfo(await window.api.resetRemoteToken()))}>
+                重置链接
+              </button>
+            </div>
+            <div className="muted small">重置后旧链接和已连接的手机会立即失效</div>
+          </div>
+        </div>
+      )}
+    </>
   )
 }
 
@@ -285,6 +400,13 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
           />
         </Field>
       </section>
+
+      {!window.api.isRemote && (
+        <section className="settings-section">
+          <h4>远程控制</h4>
+          <RemoteSettings />
+        </section>
+      )}
 
       <section className="settings-section">
         <h4>外观与历史</h4>

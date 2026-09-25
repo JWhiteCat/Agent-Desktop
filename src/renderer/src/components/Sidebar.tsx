@@ -256,8 +256,12 @@ function ProjectRow(props: {
   }
   const menu: MenuEntry[] = [
     { label: '新对话', icon: <IconCompose size={14} />, onSelect: () => goHome(p.id) },
-    { label: '在 Cursor 中打开', icon: <IconCursor size={14} />, onSelect: () => window.api.openInEditor(p.path) },
-    { label: '在文件管理器中打开', icon: <IconFolder size={14} />, onSelect: () => window.api.openPath(p.path) },
+    ...(window.api.isRemote
+      ? []
+      : [
+          { label: '在 Cursor 中打开', icon: <IconCursor size={14} />, onSelect: () => window.api.openInEditor(p.path) },
+          { label: '在文件管理器中打开', icon: <IconFolder size={14} />, onSelect: () => window.api.openPath(p.path) }
+        ]),
     { label: '重命名', icon: <IconEdit size={14} />, onSelect: props.onEdit },
     'separator',
     { label: '上移', disabled: index === 0, onSelect: () => move(-1) },
@@ -352,7 +356,7 @@ function ThreadRow(props: {
         toast('已复制会话 ID，可用 agent --resume <id> 在终端继续')
       }
     },
-    ...(t.cwd ? [{ label: '打开工作目录', icon: <IconFolder size={14} />, onSelect: () => window.api.openPath(t.cwd!) }] : []),
+    ...(t.cwd && !window.api.isRemote ? [{ label: '打开工作目录', icon: <IconFolder size={14} />, onSelect: () => window.api.openPath(t.cwd!) }] : []),
     'separator',
     {
       label: '删除对话',

@@ -8,6 +8,7 @@ import type {
   ModelInfo,
   Project,
   QuestionAnswer,
+  RemoteInfo,
   SendRequest,
   Settings,
   ThreadMeta
@@ -19,7 +20,9 @@ export interface ForkResult {
 }
 
 export interface DesktopApi {
-  platform: NodeJS.Platform
+  platform: NodeJS.Platform | 'web'
+  /** True in a phone browser connected over the LAN. */
+  isRemote: boolean
   getState(): Promise<AppState>
   pickProject(): Promise<Project | null>
   addProject(path: string): Promise<Project>
@@ -48,6 +51,9 @@ export interface DesktopApi {
   openSkillsDir(): Promise<void>
   openInEditor(path: string): Promise<boolean>
   openExternal(url: string): Promise<void>
+  remoteInfo(): Promise<RemoteInfo>
+  /** Issues a new token; links handed out earlier stop working. */
+  resetRemoteToken(): Promise<RemoteInfo>
   onEvent(cb: (ev: AgentEvent) => void): () => void
   onState(cb: (state: AppState) => void): () => void
   onFocusThread(cb: (threadId: string) => void): () => void

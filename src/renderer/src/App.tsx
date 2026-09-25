@@ -7,12 +7,15 @@ import { Sidebar } from './components/Sidebar'
 import { ThreadView } from './components/ThreadView'
 import { goHome, useStore } from './store'
 
+const NARROW = '(max-width: 720px)'
+const isNarrow = (): boolean => window.matchMedia(NARROW).matches
+
 export default function App() {
   const view = useStore((s) => s.view)
   const thread = useStore((s) => (s.view.kind === 'thread' ? s.app.threads.find((t) => t.id === (s.view as { id: string }).id) : undefined))
   const toastMsg = useStore((s) => s.toast)
   const theme = useStore((s) => s.app.settings.theme)
-  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [sidebarOpen, setSidebarOpen] = useState(() => !isNarrow())
   const [changesOpen, setChangesOpen] = useState(false)
   const [dialog, setDialog] = useState<'settings' | 'import' | null>(null)
   const search = useRef<HTMLInputElement>(null)
@@ -20,6 +23,10 @@ export default function App() {
   useEffect(() => {
     if (view.kind === 'thread' && !thread) goHome()
   }, [view, thread])
+
+  useEffect(() => {
+    if (isNarrow()) setSidebarOpen(false)
+  }, [view])
 
   useEffect(() => {
     const media = window.matchMedia('(prefers-color-scheme: dark)')
@@ -63,6 +70,7 @@ export default function App() {
   return (
     <div className={`app ${sidebarOpen ? '' : 'sidebar-hidden'} ${showChanges ? 'changes-open' : ''}`}>
       {sidebarOpen && <Sidebar ref={search} onOpenSettings={() => setDialog('settings')} onOpenImport={() => setDialog('import')} />}
+      {sidebarOpen && <div className="sidebar-scrim" onClick={() => setSidebarOpen(false)} />}
       <button
         className="icon-btn sidebar-toggle no-drag"
         title={`${sidebarOpen ? '隐藏' : '显示'}侧边栏 (Ctrl+B)`}

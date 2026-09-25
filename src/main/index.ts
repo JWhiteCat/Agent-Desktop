@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import type { AgentEvent, AgentMode, AppState, Item, ModelInfo, Project, QuestionAnswer, SendRequest, Settings, ThreadMeta } from '@shared/types'
+import type { AgentEvent, AgentMode, AppState, Item, ModelInfo, Project, QuestionAnswer, RemoteInfo, SendRequest, Settings, ThreadMeta } from '@shared/types'
 import { parseModels, resolveApiKey, resolveCli, runCliOnce } from './cli'
 import { loadCursorModelCatalog } from './model-catalog'
 import { mergeModelLists } from '@shared/model-catalog'
@@ -15,11 +15,14 @@ import { newId } from './id'
 import { syncManagedSkills, userSkillsDir } from './skills'
 import { normalizeMcpServers, normalizeSkills } from '@shared/agent-config'
 import { Store } from './store'
+import { lanAddresses, newRemoteToken, RemoteServer, type Handler } from './remote'
 
 let win: BrowserWindow | null = null
 let store: Store
 let sessions: SessionManager
 let modelsCache: ModelInfo[] | null = null
+const remote = new RemoteServer()
+let remoteError: string | undefined
 
 const isWin = process.platform === 'win32'
 const isMac = process.platform === 'darwin'
@@ -33,8 +36,19 @@ function snapshot(): AppState {
   }
 }
 
+/** Hides secrets from remote clients. */
+function remoteSafeSettings(s: Settings): Settings {
+  return { ...s, apiKey: '', remoteToken: '' }
+}
+
+function remoteSafeState(state: AppState): AppState {
+  return { ...state, settings: remoteSafeSettings(state.settings) }
+}
+
 function send(channel: string, payload: unknown): void {
   if (win && !win.isDestroyed()) win.webContents.send(channel, payload)
+  if (channel === 'state:changed') remote.broadcast(channel, remoteSafeState(payload as AppState))
+  else if (channel === 'agent:event') remote.broadcast(channel, payload)
 }
 
 const broadcastState = (): void => send('state:changed', snapshot())
@@ -214,52 +228,52 @@ function syncFromCli(threadId: string): Item[] | undefined {
   return items
 }
 
-function registerIpc(): void {
-  ipcMain.handle('state:get', () => snapshot())
+const handlers: Record<string, Handler> = {
+  'state:get': () => snapshot(),
 
-  ipcMain.handle('project:pick', async () => {
+  'project:pick': async () => {
     const res = await dialog.showOpenDialog(win!, { title: '选择项目文件夹', properties: ['openDirectory', 'createDirectory'] })
     if (res.canceled || !res.filePaths[0]) return null
     const p = store.addProject(res.filePaths[0])
     broadcastState()
     return p
-  })
-  ipcMain.handle('project:add', (_e, dir: string) => {
+  },
+  'project:add': (dir: string) => {
     if (!fs.existsSync(dir)) throw new Error(`目录不存在：${dir}`)
     const p = store.addProject(dir)
     broadcastState()
     return p
-  })
-  ipcMain.handle('project:update', (_e, id: string, patch: Partial<Project>) => {
+  },
+  'project:update': (id: string, patch: Partial<Project>) => {
     store.updateProject(id, patch)
     broadcastState()
-  })
-  ipcMain.handle('project:remove', (_e, id: string) => {
+  },
+  'project:remove': (id: string) => {
     for (const t of store.threads.filter((t) => t.projectId === id)) sessions.dispose(t.id)
     store.removeProject(id)
     broadcastState()
-  })
-  ipcMain.handle('project:reorder', (_e, ids: string[]) => {
+  },
+  'project:reorder': (ids: string[]) => {
     store.reorderProjects(ids)
     broadcastState()
-  })
+  },
 
-  ipcMain.handle('thread:create', (_e, projectId: string, mode: AgentMode, model: string) => {
+  'thread:create': (projectId: string, mode: AgentMode, model: string) => {
     if (!store.project(projectId)) throw new Error('项目不存在')
     const t = store.createThread({ projectId, title: DEFAULT_TITLE, mode, model, source: 'app' })
     broadcastState()
     return t
-  })
-  ipcMain.handle('thread:update', (_e, id: string, patch: Partial<ThreadMeta>) => {
+  },
+  'thread:update': (id: string, patch: Partial<ThreadMeta>) => {
     store.updateThread(id, patch)
     broadcastState()
-  })
-  ipcMain.handle('thread:delete', (_e, id: string) => {
+  },
+  'thread:delete': (id: string) => {
     sessions.dispose(id)
     store.deleteThread(id)
     broadcastState()
-  })
-  ipcMain.handle('thread:items', (_e, id: string) => {
+  },
+  'thread:items': (id: string) => {
     const t = store.thread(id)
     if (t?.source === 'cli' && t.chatId && !sessions.isRunning(id)) {
       const cliUpdated = cliChatUpdatedAt(t.chatId)
@@ -272,25 +286,30 @@ function registerIpc(): void {
       }
     }
     return store.items(id)
-  })
-  ipcMain.handle('thread:fork', (_e, id: string, throughItemId?: string) => forkThread(id, throughItemId))
-  ipcMain.handle('thread:syncFromCli', (_e, id: string) => {
+  },
+  'thread:fork': (id: string, throughItemId?: string) => forkThread(id, throughItemId),
+  'thread:syncFromCli': (id: string) => {
     if (sessions.isRunning(id)) throw new Error('对话正在运行，请稍后再同步')
     const items = syncFromCli(id)
     if (!items) throw new Error('未在 ~/.cursor/chats 中找到该会话')
     broadcastState()
     return items
-  })
+  },
 
-  ipcMain.handle('agent:send', (_e, req: SendRequest) => sessions.send(req))
-  ipcMain.handle('agent:stop', (_e, id: string) => sessions.stop(id))
-  ipcMain.handle('agent:answerQuestion', (_e, threadId: string, questionId: string, answers: QuestionAnswer[] | null) => {
+  'agent:send': (req: SendRequest) => sessions.send(req),
+  'agent:stop': (id: string) => sessions.stop(id),
+  'agent:answerQuestion': (threadId: string, questionId: string, answers: QuestionAnswer[] | null) => {
     sessions.answerQuestion(threadId, questionId, answers)
-  })
+  },
 
-  ipcMain.handle('settings:update', (_e, patch: Partial<Settings>) => {
+  'settings:update': async (patch: Partial<Settings>) => {
     const next: Partial<Settings> = { ...patch }
     if (patch.mcpServers !== undefined) next.mcpServers = normalizeMcpServers(patch.mcpServers)
+    if (patch.remotePort !== undefined) {
+      const port = Math.trunc(Number(patch.remotePort))
+      if (!(port >= 1024 && port <= 65535)) throw new Error('端口需在 1024–65535 之间')
+      next.remotePort = port
+    }
     if (patch.skills !== undefined) {
       next.skills = normalizeSkills(patch.skills)
       syncManagedSkills(next.skills)
@@ -307,11 +326,12 @@ function registerIpc(): void {
     ) {
       sessions.dropIdle()
     }
+    if (patch.remoteEnabled !== undefined || patch.remotePort !== undefined || patch.remoteToken !== undefined) await applyRemote()
     broadcastState()
     return s
-  })
+  },
 
-  ipcMain.handle('cli:models', async (_e, refresh?: boolean) => {
+  'cli:models': async (refresh?: boolean) => {
     if (modelsCache && !refresh) return modelsCache
     const cli = resolveCli(store.settings.agentPath)
     if (!cli) return [{ id: 'auto', label: 'Auto' }]
@@ -320,9 +340,9 @@ function registerIpc(): void {
     const models = mergeModelLists(parseModels(res.stdout), loadCursorModelCatalog())
     if (models.length) modelsCache = models
     return models.length ? models : [{ id: 'auto', label: 'Auto' }]
-  })
+  },
 
-  ipcMain.handle('cli:info', async () => {
+  'cli:info': async () => {
     const cli = resolveCli(store.settings.agentPath)
     if (!cli) return { found: false }
     const apiKey = resolveApiKey(store.settings.apiKey)
@@ -337,21 +357,21 @@ function registerIpc(): void {
       status: (status.stdout + status.stderr).trim(),
       hasApiKey: !!apiKey
     }
-  })
+  },
 
-  ipcMain.handle('cli:login', async () => {
+  'cli:login': async () => {
     const cli = resolveCli(store.settings.agentPath)
     if (!cli) throw new Error('未找到 Cursor CLI')
     const res = await runCliOnce(cli, ['login'], 5 * 60_000, false)
     return (res.stdout + res.stderr).trim()
-  })
+  },
 
-  ipcMain.handle('cli:scan', () => {
+  'cli:scan': () => {
     const imported = new Set(store.threads.map((t) => t.chatId).filter((x): x is string => !!x))
     return scanCliSessions(imported)
-  })
+  },
 
-  ipcMain.handle('cli:import', (_e, chatIds: string[]) => {
+  'cli:import': (chatIds: string[]) => {
     const wanted = new Set(chatIds)
     const imported = new Set(store.threads.map((t) => t.chatId).filter(Boolean))
     let count = 0
@@ -387,25 +407,89 @@ function registerIpc(): void {
     }
     broadcastState()
     return count
-  })
+  },
 
-  ipcMain.handle('git:diff', (_e, cwd: string) => gitDiff(cwd))
-  ipcMain.handle('shell:openPath', async (_e, p: string) => {
+  'git:diff': (cwd: string) => gitDiff(cwd),
+  'shell:openPath': async (p: string) => {
     await shell.openPath(p)
-  })
-  ipcMain.handle('shell:openSkills', async () => {
+  },
+  'shell:openSkills': async () => {
     const dir = userSkillsDir()
     fs.mkdirSync(dir, { recursive: true })
     await shell.openPath(dir)
-  })
-  ipcMain.handle('shell:openInEditor', async (_e, p: string) => {
+  },
+  'shell:openInEditor': async (p: string) => {
     const ok = await openInEditor(p)
     if (!ok) await shell.openPath(p)
     return ok
-  })
-  ipcMain.handle('shell:openExternal', (_e, url: string) => {
+  },
+  'shell:openExternal': (url: string) => {
     if (/^https?:/.test(url)) return shell.openExternal(url)
-  })
+  },
+  'remote:info': () => remoteInfo(),
+  'remote:resetToken': async () => {
+    store.updateSettings({ remoteToken: newRemoteToken() })
+    await applyRemote()
+    broadcastState()
+    return remoteInfo()
+  }
+}
+
+const REMOTE_BLOCKED = new Set(['project:pick', 'remote:info', 'remote:resetToken'])
+const REMOTE_ONLY_DESKTOP_SETTINGS: (keyof Settings)[] = ['remoteEnabled', 'remotePort', 'remoteToken']
+
+/** What a phone browser may call: no native dialogs, no remote-control settings, no secrets. */
+function remoteHandlers(): Record<string, Handler> {
+  const out: Record<string, Handler> = {}
+  for (const [name, fn] of Object.entries(handlers)) if (!REMOTE_BLOCKED.has(name)) out[name] = fn
+  out['state:get'] = () => remoteSafeState(snapshot())
+  out['settings:update'] = async (patch: Partial<Settings>) => {
+    const safe: Partial<Settings> = { ...patch }
+    for (const key of REMOTE_ONLY_DESKTOP_SETTINGS) delete safe[key]
+    if (!safe.apiKey) delete safe.apiKey
+    return remoteSafeSettings((await handlers['settings:update'](safe)) as Settings)
+  }
+  return out
+}
+
+function registerIpc(): void {
+  for (const [name, fn] of Object.entries(handlers)) ipcMain.handle(name, (_e, ...args) => fn(...args))
+}
+
+function remoteInfo(): RemoteInfo {
+  const s = store.settings
+  const port = remote.port ?? s.remotePort
+  return {
+    enabled: s.remoteEnabled,
+    running: remote.running,
+    port,
+    urls: remote.running ? lanAddresses().map((ip) => `http://${ip}:${port}/?token=${s.remoteToken}`) : [],
+    ...(remoteError ? { error: remoteError } : {})
+  }
+}
+
+/** Starts, restarts or stops the LAN server to match the settings. */
+async function applyRemote(): Promise<void> {
+  remoteError = undefined
+  const s = store.settings
+  if (!s.remoteEnabled) {
+    await remote.stop()
+    return
+  }
+  if (!s.remoteToken) store.updateSettings({ remoteToken: newRemoteToken() })
+  try {
+    await remote.start({
+      port: s.remotePort,
+      token: store.settings.remoteToken,
+      handlers: remoteHandlers(),
+      devUrl: process.env.ELECTRON_RENDERER_URL,
+      staticDir: path.join(__dirname, '../renderer')
+    })
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code
+    remoteError = code === 'EADDRINUSE' ? `端口 ${s.remotePort} 已被占用，请换一个端口` : err instanceof Error ? err.message : String(err)
+    console.error('[remote] start failed', err)
+  }
 }
 
 if (process.env.AGENT_DESKTOP_USER_DATA) app.setPath('userData', process.env.AGENT_DESKTOP_USER_DATA)
@@ -428,6 +512,7 @@ app.whenReady().then(() => {
   })
   if (isMac) Menu.setApplicationMenu(Menu.buildFromTemplate([{ role: 'appMenu' }, { role: 'editMenu' }, { role: 'windowMenu' }]))
   registerIpc()
+  void applyRemote()
   createWindow()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
@@ -436,6 +521,7 @@ app.whenReady().then(() => {
 
 app.on('before-quit', () => {
   sessions?.stopAll()
+  void remote.stop()
   store?.flush()
 })
 

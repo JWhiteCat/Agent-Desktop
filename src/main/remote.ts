@@ -1,0 +1,237 @@
+import crypto from 'node:crypto'
+import fs from 'node:fs'
+import http from 'node:http'
+import os from 'node:os'
+import path from 'node:path'
+
+export type Handler = (...args: any[]) => unknown
+
+export interface RemoteServerOptions {
+  port: number
+  token: string
+  /** RPC channels reachable from the browser, keyed like the IPC channels. */
+  handlers: Record<string, Handler>
+  /** Built renderer (`out/renderer`). */
+  staticDir?: string
+  /** Vite dev server; used instead of `staticDir` when set. */
+  devUrl?: string
+}
+
+const MAX_BODY = 20 * 1024 * 1024
+const HEARTBEAT_MS = 25_000
+
+const MIME: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.ico': 'image/x-icon',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
+  '.ttf': 'font/ttf',
+  '.map': 'application/json; charset=utf-8'
+}
+
+export function newRemoteToken(): string {
+  return crypto.randomBytes(16).toString('hex')
+}
+
+const VIRTUAL_NIC = /vethernet|vmware|virtualbox|docker|wsl|hyper-v|loopback|tailscale|zerotier|utun|bridge/i
+
+/** LAN IPv4 addresses, likely Wi-Fi/Ethernet first. */
+export function lanAddresses(): string[] {
+  const found: { ip: string; rank: number }[] = []
+  for (const [name, list] of Object.entries(os.networkInterfaces())) {
+    for (const nic of list ?? []) {
+      if (nic.internal || (nic.family !== 'IPv4' && (nic.family as unknown) !== 4)) continue
+      if (nic.address.startsWith('169.254.')) continue
+      const privateNet = /^(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(nic.address)
+      found.push({ ip: nic.address, rank: (VIRTUAL_NIC.test(name) ? 2 : 0) + (privateNet ? 0 : 1) })
+    }
+  }
+  return found.sort((a, b) => a.rank - b.rank).map((x) => x.ip)
+}
+
+function sameToken(given: string | undefined | null, expected: string): boolean {
+  if (!given || !expected) return false
+  const a = Buffer.from(given)
+  const b = Buffer.from(expected)
+  return a.length === b.length && crypto.timingSafeEqual(a, b)
+}
+
+function sendJson(res: http.ServerResponse, status: number, body: unknown): void {
+  res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+  res.end(JSON.stringify(body))
+}
+
+function readBody(req: http.IncomingMessage): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = []
+    let size = 0
+    req.on('data', (c: Buffer) => {
+      size += c.length
+      if (size > MAX_BODY) {
+        reject(new Error('请求体过大'))
+        req.destroy()
+      } else chunks.push(c)
+    })
+    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')))
+    req.on('error', reject)
+  })
+}
+
+export class RemoteServer {
+  private server: http.Server | undefined
+  private opts: RemoteServerOptions | undefined
+  private clients = new Set<http.ServerResponse>()
+  private heartbeat: NodeJS.Timeout | undefined
+
+  get running(): boolean {
+    return !!this.server?.listening
+  }
+
+  get port(): number | undefined {
+    const addr = this.server?.address()
+    return addr && typeof addr === 'object' ? addr.port : undefined
+  }
+
+  async start(opts: RemoteServerOptions): Promise<void> {
+    await this.stop()
+    this.opts = opts
+    const server = http.createServer((req, res) => {
+      this.handle(req, res).catch((err) => {
+        if (!res.headersSent) sendJson(res, 500, { ok: false, error: String(err instanceof Error ? err.message : err) })
+        else res.end()
+      })
+    })
+    await new Promise<void>((resolve, reject) => {
+      server.once('error', reject)
+      server.listen(opts.port, '0.0.0.0', () => {
+        server.off('error', reject)
+        resolve()
+      })
+    })
+    this.server = server
+    this.heartbeat = setInterval(() => {
+      for (const c of this.clients) c.write(': ping\n\n')
+    }, HEARTBEAT_MS)
+  }
+
+  async stop(): Promise<void> {
+    if (this.heartbeat) clearInterval(this.heartbeat)
+    this.heartbeat = undefined
+    for (const c of this.clients) c.end()
+    this.clients.clear()
+    const server = this.server
+    this.server = undefined
+    if (!server) return
+    server.closeAllConnections()
+    await new Promise<void>((resolve) => server.close(() => resolve()))
+  }
+
+  broadcast(channel: string, payload: unknown): void {
+    if (!this.clients.size) return
+    const frame = `data: ${JSON.stringify({ channel, payload })}\n\n`
+    for (const c of this.clients) c.write(frame)
+  }
+
+  private async handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    const opts = this.opts!
+    const url = new URL(req.url ?? '/', 'http://localhost')
+    if (!url.pathname.startsWith('/api/')) return this.serveStatic(req, res, url)
+
+    const token = (req.headers['x-token'] as string | undefined) ?? url.searchParams.get('token')
+    if (!sameToken(token, opts.token)) return sendJson(res, 401, { ok: false, error: '远程访问令牌无效，请重新扫描二维码' })
+
+    if (url.pathname === '/api/events' && req.method === 'GET') {
+      res.writeHead(200, {
+        'content-type': 'text/event-stream; charset=utf-8',
+        'cache-control': 'no-store',
+        connection: 'keep-alive',
+        'x-accel-buffering': 'no'
+      })
+      res.write(': connected\n\n')
+      this.clients.add(res)
+      req.on('close', () => this.clients.delete(res))
+      return
+    }
+
+    const rpc = /^\/api\/rpc\/(.+)$/.exec(url.pathname)
+    if (rpc && req.method === 'POST') {
+      const name = decodeURIComponent(rpc[1])
+      const fn = Object.hasOwn(opts.handlers, name) ? opts.handlers[name] : undefined
+      if (!fn) return sendJson(res, 404, { ok: false, error: `远程端不支持：${name}` })
+      let args: unknown[]
+      try {
+        const body = await readBody(req)
+        args = body ? JSON.parse(body) : []
+        if (!Array.isArray(args)) throw new Error('参数必须是数组')
+      } catch (err) {
+        return sendJson(res, 400, { ok: false, error: err instanceof Error ? err.message : String(err) })
+      }
+      try {
+        const result = await fn(...args)
+        return sendJson(res, 200, { ok: true, result: result ?? null })
+      } catch (err) {
+        return sendJson(res, 200, { ok: false, error: err instanceof Error ? err.message : String(err) })
+      }
+    }
+
+    sendJson(res, 404, { ok: false, error: 'Not found' })
+  }
+
+  private serveStatic(req: http.IncomingMessage, res: http.ServerResponse, url: URL): void {
+    const opts = this.opts!
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+      res.writeHead(405).end()
+      return
+    }
+    if (opts.devUrl) return this.proxy(req, res, opts.devUrl)
+    if (!opts.staticDir) {
+      res.writeHead(404).end()
+      return
+    }
+    const root = path.resolve(opts.staticDir)
+    let file = path.resolve(root, '.' + decodeURIComponent(url.pathname))
+    if (file !== root && !file.startsWith(root + path.sep)) {
+      res.writeHead(403).end()
+      return
+    }
+    if (!fs.existsSync(file) || fs.statSync(file).isDirectory()) file = path.join(root, 'index.html')
+    if (!fs.existsSync(file)) {
+      res.writeHead(404).end()
+      return
+    }
+    const ext = path.extname(file).toLowerCase()
+    res.writeHead(200, {
+      'content-type': MIME[ext] ?? 'application/octet-stream',
+      'cache-control': ext === '.html' ? 'no-store' : 'public, max-age=3600'
+    })
+    if (req.method === 'HEAD') res.end()
+    else fs.createReadStream(file).pipe(res)
+  }
+
+  private proxy(req: http.IncomingMessage, res: http.ServerResponse, devUrl: string): void {
+    const target = new URL(req.url ?? '/', devUrl)
+    const upstream = http.request(
+      target,
+      { method: req.method, headers: { ...req.headers, host: target.host } },
+      (up) => {
+        res.writeHead(up.statusCode ?? 502, up.headers)
+        up.pipe(res)
+      }
+    )
+    upstream.on('error', () => {
+      if (!res.headersSent) res.writeHead(502)
+      res.end()
+    })
+    req.pipe(upstream)
+  }
+}

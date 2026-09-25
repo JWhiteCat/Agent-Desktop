@@ -158,6 +158,20 @@ export interface Settings {
   notifyOnComplete: boolean
   mcpServers: McpServerConfig[]
   skills: SkillConfig[]
+  /** Serve the UI on the LAN so a phone browser can control the app. */
+  remoteEnabled: boolean
+  remotePort: number
+  /** Secret embedded in the remote link. Never sent to remote clients. */
+  remoteToken: string
+}
+
+export interface RemoteInfo {
+  enabled: boolean
+  running: boolean
+  port: number
+  /** One link per LAN address, token included. */
+  urls: string[]
+  error?: string
 }
 
 export interface AppState {
@@ -216,5 +230,8 @@ export const DEFAULT_SETTINGS: Settings = {
   showArchived: false,
   notifyOnComplete: true,
   mcpServers: [],
-  skills: []
+  skills: [],
+  remoteEnabled: false,
+  remotePort: 8765,
+  remoteToken: ''
 }

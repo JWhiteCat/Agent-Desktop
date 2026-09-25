@@ -181,9 +181,11 @@ export function SkillSettings() {
             添加 Skill
           </button>
         )}
-        <button className="btn" type="button" onClick={() => void window.api.openSkillsDir()}>
-          打开目录
-        </button>
+        {!window.api.isRemote && (
+          <button className="btn" type="button" onClick={() => void window.api.openSkillsDir()}>
+            打开目录
+          </button>
+        )}
       </div>
       {draft && (
         <SkillForm

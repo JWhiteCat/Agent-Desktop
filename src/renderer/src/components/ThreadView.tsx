@@ -186,12 +186,16 @@ export function ThreadView({ thread, changesOpen, onToggleChanges }: Props) {
           <button className="icon-btn" title="分叉对话（/fork）" disabled={running || !items?.length} onClick={() => void forkThread(thread.id)}>
             <IconBranch />
           </button>
-          <button className="icon-btn" title={`在文件管理器中打开 ${shortPath(cwd)}`} onClick={() => window.api.openPath(cwd)}>
-            <IconFolder />
-          </button>
-          <button className="icon-btn" title="在 Cursor 中打开" onClick={() => window.api.openInEditor(cwd)}>
-            <IconCursor />
-          </button>
+          {!window.api.isRemote && (
+            <>
+              <button className="icon-btn" title={`在文件管理器中打开 ${shortPath(cwd)}`} onClick={() => window.api.openPath(cwd)}>
+                <IconFolder />
+              </button>
+              <button className="icon-btn" title="在 Cursor 中打开" onClick={() => window.api.openInEditor(cwd)}>
+                <IconCursor />
+              </button>
+            </>
+          )}
           <button className={`icon-btn ${changesOpen ? 'active' : ''}`} title="变更面板 (Ctrl+Shift+D)" onClick={onToggleChanges}>
             <IconDiff />
           </button>

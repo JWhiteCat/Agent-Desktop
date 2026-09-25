@@ -9,6 +9,7 @@ function subscribe<T>(channel: string, cb: (payload: T) => void): () => void {
 
 const api: DesktopApi = {
   platform: process.platform,
+  isRemote: false,
   getState: () => ipcRenderer.invoke('state:get'),
   pickProject: () => ipcRenderer.invoke('project:pick'),
   addProject: (p) => ipcRenderer.invoke('project:add', p),
@@ -35,6 +36,8 @@ const api: DesktopApi = {
   openSkillsDir: () => ipcRenderer.invoke('shell:openSkills'),
   openInEditor: (p) => ipcRenderer.invoke('shell:openInEditor', p),
   openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
+  remoteInfo: () => ipcRenderer.invoke('remote:info'),
+  resetRemoteToken: () => ipcRenderer.invoke('remote:resetToken'),
   onEvent: (cb) => subscribe('agent:event', cb),
   onState: (cb) => subscribe('state:changed', cb),
   onFocusThread: (cb) => subscribe('thread:focus', cb)
