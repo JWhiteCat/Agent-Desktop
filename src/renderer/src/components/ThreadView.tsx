@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { AssistantItem, Item, ResultItem, ThreadMeta, ToolItem, UserItem } from '@shared/types'
+import { DiffFileView, collectEditedFiles } from '../lib/diff'
 import { duration, shortPath } from '../lib/format'
 import { planPath, planUriOf } from '../lib/tools'
 import { forkThread, modelForChat, sendMessage, useStore } from '../store'
@@ -33,15 +34,36 @@ function groupTurns(items: Item[]): Turn[] {
   return turns
 }
 
+function TurnFiles({ steps, cwd }: { steps: Item[]; cwd: string }) {
+  const files = useMemo(() => collectEditedFiles(steps, cwd), [steps, cwd])
+  if (!files.length) return null
+  const added = files.reduce((n, f) => n + f.added, 0)
+  const removed = files.reduce((n, f) => n + f.removed, 0)
+  return (
+    <div className="turn-files">
+      <div className="turn-files-label">
+        <span>修改了 {files.length} 个文件</span>
+        {added > 0 && <span className="add">+{added}</span>}
+        {removed > 0 && <span className="del">−{removed}</span>}
+      </div>
+      {files.map((f) => (
+        <DiffFileView key={f.path} file={f} defaultOpen={false} />
+      ))}
+    </div>
+  )
+}
+
 function TurnView({
   turn,
   live,
   threadId,
+  cwd,
   onFork
 }: {
   turn: Turn
   live: boolean
   threadId: string
+  cwd: string
   onFork?: (itemId: string) => void
 }) {
   const [expanded, setExpanded] = useState(false)
@@ -106,6 +128,7 @@ function TurnView({
           onFork={onFork && s.kind === 'assistant' ? () => onFork(s.id) : undefined}
         />
       ))}
+      <TurnFiles steps={turn.steps} cwd={cwd} />
       {turn.result && <ResultFooter item={turn.result} text={finalText} />}
     </div>
   )
@@ -253,6 +276,7 @@ export function ThreadView({ thread, changesOpen, onToggleChanges }: Props) {
                 <TurnView
                   turn={t}
                   threadId={thread.id}
+                  cwd={cwd}
                   live={running && last}
                   onFork={running ? undefined : (itemId) => void forkThread(thread.id, itemId)}
                 />

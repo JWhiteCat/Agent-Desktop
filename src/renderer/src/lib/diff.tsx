@@ -1,5 +1,8 @@
 import { useMemo, useState } from 'react'
+import type { Item } from '@shared/types'
 import { IconChevronDown, IconChevronRight } from '../components/icons'
+import { relativePath } from './format'
+import { toolDiff, toolPath } from './tools'
 
 export interface DiffFile {
   path: string
@@ -52,6 +55,29 @@ export function parseUnifiedDiff(text: string): DiffFile[] {
   }
   for (const f of files) while (f.lines.length && !f.lines[f.lines.length - 1]) f.lines.pop()
   return files.filter((f) => f.path || f.lines.length)
+}
+
+/** Edits in one turn, grouped by path. Later edits of the same file append. */
+export function collectEditedFiles(items: Item[], cwd?: string): DiffFile[] {
+  const byPath = new Map<string, DiffFile>()
+  for (const it of items) {
+    if (it.kind !== 'tool') continue
+    const diff = toolDiff(it)
+    if (!diff) continue
+    for (const file of parseUnifiedDiff(diff)) {
+      const p = relativePath(file.path || toolPath(it) || '(未知文件)', cwd).replace(/\\/g, '/')
+      const prev = byPath.get(p)
+      if (!prev) {
+        byPath.set(p, { ...file, path: p })
+        continue
+      }
+      prev.lines.push(...file.lines)
+      prev.added += file.added
+      prev.removed += file.removed
+      prev.binary = prev.binary || file.binary
+    }
+  }
+  return [...byPath.values()]
 }
 
 export function DiffLines({ lines }: { lines: string[] }) {

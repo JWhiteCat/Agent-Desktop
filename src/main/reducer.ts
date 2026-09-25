@@ -1,4 +1,5 @@
 import type { AssistantItem, Item, ResultItem, ThinkingItem, ToolItem } from '@shared/types'
+import { unifiedDiff } from '@shared/unified-diff'
 import { newId } from './id'
 
 export interface InitInfo {
@@ -250,7 +251,7 @@ export class StreamReducer {
     const callId = String(update.toolCallId || newId())
     const args = argsFrom(update)
     const outputText = textOfContent(update.content)
-    const result = asToolResult(update.rawOutput, outputText)
+    const result = attachContentDiffs(asToolResult(update.rawOutput, outputText), update.content)
     const status = acpToolStatus(update.status, result)
 
     if (update.sessionUpdate === 'tool_call' || !this.tools.has(callId)) {
@@ -346,6 +347,64 @@ function acpToolStatus(status: string | undefined, result: unknown): ToolItem['s
   }
   if (status === 'completed') return 'success'
   return 'running'
+}
+
+interface DiffBlock {
+  path: string
+  oldText: string | null
+  newText: string
+}
+
+/** ACP edit/delete calls carry `{ type: 'diff', oldText, newText }` instead of `diffString`. */
+function diffBlocks(content: unknown): DiffBlock[] {
+  if (!Array.isArray(content)) return []
+  const out: DiffBlock[] = []
+  for (const block of content) {
+    if (!block || typeof block !== 'object') continue
+    const b = block as { type?: unknown; path?: unknown; oldText?: unknown; newText?: unknown }
+    if (b.type !== 'diff' || typeof b.newText !== 'string') continue
+    out.push({
+      path: typeof b.path === 'string' ? b.path : '',
+      oldText: typeof b.oldText === 'string' ? b.oldText : null,
+      newText: b.newText
+    })
+  }
+  return out
+}
+
+function attachContentDiffs(result: unknown, content: unknown): unknown {
+  const blocks = diffBlocks(content)
+  if (!blocks.length) return result
+  const parts: string[] = []
+  let added = 0
+  let removed = 0
+  let path: string | undefined
+  for (const block of blocks) {
+    const built = unifiedDiff(block.path || 'file', block.oldText, block.newText)
+    if (!built.text) continue
+    parts.push(built.text)
+    added += built.added
+    removed += built.removed
+    if (!path && block.path) path = block.path
+  }
+  if (!parts.length) return result
+  const extra: Record<string, unknown> = { diffString: parts.join('\n'), linesAdded: added, linesRemoved: removed }
+  if (path) extra.path = path
+  return mergeSuccess(result, extra)
+}
+
+function mergeSuccess(result: unknown, extra: Record<string, unknown>): unknown {
+  if (result && typeof result === 'object') {
+    const o = result as Record<string, unknown>
+    if (o.success && typeof o.success === 'object') {
+      const success = o.success as Record<string, unknown>
+      if (typeof success.diffString === 'string' && success.diffString) return result
+      return { ...o, success: { ...success, ...extra } }
+    }
+    if ('error' in o || 'failure' in o || 'rejected' in o) return result
+    return { success: { ...o, ...extra } }
+  }
+  return { success: extra }
 }
 
 function asToolResult(raw: unknown, contentText: string): unknown {

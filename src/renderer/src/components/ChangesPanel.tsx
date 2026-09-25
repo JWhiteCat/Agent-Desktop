@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { GitDiff, ThreadMeta, ToolItem } from '@shared/types'
-import { DiffFileView, parseUnifiedDiff, type DiffFile } from '../lib/diff'
-import { relativePath } from '../lib/format'
-import { summarizeTool, toolDiff, toolPath } from '../lib/tools'
+import type { GitDiff, ThreadMeta } from '@shared/types'
+import { DiffFileView, collectEditedFiles, parseUnifiedDiff, type DiffFile } from '../lib/diff'
 import { useStore } from '../store'
 import { IconBranch, IconRefresh, IconX, Spinner } from './icons'
 
@@ -31,24 +29,7 @@ export function ChangesPanel({ thread, onClose }: { thread: ThreadMeta; onClose:
     if (tab === 'git' && !running) refresh()
   }, [tab, running, refresh])
 
-  const threadFiles = useMemo(() => {
-    const byPath = new Map<string, DiffFile>()
-    for (const it of items ?? []) {
-      if (it.kind !== 'tool' || summarizeTool(it as ToolItem).kind !== 'edit') continue
-      const diff = toolDiff(it as ToolItem)
-      const p = relativePath(toolPath(it as ToolItem) ?? '(未知文件)', cwd)
-      const prev = byPath.get(p) ?? { path: p, lines: [], added: 0, removed: 0 }
-      if (diff) {
-        for (const f of parseUnifiedDiff(diff)) {
-          prev.lines.push(...f.lines)
-          prev.added += f.added
-          prev.removed += f.removed
-        }
-      }
-      byPath.set(p, prev)
-    }
-    return [...byPath.values()]
-  }, [items, cwd])
+  const threadFiles = useMemo(() => collectEditedFiles(items ?? [], cwd), [items, cwd])
 
   const gitFiles = useMemo(() => {
     if (!git?.isRepo) return []

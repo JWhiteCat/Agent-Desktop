@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { titleFrom } from '../src/main/sessions'
-import { parseUnifiedDiff } from '../src/renderer/src/lib/diff'
+import { collectEditedFiles, parseUnifiedDiff } from '../src/renderer/src/lib/diff'
 import { basename, duration, relativePath, relativeTime, shortPath } from '../src/renderer/src/lib/format'
-import { planPath, planUriOf, summarizeTool } from '../src/renderer/src/lib/tools'
+import { planPath, planUriOf, summarizeTool, toolDiff } from '../src/renderer/src/lib/tools'
+import { unifiedDiff } from '../src/shared/unified-diff'
 import type { ToolItem } from '../src/shared/types'
 
 describe('format', () => {
@@ -44,6 +45,30 @@ describe('tools and diffs', () => {
     expect(files).toEqual([
       { path: 'a.ts', lines: ['@@ -1 +1 @@', '-old', '+new'], added: 1, removed: 1 }
     ])
+
+    const created: ToolItem = { ...item, tool: 'edit', args: { path: 'src/new.ts' }, result: { success: { linesRemoved: 0, diffString: 'diff --git a/src/new.ts b/src/new.ts\n--- /dev/null\n+++ b/src/new.ts\n' } } }
+    expect(summarizeTool(created)).toMatchObject({ verb: '已创建', target: 'new.ts' })
+  })
+
+  it('builds a contextual unified diff and groups a turn by file', () => {
+    const built = unifiedDiff('src/a.ts', 'keep\nold\n', 'keep\nnew\n')
+    expect(built.added).toBe(1)
+    expect(built.removed).toBe(1)
+    expect(parseUnifiedDiff(built.text)[0]).toMatchObject({ path: 'src/a.ts', added: 1, removed: 1 })
+
+    const edit: ToolItem = {
+      id: 'e',
+      kind: 'tool',
+      callId: 'c',
+      tool: 'edit',
+      args: { path: 'C:\\proj\\src\\a.ts', old_string: 'old', new_string: 'new' },
+      status: 'success',
+      startedAt: 1
+    }
+    expect(toolDiff(edit)).toContain('-old')
+    const files = collectEditedFiles([edit, { ...edit, id: 'e2', args: { path: 'C:\\proj\\src\\b.ts', contents: 'hi' } }], 'C:\\proj')
+    expect(files.map((f) => f.path)).toEqual(['src/a.ts', 'src/b.ts'])
+    expect(files[1].added).toBe(1)
   })
 
   it('finds the CreatePlan file from its progress text', () => {

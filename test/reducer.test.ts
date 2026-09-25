@@ -79,6 +79,51 @@ describe('StreamReducer', () => {
     expect(second.abortRunningTools()[0]).toMatchObject({ status: 'error' })
   })
 
+  it('builds a unified diff from an ACP edit content block', () => {
+    const items: Item[] = []
+    const reducer = new StreamReducer(items)
+    reducer.handleAcp({
+      sessionUpdate: 'tool_call',
+      toolCallId: 'e1',
+      kind: 'edit',
+      status: 'pending',
+      locations: [{ path: 'src/a.ts' }],
+      rawInput: { path: 'src/a.ts', old_string: 'old', new_string: 'new' }
+    })
+    reducer.handleAcp({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'e1',
+      status: 'completed',
+      content: [{ type: 'diff', path: 'src/a.ts', oldText: 'keep\nold\n', newText: 'keep\nnew\n' }]
+    })
+    const tool = items.find((item): item is ToolItem => item.kind === 'tool')
+    const success = (tool?.result as { success?: { diffString?: string; linesAdded?: number; linesRemoved?: number; oldText?: string } } | undefined)?.success
+    expect(tool).toMatchObject({ tool: 'edit', status: 'success' })
+    expect(success?.linesAdded).toBe(1)
+    expect(success?.linesRemoved).toBe(1)
+    expect(success?.diffString).toContain('b/src/a.ts')
+    expect(success?.diffString).toContain('-old')
+    expect(success?.diffString).toContain('+new')
+    expect(success?.diffString).toContain(' keep')
+    expect(success).not.toHaveProperty('oldText')
+  })
+
+  it('marks an ACP file create from a null before-text', () => {
+    const items: Item[] = []
+    const reducer = new StreamReducer(items)
+    reducer.handleAcp({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'e2',
+      kind: 'edit',
+      status: 'completed',
+      content: [{ type: 'diff', path: 'b.ts', oldText: null, newText: 'hi\n' }]
+    })
+    const tool = items.find((item): item is ToolItem => item.kind === 'tool')
+    const diff = (tool?.result as { success?: { diffString?: string } } | undefined)?.success?.diffString ?? ''
+    expect(diff).toContain('--- /dev/null')
+    expect(diff).toContain('+hi')
+  })
+
   it('appends ACP message chunks', () => {
     const items: Item[] = []
     const reducer = new StreamReducer(items)

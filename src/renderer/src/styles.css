@@ -1414,6 +1414,18 @@ select {
   overflow: auto;
 }
 
+.turn-files {
+  margin: 4px 0 2px;
+}
+.turn-files-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12.5px;
+  margin-bottom: 6px;
+}
+
 .result-footer {
   display: flex;
   align-items: center;

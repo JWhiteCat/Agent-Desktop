@@ -1,4 +1,5 @@
 import type { ToolItem } from '@shared/types'
+import { unifiedDiff } from '@shared/unified-diff'
 import { basename } from './format'
 
 export type ToolKind = 'read' | 'edit' | 'shell' | 'search' | 'list' | 'delete' | 'todo' | 'web' | 'mcp' | 'task' | 'other'
@@ -47,9 +48,13 @@ export function summarizeTool(item: ToolItem): ToolSummary {
     return { kind: 'read', verb: running ? '正在读取' : '已读取', target: path && basename(path), meta: range }
   }
   if (['edit', 'write', 'searchreplace', 'strreplace', 'multiedit', 'applypatch'].includes(name)) {
+    const diff = typeof s.diffString === 'string' ? s.diffString : ''
+    const created =
+      (s.linesRemoved === 0 && /(^|\n)--- \/dev\/null(?:\n|$)/.test(diff)) ||
+      (!diff && typeof a.contents === 'string' && typeof a.old_string !== 'string' && typeof a.oldString !== 'string')
     return {
       kind: 'edit',
-      verb: running ? '正在编辑' : s.linesRemoved === 0 && s.diffString?.startsWith('--- /dev/null') ? '已创建' : '已编辑',
+      verb: running ? '正在编辑' : created ? '已创建' : '已编辑',
       target: path && basename(path),
       added: s.linesAdded,
       removed: s.linesRemoved
@@ -102,9 +107,28 @@ export function summarizeTool(item: ToolItem): ToolSummary {
   return { kind: 'other', verb: item.tool, target: path ? basename(path) : undefined }
 }
 
+const EDIT_TOOLS = new Set(['edit', 'write', 'searchreplace', 'strreplace', 'multiedit', 'applypatch'])
+
+/** Unified diff from a tool result, or from edit args when the CLI only kept the replacement text. */
 export function toolDiff(item: ToolItem): string | undefined {
   const s = successOf(item)
-  return typeof s?.diffString === 'string' ? s.diffString : undefined
+  if (typeof s?.diffString === 'string' && s.diffString.trim()) return s.diffString
+  const a = item.args
+  if (!a || typeof a !== 'object') return undefined
+  const name = item.tool.toLowerCase().replace(/[^a-z]/g, '')
+  if (!EDIT_TOOLS.has(name)) return undefined
+  const path = String(pick(a, 'path', 'targetFile', 'filePath', 'file') ?? 'file')
+  const oldText = typeof a.old_string === 'string' ? a.old_string : typeof a.oldString === 'string' ? a.oldString : undefined
+  const newText = typeof a.new_string === 'string' ? a.new_string : typeof a.newString === 'string' ? a.newString : undefined
+  if (oldText !== undefined || newText !== undefined) {
+    const built = unifiedDiff(path, oldText ?? '', newText ?? '')
+    return built.text || undefined
+  }
+  if (typeof a.contents === 'string') {
+    const built = unifiedDiff(path, null, a.contents)
+    return built.text || undefined
+  }
+  return undefined
 }
 
 /** CreatePlan reports the saved file as progress text: `Plan saved to file:///…plan.md`. */
