@@ -1,6 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, shell } from 'electron'
 import { spawn } from 'node:child_process'
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import type { AgentEvent, AgentMode, AppState, Item, ModelInfo, Project, QuestionAnswer, SendRequest, Settings, ThreadMeta } from '@shared/types'
 import { parseModels, resolveApiKey, resolveCli, runCliOnce } from './cli'
@@ -387,6 +388,9 @@ function registerIpc(): void {
 }
 
 if (process.env.AGENT_DESKTOP_USER_DATA) app.setPath('userData', process.env.AGENT_DESKTOP_USER_DATA)
+// Chromium locks GPUCache under sessionData. A second window sharing that directory fails with
+// "Unable to move the cache" / "Gpu Cache Creation failed". App data stays in userData.
+const sessionDataDir = usePerProcessSessionData()
 if (isWin) app.setAppUserModelId(app.isPackaged ? 'dev.agentdesktop.app' : process.execPath)
 
 app.whenReady().then(() => {
@@ -412,3 +416,41 @@ app.on('before-quit', () => {
 app.on('window-all-closed', () => {
   if (!isMac) app.quit()
 })
+
+app.on('will-quit', () => {
+  removeDir(sessionDataDir)
+})
+
+/** Gives this process its own Chromium profile (GPU cache, HTTP cache, localStorage). */
+function usePerProcessSessionData(): string {
+  const root = path.join(os.tmpdir(), 'agent-desktop-sessions')
+  fs.mkdirSync(root, { recursive: true })
+  for (const name of fs.readdirSync(root)) {
+    if (!/^\d+$/.test(name)) continue
+    const pid = Number(name)
+    if (pid === process.pid || isProcessAlive(pid)) continue
+    removeDir(path.join(root, name))
+  }
+  const dir = path.join(root, String(process.pid))
+  removeDir(dir)
+  fs.mkdirSync(dir, { recursive: true })
+  app.setPath('sessionData', dir)
+  return dir
+}
+
+function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function removeDir(dir: string): void {
+  try {
+    fs.rmSync(dir, { recursive: true, force: true })
+  } catch {
+    // Cache files can stay locked until the process has fully exited.
+  }
+}

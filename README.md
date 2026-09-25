@@ -103,6 +103,8 @@ Windows 也可以双击 `start.bat`，效果相同。
 
 开发时可用环境变量 `AGENT_DESKTOP_USER_DATA` 指定另一份 userData 目录。
 
+可以同时开多个窗口。每个进程的 Chromium 缓存（GPU 缓存、HTTP 缓存、localStorage）写在系统临时目录的 `agent-desktop-sessions/<pid>`，避免互相锁文件。项目和对话仍共用上面的 `data/`；两个窗口同时改同一份数据时，后写入的会覆盖先写入的。退出时会删掉本进程的缓存目录，上次异常退出留下的目录会在下次启动时清掉。
+
 ## 目录
 
 ```
