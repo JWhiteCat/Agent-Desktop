@@ -150,17 +150,39 @@ function RemoteSettings() {
   const view = useStore((s) => s.view)
   const [info, setInfo] = useState<RemoteInfo | null>(null)
   const [port, setPort] = useState(String(settings.remotePort))
+  const [pubUser, setPubUser] = useState(settings.remotePublicUser)
+  const [pubHost, setPubHost] = useState(settings.remotePublicHost)
+  const [pubPort, setPubPort] = useState(String(settings.remotePublicPort))
   const [urlIndex, setUrlIndex] = useState(0)
   const [qr, setQr] = useState('')
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
     let alive = true
-    window.api.remoteInfo().then((i) => alive && setInfo(i), () => {})
+    const load = () => {
+      window.api.remoteInfo().then((i) => alive && setInfo(i), () => {})
+    }
+    load()
+    const timer = settings.remotePublicEnabled ? setInterval(load, 1500) : undefined
     return () => {
       alive = false
+      if (timer) clearInterval(timer)
     }
-  }, [settings.remoteEnabled, settings.remotePort, settings.remoteToken])
+  }, [
+    settings.remoteEnabled,
+    settings.remotePort,
+    settings.remoteToken,
+    settings.remotePublicEnabled,
+    settings.remotePublicUser,
+    settings.remotePublicHost,
+    settings.remotePublicPort
+  ])
+
+  useEffect(() => {
+    if (!info?.publicUrl) return
+    const index = info.urls.indexOf(info.publicUrl)
+    if (index >= 0) setUrlIndex(index)
+  }, [info?.publicUrl])
 
   const hash = view.kind === 'thread' ? `#thread=${view.id}` : view.projectId ? `#project=${view.projectId}` : ''
   const base = info?.urls[urlIndex] ?? info?.urls[0]
@@ -217,7 +239,72 @@ function RemoteSettings() {
           }}
         />
       </Field>
+      <Field label="公网访问" desc="用 SSH 反向隧道把上面的网页暴露到公网。链接是明文 HTTP，持有者可完全控制本应用。需本机默认密钥能登录所填用户">
+        <input
+          type="checkbox"
+          className="toggle"
+          checked={settings.remotePublicEnabled}
+          disabled={busy || (!settings.remoteEnabled && !settings.remotePublicEnabled)}
+          onChange={(e) => run(() => window.api.updateSettings({ remotePublicEnabled: e.target.checked }))}
+        />
+      </Field>
+      <Field label="SSH 用户">
+        <input
+          className="input"
+          value={pubUser}
+          disabled={busy}
+          onChange={(e) => setPubUser(e.target.value)}
+          onBlur={() => {
+            if (pubUser === settings.remotePublicUser) return
+            run(() =>
+              window.api.updateSettings({ remotePublicUser: pubUser }).catch((err) => {
+                setPubUser(settings.remotePublicUser)
+                throw err
+              })
+            )
+          }}
+        />
+      </Field>
+      <Field label="服务器地址">
+        <input
+          className="input"
+          value={pubHost}
+          disabled={busy}
+          spellCheck={false}
+          onChange={(e) => setPubHost(e.target.value.trim())}
+          onBlur={() => {
+            if (pubHost === settings.remotePublicHost) return
+            run(() =>
+              window.api.updateSettings({ remotePublicHost: pubHost }).catch((err) => {
+                setPubHost(settings.remotePublicHost)
+                throw err
+              })
+            )
+          }}
+        />
+      </Field>
+      <Field label="公网端口">
+        <input
+          className="input"
+          inputMode="numeric"
+          value={pubPort}
+          disabled={busy}
+          onChange={(e) => setPubPort(e.target.value.replace(/\D/g, ''))}
+          onBlur={() => {
+            if (pubPort === String(settings.remotePublicPort)) return
+            run(() =>
+              window.api.updateSettings({ remotePublicPort: Number(pubPort) }).catch((err) => {
+                setPubPort(String(settings.remotePublicPort))
+                throw err
+              })
+            )
+          }}
+        />
+      </Field>
       {info?.error && <div className="remote-error small">{info.error}</div>}
+      {settings.remotePublicEnabled && info?.publicStatus === 'connecting' && <div className="muted small">正在连接公网…</div>}
+      {settings.remotePublicEnabled && info?.publicStatus === 'up' && <div className="muted small">公网已连接</div>}
+      {info?.publicError && <div className="remote-error small">{info.publicError}</div>}
       {settings.remoteEnabled && info?.running && (
         <div className="remote-card">
           {qr ? <img className="remote-qr" src={qr} alt="远程控制二维码" /> : <div className="remote-qr" />}

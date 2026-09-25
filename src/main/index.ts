@@ -16,6 +16,7 @@ import { syncManagedSkills, userSkillsDir } from './skills'
 import { normalizeMcpServers, normalizeSkills } from '@shared/agent-config'
 import { Store } from './store'
 import { lanAddresses, newRemoteToken, RemoteServer, type Handler } from './remote'
+import { PublicTunnel, publicRemoteUrl, validatePublicHost, validatePublicPort, validatePublicUser } from './public-tunnel'
 import { listSessionUsage, summarizeUsage, type UsageWindow } from '@shared/usage'
 
 let win: BrowserWindow | null = null
@@ -23,7 +24,9 @@ let store: Store
 let sessions: SessionManager
 let modelsCache: ModelInfo[] | null = null
 const remote = new RemoteServer()
+const publicTunnel = new PublicTunnel()
 let remoteError: string | undefined
+let publicError: string | undefined
 
 const isWin = process.platform === 'win32'
 const isMac = process.platform === 'darwin'
@@ -324,6 +327,9 @@ const handlers: Record<string, Handler> = {
       if (!(port >= 1024 && port <= 65535)) throw new Error('端口需在 1024–65535 之间')
       next.remotePort = port
     }
+    if (patch.remotePublicUser !== undefined) next.remotePublicUser = validatePublicUser(patch.remotePublicUser)
+    if (patch.remotePublicHost !== undefined) next.remotePublicHost = validatePublicHost(patch.remotePublicHost)
+    if (patch.remotePublicPort !== undefined) next.remotePublicPort = validatePublicPort(Number(patch.remotePublicPort))
     if (patch.skills !== undefined) {
       next.skills = normalizeSkills(patch.skills)
       syncManagedSkills(next.skills)
@@ -340,7 +346,17 @@ const handlers: Record<string, Handler> = {
     ) {
       sessions.dropIdle()
     }
-    if (patch.remoteEnabled !== undefined || patch.remotePort !== undefined || patch.remoteToken !== undefined) await applyRemote()
+    if (
+      patch.remoteEnabled !== undefined ||
+      patch.remotePort !== undefined ||
+      patch.remoteToken !== undefined ||
+      patch.remotePublicEnabled !== undefined ||
+      patch.remotePublicUser !== undefined ||
+      patch.remotePublicHost !== undefined ||
+      patch.remotePublicPort !== undefined
+    ) {
+      await applyRemote()
+    }
     broadcastState()
     return s
   },
@@ -450,7 +466,15 @@ const handlers: Record<string, Handler> = {
 }
 
 const REMOTE_BLOCKED = new Set(['project:pick', 'remote:info', 'remote:resetToken'])
-const REMOTE_ONLY_DESKTOP_SETTINGS: (keyof Settings)[] = ['remoteEnabled', 'remotePort', 'remoteToken']
+const REMOTE_ONLY_DESKTOP_SETTINGS: (keyof Settings)[] = [
+  'remoteEnabled',
+  'remotePort',
+  'remoteToken',
+  'remotePublicEnabled',
+  'remotePublicUser',
+  'remotePublicHost',
+  'remotePublicPort'
+]
 
 /** What a phone browser may call: no native dialogs, no remote-control settings, no secrets. */
 function remoteHandlers(): Record<string, Handler> {
@@ -473,12 +497,18 @@ function registerIpc(): void {
 function remoteInfo(): RemoteInfo {
   const s = store.settings
   const port = remote.port ?? s.remotePort
+  const publicOn = s.remoteEnabled && s.remotePublicEnabled
+  const link = publicOn && publicTunnel.status === 'up' ? publicRemoteUrl(s.remotePublicHost, s.remotePublicPort, s.remoteToken) : undefined
+  const tunnelError = publicOn ? publicError || publicTunnel.error : undefined
   return {
     enabled: s.remoteEnabled,
     running: remote.running,
     port,
-    urls: remote.running ? lanAddresses().map((ip) => `http://${ip}:${port}/?token=${s.remoteToken}`) : [],
-    ...(remoteError ? { error: remoteError } : {})
+    urls: [...(remote.running ? lanAddresses().map((ip) => `http://${ip}:${port}/?token=${s.remoteToken}`) : []), ...(link ? [link] : [])],
+    ...(remoteError ? { error: remoteError } : {}),
+    publicStatus: publicOn ? publicTunnel.status : 'off',
+    ...(link ? { publicUrl: link } : {}),
+    ...(tunnelError ? { publicError: tunnelError } : {})
   }
 }
 
@@ -488,6 +518,7 @@ async function applyRemote(): Promise<void> {
   const s = store.settings
   if (!s.remoteEnabled) {
     await remote.stop()
+    await applyPublicTunnel()
     return
   }
   if (!s.remoteToken) store.updateSettings({ remoteToken: newRemoteToken() })
@@ -503,6 +534,30 @@ async function applyRemote(): Promise<void> {
     const code = (err as NodeJS.ErrnoException).code
     remoteError = code === 'EADDRINUSE' ? `端口 ${s.remotePort} 已被占用，请换一个端口` : err instanceof Error ? err.message : String(err)
     console.error('[remote] start failed', err)
+  }
+  await applyPublicTunnel()
+}
+
+/** Starts or stops the public SSH tunnel to match the settings. The LAN server must already be up. */
+async function applyPublicTunnel(): Promise<void> {
+  publicError = undefined
+  const s = store.settings
+  if (!s.remoteEnabled || !s.remotePublicEnabled || !remote.running) {
+    await publicTunnel.stop()
+    if (s.remoteEnabled && s.remotePublicEnabled && !remote.running) publicError = '局域网服务未启动，无法建立公网隧道'
+    return
+  }
+  try {
+    await publicTunnel.start({
+      user: validatePublicUser(s.remotePublicUser),
+      host: validatePublicHost(s.remotePublicHost),
+      port: validatePublicPort(s.remotePublicPort),
+      localPort: remote.port ?? s.remotePort
+    })
+  } catch (err) {
+    await publicTunnel.stop()
+    publicError = err instanceof Error ? err.message : String(err)
+    console.error('[remote] public tunnel failed', err)
   }
 }
 
@@ -535,6 +590,7 @@ app.whenReady().then(() => {
 
 app.on('before-quit', () => {
   sessions?.stopAll()
+  void publicTunnel.stop()
   void remote.stop()
   store?.flush()
 })

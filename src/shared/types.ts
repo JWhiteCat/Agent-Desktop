@@ -169,15 +169,29 @@ export interface Settings {
   remotePort: number
   /** Secret embedded in the remote link. Never sent to remote clients. */
   remoteToken: string
+  /** Expose the LAN server through an SSH reverse tunnel. */
+  remotePublicEnabled: boolean
+  /** SSH login on the public server. */
+  remotePublicUser: string
+  /** Public server hostname or IPv4 address, without a scheme or port. */
+  remotePublicHost: string
+  /** TCP port opened on the public server. */
+  remotePublicPort: number
 }
+
+export type PublicLinkStatus = 'off' | 'connecting' | 'up' | 'error'
 
 export interface RemoteInfo {
   enabled: boolean
   running: boolean
   port: number
-  /** One link per LAN address, token included. */
+  /** LAN links, plus the public link once the tunnel is up. Token included. */
   urls: string[]
   error?: string
+  publicStatus: PublicLinkStatus
+  /** Set while the tunnel is up. Also present in `urls`. */
+  publicUrl?: string
+  publicError?: string
 }
 
 export interface AppState {
@@ -239,5 +253,9 @@ export const DEFAULT_SETTINGS: Settings = {
   skills: [],
   remoteEnabled: false,
   remotePort: 8765,
-  remoteToken: ''
+  remoteToken: '',
+  remotePublicEnabled: false,
+  remotePublicUser: 'root',
+  remotePublicHost: '43.167.166.239',
+  remotePublicPort: 8765
 }
