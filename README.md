@@ -58,10 +58,14 @@ Windows 也可以双击 `start.bat`，效果相同。
 | 命令 | 作用 |
 | --- | --- |
 | `npm run dev` | 启动开发窗口 |
+| `npm test` | 离线单元测试，不调用模型 |
+| `npm run test:live` | 用 Grok 4.7 500K High Fast 发一次极短提问 |
 | `npm run typecheck` | 类型检查 |
 | `npm run build` | 编译到 `out/` |
 | `npm run preview` | 预览编译结果 |
 | `npm run dist` | 打包安装包到 `release/` |
+
+`npm test` 不访问 Cursor CLI。`npm run test:live` 才会在临时空目录里用 Ask 模式调用 `grok-4.7[context=500k,reasoning_effort=high,fast=true]`，提示只有一句 `Reply with exactly ok`。需要本机已登录或已设置 `CURSOR_API_KEY`。High 仍会有少量思考 token。
 
 打包目标：Windows NSIS、macOS DMG、Linux AppImage。
 
