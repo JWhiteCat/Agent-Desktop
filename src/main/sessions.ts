@@ -278,7 +278,15 @@ export class SessionManager {
       })
     )
     this.queue(threadId, run, changed)
-    run.child.stdin?.end()
+    // `agent acp` stays up after a turn and often ignores stdin EOF, which
+    // left the thread stuck on "running" after the task had already finished.
+    // This app runs one prompt per process, so close the CLI now.
+    try {
+      run.child.stdin?.end()
+    } catch {
+      /* already closed */
+    }
+    killTree(run.child)
   }
 
   private onAcpRequest(threadId: string, run: Run, method: string, params: any): Promise<unknown> {
