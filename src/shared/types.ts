@@ -72,6 +72,12 @@ export interface ResultItem {
   kind: 'result'
   isError: boolean
   durationMs?: number
+  /** When this turn finished. Older transcripts omit it; usage stats then use the preceding user message. */
+  createdAt?: number
+  /** Model id used for this turn. */
+  model?: string
+  /** Stable across a fork so the same turn is not counted twice. */
+  usageId?: string
   usage?: { inputTokens?: number; outputTokens?: number; cacheReadTokens?: number; cacheWriteTokens?: number }
 }
 

@@ -78,6 +78,7 @@ export function createWebApi(): DesktopApi {
     stop: (id) => call('agent:stop', id),
     answerQuestion: (threadId, questionId, answers) => call('agent:answerQuestion', threadId, questionId, answers),
     updateSettings: (patch) => call('settings:update', patch),
+    usageSummary: (period) => call('usage:summary', period),
     listModels: (refresh) => call('cli:models', refresh),
     cliInfo: () => call('cli:info'),
     login: () => call('cli:login'),

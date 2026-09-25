@@ -26,6 +26,7 @@ const api: DesktopApi = {
   stop: (id) => ipcRenderer.invoke('agent:stop', id),
   answerQuestion: (threadId, questionId, answers) => ipcRenderer.invoke('agent:answerQuestion', threadId, questionId, answers),
   updateSettings: (patch) => ipcRenderer.invoke('settings:update', patch),
+  usageSummary: (period) => ipcRenderer.invoke('usage:summary', period),
   listModels: (refresh) => ipcRenderer.invoke('cli:models', refresh),
   cliInfo: () => ipcRenderer.invoke('cli:info'),
   login: () => ipcRenderer.invoke('cli:login'),

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import QRCode from 'qrcode'
 import type { CliSession, RemoteInfo, Settings } from '@shared/types'
-import { relativeTime, shortPath } from '../lib/format'
+import type { UsageSummary, UsageWindow } from '@shared/usage'
+import { compactNumber, relativeTime, shortPath } from '../lib/format'
 import { groupModels } from '../lib/models'
 import { errorText, loadModels, modelForChat, setDefaultModel, setFavoriteModels, toast, useStore } from '../store'
 import { ModelPicker } from './ModelPicker'
@@ -258,11 +259,147 @@ function RemoteSettings() {
   )
 }
 
+const USAGE_PERIODS: { id: UsageWindow; label: string }[] = [
+  { id: '1d', label: '1天' },
+  { id: '7d', label: '7天' },
+  { id: '30d', label: '30天' }
+]
+
+function formatUsd(cost: number | null): string {
+  if (cost == null) return '未定价'
+  if (cost === 0) return '$0'
+  if (cost < 0.01) return '<$0.01'
+  return `$${cost.toFixed(2)}`
+}
+
+function UsageSettings() {
+  const [period, setPeriod] = useState<UsageWindow>('7d')
+  const [summary, setSummary] = useState<UsageSummary | null>(null)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    let cancel = false
+    setSummary(null)
+    setError('')
+    window.api.usageSummary(period).then(
+      (next) => {
+        if (!cancel) setSummary(next)
+      },
+      (err) => {
+        if (!cancel) {
+          setSummary(null)
+          setError(errorText(err))
+        }
+      }
+    )
+    return () => {
+      cancel = true
+    }
+  }, [period])
+
+  const token = (n: number) => (
+    <span title={n.toLocaleString('zh-CN')}>{compactNumber(n)}</span>
+  )
+
+  return (
+    <section className="settings-section">
+      <h4>用量</h4>
+      <div className="usage-periods" role="group" aria-label="统计范围">
+        {USAGE_PERIODS.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            className={`usage-period ${period === item.id ? 'active' : ''}`}
+            aria-pressed={period === item.id}
+            onClick={() => setPeriod(item.id)}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+      {error ? (
+        <div className="notice error">{error}</div>
+      ) : !summary ? (
+        <div className="muted small">正在统计…</div>
+      ) : summary.turns === 0 ? (
+        <div className="muted small">这段时间没有用量</div>
+      ) : (
+        <>
+          <div className="usage-stats">
+            <div className="usage-stat">
+              <div className="label">费用</div>
+              <div className="value">{formatUsd(summary.costUsd)}</div>
+            </div>
+            <div className="usage-stat">
+              <div className="label">回合</div>
+              <div className="value">{summary.turns}</div>
+            </div>
+            <div className="usage-stat">
+              <div className="label">输入</div>
+              <div className="value">{token(summary.inputTokens)}</div>
+            </div>
+            <div className="usage-stat">
+              <div className="label">输出</div>
+              <div className="value">{token(summary.outputTokens)}</div>
+            </div>
+            <div className="usage-stat">
+              <div className="label">缓存读</div>
+              <div className="value">{token(summary.cacheReadTokens)}</div>
+            </div>
+            <div className="usage-stat">
+              <div className="label">缓存写</div>
+              <div className="value">{token(summary.cacheWriteTokens)}</div>
+            </div>
+          </div>
+          {summary.unpricedTurns > 0 && summary.costUsd != null && (
+            <div className="muted small">另有 {summary.unpricedTurns} 轮未定价，未计入费用。</div>
+          )}
+          <div className="usage-table-wrap">
+            <table className="usage-table">
+              <thead>
+                <tr>
+                  <th>模型</th>
+                  <th>回合</th>
+                  <th>输入</th>
+                  <th>输出</th>
+                  <th>缓存读</th>
+                  <th>缓存写</th>
+                  <th>费用</th>
+                </tr>
+              </thead>
+              <tbody>
+                {summary.models.map((row) => (
+                  <tr key={`${row.model}\n${row.label}`}>
+                    <td>
+                      <div>{row.label}</div>
+                      {row.model && row.model !== row.label && <div className="muted small mono">{row.model}</div>}
+                    </td>
+                    <td>{row.turns}</td>
+                    <td title={row.inputTokens.toLocaleString('zh-CN')}>{compactNumber(row.inputTokens)}</td>
+                    <td title={row.outputTokens.toLocaleString('zh-CN')}>{compactNumber(row.outputTokens)}</td>
+                    <td title={row.cacheReadTokens.toLocaleString('zh-CN')}>{compactNumber(row.cacheReadTokens)}</td>
+                    <td title={row.cacheWriteTokens.toLocaleString('zh-CN')}>{compactNumber(row.cacheWriteTokens)}</td>
+                    <td>{formatUsd(row.costUsd)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+      <p className="usage-note">
+        费用按 Cursor 公开标价估算（美元 / 百万 token），不是套餐剩余额度，也不含 Teams 的 Token Rate。Auto 和价目表没有的模型只计 token。
+      </p>
+    </section>
+  )
+}
+
 const SETTINGS_TABS = [
   { id: 'cli', label: 'Cursor CLI' },
   { id: 'mcp', label: 'MCP' },
   { id: 'skill', label: 'Skill' },
   { id: 'models', label: '模型' },
+  { id: 'usage', label: '用量' },
   { id: 'defaults', label: '默认值' },
   { id: 'notify', label: '通知' },
   { id: 'remote', label: '远程控制' },
@@ -427,6 +564,8 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
         </Field>
       </section>
       )}
+
+      {tab === 'usage' && <UsageSettings />}
 
       {tab === 'defaults' && (
       <section className="settings-section">

@@ -13,6 +13,7 @@ import type {
   Settings,
   ThreadMeta
 } from './types'
+import type { UsageSummary, UsageWindow } from './usage'
 
 export interface ForkResult {
   thread: ThreadMeta
@@ -41,6 +42,7 @@ export interface DesktopApi {
   /** `null` skips the question. */
   answerQuestion(threadId: string, questionId: string, answers: QuestionAnswer[] | null): Promise<void>
   updateSettings(patch: Partial<Settings>): Promise<Settings>
+  usageSummary(period: UsageWindow): Promise<UsageSummary>
   listModels(refresh?: boolean): Promise<ModelInfo[]>
   cliInfo(): Promise<{ found: boolean; path?: string; version?: string; status?: string; hasApiKey?: boolean }>
   login(): Promise<string>

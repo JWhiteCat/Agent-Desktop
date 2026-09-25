@@ -376,6 +376,9 @@ export class SessionManager {
         kind: 'result',
         isError: stop !== 'end_turn' && stop !== 'cancelled',
         durationMs: Date.now() - started,
+        createdAt: Date.now(),
+        model: req.model,
+        usageId: newId(),
         usage
       })
     )

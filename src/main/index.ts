@@ -16,6 +16,7 @@ import { syncManagedSkills, userSkillsDir } from './skills'
 import { normalizeMcpServers, normalizeSkills } from '@shared/agent-config'
 import { Store } from './store'
 import { lanAddresses, newRemoteToken, RemoteServer, type Handler } from './remote'
+import { summarizeUsage, type UsageWindow } from '@shared/usage'
 
 let win: BrowserWindow | null = null
 let store: Store
@@ -154,6 +155,7 @@ function forkTitle(title: string, projectId: string): string {
 function cloneItems(items: Item[]): Item[] {
   const cloned = structuredClone(items) as Item[]
   for (const it of cloned) {
+    // Keep usageId so a forked turn is not counted again.
     it.id = newId()
     if (it.kind === 'question' && it.status === 'pending') it.status = 'skipped'
     if (it.kind === 'tool' && it.status === 'running') it.status = 'error'
@@ -301,6 +303,12 @@ const handlers: Record<string, Handler> = {
   'agent:answerQuestion': (threadId: string, questionId: string, answers: QuestionAnswer[] | null) => {
     sessions.answerQuestion(threadId, questionId, answers)
   },
+
+  'usage:summary': (period: UsageWindow) =>
+    summarizeUsage(
+      store.threads.map((t) => ({ model: t.model, items: store.items(t.id) })),
+      period
+    ),
 
   'settings:update': async (patch: Partial<Settings>) => {
     const next: Partial<Settings> = { ...patch }
