@@ -3,7 +3,7 @@ import QRCode from 'qrcode'
 import type { CliSession, RemoteInfo, Settings } from '@shared/types'
 import type { UsageSessionRow, UsageSummary, UsageWindow } from '@shared/usage'
 import { compactNumber, formatUsd, relativeTime, shortPath } from '../lib/format'
-import { groupModels } from '../lib/models'
+import { groupModels, modelCaption } from '../lib/models'
 import { errorText, loadModels, modelForChat, setDefaultModel, setFavoriteModels, toast, useStore } from '../store'
 import { ModelPicker } from './ModelPicker'
 import { MODES } from './Composer'
@@ -272,11 +272,14 @@ function UsageToken({ n }: { n: number }) {
 }
 
 function UsageSettings() {
+  const models = useStore((s) => s.models)
+  const groups = useMemo(() => groupModels(models), [models])
   const [period, setPeriod] = useState<UsageWindow>('7d')
   const [summary, setSummary] = useState<UsageSummary | null>(null)
   const [sessions, setSessions] = useState<UsageSessionRow[] | null>(null)
   const [page, setPage] = useState(1)
   const [error, setError] = useState('')
+  const modelName = (id: string, fallback = '') => (id ? modelCaption(groups, id) : fallback)
 
   useEffect(() => {
     let cancel = false
@@ -372,10 +375,7 @@ function UsageSettings() {
               <tbody>
                 {summary.models.map((row) => (
                   <tr key={`${row.model}\n${row.label}`}>
-                    <td>
-                      <div>{row.label}</div>
-                      {row.model && row.model !== row.label && <div className="muted small mono">{row.model}</div>}
-                    </td>
+                    <td>{modelName(row.model, row.label)}</td>
                     <td>{row.turns}</td>
                     <td><UsageToken n={row.inputTokens} /></td>
                     <td><UsageToken n={row.outputTokens} /></td>
@@ -422,12 +422,7 @@ function UsageSettings() {
                       {row.models.length === 0 ? (
                         '—'
                       ) : (
-                        row.models.map((model) => (
-                          <div key={model.id}>
-                            <div>{model.label}</div>
-                            {model.id !== model.label && <div className="muted small mono">{model.id}</div>}
-                          </div>
-                        ))
+                        row.models.map((model) => <div key={model.id}>{modelName(model.id, model.label)}</div>)
                       )}
                     </td>
                     <td>{row.at ? relativeTime(row.at) : '—'}</td>

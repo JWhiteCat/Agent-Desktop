@@ -198,13 +198,20 @@ export function findVariant(groups: ModelGroup[], id: string): ModelVariant | un
   return legacy.sort((a, b) => contextSize(a.context ?? '') - contextSize(b.context ?? ''))[0]
 }
 
-/** Readable name for one turn: catalog label when known, otherwise the price-list name. */
+function captionFromId(id: string): string {
+  const parsed = parseBracket(id) ?? parseId(id)
+  const priced = quoteModel(parsed.base, {}).label
+  const name = priced && priced !== parsed.base ? priced : parsed.base
+  return [name, parsed.context, effortText(parsed.effort, parsed.thinking), parsed.fast ? 'Fast' : ''].filter(Boolean).join(' ')
+}
+
+/** Readable name for one turn: catalog label when known, otherwise the price-list name plus variant. */
 export function modelCaption(groups: ModelGroup[], id: string): string {
   const summary = describeModel(groups, id)
   if (summary.name !== id) {
     return [summary.name, summary.context, summary.effortLabel, summary.fast ? 'Fast' : ''].filter(Boolean).join(' ')
   }
-  return quoteModel(id, {}).label
+  return captionFromId(id) || quoteModel(id, {}).label
 }
 
 export function describeModel(groups: ModelGroup[], id: string): ModelSummary {

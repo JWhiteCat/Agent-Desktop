@@ -118,6 +118,8 @@ describe('model picker', () => {
       fast: true
     })
     expect(modelCaption(groups, picked.id)).toBe('Grok 4.7 500K High Fast')
+    expect(modelCaption([], GROK_47_500K_HIGH_FAST)).toBe('Grok 4.7 500K High Fast')
+    expect(modelCaption([], 'grok-4.7[context=256k,reasoning_effort=high,fast=false]')).toBe('Grok 4.7 256K High')
     expect(modelCaption([], 'composer-2.5[fast=true]')).toBe('Composer 2.5 Fast')
     expect(modelCaption([], 'auto')).toBe('Auto')
     expect(pickVariant(grok!, { context: '500K', effort: 'high', fast: false }).id).toBe(GROK_500K_HIGH)
