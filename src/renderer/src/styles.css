@@ -1582,6 +1582,53 @@ select {
 .modal.wide {
   width: min(760px, calc(100vw - 48px));
 }
+.modal.with-nav {
+  width: min(880px, calc(100vw - 48px));
+  height: min(680px, calc(100vh - 64px));
+}
+.modal.with-nav .modal-head {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 12px;
+}
+.modal-split {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.settings-nav {
+  width: 168px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+  background: var(--bg-sidebar);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+}
+.settings-nav-btn {
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 8px;
+  text-align: left;
+  color: var(--text-2);
+}
+.settings-nav-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.settings-nav-btn.active {
+  background: var(--bg-active);
+  color: var(--text);
+  font-weight: 500;
+}
+.modal.with-nav .modal-body {
+  min-height: 0;
+}
+.modal.with-nav .favorite-list,
+.modal.with-nav .config-list {
+  max-height: min(420px, calc(100vh - 320px));
+}
 .modal-head {
   display: flex;
   align-items: center;
@@ -2015,12 +2062,28 @@ select {
     align-items: stretch;
   }
   .modal,
-  .modal.wide {
+  .modal.wide,
+  .modal.with-nav {
     width: 100vw;
     max-height: none;
     height: 100%;
     border-radius: 0;
     border: 0;
+  }
+  .modal-split {
+    flex-direction: column;
+  }
+  .settings-nav {
+    width: auto;
+    flex-direction: row;
+    overflow-x: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+    padding: 6px 8px;
+  }
+  .settings-nav-btn {
+    flex: none;
+    white-space: nowrap;
   }
   .field {
     flex-wrap: wrap;

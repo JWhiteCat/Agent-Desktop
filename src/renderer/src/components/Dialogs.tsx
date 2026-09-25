@@ -9,7 +9,21 @@ import { MODES } from './Composer'
 import { McpSettings, SkillSettings } from './AgentConfigSettings'
 import { IconFolder, IconRefresh, IconX, Spinner } from './icons'
 
-function Modal({ title, onClose, children, footer, wide }: { title: string; onClose: () => void; children: React.ReactNode; footer?: React.ReactNode; wide?: boolean }) {
+function Modal({
+  title,
+  onClose,
+  children,
+  footer,
+  wide,
+  nav
+}: {
+  title: string
+  onClose: () => void
+  children: React.ReactNode
+  footer?: React.ReactNode
+  wide?: boolean
+  nav?: React.ReactNode
+}) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
     window.addEventListener('keydown', onKey)
@@ -17,14 +31,21 @@ function Modal({ title, onClose, children, footer, wide }: { title: string; onCl
   }, [onClose])
   return (
     <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className={`modal ${wide ? 'wide' : ''}`}>
+      <div className={`modal ${wide ? 'wide' : ''} ${nav ? 'with-nav' : ''}`}>
         <div className="modal-head">
           <h3>{title}</h3>
           <button className="icon-btn" onClick={onClose}>
             <IconX size={14} />
           </button>
         </div>
-        <div className="modal-body">{children}</div>
+        {nav ? (
+          <div className="modal-split">
+            {nav}
+            <div className="modal-body">{children}</div>
+          </div>
+        ) : (
+          <div className="modal-body">{children}</div>
+        )}
         {footer && <div className="modal-foot">{footer}</div>}
       </div>
     </div>
@@ -237,6 +258,19 @@ function RemoteSettings() {
   )
 }
 
+const SETTINGS_TABS = [
+  { id: 'cli', label: 'Cursor CLI' },
+  { id: 'mcp', label: 'MCP' },
+  { id: 'skill', label: 'Skill' },
+  { id: 'models', label: '模型' },
+  { id: 'defaults', label: '默认值' },
+  { id: 'notify', label: '通知' },
+  { id: 'remote', label: '远程控制' },
+  { id: 'appearance', label: '外观与历史' }
+] as const
+
+type SettingsTab = (typeof SETTINGS_TABS)[number]['id']
+
 export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void; onOpenImport: () => void }) {
   const settings = useStore((s) => s.app.settings)
   const models = useStore((s) => s.models)
@@ -245,6 +279,8 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
   const [agentPath, setAgentPath] = useState(settings.agentPath)
   const [apiKey, setApiKey] = useState(settings.apiKey ?? '')
   const [loggingIn, setLoggingIn] = useState(false)
+  const [tab, setTab] = useState<SettingsTab>('cli')
+  const tabs = SETTINGS_TABS.filter((item) => item.id !== 'remote' || !window.api.isRemote)
 
   const check = async () => {
     setChecking(true)
@@ -262,7 +298,26 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
   const update = (patch: Partial<Settings>) => window.api.updateSettings(patch)
 
   return (
-    <Modal title="设置" onClose={onClose} wide>
+    <Modal
+      title="设置"
+      onClose={onClose}
+      nav={
+        <nav className="settings-nav" aria-label="设置分类">
+          {tabs.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              className={`settings-nav-btn ${tab === item.id ? 'active' : ''}`}
+              aria-current={tab === item.id ? 'page' : undefined}
+              onClick={() => setTab(item.id)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </nav>
+      }
+    >
+      {tab === 'cli' && (
       <section className="settings-section">
         <h4>Cursor CLI</h4>
         <div className="cli-card">
@@ -347,27 +402,35 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
           />
         </Field>
       </section>
+      )}
 
+      {tab === 'mcp' && (
       <section className="settings-section">
         <h4>MCP</h4>
         <McpSettings />
       </section>
+      )}
 
+      {tab === 'skill' && (
       <section className="settings-section">
         <h4>Skill</h4>
         <SkillSettings />
       </section>
+      )}
 
+      {tab === 'models' && (
       <section className="settings-section">
         <h4>常用模型</h4>
         <FavoriteModels />
-      </section>
-
-      <section className="settings-section">
-        <h4>默认值</h4>
         <Field label="默认模型" desc="每个项目会记住自己上次选的模型。这里只给还没单独选过的项目用。勾选常用模型后，这里也只列出常用模型">
           <ModelPicker value={modelForChat(models, settings.favoriteModels, settings.defaultModel)} onChange={setDefaultModel} />
         </Field>
+      </section>
+      )}
+
+      {tab === 'defaults' && (
+      <section className="settings-section">
+        <h4>默认值</h4>
         <Field label="默认模式">
           <select className="input" value={settings.defaultMode} onChange={(e) => update({ defaultMode: e.target.value as Settings['defaultMode'] })}>
             {MODES.map((m) => (
@@ -388,7 +451,9 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
           </select>
         </Field>
       </section>
+      )}
 
+      {tab === 'notify' && (
       <section className="settings-section">
         <h4>通知</h4>
         <Field label="任务完成时通知" desc="对话结束后发送系统通知，点击通知可回到该对话">
@@ -400,14 +465,16 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
           />
         </Field>
       </section>
+      )}
 
-      {!window.api.isRemote && (
+      {tab === 'remote' && !window.api.isRemote && (
         <section className="settings-section">
           <h4>远程控制</h4>
           <RemoteSettings />
         </section>
       )}
 
+      {tab === 'appearance' && (
       <section className="settings-section">
         <h4>外观与历史</h4>
         <Field label="主题">
@@ -432,6 +499,7 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
           </button>
         </Field>
       </section>
+      )}
     </Modal>
   )
 }
