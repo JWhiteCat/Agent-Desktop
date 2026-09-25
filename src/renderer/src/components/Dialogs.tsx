@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import QRCode from 'qrcode'
 import type { CliSession, RemoteInfo, Settings } from '@shared/types'
-import type { UsageSummary, UsageWindow } from '@shared/usage'
+import type { UsageSessionRow, UsageSummary, UsageWindow } from '@shared/usage'
 import { compactNumber, formatUsd, relativeTime, shortPath } from '../lib/format'
 import { groupModels } from '../lib/models'
 import { errorText, loadModels, modelForChat, setDefaultModel, setFavoriteModels, toast, useStore } from '../store'
@@ -265,9 +265,14 @@ const USAGE_PERIODS: { id: UsageWindow; label: string }[] = [
   { id: '30d', label: '30天' }
 ]
 
+function UsageToken({ n }: { n: number }) {
+  return <span title={n.toLocaleString('zh-CN')}>{compactNumber(n)}</span>
+}
+
 function UsageSettings() {
   const [period, setPeriod] = useState<UsageWindow>('7d')
   const [summary, setSummary] = useState<UsageSummary | null>(null)
+  const [sessions, setSessions] = useState<UsageSessionRow[] | null>(null)
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -276,23 +281,20 @@ function UsageSettings() {
     setError('')
     window.api.usageSummary(period).then(
       (next) => {
-        if (!cancel) setSummary(next)
+        if (cancel) return
+        setSummary(next.summary)
+        setSessions(next.sessions)
       },
       (err) => {
-        if (!cancel) {
-          setSummary(null)
-          setError(errorText(err))
-        }
+        if (cancel) return
+        setSummary(null)
+        setError(errorText(err))
       }
     )
     return () => {
       cancel = true
     }
   }, [period])
-
-  const token = (n: number) => (
-    <span title={n.toLocaleString('zh-CN')}>{compactNumber(n)}</span>
-  )
 
   return (
     <section className="settings-section">
@@ -329,19 +331,19 @@ function UsageSettings() {
             </div>
             <div className="usage-stat">
               <div className="label">输入</div>
-              <div className="value">{token(summary.inputTokens)}</div>
+              <div className="value"><UsageToken n={summary.inputTokens} /></div>
             </div>
             <div className="usage-stat">
               <div className="label">输出</div>
-              <div className="value">{token(summary.outputTokens)}</div>
+              <div className="value"><UsageToken n={summary.outputTokens} /></div>
             </div>
             <div className="usage-stat">
               <div className="label">缓存读</div>
-              <div className="value">{token(summary.cacheReadTokens)}</div>
+              <div className="value"><UsageToken n={summary.cacheReadTokens} /></div>
             </div>
             <div className="usage-stat">
               <div className="label">缓存写</div>
-              <div className="value">{token(summary.cacheWriteTokens)}</div>
+              <div className="value"><UsageToken n={summary.cacheWriteTokens} /></div>
             </div>
           </div>
           {summary.unpricedTurns > 0 && summary.costUsd != null && (
@@ -368,10 +370,10 @@ function UsageSettings() {
                       {row.model && row.model !== row.label && <div className="muted small mono">{row.model}</div>}
                     </td>
                     <td>{row.turns}</td>
-                    <td title={row.inputTokens.toLocaleString('zh-CN')}>{compactNumber(row.inputTokens)}</td>
-                    <td title={row.outputTokens.toLocaleString('zh-CN')}>{compactNumber(row.outputTokens)}</td>
-                    <td title={row.cacheReadTokens.toLocaleString('zh-CN')}>{compactNumber(row.cacheReadTokens)}</td>
-                    <td title={row.cacheWriteTokens.toLocaleString('zh-CN')}>{compactNumber(row.cacheWriteTokens)}</td>
+                    <td><UsageToken n={row.inputTokens} /></td>
+                    <td><UsageToken n={row.outputTokens} /></td>
+                    <td><UsageToken n={row.cacheReadTokens} /></td>
+                    <td><UsageToken n={row.cacheWriteTokens} /></td>
                     <td>{formatUsd(row.costUsd)}</td>
                   </tr>
                 ))}
@@ -380,8 +382,48 @@ function UsageSettings() {
           </div>
         </>
       )}
+      <h4>会话</h4>
+      {sessions == null ? (
+        error ? null : <div className="muted small">正在统计…</div>
+      ) : sessions.length === 0 ? (
+        <div className="muted small">还没有会话用量</div>
+      ) : (
+        <div className="usage-table-wrap">
+          <table className="usage-table">
+            <thead>
+              <tr>
+                <th>会话</th>
+                <th>时间</th>
+                <th>回合</th>
+                <th>输入</th>
+                <th>输出</th>
+                <th>缓存读</th>
+                <th>缓存写</th>
+                <th>费用</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sessions.map((row) => (
+                <tr key={row.threadId}>
+                  <td>
+                    <div>{row.title}</div>
+                    {row.project && <div className="muted small">{row.project}</div>}
+                  </td>
+                  <td>{relativeTime(row.at)}</td>
+                  <td>{row.turns}</td>
+                  <td><UsageToken n={row.inputTokens} /></td>
+                  <td><UsageToken n={row.outputTokens} /></td>
+                  <td><UsageToken n={row.cacheReadTokens} /></td>
+                  <td><UsageToken n={row.cacheWriteTokens} /></td>
+                  <td>{formatUsd(row.costUsd)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
       <p className="usage-note">
-        费用按 Cursor 公开标价估算（美元 / 百万 token），不是套餐剩余额度，也不含 Teams 的 Token Rate。Auto 和价目表没有的模型只计 token。
+        费用按 Cursor 公开标价估算（美元 / 百万 token），不是套餐剩余额度，也不含 Teams 的 Token Rate。Auto 和价目表没有的模型只计 token。上方合计里，分叉复制的同一轮只计一次；会话列表按各对话自己的记录累计，不受上面的天数限制。
       </p>
     </section>
   )

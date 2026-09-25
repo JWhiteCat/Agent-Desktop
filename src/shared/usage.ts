@@ -35,7 +35,30 @@ export interface UsageSummary {
   models: UsageModelRow[]
 }
 
+export interface UsageSessionRow {
+  threadId: string
+  title: string
+  project?: string
+  /** Time of the latest counted turn. */
+  at: number
+  turns: number
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheWriteTokens: number
+  /** Sum of priced turns. Null when every turn on the session is unpriced. */
+  costUsd: number | null
+}
+
+export interface UsageReport {
+  summary: UsageSummary
+  sessions: UsageSessionRow[]
+}
+
 export interface UsageThread {
+  id?: string
+  title?: string
+  project?: string
   model?: string
   items: Item[]
 }
@@ -49,33 +72,86 @@ function tokensOf(usage: TokenUsage): [number, number, number, number] {
 }
 
 interface Turn {
+  key: string
   at: number
   model: string
   usage: TokenUsage
+}
+
+/** Turns recorded on one session. A copied fork turn stays on that session. */
+function turnsOf(thread: UsageThread): Turn[] {
+  const seen = new Set<string>()
+  const turns: Turn[] = []
+  let lastUserAt: number | undefined
+  for (const item of thread.items) {
+    if (item.kind === 'user') {
+      lastUserAt = item.createdAt
+      continue
+    }
+    if (item.kind !== 'result' || !item.usage) continue
+    const at = item.createdAt ?? lastUserAt
+    if (at == null) continue
+    const model = item.model || thread.model || ''
+    const [input, output, cacheRead, cacheWrite] = tokensOf(item.usage)
+    const key = item.usageId || `${at}|${model}|${input}|${output}|${cacheRead}|${cacheWrite}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    turns.push({ key, at, model, usage: item.usage })
+  }
+  return turns
 }
 
 function collectTurns(threads: UsageThread[]): Turn[] {
   const seen = new Set<string>()
   const turns: Turn[] = []
   for (const thread of threads) {
-    let lastUserAt: number | undefined
-    for (const item of thread.items) {
-      if (item.kind === 'user') {
-        lastUserAt = item.createdAt
-        continue
-      }
-      if (item.kind !== 'result' || !item.usage) continue
-      const at = item.createdAt ?? lastUserAt
-      if (at == null) continue
-      const model = item.model || thread.model || ''
-      const [input, output, cacheRead, cacheWrite] = tokensOf(item.usage)
-      const key = item.usageId || `${at}|${model}|${input}|${output}|${cacheRead}|${cacheWrite}`
-      if (seen.has(key)) continue
-      seen.add(key)
-      turns.push({ at, model, usage: item.usage })
+    for (const turn of turnsOf(thread)) {
+      if (seen.has(turn.key)) continue
+      seen.add(turn.key)
+      turns.push(turn)
     }
   }
   return turns
+}
+
+/** Lifetime totals for each session that recorded usage. Not filtered by the summary window. */
+export function listSessionUsage(threads: UsageThread[]): UsageSessionRow[] {
+  const rows: UsageSessionRow[] = []
+  for (const thread of threads) {
+    if (!thread.id) continue
+    const turns = turnsOf(thread)
+    if (!turns.length) continue
+    const row: UsageSessionRow = {
+      threadId: thread.id,
+      title: thread.title?.trim() || '未命名',
+      project: thread.project?.trim() || undefined,
+      at: 0,
+      turns: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      costUsd: null
+    }
+    let priced = 0
+    let unpriced = 0
+    for (const turn of turns) {
+      const quote = quoteModel(turn.model, turn.usage)
+      const [input, output, cacheRead, cacheWrite] = tokensOf(turn.usage)
+      row.turns += 1
+      row.inputTokens += input
+      row.outputTokens += output
+      row.cacheReadTokens += cacheRead
+      row.cacheWriteTokens += cacheWrite
+      if (turn.at > row.at) row.at = turn.at
+      if (quote.costUsd == null) unpriced += 1
+      else priced += quote.costUsd
+    }
+    row.costUsd = unpriced === row.turns ? null : priced
+    rows.push(row)
+  }
+  rows.sort((a, b) => b.at - a.at)
+  return rows
 }
 
 /** Rolls up local turns. Forks that share a `usageId` (or the same user time and tokens) count once. */

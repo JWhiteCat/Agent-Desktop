@@ -16,7 +16,7 @@ import { syncManagedSkills, userSkillsDir } from './skills'
 import { normalizeMcpServers, normalizeSkills } from '@shared/agent-config'
 import { Store } from './store'
 import { lanAddresses, newRemoteToken, RemoteServer, type Handler } from './remote'
-import { summarizeUsage, type UsageWindow } from '@shared/usage'
+import { listSessionUsage, summarizeUsage, type UsageWindow } from '@shared/usage'
 
 let win: BrowserWindow | null = null
 let store: Store
@@ -304,11 +304,16 @@ const handlers: Record<string, Handler> = {
     sessions.answerQuestion(threadId, questionId, answers)
   },
 
-  'usage:summary': (period: UsageWindow) =>
-    summarizeUsage(
-      store.threads.map((t) => ({ model: t.model, items: store.items(t.id) })),
-      period
-    ),
+  'usage:summary': (period: UsageWindow) => {
+    const threads = store.threads.map((t) => ({
+      id: t.id,
+      title: t.title,
+      project: store.project(t.projectId)?.name,
+      model: t.model,
+      items: store.items(t.id)
+    }))
+    return { summary: summarizeUsage(threads, period), sessions: listSessionUsage(threads) }
+  },
 
   'settings:update': async (patch: Partial<Settings>) => {
     const next: Partial<Settings> = { ...patch }

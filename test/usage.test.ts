@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { quoteModel } from '../src/shared/model-prices'
-import { summarizeUsage, type UsageThread } from '../src/shared/usage'
+import { listSessionUsage, summarizeUsage, type UsageThread } from '../src/shared/usage'
 import type { Item } from '../src/shared/types'
 
 const GROK = 'grok-4.7[context=256k,reasoning_effort=high,fast=false]'
@@ -106,5 +106,75 @@ describe('usage summary', () => {
     expect(summary.models[0].label).toBe('Grok 4.7 长上下文')
     expect(summary.models[1].costUsd).toBeNull()
     expect(summarizeUsage([{ items: [user(at), result({ id: 'only', model: 'auto', createdAt: at, usage })] }], '1d', now).costUsd).toBeNull()
+  })
+})
+
+describe('session usage', () => {
+  const usage = { inputTokens: 1000, outputTokens: 10 }
+
+  it('counts every turn on a session, including ones outside the summary window', () => {
+    const thread: UsageThread = {
+      id: 't1',
+      title: '长对话',
+      project: 'AgentDesktop',
+      model: 'grok-4.7',
+      items: [
+        user(now - 2 * hour, 'u1'),
+        result({ id: 'a', usageId: 'a', usage }),
+        user(now - 40 * day, 'u4'),
+        result({ id: 'd', usageId: 'd', usage })
+      ]
+    }
+    expect(summarizeUsage([thread], '30d', now).turns).toBe(1)
+    const [row] = listSessionUsage([thread])
+    expect(row).toMatchObject({
+      threadId: 't1',
+      title: '长对话',
+      project: 'AgentDesktop',
+      at: now - 2 * hour,
+      turns: 2,
+      inputTokens: 2000,
+      outputTokens: 20
+    })
+    expect(row.costUsd).toBeGreaterThan(0)
+  })
+
+  it('lists a forked turn on each session while the summary counts it once', () => {
+    const at = now - hour
+    const threads: UsageThread[] = [
+      {
+        id: 'a',
+        title: '原会话',
+        items: [user(at, 'u1'), result({ id: 'r1', usageId: 'same', model: 'grok-4.7', createdAt: at, usage })]
+      },
+      {
+        id: 'b',
+        title: '分叉',
+        items: [user(at, 'u2'), result({ id: 'r2', usageId: 'same', model: 'grok-4.7', createdAt: at, usage })]
+      }
+    ]
+    expect(summarizeUsage(threads, '1d', now).turns).toBe(1)
+    const rows = listSessionUsage(threads)
+    expect(rows.map((row) => row.threadId).sort()).toEqual(['a', 'b'])
+    expect(rows.every((row) => row.turns === 1 && row.inputTokens === 1000)).toBe(true)
+  })
+
+  it('leaves an unpriced session unpriced and skips sessions with no usage', () => {
+    const at = now - hour
+    const rows = listSessionUsage([
+      { id: 'empty', title: '空', items: [user(at)] },
+      { id: 'auto', title: '  ', items: [user(at), result({ id: 'only', model: 'auto', createdAt: at, usage })] }
+    ])
+    expect(rows).toEqual([
+      expect.objectContaining({ threadId: 'auto', title: '未命名', turns: 1, costUsd: null })
+    ])
+  })
+
+  it('sorts sessions by the latest usage time', () => {
+    const rows = listSessionUsage([
+      { id: 'old', title: '旧', items: [result({ id: 'r1', usageId: '1', model: 'grok-4.7', createdAt: now - 2 * day, usage })] },
+      { id: 'new', title: '新', items: [result({ id: 'r2', usageId: '2', model: 'grok-4.7', createdAt: now - hour, usage })] }
+    ])
+    expect(rows.map((row) => row.threadId)).toEqual(['new', 'old'])
   })
 })
