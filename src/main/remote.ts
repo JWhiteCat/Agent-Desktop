@@ -35,6 +35,23 @@ export function rewriteDevAbsolutePaths(body: string, prefix: string): string {
   return body.replace(/(^|[\s"'`(:=])\/(?=@|src\/|node_modules\/)/g, `$1${base}/`)
 }
 
+/**
+ * Dev-mode page requests are forwarded to Vite. The request target must stay on that origin:
+ * an absolute-form or protocol-relative URL would otherwise turn the open remote port into a proxy.
+ */
+export function resolveDevProxyUrl(requestUrl: string, devUrl: string): URL | undefined {
+  let base: URL
+  let target: URL
+  try {
+    base = new URL(devUrl)
+    target = new URL(requestUrl || '/', base)
+  } catch {
+    return undefined
+  }
+  if (target.origin !== base.origin) return undefined
+  return target
+}
+
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -238,7 +255,12 @@ export class RemoteServer {
 
   private proxy(req: http.IncomingMessage, res: http.ServerResponse, devUrl: string): void {
     const prefix = publicPrefixHeader(req.headers['x-agent-desktop-prefix'])
-    const target = new URL(req.url ?? '/', devUrl)
+    const target = resolveDevProxyUrl(req.url ?? '/', devUrl)
+    if (!target) {
+      req.resume()
+      res.writeHead(403).end()
+      return
+    }
     const upstream = http.request(
       target,
       { method: req.method, headers: { ...req.headers, host: target.host } },

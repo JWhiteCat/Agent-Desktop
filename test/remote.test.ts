@@ -1,8 +1,9 @@
+import http from 'node:http'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { RemoteServer, rewriteDevAbsolutePaths } from '../src/main/remote'
+import { RemoteServer, resolveDevProxyUrl, rewriteDevAbsolutePaths } from '../src/main/remote'
 
 const TOKEN = 'secret-token'
 
@@ -78,5 +79,81 @@ describe('RemoteServer', () => {
     while (!text.includes('data:')) text += decoder.decode((await reader.read()).value)
     expect(text).toContain(JSON.stringify({ channel: 'state:changed', payload: { n: 1 } }))
     await reader.cancel()
+  })
+})
+
+describe('dev proxy target', () => {
+  const devUrl = 'http://127.0.0.1:5173/'
+
+  it('keeps ordinary page paths on the Vite origin', () => {
+    expect(resolveDevProxyUrl('/src/main.tsx', devUrl)?.href).toBe('http://127.0.0.1:5173/src/main.tsx')
+    expect(resolveDevProxyUrl('http://127.0.0.1:5173/src/main.tsx', devUrl)?.href).toBe('http://127.0.0.1:5173/src/main.tsx')
+  })
+
+  it('rejects absolute-form and protocol-relative targets', () => {
+    expect(resolveDevProxyUrl('http://169.254.169.254/latest/meta-data/', devUrl)).toBeUndefined()
+    expect(resolveDevProxyUrl('//evil.example/steal', devUrl)).toBeUndefined()
+    expect(resolveDevProxyUrl('http://127.0.0.1:9/secret', devUrl)).toBeUndefined()
+  })
+})
+
+describe('dev proxy server', () => {
+  let vite: http.Server
+  let bait: http.Server
+  let remote: RemoteServer
+  let vitePort: number
+  let baitHits = 0
+
+  beforeEach(async () => {
+    baitHits = 0
+    vite = http.createServer((_req, res) => {
+      res.writeHead(200, { 'content-type': 'text/plain' })
+      res.end('from-vite')
+    })
+    bait = http.createServer((_req, res) => {
+      baitHits += 1
+      res.writeHead(200, { 'content-type': 'text/plain' })
+      res.end('from-bait')
+    })
+    await new Promise<void>((resolve) => vite.listen(0, '127.0.0.1', () => resolve()))
+    await new Promise<void>((resolve) => bait.listen(0, '127.0.0.1', () => resolve()))
+    vitePort = (vite.address() as { port: number }).port
+    remote = new RemoteServer()
+    await remote.start({
+      port: 0,
+      token: TOKEN,
+      clientId: 'aaaaaaaaaaaaaaaa',
+      devUrl: `http://127.0.0.1:${vitePort}`,
+      handlers: {}
+    })
+  })
+
+  afterEach(async () => {
+    await remote.stop()
+    await Promise.all([vite, bait].map((server) => new Promise<void>((resolve) => server.close(() => resolve()))))
+  })
+
+  function request(target: string): Promise<{ status: number; body: string }> {
+    return new Promise((resolve, reject) => {
+      const req = http.request({ hostname: '127.0.0.1', port: remote.port, path: target, method: 'GET' }, (res) => {
+        const chunks: Buffer[] = []
+        res.on('data', (chunk: Buffer) => chunks.push(chunk))
+        res.on('end', () => resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks).toString('utf8') }))
+      })
+      req.on('error', reject)
+      req.end()
+    })
+  }
+
+  it('forwards page requests to Vite and refuses other hosts', async () => {
+    const baitPort = (bait.address() as { port: number }).port
+    const page = await request('/src/main.tsx')
+    expect(page).toEqual({ status: 200, body: 'from-vite' })
+
+    const absolute = await request(`http://127.0.0.1:${baitPort}/steal`)
+    const relative = await request('//evil.example/steal')
+    expect(absolute.status).toBe(403)
+    expect(relative.status).toBe(403)
+    expect(baitHits).toBe(0)
   })
 })
