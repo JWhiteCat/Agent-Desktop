@@ -390,11 +390,13 @@ function ThreadRow(props: {
           }}
         />
       ) : (
-        <span className="thread-title">
-          {t.title}
-          {props.projectName && <span className="thread-project"> · {props.projectName}</span>}
-        </span>
-        <span className="badge">{threadCli(t) === 'codex' ? 'Codex' : 'Cursor'}</span>
+        <>
+          <span className="thread-title">
+            {t.title}
+            {props.projectName && <span className="thread-project"> · {props.projectName}</span>}
+          </span>
+          <span className="badge">{threadCli(t) === 'codex' ? 'Codex' : 'Cursor'}</span>
+        </>
       )}
       <span className="thread-time">{relativeTime(t.updatedAt)}</span>
       <div className="row-tools" onClick={(e) => e.stopPropagation()}>

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { relativeTime, shortPath } from '../lib/format'
-import { addProjectInteractive, defaultModelFor, favoritesFor, goHome, modelForChat, openThread, projectModelFor, startThread, useStore } from '../store'
+import { defaultModelFor, favoritesFor, modelForChat, projectModelFor } from '../lib/model-prefs'
+import { addProjectInteractive, goHome, openThread, startThread, useStore } from '../store'
 import { Composer, type ComposerHandle } from './Composer'
 import { IconChevronDown, IconFolder, IconImport, IconPlus } from './icons'
 import { MenuList, Popover } from './Menu'

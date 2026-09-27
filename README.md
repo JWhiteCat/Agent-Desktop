@@ -164,9 +164,16 @@ ACP 下 CLI 会自动批准模型发起的 SwitchMode，且不通知客户端。
 ## 目录
 
 ```
-src/main      Electron 主进程：窗口、CLI 进程、持久化、git diff、局域网远程服务（remote.ts）、公网 SSH 隧道（public-tunnel.ts）
-scripts       公网入口（public-gateway.py）和服务器安装脚本（setup-public-server.sh）
-src/preload   渲染进程可用的安全 API
-src/renderer  React 界面
-src/shared    主进程与界面共用的类型和解析（如 Plan 模式的提问块）
+src/main           Electron 主进程。index.ts 只负责启动和退出
+  window.ts        窗口、标题栏主题、每个进程自己的缓存目录
+  thread-history.ts 分叉对话，以及从 CLI 存储同步记录
+  cli-catalog.ts   模型列表、CLI 检测和登录
+  remote-runtime.ts 按设置开关局域网服务和公网隧道
+  remote.ts        局域网 HTTP 服务
+  public-tunnel.ts 公网 SSH 反向隧道
+  ipc/             按项目、对话、设置、CLI、用量和本机操作拆开的 IPC
+scripts            公网入口（public-gateway.py）和服务器安装脚本（setup-public-server.sh）
+src/preload        渲染进程可用的安全 API
+src/renderer       React 界面。设置各分类在 components/settings。选哪个模型由 lib/model-prefs.ts 决定，不经过界面状态
+src/shared         主进程与界面共用的类型和解析（如 Plan 模式的提问块）
 ```

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { catalogFromStorageJson, mergeModelLists } from '../src/shared/model-catalog'
-import { modelForChat, pruneFavoriteList } from '../src/renderer/src/store'
+import { modelForChat, pruneFavoriteList } from '../src/renderer/src/lib/model-prefs'
 import { describeModel, effortChoices, findVariant, groupModels, listedModelGroups, modelCaption, pickVariant } from '../src/renderer/src/lib/models'
 import type { ModelInfo } from '../src/shared/types'
 import { GROK_47_500K_HIGH_FAST } from './grok-model'

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CliProvider } from '@shared/types'
-import { favoritesFor, loadModels, useStore } from '../store'
+import { favoritesFor } from '../lib/model-prefs'
+import { loadModels, useStore } from '../store'
 import {
   contextChoices,
   describeModel,

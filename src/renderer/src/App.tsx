@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { ChangesPanel } from './components/ChangesPanel'
-import { ImportDialog, SettingsDialog } from './components/Dialogs'
+import { ImportDialog } from './components/ImportDialog'
+import { SettingsDialog } from './components/settings/SettingsDialog'
 import { Home } from './components/Home'
 import { IconSidebar } from './components/icons'
 import { Sidebar } from './components/Sidebar'
