@@ -87,19 +87,20 @@ function QuotaRow({ row }: { row: QuotaWindow }) {
           <div className={barClass(used)} style={{ width: `${Math.max(0, Math.min(100, used))}%` }} />
         </div>
       ) : null}
-      {row.usage ? <WindowUsageLine usage={row.usage} /> : null}
+      {row.usage ? <WindowUsageLine usage={row.usage} hidePrice={row.id === 'on-demand' || row.id === 'on-demand-pooled'} /> : null}
       {reset ? <div className="muted small">{reset}</div> : null}
     </div>
   )
 }
 
-function WindowUsageLine({ usage }: { usage: WindowUsage }) {
-  const price = usage.costUsd == null ? '未定价' : `总价 ${formatUsd(usage.costUsd)}`
-  if (!usage.tokensKnown) return <div className="muted small">{price}</div>
+function WindowUsageLine({ usage, hidePrice }: { usage: WindowUsage; hidePrice?: boolean }) {
+  const price = hidePrice ? '' : usage.costUsd == null ? '未定价' : `总价 ${formatUsd(usage.costUsd)}`
+  if (!usage.tokensKnown) return price ? <div className="muted small">{price}</div> : null
   return (
     <div className="muted small">
       输入 <TokenCount n={usage.inputTokens} /> · 输出 <TokenCount n={usage.outputTokens} /> · 缓存读 <TokenCount n={usage.cacheReadTokens} /> · 缓存写{' '}
-      <TokenCount n={usage.cacheWriteTokens} /> · {price}
+      <TokenCount n={usage.cacheWriteTokens} />
+      {price ? ` · ${price}` : ''}
     </div>
   )
 }

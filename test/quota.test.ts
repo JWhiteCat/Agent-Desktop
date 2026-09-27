@@ -37,10 +37,28 @@ describe('cursor quota', () => {
     expect(quota.windows[0]).toMatchObject({ usedPercent: 12, resetsAt: 1_771_077_734_000 })
     expect(quota.windows[1]).toMatchObject({
       usedPercent: 46.444,
-      amount: '$232.22 / $400.00',
       resetsAt: 1_771_077_734_000
     })
+    expect(quota.windows[1].amount).toBeUndefined()
     expect(quota.windows[2]).toMatchObject({ usedPercent: 25, amount: '$25.00 / $100.00' })
+  })
+
+  it('does not show the saturated included cap as other-model spend', () => {
+    const quota = parseCursorQuota(
+      {
+        planUsage: {
+          totalSpend: 104661,
+          includedSpend: 2000,
+          bonusSpend: 102661,
+          limit: 2000,
+          autoPercentUsed: 80.6,
+          apiPercentUsed: 100
+        }
+      },
+      { planInfo: { planName: 'Team' } }
+    )
+    expect(quota.windows.find((row) => row.id === 'other-models')).toMatchObject({ usedPercent: 100 })
+    expect(quota.windows.find((row) => row.id === 'other-models')?.amount).toBeUndefined()
   })
 
   it('skips on-demand when there is no concrete limit', () => {

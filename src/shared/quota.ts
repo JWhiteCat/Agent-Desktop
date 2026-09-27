@@ -133,17 +133,16 @@ function otherModelsWindow(
   const remaining = num(pick(planUsage, 'remaining'))
   const limit = num(pick(planUsage, 'limit'))
   const planLimit = num(pick(planInfo, 'includedAmountCents', 'included_amount_cents'))
-  let amount: string | undefined
-  if (limit != null && limit > 0) {
-    const usedCents = included ?? (remaining != null ? limit - remaining : null)
-    if (usedCents != null) amount = `${usdFromCents(usedCents)} / ${usdFromCents(limit)}`
-  } else if (planLimit != null && planLimit > 0 && included != null) {
-    amount = `${usdFromCents(included)} / ${usdFromCents(planLimit)}`
-  }
-  if (apiPercent == null && !amount) return null
   let usedPercent = apiPercent
-  if (usedPercent == null && limit != null && limit > 0 && included != null) usedPercent = (included / limit) * 100
-  return { id: 'other-models', label: '每月', detail: '其他模型', usedPercent, amount, resetsAt }
+  if (usedPercent == null && limit != null && limit > 0) {
+    const usedCents = included ?? (remaining != null ? limit - remaining : null)
+    if (usedCents != null) usedPercent = (usedCents / limit) * 100
+  } else if (usedPercent == null && planLimit != null && planLimit > 0 && included != null) {
+    usedPercent = (included / planLimit) * 100
+  }
+  if (usedPercent == null) return null
+  // includedSpend stops at the plan's included dollar cap, so it is not this pool's spend.
+  return { id: 'other-models', label: '每月', detail: '其他模型', usedPercent, resetsAt }
 }
 
 function spendWindow(spend: Record<string, unknown> | null, resetsAt: number | undefined): QuotaWindow | null {
