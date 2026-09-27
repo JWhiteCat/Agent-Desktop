@@ -4,16 +4,27 @@ const TOKEN_KEY = 'agent-desktop:remoteToken'
 
 type Listener = (payload: unknown) => void
 
+/** Resolve an API path against the page directory, so `/c/<id>/` and a LAN URL at `/` both work. */
+export function remoteUrl(pageHref: string, path: string): string {
+  return new URL(path, new URL('.', pageHref)).href
+}
+
+function tokenKey(): string {
+  const match = /^\/c\/([a-f0-9]{16})(?:\/|$)/.exec(location.pathname)
+  return match ? `${TOKEN_KEY}:${match[1]}` : TOKEN_KEY
+}
+
 function takeToken(): string {
   const url = new URL(location.href)
   const fromUrl = url.searchParams.get('token')
+  const key = tokenKey()
   if (fromUrl) {
-    localStorage.setItem(TOKEN_KEY, fromUrl)
+    localStorage.setItem(key, fromUrl)
     url.searchParams.delete('token')
     history.replaceState(null, '', url.pathname + url.search + url.hash)
     return fromUrl
   }
-  return localStorage.getItem(TOKEN_KEY) ?? ''
+  return localStorage.getItem(key) ?? ''
 }
 
 /** `DesktopApi` for a phone browser talking to the desktop app over the LAN. */
@@ -22,7 +33,7 @@ export function createWebApi(): DesktopApi {
   const listeners = new Map<string, Set<Listener>>()
 
   async function call<T>(name: string, ...args: unknown[]): Promise<T> {
-    const res = await fetch(`/api/rpc/${encodeURIComponent(name)}`, {
+    const res = await fetch(remoteUrl(location.href, `api/rpc/${encodeURIComponent(name)}`), {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-token': token },
       body: JSON.stringify(args)
@@ -37,7 +48,7 @@ export function createWebApi(): DesktopApi {
   }
 
   let connectedOnce = false
-  const events = new EventSource(`/api/events?token=${encodeURIComponent(token)}`)
+  const events = new EventSource(remoteUrl(location.href, `api/events?token=${encodeURIComponent(token)}`))
   events.onopen = () => {
     // Events sent while disconnected are lost; refetch the state after a reconnect.
     if (connectedOnce) void call('state:get').then((s) => emit('state:changed', s), () => {})

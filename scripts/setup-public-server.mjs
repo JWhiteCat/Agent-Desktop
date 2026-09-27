@@ -3,8 +3,11 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const scriptPath = path.join(path.dirname(fileURLToPath(import.meta.url)), 'setup-public-server.sh')
+const dir = path.dirname(fileURLToPath(import.meta.url))
+const scriptPath = path.join(dir, 'setup-public-server.sh')
+const gatewayPath = path.join(dir, 'public-gateway.py')
 const script = fs.readFileSync(scriptPath).toString('utf8').replace(/\r\n/g, '\n')
+const gatewayB64 = Buffer.from(fs.readFileSync(gatewayPath).toString('utf8').replace(/\r\n/g, '\n')).toString('base64')
 
 function arg(name, fallback) {
   const index = process.argv.indexOf(name)
@@ -39,5 +42,5 @@ ssh.on('error', (err) => {
   process.exit(1)
 })
 ssh.on('exit', (code) => process.exit(code ?? 1))
-ssh.stdin.write(script)
+ssh.stdin.write(`GATEWAY_B64='${gatewayB64}'\n${script}`)
 ssh.stdin.end()

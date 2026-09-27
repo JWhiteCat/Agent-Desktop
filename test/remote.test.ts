@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { RemoteServer } from '../src/main/remote'
+import { RemoteServer, rewriteDevAbsolutePaths } from '../src/main/remote'
 
 const TOKEN = 'secret-token'
 
@@ -18,6 +18,7 @@ describe('RemoteServer', () => {
     await server.start({
       port: 0,
       token: TOKEN,
+      clientId: 'aaaaaaaaaaaaaaaa',
       staticDir,
       handlers: {
         echo: (a: number, b: number) => a + b,
@@ -36,6 +37,19 @@ describe('RemoteServer', () => {
 
   const rpc = (name: string, args: unknown[], token = TOKEN) =>
     fetch(`${base}/api/rpc/${name}`, { method: 'POST', headers: { 'x-token': token }, body: JSON.stringify(args) })
+
+  it('reports this computer on the public health check without a token', async () => {
+    const res = await fetch(`${base}/api/public-health`)
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ ok: true, clientId: 'aaaaaaaaaaaaaaaa' })
+  })
+
+  it('rewrites Vite dev paths so they stay under the public prefix', () => {
+    const body = `<script src="/src/main.tsx"></script>\nimport "/@vite/client"\nimport "/src/App.tsx"`
+    expect(rewriteDevAbsolutePaths(body, '/c/aaaaaaaaaaaaaaaa')).toBe(
+      `<script src="/c/aaaaaaaaaaaaaaaa/src/main.tsx"></script>\nimport "/c/aaaaaaaaaaaaaaaa/@vite/client"\nimport "/c/aaaaaaaaaaaaaaaa/src/App.tsx"`
+    )
+  })
 
   it('serves the app without a token and falls back to index.html', async () => {
     const res = await fetch(`${base}/some/route`)

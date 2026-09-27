@@ -190,13 +190,15 @@ export interface Settings {
   remotePort: number
   /** Secret embedded in the remote link. Never sent to remote clients. */
   remoteToken: string
+  /** Stable id in the public URL and the server socket name. Not a secret. */
+  remoteClientId: string
   /** Expose the LAN server through an SSH reverse tunnel. */
   remotePublicEnabled: boolean
   /** SSH login on the public server. */
   remotePublicUser: string
   /** Public server hostname or IPv4 address, without a scheme or port. */
   remotePublicHost: string
-  /** TCP port opened on the public server. */
+  /** TCP port the shared public gateway listens on. */
   remotePublicPort: number
 }
 
@@ -291,6 +293,7 @@ export const DEFAULT_SETTINGS: Settings = {
   remoteEnabled: false,
   remotePort: 8765,
   remoteToken: '',
+  remoteClientId: '',
   remotePublicEnabled: false,
   remotePublicUser: 'root',
   remotePublicHost: '43.167.166.239',

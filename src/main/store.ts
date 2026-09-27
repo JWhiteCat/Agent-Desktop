@@ -4,6 +4,7 @@ import path from 'node:path'
 import { normalizeMcpServers, normalizeSkills } from '@shared/agent-config'
 import { DEFAULT_SETTINGS, type Item, type Project, type Settings, type ThreadMeta } from '@shared/types'
 import { newId } from './id'
+import { newRemoteClientId, validClientId } from './public-tunnel'
 
 interface PersistedState {
   version: 1
@@ -41,6 +42,8 @@ export class Store {
     this.stateFile = path.join(this.dir, 'state.json')
     fs.mkdirSync(this.threadsDir, { recursive: true })
     const loaded = readJson<PersistedState>(this.stateFile)
+    const rawClientId = loaded?.settings?.remoteClientId
+    const remoteClientId = typeof rawClientId === 'string' && validClientId(rawClientId) ? rawClientId : newRemoteClientId()
     this.state = {
       version: 1,
       projects: loaded?.projects ?? [],
@@ -59,9 +62,11 @@ export class Store {
             ? loaded.settings.favoriteModels.slice()
             : [],
         mcpServers: normalizeMcpServers(loaded?.settings?.mcpServers),
-        skills: normalizeSkills(loaded?.settings?.skills)
+        skills: normalizeSkills(loaded?.settings?.skills),
+        remoteClientId
       }
     }
+    if (remoteClientId !== rawClientId) this.flush()
   }
 
   get dataDir(): string {

@@ -1,3 +1,4 @@
+import crypto from 'node:crypto'
 import { spawn, type ChildProcess } from 'node:child_process'
 import fs from 'node:fs'
 import http from 'node:http'
@@ -5,6 +6,8 @@ import path from 'node:path'
 import type { PublicLinkStatus } from '@shared/types'
 
 export const RETRY_DELAYS_MS = [1000, 2000, 5000, 10000]
+export const PUBLIC_SOCKET_DIR = '/run/agent-desktop'
+const CLIENT_ID = /^[a-f0-9]{16}$/
 
 const SSH_USER = /^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$/
 const HOST_LABEL = /^(?:[A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9-]{0,61}[A-Za-z0-9])$/
@@ -13,10 +16,12 @@ const IPV4 = /^(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?:\.(?:25[0-5]|2[0-4]\d|1\d\d
 export interface TunnelTarget {
   user: string
   host: string
-  /** Port opened on the public server. */
+  /** Port the public gateway listens on. */
   port: number
   /** Local remote-control port the tunnel forwards to. */
   localPort: number
+  /** Stable id used in the public URL and the server socket name. */
+  clientId: string
 }
 
 export type SshSpawn = (command: string, args: string[], options: { windowsHide: boolean; stdio: ['ignore', 'ignore', 'pipe'] }) => ChildProcess
@@ -49,8 +54,22 @@ export function validatePublicPort(port: number): number {
   return value
 }
 
-export function publicRemoteUrl(host: string, port: number, token: string): string {
-  return `http://${host}:${port}/?token=${encodeURIComponent(token)}`
+export function validClientId(id: string): boolean {
+  return CLIENT_ID.test(id)
+}
+
+export function newRemoteClientId(): string {
+  return crypto.randomBytes(8).toString('hex')
+}
+
+export function publicSocketPath(clientId: string): string {
+  if (!validClientId(clientId)) throw new Error('电脑标识无效')
+  return `${PUBLIC_SOCKET_DIR}/${clientId}`
+}
+
+export function publicRemoteUrl(host: string, port: number, clientId: string, token: string): string {
+  if (!validClientId(clientId)) throw new Error('电脑标识无效')
+  return `http://${host}:${port}/c/${clientId}/?token=${encodeURIComponent(token)}`
 }
 
 export function buildSshArgs(target: TunnelTarget): string[] {
@@ -68,7 +87,7 @@ export function buildSshArgs(target: TunnelTarget): string[] {
     '-o',
     'StrictHostKeyChecking=accept-new',
     '-R',
-    `0.0.0.0:${target.port}:127.0.0.1:${target.localPort}`,
+    `${publicSocketPath(target.clientId)}:127.0.0.1:${target.localPort}`,
     `${target.user}@${target.host}`
   ]
 }
@@ -84,8 +103,8 @@ export function resolveSshPath(): string {
 export function explainSshFailure(text: string): string {
   const raw = text.trim()
   if (/permission denied/i.test(raw)) return '公钥登录失败，请确认本机默认密钥能登录该用户'
-  if (/remote port forwarding failed|administratively prohibited/i.test(raw)) {
-    return '反向隧道被拒绝。请确认公网端口空闲，且服务器 GatewayPorts 为 clientspecified 或 yes'
+  if (/remote port forwarding failed|administratively prohibited|streamlocal|unix domain socket/i.test(raw)) {
+    return '反向隧道被拒绝。请重新运行 setup:public-server，确认服务器允许 Unix 套接字转发'
   }
   if (/connection refused|timed out|no route|network is unreachable/i.test(raw)) return '无法连接服务器'
   if (/ENOENT|not found/i.test(raw)) return '未找到 OpenSSH 客户端'
@@ -98,19 +117,43 @@ export function explainSshFailure(text: string): string {
   return line || '隧道已断开'
 }
 
-const UNREACHABLE = '公网端口不可达。请确认安全组已放行该端口，且服务器 GatewayPorts 为 clientspecified 或 yes'
+const UNREACHABLE = '公网入口不可达。请确认已运行 setup:public-server，且安全组放行了该端口'
 
-function probeReachable(host: string, port: number): Promise<boolean> {
+function probeReachable(host: string, port: number, clientId: string): Promise<boolean> {
   return new Promise((resolve) => {
-    const req = http.get({ host, port, path: '/', timeout: 5000 }, (res) => {
-      res.resume()
-      resolve((res.statusCode ?? 500) < 500)
+    let done = false
+    const finish = (ok: boolean) => {
+      if (done) return
+      done = true
+      resolve(ok)
+    }
+    const req = http.get({ host, port, path: `/c/${clientId}/api/public-health`, timeout: 5000 }, (res) => {
+      const chunks: Buffer[] = []
+      let size = 0
+      res.on('data', (chunk: Buffer) => {
+        size += chunk.length
+        if (size > 4096) {
+          req.destroy()
+          finish(false)
+          return
+        }
+        chunks.push(chunk)
+      })
+      res.on('end', () => {
+        if ((res.statusCode ?? 500) >= 500) return finish(false)
+        try {
+          const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as { ok?: boolean; clientId?: string }
+          finish(body.ok === true && body.clientId === clientId)
+        } catch {
+          finish(false)
+        }
+      })
     })
     req.on('timeout', () => {
       req.destroy()
-      resolve(false)
+      finish(false)
     })
-    req.on('error', () => resolve(false))
+    req.on('error', () => finish(false))
   })
 }
 
@@ -131,7 +174,7 @@ export class PublicTunnel {
   constructor(
     private spawnFn: SshSpawn = spawn as SshSpawn,
     private sshPath = resolveSshPath(),
-    private probe: (host: string, port: number) => Promise<boolean> = probeReachable
+    private probe: (host: string, port: number, clientId: string) => Promise<boolean> = probeReachable
   ) {}
 
   /** Stops any tunnel, then connects. Invalid targets should be rejected by the caller. */
@@ -217,7 +260,7 @@ export class PublicTunnel {
     for (const wait of [800, 1200, 2000]) {
       await sleep(wait)
       if (gen !== this.generation || this.child === undefined) return
-      if (await this.probe(target.host, target.port)) {
+      if (await this.probe(target.host, target.port, target.clientId)) {
         if (gen !== this.generation || this.child === undefined) return
         this.attempt = 0
         this.setStatus('up')

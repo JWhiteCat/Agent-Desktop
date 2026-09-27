@@ -19,7 +19,7 @@ import { syncAllManagedSkills, userSkillsDir } from './skills'
 import { normalizeMcpServers, normalizeSkills } from '@shared/agent-config'
 import { Store } from './store'
 import { lanAddresses, newRemoteToken, RemoteServer, type Handler } from './remote'
-import { PublicTunnel, publicRemoteUrl, validatePublicHost, validatePublicPort, validatePublicUser } from './public-tunnel'
+import { PublicTunnel, newRemoteClientId, publicRemoteUrl, validClientId, validatePublicHost, validatePublicPort, validatePublicUser } from './public-tunnel'
 import { listSessionUsage, summarizeUsage, type UsageWindow } from '@shared/usage'
 
 let win: BrowserWindow | null = null
@@ -338,6 +338,10 @@ const handlers: Record<string, Handler> = {
     if (patch.remotePublicUser !== undefined) next.remotePublicUser = validatePublicUser(patch.remotePublicUser)
     if (patch.remotePublicHost !== undefined) next.remotePublicHost = validatePublicHost(patch.remotePublicHost)
     if (patch.remotePublicPort !== undefined) next.remotePublicPort = validatePublicPort(Number(patch.remotePublicPort))
+    if (patch.remoteClientId !== undefined) {
+      if (!validClientId(String(patch.remoteClientId))) throw new Error('电脑标识无效')
+      next.remoteClientId = patch.remoteClientId
+    }
     if (patch.skills !== undefined) {
       next.skills = normalizeSkills(patch.skills)
       syncAllManagedSkills(next.skills)
@@ -364,6 +368,7 @@ const handlers: Record<string, Handler> = {
       patch.remoteEnabled !== undefined ||
       patch.remotePort !== undefined ||
       patch.remoteToken !== undefined ||
+      patch.remoteClientId !== undefined ||
       patch.remotePublicEnabled !== undefined ||
       patch.remotePublicUser !== undefined ||
       patch.remotePublicHost !== undefined ||
@@ -492,6 +497,7 @@ const REMOTE_ONLY_DESKTOP_SETTINGS: (keyof Settings)[] = [
   'remoteEnabled',
   'remotePort',
   'remoteToken',
+  'remoteClientId',
   'remotePublicEnabled',
   'remotePublicUser',
   'remotePublicHost',
@@ -521,7 +527,10 @@ function remoteInfo(): RemoteInfo {
   const s = store.settings
   const port = remote.port ?? s.remotePort
   const publicOn = s.remoteEnabled && s.remotePublicEnabled
-  const link = publicOn && publicTunnel.status === 'up' ? publicRemoteUrl(s.remotePublicHost, s.remotePublicPort, s.remoteToken) : undefined
+  const link =
+    publicOn && publicTunnel.status === 'up' && validClientId(s.remoteClientId)
+      ? publicRemoteUrl(s.remotePublicHost, s.remotePublicPort, s.remoteClientId, s.remoteToken)
+      : undefined
   const tunnelError = publicOn ? publicError || publicTunnel.error : undefined
   return {
     enabled: s.remoteEnabled,
@@ -549,6 +558,7 @@ async function applyRemote(): Promise<void> {
     await remote.start({
       port: s.remotePort,
       token: store.settings.remoteToken,
+      clientId: store.settings.remoteClientId,
       handlers: remoteHandlers(),
       devUrl: process.env.ELECTRON_RENDERER_URL,
       staticDir: path.join(__dirname, '../renderer')
@@ -571,11 +581,14 @@ async function applyPublicTunnel(): Promise<void> {
     return
   }
   try {
+    if (!validClientId(store.settings.remoteClientId)) store.updateSettings({ remoteClientId: newRemoteClientId() })
+    const current = store.settings
     await publicTunnel.start({
-      user: validatePublicUser(s.remotePublicUser),
-      host: validatePublicHost(s.remotePublicHost),
-      port: validatePublicPort(s.remotePublicPort),
-      localPort: remote.port ?? s.remotePort
+      user: validatePublicUser(current.remotePublicUser),
+      host: validatePublicHost(current.remotePublicHost),
+      port: validatePublicPort(current.remotePublicPort),
+      localPort: remote.port ?? current.remotePort,
+      clientId: current.remoteClientId
     })
   } catch (err) {
     await publicTunnel.stop()

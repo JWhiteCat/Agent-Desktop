@@ -9,6 +9,8 @@ export type Handler = (...args: any[]) => unknown
 export interface RemoteServerOptions {
   port: number
   token: string
+  /** Stable public-link id. Returned by the unauthenticated health check. */
+  clientId: string
   /** RPC channels reachable from the browser, keyed like the IPC channels. */
   handlers: Record<string, Handler>
   /** Built renderer (`out/renderer`). */
@@ -19,6 +21,19 @@ export interface RemoteServerOptions {
 
 const MAX_BODY = 20 * 1024 * 1024
 const HEARTBEAT_MS = 25_000
+const PUBLIC_PREFIX = /^\/c\/[a-f0-9]{16}$/
+
+export function publicPrefixHeader(value: string | string[] | undefined): string | undefined {
+  const raw = Array.isArray(value) ? value[0] : value
+  if (!raw || !PUBLIC_PREFIX.test(raw)) return undefined
+  return raw
+}
+
+/** Vite dev URLs are root-absolute. Under `/c/<id>/` they must keep that prefix so the gateway can route them. */
+export function rewriteDevAbsolutePaths(body: string, prefix: string): string {
+  const base = prefix.replace(/\/$/, '')
+  return body.replace(/(^|[\s"'`(:=])\/(?=@|src\/|node_modules\/)/g, `$1${base}/`)
+}
 
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -145,6 +160,9 @@ export class RemoteServer {
   private async handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     const opts = this.opts!
     const url = new URL(req.url ?? '/', 'http://localhost')
+    if (url.pathname === '/api/public-health' && req.method === 'GET') {
+      return sendJson(res, 200, { ok: true, clientId: opts.clientId })
+    }
     if (!url.pathname.startsWith('/api/')) return this.serveStatic(req, res, url)
 
     const token = (req.headers['x-token'] as string | undefined) ?? url.searchParams.get('token')
@@ -219,13 +237,29 @@ export class RemoteServer {
   }
 
   private proxy(req: http.IncomingMessage, res: http.ServerResponse, devUrl: string): void {
+    const prefix = publicPrefixHeader(req.headers['x-agent-desktop-prefix'])
     const target = new URL(req.url ?? '/', devUrl)
     const upstream = http.request(
       target,
       { method: req.method, headers: { ...req.headers, host: target.host } },
       (up) => {
-        res.writeHead(up.statusCode ?? 502, up.headers)
-        up.pipe(res)
+        const type = String(up.headers['content-type'] ?? '')
+        const rewrite = !!prefix && /text\/html|javascript|text\/css/.test(type) && !up.headers['content-encoding']
+        if (!rewrite) {
+          res.writeHead(up.statusCode ?? 502, up.headers)
+          up.pipe(res)
+          return
+        }
+        const chunks: Buffer[] = []
+        up.on('data', (chunk: Buffer) => chunks.push(chunk))
+        up.on('end', () => {
+          const body = Buffer.from(rewriteDevAbsolutePaths(Buffer.concat(chunks).toString('utf8'), prefix))
+          const headers = { ...up.headers }
+          delete headers['transfer-encoding']
+          headers['content-length'] = String(body.length)
+          res.writeHead(up.statusCode ?? 502, headers)
+          res.end(body)
+        })
       }
     )
     upstream.on('error', () => {

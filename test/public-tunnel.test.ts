@@ -2,8 +2,11 @@ import { describe, expect, it } from 'vitest'
 import {
   buildSshArgs,
   explainSshFailure,
+  newRemoteClientId,
   publicRemoteUrl,
+  publicSocketPath,
   retryDelay,
+  validClientId,
   validatePublicHost,
   validatePublicPort,
   validatePublicUser
@@ -30,8 +33,13 @@ describe('public tunnel settings', () => {
   })
 
   it('builds the reverse-forward command and the public link', () => {
+    const clientId = 'aaaaaaaaaaaaaaaa'
+    expect(validClientId(clientId)).toBe(true)
+    expect(validClientId('short')).toBe(false)
+    expect(newRemoteClientId()).toMatch(/^[a-f0-9]{16}$/)
+    expect(publicSocketPath(clientId)).toBe('/run/agent-desktop/aaaaaaaaaaaaaaaa')
     expect(
-      buildSshArgs({ user: 'root', host: '43.167.166.239', port: 8765, localPort: 8765 })
+      buildSshArgs({ user: 'root', host: '43.167.166.239', port: 8765, localPort: 8765, clientId })
     ).toEqual([
       '-N',
       '-T',
@@ -46,10 +54,12 @@ describe('public tunnel settings', () => {
       '-o',
       'StrictHostKeyChecking=accept-new',
       '-R',
-      '0.0.0.0:8765:127.0.0.1:8765',
+      '/run/agent-desktop/aaaaaaaaaaaaaaaa:127.0.0.1:8765',
       'root@43.167.166.239'
     ])
-    expect(publicRemoteUrl('example.com', 9000, 'a b')).toBe('http://example.com:9000/?token=a%20b')
+    expect(publicRemoteUrl('example.com', 9000, clientId, 'a b')).toBe(
+      'http://example.com:9000/c/aaaaaaaaaaaaaaaa/?token=a%20b'
+    )
     expect(retryDelay(0)).toBe(1000)
     expect(retryDelay(3)).toBe(10000)
     expect(retryDelay(9)).toBe(10000)
@@ -57,7 +67,7 @@ describe('public tunnel settings', () => {
 
   it('turns ssh failures into short messages', () => {
     expect(explainSshFailure('root@host: Permission denied (publickey).')).toMatch(/公钥/)
-    expect(explainSshFailure('Error: remote port forwarding failed for listen port 8765')).toMatch(/GatewayPorts/)
+    expect(explainSshFailure('Error: remote port forwarding failed for listen port 8765')).toMatch(/Unix 套接字/)
     expect(explainSshFailure('connect to address: Connection timed out')).toMatch(/无法连接/)
     expect(explainSshFailure('')).toBe('隧道已断开')
   })

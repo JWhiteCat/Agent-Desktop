@@ -250,7 +250,10 @@ function RemoteSettings() {
           }}
         />
       </Field>
-      <Field label="公网访问" desc="用 SSH 反向隧道把上面的网页暴露到公网。链接是明文 HTTP，持有者可完全控制本应用。需本机默认密钥能登录所填用户">
+      <Field
+        label="公网访问"
+        desc="经 SSH 把网页挂到服务器的同一个端口。多台电脑可以同时开着，每台有自己的链接。链接是明文 HTTP，持有者可完全控制本应用"
+      >
         <input
           type="checkbox"
           className="toggle"
@@ -328,7 +331,10 @@ function RemoteSettings() {
                   <select className="input" value={urlIndex} onChange={(e) => setUrlIndex(Number(e.target.value))}>
                     {info.urls.map((u, i) => (
                       <option key={u} value={i}>
-                        {new URL(u).host}
+                        {(() => {
+                          const parsed = new URL(u)
+                          return parsed.pathname === '/' ? parsed.host : `${parsed.host}${parsed.pathname}`
+                        })()}
                       </option>
                     ))}
                   </select>
