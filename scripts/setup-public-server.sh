@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 配置公网远程控制：SSH Unix 套接字反向隧道，以及共用一个端口的入口。
 # 在服务器上：sudo bash setup-public-server.sh [公网端口]
-# 从本机一键执行请用：npm run setup:public-server
+# 从本机配置自己的服务器：npm run setup:public-server -- --user <用户> --host <地址> --port <公网端口>
 set -euo pipefail
 
 PORT="${1:-8765}"
@@ -16,10 +16,47 @@ if [[ ! "$PORT" =~ ^[0-9]+$ ]] || [[ "$PORT" -lt 1 ]] || [[ "$PORT" -gt 65535 ]]
   exit 1
 fi
 
-if ! command -v python3 >/dev/null 2>&1; then
-  echo "需要 python3 来运行公网入口" >&2
-  exit 1
-fi
+ensure_python3() {
+  if command -v python3 >/dev/null 2>&1; then
+    return
+  fi
+  echo "服务器没有 python3，正在安装…"
+  if command -v apt-get >/dev/null 2>&1; then
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update -y
+    apt-get install -y python3
+  elif command -v dnf >/dev/null 2>&1; then
+    dnf install -y python3
+  elif command -v yum >/dev/null 2>&1; then
+    yum install -y python3
+  elif command -v apk >/dev/null 2>&1; then
+    apk add --no-cache python3
+  else
+    echo "需要 python3 来运行公网入口，请先安装后再执行" >&2
+    exit 1
+  fi
+  if ! command -v python3 >/dev/null 2>&1; then
+    echo "python3 安装后仍不可用" >&2
+    exit 1
+  fi
+}
+
+wait_listen() {
+  python3 - "$1" << 'PY'
+import socket, sys, time
+port = int(sys.argv[1])
+for _ in range(20):
+    try:
+        sock = socket.create_connection(("127.0.0.1", port), 0.5)
+        sock.close()
+        raise SystemExit(0)
+    except OSError:
+        time.sleep(0.25)
+raise SystemExit(1)
+PY
+}
+
+ensure_python3
 
 CFG=/etc/ssh/sshd_config
 if [[ ! -f "$CFG" ]]; then
@@ -116,7 +153,9 @@ install_gateway() {
   local dest=/usr/local/lib/agent-desktop
   mkdir -p "$dest"
   if [[ -n "${GATEWAY_B64:-}" ]]; then
-    printf '%s' "$GATEWAY_B64" | base64 -d > "$dest/public-gateway.py"
+    if ! printf '%s' "$GATEWAY_B64" | base64 -d > "$dest/public-gateway.py" 2>/dev/null; then
+      printf '%s' "$GATEWAY_B64" | base64 --decode > "$dest/public-gateway.py"
+    fi
   else
     local src
     src="$(cd "$(dirname "$0")" && pwd)/public-gateway.py"
@@ -176,6 +215,11 @@ else
     echo "公网入口没有启动。如果端口 ${PORT} 被占用，请先关闭旧版本的公网隧道。" >&2
     exit 1
   fi
+fi
+
+if ! wait_listen "$PORT"; then
+  echo "公网入口没有在 127.0.0.1:${PORT} 监听。如果端口被占用，请先关闭旧的公网隧道。" >&2
+  exit 1
 fi
 
 if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet firewalld; then
