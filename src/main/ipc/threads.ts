@@ -1,4 +1,4 @@
-import type { AgentMode, QuestionAnswer, ThreadMeta } from '@shared/types'
+import type { AgentMode, PrepareRequest, QuestionAnswer, ThreadMeta } from '@shared/types'
 import { threadCli } from '@shared/types'
 import { codexChatUpdatedAt } from '../codex-history'
 import { cliChatUpdatedAt } from '../history'
@@ -57,6 +57,7 @@ export function threadHandlers(deps: IpcDeps): Record<string, Handler> {
       return items
     },
     'agent:send': (req) => sessions.send(req),
+    'agent:prepare': (threadId: string, opts: PrepareRequest) => sessions.prepare(threadId, opts),
     'agent:stop': (id: string) => sessions.stop(id),
     'agent:answerQuestion': (threadId: string, questionId: string, answers: QuestionAnswer[] | null) => {
       sessions.answerQuestion(threadId, questionId, answers)

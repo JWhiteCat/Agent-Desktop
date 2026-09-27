@@ -11,10 +11,12 @@ import type {
   Project,
   QuestionAnswer,
   RemoteInfo,
+  PrepareRequest,
   SendRequest,
   Settings,
   ThreadMeta
 } from './types'
+import type { SlashCommand } from './commands'
 import type { UsageReport, UsageWindow } from './usage'
 
 export interface ForkResult {
@@ -40,6 +42,8 @@ export interface DesktopApi {
   getItems(threadId: string): Promise<Item[]>
   syncFromCli(threadId: string): Promise<Item[]>
   send(req: SendRequest): Promise<void>
+  /** Loads slash commands for a thread that already has a CLI session. */
+  prepareCommands(threadId: string, opts: PrepareRequest): Promise<SlashCommand[]>
   stop(threadId: string): Promise<void>
   /** `null` skips the question. */
   answerQuestion(threadId: string, questionId: string, answers: QuestionAnswer[] | null): Promise<void>

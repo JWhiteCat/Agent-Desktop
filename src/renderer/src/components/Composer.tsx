@@ -1,4 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
+import { argumentHint, filterCommands, slashQuery, type SlashCommand } from '@shared/commands'
 import type { AgentMode, CliProvider } from '@shared/types'
 import { rememberModel, type SendOptions } from '../store'
 import { IconArrowUp, IconBranch, IconChevronDown, IconFolder, IconList, IconShield, IconSparkle, IconStop } from './icons'
@@ -26,6 +27,10 @@ interface Props {
   placeholder?: string
   showWorktree?: boolean
   cli?: CliProvider
+  /** Slash commands offered when the draft is `/name`. Home leaves this empty. */
+  commands?: SlashCommand[]
+  /** Called once when the user starts a `/` command, so the CLI list can be loaded. */
+  onPrepare?: (opts: SendOptions) => void
   footerLeft?: React.ReactNode
   onSend: (text: string, opts: SendOptions) => Promise<void> | void
   onStop?: () => void
@@ -36,7 +41,17 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
   const [text, setText] = useState('')
   const [opts, setOpts] = useState<SendOptions>(props.initial)
   const [sending, setSending] = useState(false)
+  const [dismissed, setDismissed] = useState(false)
+  const [active, setActive] = useState(0)
   const ta = useRef<HTMLTextAreaElement>(null)
+  const box = useRef<HTMLDivElement>(null)
+  const listRef = useRef<HTMLDivElement>(null)
+  const slashArmed = useRef(false)
+  const commands = props.commands ?? []
+  const query = slashQuery(text)
+  const matches = query === undefined ? [] : filterCommands(commands, query)
+  const menuOpen = query !== undefined && !dismissed && matches.length > 0 && !disabled
+  const hint = argumentHint(text, commands)
 
   useEffect(() => {
     setOpts((o) => (o.model === props.initial.model ? o : { ...o, model: props.initial.model }))
@@ -68,6 +83,23 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
     el.style.height = `${Math.min(el.scrollHeight, window.innerHeight * 0.4)}px`
   }, [text])
 
+  useEffect(() => {
+    setActive(0)
+  }, [query])
+
+  const highlighted = matches.length === 0 ? 0 : Math.min(active, matches.length - 1)
+
+  useEffect(() => {
+    if (!menuOpen) return
+    listRef.current?.querySelector<HTMLElement>(`[data-index="${highlighted}"]`)?.scrollIntoView({ block: 'nearest' })
+  }, [menuOpen, highlighted])
+
+  useEffect(() => {
+    const armed = query !== undefined
+    if (armed && !slashArmed.current) props.onPrepare?.(opts)
+    slashArmed.current = armed
+  }, [query, opts, props.onPrepare])
+
   const canSend = !!text.trim() && !running && !disabled && !sending
 
   const submit = async () => {
@@ -84,24 +116,91 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
     }
   }
 
+  const choose = async (command: SlashCommand) => {
+    setDismissed(true)
+    if (command.hint) {
+      setText(`/${command.name} `)
+      requestAnimationFrame(() => ta.current?.focus())
+      return
+    }
+    if (running || disabled || sending) return
+    const value = `/${command.name}`
+    setSending(true)
+    setText('')
+    try {
+      await props.onSend(value, opts)
+    } catch {
+      setDismissed(false)
+      setText(value)
+    } finally {
+      setSending(false)
+    }
+  }
+
   return (
-    <div className={`composer ${disabled ? 'disabled' : ''}`}>
+    <div ref={box} className={`composer ${disabled ? 'disabled' : ''}`}>
       <textarea
         ref={ta}
         rows={1}
         value={text}
         disabled={disabled}
         placeholder={props.placeholder ?? '描述任务，Enter 发送，Shift+Enter 换行'}
-        onChange={(e) => setText(e.target.value)}
+        onChange={(e) => {
+          setDismissed(false)
+          setText(e.target.value)
+        }}
         onKeyDown={(e) => {
-          if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && e.keyCode !== 229) {
+          const composing = e.nativeEvent.isComposing || e.keyCode === 229
+          if (!composing && menuOpen && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
             e.preventDefault()
-            submit()
+            setActive((i) => {
+              const count = matches.length
+              if (!count) return 0
+              return e.key === 'ArrowDown' ? (i + 1) % count : (i - 1 + count) % count
+            })
+            return
+          }
+          if (!composing && menuOpen && (e.key === 'Enter' || e.key === 'Tab') && !e.shiftKey) {
+            e.preventDefault()
+            const command = matches[highlighted]
+            if (command) void choose(command)
+            return
+          }
+          if (e.key === 'Escape' && menuOpen) {
+            e.preventDefault()
+            e.stopPropagation()
+            setDismissed(true)
+            return
+          }
+          if (e.key === 'Enter' && !e.shiftKey && !composing) {
+            e.preventDefault()
+            void submit()
           } else if (e.key === 'Escape' && running) {
             props.onStop?.()
           }
         }}
       />
+      {hint && <div className="composer-hint">{hint}</div>}
+      <Popover anchor={box.current} open={menuOpen} onClose={() => setDismissed(true)} placement="top-start" className="command-popover">
+        <div ref={listRef} className="menu command-menu" role="listbox">
+          {matches.map((command, i) => (
+            <button
+              key={`${command.local ? 'local' : 'cli'}:${command.name}`}
+              type="button"
+              role="option"
+              aria-selected={i === highlighted}
+              data-index={i}
+              className={`menu-item ${i === highlighted ? 'active' : ''}`}
+              onMouseDown={(e) => e.preventDefault()}
+              onMouseEnter={() => setActive(i)}
+              onClick={() => void choose(command)}
+            >
+              <span className="menu-label">/{command.name}</span>
+              <span className="menu-hint">{command.description}</span>
+            </button>
+          ))}
+        </div>
+      </Popover>
       <div className="composer-bar">
         <div className="composer-left">
           <ModePicker value={opts.mode} onChange={(mode) => setOpts((o) => ({ ...o, mode }))} />

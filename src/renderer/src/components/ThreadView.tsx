@@ -1,11 +1,12 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { FORK_COMMAND, mergeCommands } from '@shared/commands'
 import type { AssistantItem, CliProvider, Item, ResultItem, ThreadMeta, ToolItem, UserItem } from '@shared/types'
 import { threadCli } from '@shared/types'
 import { DiffFileView, collectEditedFiles } from '../lib/diff'
 import { duration, shortPath } from '../lib/format'
 import { planPath, planUriOf } from '../lib/tools'
 import { defaultModelFor, favoritesFor, modelForChat, projectModelFor } from '../lib/model-prefs'
-import { forkThread, sendMessage, useStore } from '../store'
+import { forkThread, prepareCommands, sendMessage, useStore } from '../store'
 import { Composer, type ComposerHandle } from './Composer'
 import { IconBranch, IconChevronDown, IconChevronRight, IconCursor, IconDiff, IconFolder, Spinner } from './icons'
 import { ResultFooter, StepItem, TurnActionsProvider, UserMessage, type TurnActions } from './Items'
@@ -158,6 +159,11 @@ export function ThreadView({ thread, changesOpen, onToggleChanges }: Props) {
   const composer = useRef<ComposerHandle>(null)
   const [editingTitle, setEditingTitle] = useState(false)
 
+  const cliCommands = useStore((s) => s.commandsByThread[thread.id])
+  const commands = useMemo(
+    () => mergeCommands(items && items.length > 0 ? [FORK_COMMAND] : [], cliCommands ?? []),
+    [items, cliCommands]
+  )
   const turns = useMemo(() => groupTurns(items ?? []), [items])
   const latestPlan = useMemo(() => {
     const list = items ?? []
@@ -309,7 +315,9 @@ export function ThreadView({ thread, changesOpen, onToggleChanges }: Props) {
             mode: thread.mode,
             force: settings.force
           }}
-          placeholder={thread.chatId ? '继续对话…' : '描述任务，Enter 发送，Shift+Enter 换行'}
+          placeholder={thread.chatId ? '继续对话… 输入 / 查看命令' : '描述任务，输入 / 查看命令，Enter 发送'}
+          commands={commands}
+          onPrepare={(opts) => void prepareCommands(thread.id, opts)}
           onSend={(text, opts) => {
             if (text.trim() === '/fork') {
               void forkThread(thread.id)

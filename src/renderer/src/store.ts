@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react'
+import type { SlashCommand } from '@shared/commands'
 import type { AgentMode, AppState, CliProvider, Item, ModelInfo, Project, QuestionAnswer, Settings, ThreadMeta } from '@shared/types'
 import { findVariant, groupModels, pickVariant, wantFrom } from './lib/models'
 import {
@@ -17,6 +18,7 @@ export type View = { kind: 'home'; projectId?: string } | { kind: 'thread'; id: 
 export interface UIState {
   app: AppState
   items: Record<string, Item[] | undefined>
+  commandsByThread: Record<string, SlashCommand[] | undefined>
   view: View
   models: ModelInfo[]
   modelsByCli: Record<CliProvider, ModelInfo[]>
@@ -30,6 +32,7 @@ type Listener = () => void
 let state: UIState = {
   app: { projects: [], threads: [], settings: {} as AppState['settings'], running: [] },
   items: {},
+  commandsByThread: {},
   view: { kind: 'home' },
   models: [{ id: 'auto', label: 'Auto' }],
   modelsByCli: { cursor: [{ id: 'auto', label: 'Auto' }], codex: [] },
@@ -215,6 +218,8 @@ export async function initStore(): Promise<void> {
         }
         return { items: { ...s.items, [ev.threadId]: next } }
       })
+    } else if (ev.type === 'commands') {
+      setState((s) => ({ commandsByThread: { ...s.commandsByThread, [ev.threadId]: ev.commands } }))
     } else if (ev.type === 'running' && !ev.running) {
       const v = state.view
       if (v.kind === 'thread' && v.id === ev.threadId && document.hasFocus()) {
@@ -357,6 +362,15 @@ export async function answerQuestion(threadId: string, questionId: string, answe
   } catch (err) {
     toast(errorText(err), 'error')
     throw err
+  }
+}
+
+export async function prepareCommands(threadId: string, opts: SendOptions): Promise<void> {
+  try {
+    const commands = await window.api.prepareCommands(threadId, { model: opts.model, mode: opts.mode, force: opts.force })
+    setState((s) => ({ commandsByThread: { ...s.commandsByThread, [threadId]: commands } }))
+  } catch (err) {
+    toast(errorText(err), 'error')
   }
 }
 

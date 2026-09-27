@@ -770,6 +770,22 @@ select {
 .composer textarea::placeholder {
   color: var(--muted);
 }
+.composer-hint {
+  margin: -2px 0 6px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.command-popover {
+  width: min(420px, calc(100vw - 32px));
+}
+.command-menu {
+  max-height: 280px;
+  overflow: auto;
+}
+.menu-item.active {
+  background: var(--bg-hover);
+}
 .composer-bar {
   display: flex;
   align-items: center;

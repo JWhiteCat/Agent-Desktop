@@ -86,6 +86,7 @@ export function createWebApi(): DesktopApi {
     getItems: (id) => call('thread:items', id),
     syncFromCli: (id) => call('thread:syncFromCli', id),
     send: (req) => call('agent:send', req),
+    prepareCommands: (threadId, opts) => call('agent:prepare', threadId, opts),
     stop: (id) => call('agent:stop', id),
     answerQuestion: (threadId, questionId, answers) => call('agent:answerQuestion', threadId, questionId, answers),
     updateSettings: (patch) => call('settings:update', patch),

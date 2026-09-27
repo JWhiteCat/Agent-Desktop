@@ -1,3 +1,5 @@
+import type { SlashCommand } from './commands'
+
 export type AgentMode = 'agent' | 'plan' | 'ask'
 
 /** Which local CLI owns a thread. Missing values on older threads mean Cursor. */
@@ -233,6 +235,13 @@ export interface SendRequest {
   worktree?: boolean
 }
 
+/** Options used to resume a session so its slash commands can be listed. */
+export interface PrepareRequest {
+  model: string
+  mode: AgentMode
+  force: boolean
+}
+
 export interface ModelInfo {
   id: string
   label: string
@@ -271,6 +280,7 @@ export interface GitDiff {
 export type AgentEvent =
   | { type: 'items'; threadId: string; items: Item[] }
   | { type: 'running'; threadId: string; running: boolean }
+  | { type: 'commands'; threadId: string; commands: SlashCommand[] }
 
 export const DEFAULT_SETTINGS: Settings = {
   cliProvider: 'cursor',

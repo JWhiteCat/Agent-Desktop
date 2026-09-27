@@ -1,7 +1,8 @@
 import type { ChildProcess } from 'node:child_process'
 import fs from 'node:fs'
 import { enabledSkillFingerprint, toAcpMcpServers } from '@shared/agent-config'
-import type { AgentEvent, CliProvider, Item, QuestionAnswer, QuestionItem, SendRequest } from '@shared/types'
+import { parseAvailableCommands, type SlashCommand } from '@shared/commands'
+import type { AgentEvent, CliProvider, Item, PrepareRequest, QuestionAnswer, QuestionItem, SendRequest } from '@shared/types'
 import { threadCli } from '@shared/types'
 import { normalizeTurnUsage } from '@shared/turn-usage'
 import { normalizeQuestions } from '@shared/questions'
@@ -68,11 +69,17 @@ export function titleFrom(prompt: string): string {
 }
 
 const CANCEL_KILL_MS = 5000
+const COMMAND_WAIT_MS = 2000
 
 export class SessionManager {
   private runs = new Map<string, Run>()
   /** Idle CLI processes, keyed by thread id. Not included in `running()`. */
   private agents = new Map<string, AgentProc>()
+  /** Last slash-command list for a thread. Kept after the process exits, until the thread is deleted. */
+  private commandLists = new Map<string, SlashCommand[]>()
+  private commandWaiters = new Map<string, Array<() => void>>()
+  /** Serializes prepare and send so one thread cannot start two CLI processes. */
+  private tails = new Map<string, Promise<void>>()
 
   constructor(
     private readonly store: Store,
@@ -89,7 +96,35 @@ export class SessionManager {
     return this.runs.has(threadId)
   }
 
-  send(req: SendRequest): void {
+  send(req: SendRequest): Promise<void> {
+    return this.enqueue(req.threadId, async () => {
+      this.beginSend(req)
+    })
+  }
+
+  /**
+   * Loads an existing CLI session without sending a prompt, so slash commands can be listed.
+   * A thread with no `chatId` is left alone. A list already received is returned immediately.
+   */
+  prepare(threadId: string, opts: PrepareRequest): Promise<SlashCommand[]> {
+    return this.enqueue(threadId, () => this.prepareBody(threadId, opts))
+  }
+
+  private enqueue<T>(threadId: string, fn: () => Promise<T>): Promise<T> {
+    const prev = this.tails.get(threadId) ?? Promise.resolve()
+    const result = prev.then(fn, fn)
+    const settled = result.then(
+      () => undefined,
+      () => undefined
+    )
+    this.tails.set(threadId, settled)
+    void settled.finally(() => {
+      if (this.tails.get(threadId) === settled) this.tails.delete(threadId)
+    })
+    return result
+  }
+
+  private beginSend(req: SendRequest): void {
     if (this.runs.has(req.threadId)) throw new Error('该对话正在运行中')
     const thread = this.store.thread(req.threadId)
     if (!thread) throw new Error('对话不存在')
@@ -189,6 +224,8 @@ export class SessionManager {
 
   /** Kill the CLI process for this thread. Used when the thread or app is going away. */
   dispose(threadId: string): void {
+    this.commandLists.delete(threadId)
+    this.commandWaiters.delete(threadId)
     const run = this.runs.get(threadId)
     if (run) {
       run.stopped = true
@@ -249,6 +286,13 @@ export class SessionManager {
     })
     acp.start({
       onNotification: (method, params) => {
+        if (method === 'session/update' && params?.update?.sessionUpdate === 'available_commands_update') {
+          const sessionId = typeof params?.sessionId === 'string' ? params.sessionId : ''
+          if (!sessionId || !proc.sessionId || sessionId === proc.sessionId) {
+            this.rememberCommands(threadId, params.update.availableCommands)
+          }
+          return
+        }
         const run = this.runs.get(threadId)
         if (!run || run.proc !== proc || method !== 'session/update' || !run.acceptUpdates) return
         if (
@@ -305,6 +349,97 @@ export class SessionManager {
     await this.runPrompt(threadId, run, req)
   }
 
+  private async prepareBody(threadId: string, opts: PrepareRequest): Promise<SlashCommand[]> {
+    const known = this.commandLists.get(threadId)
+    if (known) return known
+    if (this.runs.has(threadId)) return []
+    const thread = this.store.thread(threadId)
+    if (!thread) throw new Error('对话不存在')
+    if (!thread.chatId) return []
+    const project = this.store.project(thread.projectId)
+    if (!project) throw new Error('项目不存在')
+    const settings = this.store.settings
+    const provider = threadCli(thread)
+    const launch = resolveLaunch(provider, settings.agentPath, settings.codexPath)
+    if (!launch) throw new Error(`未找到 ${cliLabel(provider)}。请先安装，或在设置中指定路径。`)
+    const apiKey = provider === 'codex' ? resolveCodexApiKey(settings.codexApiKey) : resolveApiKey(settings.apiKey)
+    const cwd = thread.cwd && fs.existsSync(thread.cwd) ? thread.cwd : project.path
+    if (!fs.existsSync(cwd)) throw new Error(`项目目录不存在：${cwd}`)
+
+    const mcpServers = toAcpMcpServers(settings.mcpServers)
+    const fingerprint = procFingerprint(
+      launch.cli,
+      provider,
+      cwd,
+      settings.sandbox,
+      opts.force,
+      apiKey,
+      mcpServers,
+      enabledSkillFingerprint(settings.skills)
+    )
+    const req: SendRequest = { threadId, prompt: '', model: opts.model, mode: opts.mode, force: opts.force }
+    let proc = this.agents.get(threadId)
+    const reusable = !!proc && this.canReuse(proc, fingerprint)
+    if (proc && !reusable) {
+      this.discard(threadId)
+      proc = undefined
+    }
+    if (reusable && proc) return this.finishCommandWait(threadId)
+
+    if (!proc) {
+      syncAllManagedSkills(settings.skills)
+      const args = provider === 'cursor' ? cursorArgs(req, settings.sandbox, cwd, true) : []
+      proc = this.openProc(threadId, provider, launch, args, cwd, apiKey, fingerprint)
+    }
+    proc.force = opts.force
+    try {
+      const sessionId = await this.connectSession(proc, cwd, thread.chatId, provider, apiKey, mcpServers)
+      await this.applySessionOptions(proc, req)
+      if (proc.dying || proc.child.exitCode !== null) throw new Error('CLI 进程已退出')
+      this.store.updateThread(threadId, { chatId: sessionId, cwd })
+      this.onStateChange()
+      this.agents.set(threadId, proc)
+    } catch (err) {
+      this.killProc(proc)
+      throw err
+    }
+    return this.finishCommandWait(threadId)
+  }
+
+  private rememberCommands(threadId: string, raw: unknown): void {
+    const commands = parseAvailableCommands(raw)
+    this.commandLists.set(threadId, commands)
+    this.emit({ type: 'commands', threadId, commands })
+    const waiters = this.commandWaiters.get(threadId)
+    if (!waiters) return
+    this.commandWaiters.delete(threadId)
+    for (const wake of waiters) wake()
+  }
+
+  private finishCommandWait(threadId: string): Promise<SlashCommand[]> {
+    const known = this.commandLists.get(threadId)
+    if (known) return Promise.resolve(known)
+    return new Promise((resolve) => {
+      let settled = false
+      let timer: ReturnType<typeof setTimeout> | undefined
+      const finish = () => {
+        if (settled) return
+        settled = true
+        if (timer) clearTimeout(timer)
+        const left = (this.commandWaiters.get(threadId) ?? []).filter((waiter) => waiter !== wake)
+        if (left.length) this.commandWaiters.set(threadId, left)
+        else this.commandWaiters.delete(threadId)
+        if (!this.commandLists.has(threadId)) this.commandLists.set(threadId, [])
+        resolve(this.commandLists.get(threadId) ?? [])
+      }
+      const wake = () => finish()
+      timer = setTimeout(finish, COMMAND_WAIT_MS)
+      const waiting = this.commandWaiters.get(threadId) ?? []
+      waiting.push(wake)
+      this.commandWaiters.set(threadId, waiting)
+    })
+  }
+
   private async drive(
     threadId: string,
     run: Run,
@@ -316,6 +451,25 @@ export class SessionManager {
     mcpServers: Record<string, unknown>[] = []
   ): Promise<void> {
     const { proc } = run
+    const sessionId = await this.connectSession(proc, cwd, chatId, provider, apiKey, mcpServers)
+    run.reducer.init = { sessionId, cwd, model: req.model }
+    this.store.updateThread(threadId, { chatId: sessionId, cwd })
+    this.onStateChange()
+    await this.applySessionOptions(proc, req)
+    if (!this.runs.has(threadId) || run.settled) return
+    run.acceptUpdates = true
+    await this.runPrompt(threadId, run, req)
+  }
+
+  /** Initializes the ACP session. Does not send a prompt. */
+  private async connectSession(
+    proc: AgentProc,
+    cwd: string,
+    chatId: string | undefined,
+    provider: CliProvider,
+    apiKey: string,
+    mcpServers: Record<string, unknown>[]
+  ): Promise<string> {
     const acp = proc.acp
     await acp.request('initialize', {
       protocolVersion: 1,
@@ -342,13 +496,7 @@ export class SessionManager {
     }
     proc.sessionId = sessionId
     proc.ready = true
-    run.reducer.init = { sessionId, cwd, model: req.model }
-    this.store.updateThread(threadId, { chatId: sessionId, cwd })
-    this.onStateChange()
-    await this.applySessionOptions(proc, req)
-    if (!this.runs.has(threadId) || run.settled) return
-    run.acceptUpdates = true
-    await this.runPrompt(threadId, run, req)
+    return sessionId
   }
 
   private async applySessionOptions(proc: AgentProc, req: SendRequest): Promise<void> {
