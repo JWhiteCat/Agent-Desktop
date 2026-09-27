@@ -17,6 +17,7 @@ import type {
   ThreadMeta
 } from './types'
 import type { SlashCommand } from './commands'
+import type { QuotaReport } from './quota'
 import type { UsageReport, UsageWindow } from './usage'
 
 export interface ForkResult {
@@ -49,6 +50,7 @@ export interface DesktopApi {
   answerQuestion(threadId: string, questionId: string, answers: QuestionAnswer[] | null): Promise<void>
   updateSettings(patch: Partial<Settings>): Promise<Settings>
   usageSummary(period: UsageWindow): Promise<UsageReport>
+  usageQuotas(): Promise<QuotaReport>
   listModels(refresh?: boolean, provider?: CliProvider): Promise<ModelInfo[]>
   cliInfo(provider?: CliProvider): Promise<CliInfo>
   login(provider?: CliProvider): Promise<string>

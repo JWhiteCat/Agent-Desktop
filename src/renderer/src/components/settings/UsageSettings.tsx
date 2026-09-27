@@ -3,6 +3,7 @@ import type { UsageSessionRow, UsageSummary, UsageWindow } from '@shared/usage'
 import { compactNumber, formatUsd, relativeTime } from '../../lib/format'
 import { groupModels, modelCaption } from '../../lib/models'
 import { errorText, useStore } from '../../store'
+import { QuotaPanel } from './QuotaPanel'
 
 const USAGE_PERIODS: { id: UsageWindow; label: string }[] = [
   { id: '1d', label: '1天' },
@@ -53,7 +54,8 @@ export function UsageSettings() {
 
   return (
     <section className="settings-section">
-      <h4>用量</h4>
+      <QuotaPanel />
+      <h4>本机用量</h4>
       <div className="usage-periods" role="group" aria-label="统计范围">
         {USAGE_PERIODS.map((item) => (
           <button

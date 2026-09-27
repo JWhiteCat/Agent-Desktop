@@ -19,7 +19,7 @@
 - 任务结束时发送系统通知，点击通知回到该对话
 - 主题：跟随系统、深色、浅色
 - 设置按左侧分类切换：CLI、MCP、Skill、模型、用量、默认值、通知、远程控制、外观与历史。CLI 页可分别检测 Cursor 与 Codex、填写路径和 API Key、登录。模型页顶部用 Cursor / Codex 页签分别配置常用模型和默认模型
-- 用量：按最近 1 天、7 天、30 天汇总 token，并分页列出全部历史会话的模型和累计消耗。费用用 [Cursor 公开标价](https://cursor.com/docs/models-and-pricing) 估算。Auto 和价目表没有的模型显示为未定价
+- 用量：显示 Cursor 与 Codex 的账号额度（有则显示 5 小时、每周、每月窗口和下次重置时间），并按最近 1 天、7 天、30 天汇总 token，分页列出全部历史会话的模型和累计消耗。费用用 [Cursor 公开标价](https://cursor.com/docs/models-and-pricing) 估算。Auto 和价目表没有的模型显示为未定价
 - 远程控制：局域网扫码，或经 SSH 反向隧道从公网打开同一页面
 
 ## 环境要求
@@ -128,6 +128,8 @@ ACP 下 CLI 会自动批准模型发起的 SwitchMode，且不通知客户端。
 
 ## 用量
 
+用量页顶部显示账号额度。Cursor 显示当前账单周期里的 Cursor 模型和其他模型占用，以及下次重置时间；有按需上限时一并显示。Codex 显示接口返回的窗口，常见是 5 小时和每周，并写出下次重置时间。没有的窗口不显示。只用 API Key 登录的 Codex 没有订阅额度，卡片会说明原因。这些数字来自账号接口，不是下面的本机估算。
+
 设置里的「用量」按最近 1 天、7 天和 30 天汇总本机对话的 token，并按模型列出估算费用。模型名用短名称，例如「Grok 4.7 500K High Fast」，不显示完整参数串。下方的会话列表包含全部历史对话，每行显示用过的模型、累计 token 和费用，不受上面的天数限制；超过 20 条时翻页。没有 token 记录的对话也会列出，费用留空。每一轮结束时，回复下方也会显示该轮的耗时、token、使用的模型和估算费用。Token 来自 CLI 在回合结束时给出的用量：输入里已经扣除缓存，缓存读写单独计数。Cursor 模型用 Cursor 公开标价，Codex 的 GPT 模型用同一份已收录的公开 token 标价（美元 / 百万 token）。这不是套餐里还剩多少，也不含 Teams 的 Token Rate。不足 1 美分时显示到小数点后四位。Auto 和价目表没有的模型只显示 token，费用写为「未定价」。上方合计里，分叉复制的同一轮只计一次；会话列表按各对话自己的记录累计，所以同一轮会同时出现在原对话和分叉里。
 
 ## 远程控制
@@ -187,9 +189,10 @@ src/main           Electron 主进程。index.ts 只负责启动和退出
   remote-runtime.ts 按设置开关局域网服务和公网隧道
   remote.ts        局域网 HTTP 服务
   public-tunnel.ts 公网 SSH 反向隧道
+  quota.ts         Cursor 与 Codex 的账号额度
   ipc/             按项目、对话、设置、CLI、用量和本机操作拆开的 IPC
 scripts            公网入口（public-gateway.py）、服务器安装脚本（setup-public-server.sh）和本机一键配置（setup-public-server.mjs）
 src/preload        渲染进程可用的安全 API
 src/renderer       React 界面。设置各分类在 components/settings。选哪个模型由 lib/model-prefs.ts 决定，不经过界面状态
-src/shared         主进程与界面共用的类型和解析（如 Plan 模式的提问块）
+src/shared         主进程与界面共用的类型、用量、额度和解析（如 Plan 模式的提问块）
 ```

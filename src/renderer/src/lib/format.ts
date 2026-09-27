@@ -1,3 +1,24 @@
+/** How long until a quota window resets. */
+export function resetsIn(ts: number, now = Date.now()): string {
+  const diff = ts - now
+  if (diff <= 0) return '即将重置'
+  const min = Math.floor(diff / 60_000)
+  if (min < 1) return '1 分钟内'
+  if (min < 60) return `${min} 分钟后`
+  const h = Math.floor(min / 60)
+  if (h < 24) return `${h} 小时后`
+  const d = Math.floor(h / 24)
+  if (d < 7) return `${d} 天后`
+  if (d < 30) return `${Math.floor(d / 7)} 周后`
+  return `${Math.floor(d / 30)} 个月后`
+}
+
+export function resetStamp(ts: number): string {
+  const date = new Date(ts)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
 export function relativeTime(ts: number, now = Date.now()): string {
   const diff = Math.max(0, now - ts)
   const min = Math.floor(diff / 60_000)

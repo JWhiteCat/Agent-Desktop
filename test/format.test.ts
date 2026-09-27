@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { titleFrom } from '../src/main/sessions'
 import { collectEditedFiles, parseUnifiedDiff } from '../src/renderer/src/lib/diff'
-import { basename, duration, formatUsd, relativePath, relativeTime, shortPath } from '../src/renderer/src/lib/format'
+import { basename, duration, formatUsd, relativePath, relativeTime, resetStamp, resetsIn, shortPath } from '../src/renderer/src/lib/format'
 import { planPath, planUriOf, summarizeTool, toolDiff } from '../src/renderer/src/lib/tools'
 import { unifiedDiff } from '../src/shared/unified-diff'
 import type { ToolItem } from '../src/shared/types'
@@ -13,6 +13,11 @@ describe('format', () => {
     expect(relativeTime(now, now)).toBe('刚刚')
     expect(relativeTime(now - 5 * 60_000, now)).toBe('5 分钟')
     expect(relativeTime(now - 3 * 3_600_000, now)).toBe('3 小时')
+    expect(resetsIn(now + 3 * 3_600_000, now)).toBe('3 小时后')
+    expect(resetsIn(now + 30 * 60_000, now)).toBe('30 分钟后')
+    expect(resetsIn(now + 2 * 86_400_000, now)).toBe('2 天后')
+    expect(resetsIn(now - 1000, now)).toBe('即将重置')
+    expect(resetStamp(now)).toMatch(/^\d{4}\/\d{1,2}\/\d{1,2} \d{2}:\d{2}$/)
     expect(duration(500)).toBe('500ms')
     expect(duration(1500)).toBe('2s')
     expect(duration(65_000)).toBe('1m 5s')

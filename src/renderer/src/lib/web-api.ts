@@ -91,6 +91,7 @@ export function createWebApi(): DesktopApi {
     answerQuestion: (threadId, questionId, answers) => call('agent:answerQuestion', threadId, questionId, answers),
     updateSettings: (patch) => call('settings:update', patch),
     usageSummary: (period) => call('usage:summary', period),
+    usageQuotas: () => call('usage:quotas'),
     listModels: (refresh, provider) => call('cli:models', refresh, provider),
     cliInfo: (provider) => call('cli:info', provider),
     login: (provider) => call('cli:login', provider),
