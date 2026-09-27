@@ -7,18 +7,27 @@ function inCatalog(models: ModelInfo[], id: string | undefined): boolean {
   return !!findVariant(groupModels(models), id)
 }
 
-export function favoritesFor(settings: Pick<Settings, 'favoriteModels' | 'codexFavoriteModels'>, cli: CliProvider): string[] {
-  return (cli === 'codex' ? settings.codexFavoriteModels : settings.favoriteModels) ?? []
+export function favoritesFor(
+  settings: Pick<Settings, 'favoriteModels' | 'codexFavoriteModels' | 'claudeFavoriteModels'>,
+  cli: CliProvider
+): string[] {
+  if (cli === 'codex') return settings.codexFavoriteModels ?? []
+  if (cli === 'claude') return settings.claudeFavoriteModels ?? []
+  return settings.favoriteModels ?? []
 }
 
-export function defaultModelFor(settings: Pick<Settings, 'defaultModel' | 'codexDefaultModel'>, cli: CliProvider): string {
-  return cli === 'codex' ? settings.codexDefaultModel : settings.defaultModel
+export function defaultModelFor(settings: Pick<Settings, 'defaultModel' | 'codexDefaultModel' | 'claudeDefaultModel'>, cli: CliProvider): string {
+  if (cli === 'codex') return settings.codexDefaultModel
+  if (cli === 'claude') return settings.claudeDefaultModel
+  return settings.defaultModel
 }
 
 /** Last model this project used with `cli`. Codex falls back to the older shared field until it is chosen again. */
-export function projectModelFor(project: Pick<Project, 'model' | 'codexModel'> | undefined, cli: CliProvider): string | undefined {
+export function projectModelFor(project: Pick<Project, 'model' | 'codexModel' | 'claudeModel'> | undefined, cli: CliProvider): string | undefined {
   if (!project) return undefined
-  return cli === 'codex' ? project.codexModel ?? project.model : project.model
+  if (cli === 'codex') return project.codexModel ?? project.model
+  if (cli === 'claude') return project.claudeModel
+  return project.model
 }
 
 /** Drop ids that belong to the other CLI once that catalog is known. Unknown ids stay. */

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { CliProvider, Settings } from '@shared/types'
+import { normalizeCliProvider, type CliProvider, type Settings } from '@shared/types'
 import { defaultModelFor, favoritesFor, modelForChat } from '../../lib/model-prefs'
 import { loadModels, setDefaultModel, useStore } from '../../store'
 import { McpSettings, SkillSettings } from '../AgentConfigSettings'
@@ -45,7 +45,7 @@ function ModelCliSettings({ provider }: { provider: CliProvider }) {
 
 export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void; onOpenImport: () => void }) {
   const settings = useStore((s) => s.app.settings)
-  const cli = settings.cliProvider === 'codex' ? 'codex' : 'cursor'
+  const cli = normalizeCliProvider(settings.cliProvider)
   const [modelCli, setModelCli] = useState<CliProvider>(cli)
   const [tab, setTab] = useState<SettingsTab>('cli')
   const tabs = SETTINGS_TABS.filter((item) => item.id !== 'remote' || !window.api.isRemote)
@@ -84,13 +84,14 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
               className="input"
               value={cli}
               onChange={(e) => {
-                const next = e.target.value === 'codex' ? 'codex' : 'cursor'
+                const next = normalizeCliProvider(e.target.value)
                 void update({ cliProvider: next })
                 void loadModels(false, next)
               }}
             >
               <option value="cursor">Cursor CLI</option>
               <option value="codex">Codex CLI</option>
+              <option value="claude">Claude Code</option>
             </select>
           </Field>
           <h4>Cursor CLI</h4>
@@ -121,6 +122,20 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
             onPath={(codexPath) => void saveCli({ codexPath }, 'codex')}
             onKey={(codexApiKey) => void saveCli({ codexApiKey }, 'codex')}
           />
+          <h4>Claude Code</h4>
+          <CliCard
+            provider="claude"
+            pathValue={settings.claudePath ?? ''}
+            pathPlaceholder="自动检测，否则使用内置 Claude"
+            pathDesc="留空时先找本机 claude。找不到则使用适配器自带的 Claude。Windows 上会跳过 .cmd 跳转。"
+            keyValue={settings.claudeApiKey ?? ''}
+            keyPlaceholder="留空使用 ANTHROPIC_API_KEY，再否则使用本机登录"
+            keyDesc="只要设置或环境变量里有 API Key，就按 API 计费，不会使用 Claude 订阅。都没有时使用 ~/.claude 的登录。"
+            missing="未找到 Claude 适配器"
+            install="需要安装本应用依赖里的 Claude 适配器。本机另有 claude 时会优先使用它。安装 Claude Code：npm install -g @anthropic-ai/claude-code"
+            onPath={(claudePath) => void saveCli({ claudePath }, 'claude')}
+            onKey={(claudeApiKey) => void saveCli({ claudeApiKey }, 'claude')}
+          />
         </section>
       )}
 
@@ -141,7 +156,7 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
       {tab === 'models' && (
         <section className="settings-section">
           <div className="usage-periods" role="tablist" aria-label="模型来源">
-            {(['cursor', 'codex'] as const).map((id) => (
+            {(['cursor', 'codex', 'claude'] as const).map((id) => (
               <button
                 key={id}
                 type="button"
@@ -150,7 +165,7 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
                 className={`usage-period ${modelCli === id ? 'active' : ''}`}
                 onClick={() => setModelCli(id)}
               >
-                {id === 'cursor' ? 'Cursor' : 'Codex'}
+                {id === 'cursor' ? 'Cursor' : id === 'codex' ? 'Codex' : 'Claude'}
               </button>
             ))}
           </div>
@@ -219,7 +234,7 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
           <Field label="显示已归档对话">
             <input type="checkbox" className="toggle" checked={settings.showArchived} onChange={(e) => update({ showArchived: e.target.checked })} />
           </Field>
-          <Field label="CLI 历史会话" desc="从 ~/.cursor/chats 和 ~/.codex/sessions 导入，按工作目录自动归入项目">
+          <Field label="CLI 历史会话" desc="从 ~/.cursor/chats、~/.codex/sessions 和 ~/.claude/projects 导入，按工作目录自动归入项目">
             <button
               className="btn"
               onClick={() => {

@@ -92,4 +92,13 @@ describe('acp questions', () => {
     expect(permissionResult(options, false)).toEqual({ outcome: { outcome: 'selected', optionId: 'once' } })
     expect(permissionResult([], false)).toEqual({ outcome: { outcome: 'cancelled' } })
   })
+
+  it('picks a reject option when ask mode must deny a tool', () => {
+    const options = [
+      { optionId: 'once', kind: 'allow_once' },
+      { optionId: 'no', kind: 'reject_once' }
+    ]
+    expect(permissionResult(options, true, true)).toEqual({ outcome: { outcome: 'selected', optionId: 'no' } })
+    expect(permissionResult([{ optionId: 'once', kind: 'allow_once' }], false, true)).toEqual({ outcome: { outcome: 'cancelled' } })
+  })
 })

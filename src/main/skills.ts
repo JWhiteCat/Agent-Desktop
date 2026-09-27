@@ -18,10 +18,15 @@ export function codexSkillsDirs(): string[] {
   return [path.join(home, '.agents', 'skills'), path.join(home, '.codex', 'skills')]
 }
 
-/** Writes one settings list to Cursor and both Codex skill directories. */
+export function claudeSkillsDir(): string {
+  return path.join(os.homedir(), '.claude', 'skills')
+}
+
+/** Writes one settings list to Cursor, both Codex skill directories, and Claude. */
 export function syncAllManagedSkills(skills: SkillConfig[] | undefined): void {
   syncManagedSkills(skills, userSkillsDir())
   for (const dir of codexSkillsDirs()) syncManagedSkills(skills, dir)
+  syncManagedSkills(skills, claudeSkillsDir())
 }
 
 /**

@@ -1,7 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { FORK_COMMAND, mergeCommands } from '@shared/commands'
-import type { AssistantItem, CliProvider, Item, ResultItem, ThreadMeta, ToolItem, UserItem } from '@shared/types'
-import { threadCli } from '@shared/types'
+import { cliTitle, threadCli, type AssistantItem, type CliProvider, type Item, type ResultItem, type ThreadMeta, type ToolItem, type UserItem } from '@shared/types'
 import { DiffFileView, collectEditedFiles } from '../lib/diff'
 import { duration, shortPath } from '../lib/format'
 import { planPath, planUriOf } from '../lib/tools'
@@ -95,7 +94,7 @@ function TurnView({
         {!streamingText && !busy && (
           <div className="working">
             <Spinner size={12} />
-            <span className="shimmer">{turn.steps.length ? '处理中' : cli === 'codex' ? '正在启动 codex' : '正在启动 agent'}</span>
+            <span className="shimmer">{turn.steps.length ? '处理中' : cli === 'codex' ? '正在启动 codex' : cli === 'claude' ? '正在启动 claude' : '正在启动 agent'}</span>
           </div>
         )}
       </div>
@@ -245,7 +244,7 @@ export function ThreadView({ thread, changesOpen, onToggleChanges }: Props) {
               <IconBranch size={12} /> worktree
             </span>
           )}
-          <span className="badge">{cli === 'codex' ? 'Codex' : 'Cursor'}</span>
+          <span className="badge">{cliTitle(cli)}</span>
           {thread.source === 'cli' && <span className="badge">CLI 导入</span>}
         </div>
         <div className="header-actions no-drag">

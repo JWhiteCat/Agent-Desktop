@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { CliProvider } from '@shared/types'
+import { normalizeCliProvider, type CliProvider } from '@shared/types'
 import { favoritesFor } from '../lib/model-prefs'
 import { loadModels, useStore } from '../store'
 import {
@@ -19,7 +19,7 @@ import { IconChevronDown, IconRefresh } from './icons'
 import { Popover } from './Menu'
 
 export function ModelPicker({ value, onChange, cli }: { value: string; onChange: (id: string) => void; cli?: CliProvider }) {
-  const settingsCli = useStore((s) => (s.app.settings.cliProvider === 'codex' ? 'codex' : 'cursor'))
+  const settingsCli = useStore((s) => normalizeCliProvider(s.app.settings.cliProvider))
   const provider = cli ?? settingsCli
   const models = useStore((s) => s.modelsByCli[provider] ?? s.models)
   const favorites = useStore((s) => favoritesFor(s.app.settings, provider))

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { normalizeCliProvider } from '@shared/types'
 import { relativeTime, shortPath } from '../lib/format'
 import { defaultModelFor, favoritesFor, modelForChat, projectModelFor } from '../lib/model-prefs'
 import { addProjectInteractive, cliCommands, goHome, openThread, startThread, useStore } from '../store'
@@ -17,7 +18,7 @@ export function Home({ projectId, onOpenImport }: { projectId?: string; onOpenIm
   const projects = useStore((s) => s.app.projects)
   const threads = useStore((s) => s.app.threads)
   const settings = useStore((s) => s.app.settings)
-  const cli = settings.cliProvider === 'codex' ? 'codex' : 'cursor'
+  const cli = normalizeCliProvider(settings.cliProvider)
   const slashCommands = useStore((s) => cliCommands(s, cli))
   const models = useStore((s) => s.modelsByCli[cli] ?? s.models)
   const project = projects.find((p) => p.id === projectId) ?? projects[0]
@@ -106,7 +107,7 @@ export function Home({ projectId, onOpenImport }: { projectId?: string; onOpenIm
               ref={composer}
               projectId={project.id}
               cli={cli}
-              showWorktree={cli !== 'codex'}
+              showWorktree={cli === 'cursor'}
               initial={{
                 model: modelForChat(models, favoritesFor(settings, cli), defaultModelFor(settings, cli), projectModelFor(project, cli)),
                 mode: settings.defaultMode,

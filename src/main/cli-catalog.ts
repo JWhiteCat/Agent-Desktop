@@ -1,6 +1,7 @@
 import type { CliInfo, ModelInfo } from '@shared/types'
 import { mergeModelLists } from '@shared/model-catalog'
 import { parseModels, resolveApiKey, resolveCli, runCliOnce } from './cli'
+import { claudeLogin, claudeStatus, claudeVersion, listClaudeModels, resolveClaude, resolveClaudeApiKey } from './claude'
 import { codexLogin, codexStatus, codexVersion, listCodexModels, resolveCodex, resolveCodexApiKey } from './codex'
 import { loadCursorModelCatalog } from './model-catalog'
 
@@ -48,6 +49,24 @@ export async function codexCliInfo(codexPath: string, codexApiKey: string): Prom
   }
 }
 
+export async function claudeModelList(claudePath: string, claudeApiKey: string): Promise<ModelInfo[]> {
+  return (await listClaudeModels(claudePath, resolveClaudeApiKey(claudeApiKey))).models
+}
+
+export async function claudeCliInfo(claudePath: string, claudeApiKey: string): Promise<CliInfo> {
+  const claude = resolveClaude(claudePath)
+  if (!claude) return { found: false }
+  const [version, status] = await Promise.all([claudeVersion(claude), claudeStatus(claude)])
+  return {
+    found: true,
+    path: claude.display,
+    version,
+    status,
+    hasApiKey: !!resolveClaudeApiKey(claudeApiKey),
+    bundled: claude.bundled
+  }
+}
+
 export async function loginCursor(agentPath: string): Promise<string> {
   const cursor = resolveCli(agentPath)
   if (!cursor) throw new Error('未找到 Cursor CLI')
@@ -59,4 +78,10 @@ export async function loginCodex(codexPath: string): Promise<string> {
   const codex = resolveCodex(codexPath)
   if (!codex) throw new Error('未找到 Codex CLI')
   return codexLogin(codex)
+}
+
+export async function loginClaude(claudePath: string): Promise<string> {
+  const claude = resolveClaude(claudePath)
+  if (!claude) throw new Error('未找到 Claude Code')
+  return claudeLogin(claude)
 }

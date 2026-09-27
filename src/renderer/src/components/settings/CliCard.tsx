@@ -58,7 +58,7 @@ export function CliCard({
         ) : info?.found ? (
           <>
             <div className="row-gap">
-              <span className="ok-dot" /> <strong>{info.bundled ? '使用内置 Codex' : '已找到'}</strong>{' '}
+              <span className="ok-dot" /> <strong>{info.bundled ? (provider === 'claude' ? '使用内置 Claude' : '使用内置 Codex') : '已找到'}</strong>{' '}
               <span className="muted small">{info.version}</span>
             </div>
             <div className="muted small mono break">{info.path}</div>

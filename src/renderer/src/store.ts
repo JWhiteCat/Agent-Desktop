@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react'
 import { sanitizeCommandCache, sanitizeSlashCommands, type CommandCache, type SlashCommand } from '@shared/commands'
-import { threadCli, type AgentMode, type AppState, type CliProvider, type Item, type ModelInfo, type Project, type QuestionAnswer, type Settings, type ThreadMeta } from '@shared/types'
+import { normalizeCliProvider, threadCli, type AgentMode, type AppState, type CliProvider, type Item, type ModelInfo, type Project, type QuestionAnswer, type Settings, type ThreadMeta } from '@shared/types'
 import { findVariant, groupModels, pickVariant, wantFrom } from './lib/models'
 import {
   defaultModelFor,
@@ -63,8 +63,8 @@ let state: UIState = {
   commandsByCli: readCommandCache(),
   view: { kind: 'home' },
   models: [{ id: 'auto', label: 'Auto' }],
-  modelsByCli: { cursor: [{ id: 'auto', label: 'Auto' }], codex: [] },
-  modelErrorByCli: { cursor: '', codex: '' }
+  modelsByCli: { cursor: [{ id: 'auto', label: 'Auto' }], codex: [], claude: [] },
+  modelErrorByCli: { cursor: '', codex: '', claude: '' }
 }
 const listeners = new Set<Listener>()
 
@@ -91,8 +91,43 @@ export function useStore<T>(selector: (s: UIState) => T): T {
 const LAST_PROJECT_KEY = 'agent-desktop:lastProject'
 const LEGACY_MODEL_KEY = 'agent-desktop:model'
 
+const CLI_PROVIDERS: CliProvider[] = ['cursor', 'codex', 'claude']
+
 function cliOf(cli?: CliProvider): CliProvider {
-  return cli ?? (state.app.settings.cliProvider === 'codex' ? 'codex' : 'cursor')
+  return cli ?? normalizeCliProvider(state.app.settings.cliProvider)
+}
+
+function storedProjectModel(project: Project, provider: CliProvider): string | undefined {
+  if (provider === 'codex') return project.codexModel
+  if (provider === 'claude') return project.claudeModel
+  return project.model
+}
+
+function projectModelPatch(provider: CliProvider, model: string): Partial<Project> {
+  if (provider === 'codex') return { codexModel: model }
+  if (provider === 'claude') return { claudeModel: model }
+  return { model }
+}
+
+function defaultModelPatch(provider: CliProvider, model: string): Partial<Settings> {
+  if (provider === 'codex') return { codexDefaultModel: model }
+  if (provider === 'claude') return { claudeDefaultModel: model }
+  return { defaultModel: model }
+}
+
+function favoritePatch(provider: CliProvider, kept: string[]): Partial<Settings> {
+  if (provider === 'codex') return { codexFavoriteModels: kept }
+  if (provider === 'claude') return { claudeFavoriteModels: kept }
+  return { favoriteModels: kept }
+}
+
+function otherModelBases(provider: CliProvider): Set<string> {
+  const other = new Set<string>()
+  for (const cli of CLI_PROVIDERS) {
+    if (cli === provider) continue
+    for (const id of modelBases(state.modelsByCli[cli] ?? [])) other.add(id)
+  }
+  return other
 }
 
 export function rememberModel(projectId: string, model: string, previous?: string, cli?: CliProvider): void {
@@ -100,7 +135,7 @@ export function rememberModel(projectId: string, model: string, previous?: strin
   if (!project) return
   const provider = cliOf(cli)
   const models = state.modelsByCli[provider] ?? state.models
-  const stored = provider === 'codex' ? project.codexModel : project.model
+  const stored = storedProjectModel(project, provider)
   const visible = projectModelFor(project, provider)
   if (stored === model) return
   const canonicalizing = previous !== undefined && sameModel(models, previous, model)
@@ -110,7 +145,7 @@ export function rememberModel(projectId: string, model: string, previous?: strin
     const fallback = modelForChat(models, favoritesFor(state.app.settings, provider), defaultModelFor(state.app.settings, provider))
     if (sameModel(models, model, fallback)) return
   }
-  const patch: Partial<Project> = provider === 'codex' ? { codexModel: model } : { model }
+  const patch: Partial<Project> = projectModelPatch(provider, model)
   if (provider === 'cursor' && !project.codexModel && project.model && project.model !== model) {
     const codexCatalog = state.modelsByCli.codex
     if (inCatalog(codexCatalog, project.model) && !inCatalog(models, project.model)) patch.codexModel = project.model
@@ -131,27 +166,22 @@ function applyProjectPatch(project: Project, patch: Partial<Project>): Project {
   const next: Project = { ...project, ...patch }
   if (patch.model === undefined) delete next.model
   if (patch.codexModel === undefined) delete next.codexModel
+  if (patch.claudeModel === undefined) delete next.claudeModel
   return next
 }
 
 export function setDefaultModel(model: string, cli?: CliProvider): void {
   const provider = cliOf(cli)
-  if (provider === 'codex') {
-    if (state.app.settings.codexDefaultModel === model) return
-    setState((s) => ({ app: { ...s.app, settings: { ...s.app.settings, codexDefaultModel: model } } }))
-    void window.api.updateSettings({ codexDefaultModel: model })
-    return
-  }
-  if (state.app.settings.defaultModel === model) return
-  setState((s) => ({ app: { ...s.app, settings: { ...s.app.settings, defaultModel: model } } }))
-  void window.api.updateSettings({ defaultModel: model })
+  if (defaultModelFor(state.app.settings, provider) === model) return
+  const patch = defaultModelPatch(provider, model)
+  setState((s) => ({ app: { ...s.app, settings: { ...s.app.settings, ...patch } } }))
+  void window.api.updateSettings(patch)
 }
 
 export function setFavoriteModels(bases: string[], cli?: CliProvider): void {
   const provider = cliOf(cli)
-  const other: CliProvider = provider === 'codex' ? 'cursor' : 'codex'
-  const kept = pruneFavoriteList(bases, modelBases(state.modelsByCli[provider] ?? []), modelBases(state.modelsByCli[other] ?? []))
-  const patch: Partial<Settings> = provider === 'codex' ? { codexFavoriteModels: kept } : { favoriteModels: kept }
+  const kept = pruneFavoriteList(bases, modelBases(state.modelsByCli[provider] ?? []), otherModelBases(provider))
+  const patch: Partial<Settings> = favoritePatch(provider, kept)
   const projectPatches: { id: string; patch: Partial<Project> }[] = []
   if (kept.length) {
     const catalog = state.modelsByCli[provider] ?? state.models
@@ -166,16 +196,13 @@ export function setFavoriteModels(bases: string[], cli?: CliProvider): void {
       return next === modelId ? undefined : next
     }
     const snappedDefault = snap(defaultModelFor(state.app.settings, provider) || 'auto')
-    if (snappedDefault) {
-      if (provider === 'codex') patch.codexDefaultModel = snappedDefault
-      else patch.defaultModel = snappedDefault
-    }
+    if (snappedDefault) Object.assign(patch, defaultModelPatch(provider, snappedDefault))
     for (const project of state.app.projects) {
       const current = projectModelFor(project, provider)
       if (!current) continue
       const next = snap(current)
       if (!next) continue
-      projectPatches.push({ id: project.id, patch: provider === 'codex' ? { codexModel: next } : { model: next } })
+      projectPatches.push({ id: project.id, patch: projectModelPatch(provider, next) })
     }
   }
   setState((s) => ({
@@ -199,15 +226,29 @@ function sameStringList(a: string[], b: string[]): boolean {
 }
 
 /** Split a shared favorite list once both catalogs can tell the bases apart. */
+function catalogReady(cli: CliProvider): boolean {
+  const list = state.modelsByCli[cli] ?? []
+  return cli === 'cursor' ? list.length > 1 : list.length > 0
+}
+
 function pruneCrossCliFavorites(): void {
-  const cursorBases = modelBases(state.modelsByCli.cursor)
-  const codexBases = modelBases(state.modelsByCli.codex)
-  if (!cursorBases.size || !codexBases.size) return
   const settings = state.app.settings
-  const favoriteModels = pruneFavoriteList(settings.favoriteModels ?? [], cursorBases, codexBases)
-  const codexFavoriteModels = pruneFavoriteList(settings.codexFavoriteModels ?? [], codexBases, cursorBases)
-  if (sameStringList(favoriteModels, settings.favoriteModels ?? []) && sameStringList(codexFavoriteModels, settings.codexFavoriteModels ?? [])) return
-  const patch = { favoriteModels, codexFavoriteModels }
+  const patch: Partial<Settings> = {}
+  let changed = false
+  for (const cli of CLI_PROVIDERS) {
+    if (!catalogReady(cli)) continue
+    const other = new Set<string>()
+    for (const peer of CLI_PROVIDERS) {
+      if (peer === cli || !catalogReady(peer)) continue
+      for (const id of modelBases(state.modelsByCli[peer] ?? [])) other.add(id)
+    }
+    const current = favoritesFor(settings, cli)
+    const next = pruneFavoriteList(current, modelBases(state.modelsByCli[cli] ?? []), other)
+    if (sameStringList(next, current)) continue
+    Object.assign(patch, favoritePatch(cli, next))
+    changed = true
+  }
+  if (!changed) return
   setState((s) => ({ app: { ...s.app, settings: { ...s.app.settings, ...patch } } }))
   void window.api.updateSettings(patch)
 }
@@ -285,7 +326,7 @@ function readModelCache(cli: CliProvider): ModelInfo[] | null {
 function publishModels(cli: CliProvider, list: ModelInfo[]): void {
   const modelsByCli = { ...state.modelsByCli, [cli]: list }
   const seen = new Set<string>()
-  const models = [...modelsByCli.cursor, ...modelsByCli.codex].filter((model) => {
+  const models = [...modelsByCli.cursor, ...modelsByCli.codex, ...modelsByCli.claude].filter((model) => {
     if (seen.has(model.id)) return false
     seen.add(model.id)
     return true
@@ -295,7 +336,7 @@ function publishModels(cli: CliProvider, list: ModelInfo[]): void {
 }
 
 export async function loadModels(refresh = false, only?: CliProvider): Promise<void> {
-  const targets: CliProvider[] = only ? [only] : ['cursor', 'codex']
+  const targets: CliProvider[] = only ? [only] : CLI_PROVIDERS
   if (!refresh) {
     for (const cli of targets) {
       const cached = readModelCache(cli)

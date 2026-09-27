@@ -1,5 +1,6 @@
-import type { CliProvider } from '@shared/types'
-import { codexCliInfo, codexModelList, cursorCliInfo, cursorModelList, loginCodex, loginCursor } from '../cli-catalog'
+import { isCliProvider, normalizeCliProvider, type CliProvider } from '@shared/types'
+import { claudeCliInfo, claudeModelList, codexCliInfo, codexModelList, cursorCliInfo, cursorModelList, loginClaude, loginCodex, loginCursor } from '../cli-catalog'
+import { scanClaudeSessions } from '../claude-history'
 import { scanCodexSessions } from '../codex-history'
 import { scanCliSessions } from '../history'
 import { newId } from '../id'
@@ -8,7 +9,13 @@ import { syncFromCli } from '../thread-history'
 import type { IpcDeps } from './deps'
 
 function chosen(settingsCli: CliProvider, provider?: CliProvider): CliProvider {
-  return provider === 'codex' || provider === 'cursor' ? provider : settingsCli
+  return isCliProvider(provider) ? provider : normalizeCliProvider(settingsCli)
+}
+
+function modelList(cli: CliProvider, settings: { agentPath: string; apiKey: string; codexPath: string; codexApiKey: string; claudePath: string; claudeApiKey: string }) {
+  if (cli === 'codex') return codexModelList(settings.codexPath, settings.codexApiKey)
+  if (cli === 'claude') return claudeModelList(settings.claudePath, settings.claudeApiKey)
+  return cursorModelList(settings.agentPath, settings.apiKey)
 }
 
 export function cliHandlers(deps: IpcDeps): Record<string, Handler> {
@@ -23,29 +30,31 @@ export function cliHandlers(deps: IpcDeps): Record<string, Handler> {
       const cli = chosen(store.settings.cliProvider, provider)
       const cached = modelsCache.get(cli)
       if (cached && !refresh) return cached
-      const models = cli === 'codex' ? await codexModelList(store.settings.codexPath, store.settings.codexApiKey) : await cursorModelList(store.settings.agentPath, store.settings.apiKey)
+      const models = await modelList(cli, store.settings)
       if (models.length) modelsCache.set(cli, models)
       return models
     },
     'cli:info': async (provider?: CliProvider) => {
       const cli = chosen(store.settings.cliProvider, provider)
       if (cli === 'codex') return codexCliInfo(store.settings.codexPath, store.settings.codexApiKey)
+      if (cli === 'claude') return claudeCliInfo(store.settings.claudePath, store.settings.claudeApiKey)
       return cursorCliInfo(store.settings.agentPath, store.settings.apiKey)
     },
     'cli:login': async (provider?: CliProvider) => {
       const cli = chosen(store.settings.cliProvider, provider)
       if (cli === 'codex') return loginCodex(store.settings.codexPath)
+      if (cli === 'claude') return loginClaude(store.settings.claudePath)
       return loginCursor(store.settings.agentPath)
     },
     'cli:scan': () => {
       const imported = new Set(store.threads.map((t) => t.chatId).filter((x): x is string => !!x))
-      return [...scanCliSessions(imported), ...scanCodexSessions(imported)].sort((a, b) => b.updatedAt - a.updatedAt)
+      return [...scanCliSessions(imported), ...scanCodexSessions(imported), ...scanClaudeSessions(imported)].sort((a, b) => b.updatedAt - a.updatedAt)
     },
     'cli:import': (chatIds: string[]) => {
       const wanted = new Set(chatIds)
       const imported = new Set(store.threads.map((t) => t.chatId).filter(Boolean))
       let count = 0
-      const found = [...scanCliSessions(new Set()), ...scanCodexSessions(new Set())]
+      const found = [...scanCliSessions(new Set()), ...scanCodexSessions(new Set()), ...scanClaudeSessions(new Set())]
       for (const s of found) {
         if (!wanted.has(s.chatId) || imported.has(s.chatId)) continue
         const project = store.projectByPath(s.cwd) ?? store.addProject(s.cwd)

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { CliSession } from '@shared/types'
+import { cliTitle, type CliSession } from '@shared/types'
 import { relativeTime, shortPath } from '../lib/format'
 import { errorText, toast } from '../store'
 import { IconFolder, Spinner } from './icons'
@@ -103,7 +103,7 @@ export function ImportDialog({ onClose }: { onClose: () => void }) {
                     onChange={(e) => toggle([s.chatId], e.target.checked)}
                   />
                   <span className="import-title">
-                    {s.title} <span className="badge">{s.cli === 'codex' ? 'Codex' : 'Cursor'}</span>
+                    {s.title} <span className="badge">{cliTitle(s.cli)}</span>
                   </span>
                   <span className="muted small">{s.imported ? '已导入' : relativeTime(s.updatedAt)}</span>
                 </label>

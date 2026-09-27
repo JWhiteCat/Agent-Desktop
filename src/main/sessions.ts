@@ -6,8 +6,9 @@ import type { AgentEvent, CliProvider, Item, PrepareRequest, QuestionAnswer, Que
 import { threadCli } from '@shared/types'
 import { normalizeTurnUsage } from '@shared/turn-usage'
 import { normalizeQuestions } from '@shared/questions'
-import { AcpConnection, codexPlanModePrompt, MethodNotFound, permissionResult, planModePrompt } from './acp'
+import { AcpConnection, claudePlanModePrompt, codexPlanModePrompt, MethodNotFound, permissionResult, planModePrompt } from './acp'
 import { killTree, resolveApiKey, resolveCli, spawnCli, stripAnsi, type ResolvedCli } from './cli'
+import { claudeAsCli, claudeModeId, CLAUDE_EFFORT_CONFIG_ID, CLAUDE_MODEL_CONFIG_ID, resolveClaude, resolveClaudeApiKey, spawnClaudeAcp, type ResolvedClaude } from './claude'
 import { codexAsCli, codexModeId, resolveCodex, resolveCodexApiKey, spawnCodexAcp, type ResolvedCodex } from './codex'
 import { syncAllManagedSkills } from './skills'
 import { newId } from './id'
@@ -132,9 +133,9 @@ export class SessionManager {
     if (!project) throw new Error('项目不存在')
     const settings = this.store.settings
     const provider = threadCli(thread)
-    const launch = resolveLaunch(provider, settings.agentPath, settings.codexPath)
+    const launch = resolveLaunch(provider, settings.agentPath, settings.codexPath, settings.claudePath)
     if (!launch) throw new Error(`未找到 ${cliLabel(provider)}。请先安装，或在设置中指定路径。`)
-    const apiKey = provider === 'codex' ? resolveCodexApiKey(settings.codexApiKey) : resolveApiKey(settings.apiKey)
+    const apiKey = providerApiKey(provider, settings)
 
     const cwd = thread.cwd && fs.existsSync(thread.cwd) ? thread.cwd : project.path
     if (!fs.existsSync(cwd)) throw new Error(`项目目录不存在：${cwd}`)
@@ -265,7 +266,12 @@ export class SessionManager {
     apiKey: string,
     fingerprint: string
   ): AgentProc {
-    const child = provider === 'codex' && launch.codex ? spawnCodexAcp(launch.codex, cwd, apiKey) : spawnCli(launch.cli, args, cwd, 'pipe', apiKey)
+    const child =
+      provider === 'codex' && launch.codex
+        ? spawnCodexAcp(launch.codex, cwd, apiKey)
+        : provider === 'claude' && launch.claude
+          ? spawnClaudeAcp(launch.claude, cwd, apiKey)
+          : spawnCli(launch.cli, args, cwd, 'pipe', apiKey)
     const proc: AgentProc = {
       child,
       acp: undefined as unknown as AcpConnection,
@@ -303,7 +309,7 @@ export class SessionManager {
         ) {
           return
         }
-        if (proc.provider === 'cursor' && run.mode === 'plan' && leftPlanMode(params?.update, run.switchCalls)) {
+        if ((proc.provider === 'cursor' || proc.provider === 'claude') && run.mode === 'plan' && leftPlanMode(params?.update, run.switchCalls)) {
           proc.acp.request('session/set_mode', { sessionId: proc.sessionId, modeId: 'plan' }).catch(() => undefined)
         }
         const changed = run.reducer.handleAcp(params?.update)
@@ -360,9 +366,9 @@ export class SessionManager {
     if (!project) throw new Error('项目不存在')
     const settings = this.store.settings
     const provider = threadCli(thread)
-    const launch = resolveLaunch(provider, settings.agentPath, settings.codexPath)
+    const launch = resolveLaunch(provider, settings.agentPath, settings.codexPath, settings.claudePath)
     if (!launch) throw new Error(`未找到 ${cliLabel(provider)}。请先安装，或在设置中指定路径。`)
-    const apiKey = provider === 'codex' ? resolveCodexApiKey(settings.codexApiKey) : resolveApiKey(settings.apiKey)
+    const apiKey = providerApiKey(provider, settings)
     const cwd = thread.cwd && fs.existsSync(thread.cwd) ? thread.cwd : project.path
     if (!fs.existsSync(cwd)) throw new Error(`项目目录不存在：${cwd}`)
 
@@ -485,6 +491,7 @@ export class SessionManager {
     if (provider === 'cursor' && !apiKey) await acp.request('authenticate', { methodId: 'cursor_login' })
     if (provider === 'codex' && apiKey) await acp.request('authenticate', { methodId: 'api-key' })
     if (provider === 'codex' && !apiKey) await acp.request('authenticate', { methodId: 'chat-gpt' })
+    // Claude uses ANTHROPIC_API_KEY at process start, or the login already stored in ~/.claude.
 
     let sessionId = chatId
     if (sessionId) {
@@ -502,6 +509,10 @@ export class SessionManager {
   private async applySessionOptions(proc: AgentProc, req: SendRequest): Promise<void> {
     if (proc.provider === 'codex') {
       await this.applyCodexOptions(proc, req)
+      return
+    }
+    if (proc.provider === 'claude') {
+      await this.applyClaudeOptions(proc, req)
       return
     }
     const { acp, sessionId } = proc
@@ -539,6 +550,32 @@ export class SessionManager {
     await this.applyCodexModel(proc, req.model)
   }
 
+  private async applyClaudeOptions(proc: AgentProc, req: SendRequest): Promise<void> {
+    try {
+      await proc.acp.request('session/set_mode', { sessionId: proc.sessionId, modeId: claudeModeId(req.mode, req.force) })
+    } catch {
+      /* the next prompt still runs in whatever mode the process started with */
+    }
+    await this.applyClaudeModel(proc, req.model)
+  }
+
+  private async applyClaudeModel(proc: AgentProc, model: string): Promise<void> {
+    if (!model || model === 'auto') return
+    const bracket = model.match(/^([^[]+)\[([^\]]+)\]$/)
+    const id = bracket?.[1] ?? model
+    try {
+      await proc.acp.request('session/set_config_option', { sessionId: proc.sessionId, configId: CLAUDE_MODEL_CONFIG_ID, value: id })
+    } catch {
+      /* keep the session's current model */
+    }
+    if (!bracket?.[2] || bracket[2] === 'default') return
+    try {
+      await proc.acp.request('session/set_config_option', { sessionId: proc.sessionId, configId: CLAUDE_EFFORT_CONFIG_ID, value: bracket[2] })
+    } catch {
+      /* the model keeps its default effort */
+    }
+  }
+
   private async applyCodexModel(proc: AgentProc, model: string): Promise<void> {
     if (!model || model === 'auto') return
     const bracket = model.match(/^([^[]+)\[([^\]]+)\]$/)
@@ -562,7 +599,14 @@ export class SessionManager {
 
   private async runPrompt(threadId: string, run: Run, req: SendRequest): Promise<void> {
     const started = Date.now()
-    const text = req.mode !== 'plan' ? req.prompt : run.proc.provider === 'codex' ? codexPlanModePrompt(req.prompt) : planModePrompt(req.prompt)
+    const text =
+      req.mode !== 'plan'
+        ? req.prompt
+        : run.proc.provider === 'codex'
+          ? codexPlanModePrompt(req.prompt)
+          : run.proc.provider === 'claude'
+            ? claudePlanModePrompt(req.prompt)
+            : planModePrompt(req.prompt)
     const result = await run.proc.acp.request('session/prompt', {
       sessionId: run.proc.sessionId,
       prompt: [{ type: 'text', text }]
@@ -689,6 +733,7 @@ export class SessionManager {
   private async answerPermission(threadId: string, run: Run, params: any): Promise<unknown> {
     const options: { optionId?: string; kind?: string; name?: string }[] = Array.isArray(params?.options) ? params.options : []
     const askFallback = options.some((o) => o.optionId === '__ask_question_skip__')
+    if (run.proc.provider === 'claude' && run.mode === 'ask' && !askFallback) return permissionResult(options, false, true)
     if (!askFallback || !run.acceptUpdates) return permissionResult(options, run.force)
     const decision = await this.waitForAnswers(threadId, run, {
       toolCallId: String(params?.toolCall?.toolCallId ?? ''),
@@ -774,15 +819,26 @@ function procFingerprint(
 interface AgentLaunch {
   cli: ResolvedCli
   codex?: ResolvedCodex
+  claude?: ResolvedClaude
 }
 
-function resolveLaunch(provider: CliProvider, agentPath: string, codexPath: string): AgentLaunch | undefined {
+function resolveLaunch(provider: CliProvider, agentPath: string, codexPath: string, claudePath: string): AgentLaunch | undefined {
   if (provider === 'codex') {
     const codex = resolveCodex(codexPath)
     return codex ? { cli: codexAsCli(codex), codex } : undefined
   }
+  if (provider === 'claude') {
+    const claude = resolveClaude(claudePath)
+    return claude ? { cli: claudeAsCli(claude), claude } : undefined
+  }
   const cli = resolveCli(agentPath)
   return cli ? { cli } : undefined
+}
+
+function providerApiKey(provider: CliProvider, settings: { apiKey: string; codexApiKey: string; claudeApiKey: string }): string {
+  if (provider === 'codex') return resolveCodexApiKey(settings.codexApiKey)
+  if (provider === 'claude') return resolveClaudeApiKey(settings.claudeApiKey)
+  return resolveApiKey(settings.apiKey)
 }
 
 function cursorArgs(req: SendRequest, sandbox: 'default' | 'enabled' | 'disabled', cwd: string, hasChat: boolean): string[] {
@@ -797,7 +853,9 @@ function cursorArgs(req: SendRequest, sandbox: 'default' | 'enabled' | 'disabled
 }
 
 function cliLabel(provider: CliProvider): string {
-  return provider === 'codex' ? 'Codex CLI' : 'Cursor CLI'
+  if (provider === 'codex') return 'Codex CLI'
+  if (provider === 'claude') return 'Claude Code'
+  return 'Cursor CLI'
 }
 
 function isQuestionParams(params: any): boolean {

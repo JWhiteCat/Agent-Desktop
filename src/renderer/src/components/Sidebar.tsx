@@ -1,6 +1,6 @@
 import { forwardRef, useEffect, useMemo, useRef, useState } from 'react'
 import type { Project, ThreadMeta } from '@shared/types'
-import { threadCli } from '@shared/types'
+import { cliTitle, threadCli } from '@shared/types'
 import { relativeTime } from '../lib/format'
 import { addProjectInteractive, forkThread, goHome, openThread, setState, syncThreadFromCli, toast, useStore } from '../store'
 import {
@@ -395,7 +395,7 @@ function ThreadRow(props: {
             {t.title}
             {props.projectName && <span className="thread-project"> · {props.projectName}</span>}
           </span>
-          <span className="badge">{threadCli(t) === 'codex' ? 'Codex' : 'Cursor'}</span>
+          <span className="badge">{cliTitle(threadCli(t))}</span>
         </>
       )}
       <span className="thread-time">{relativeTime(t.updatedAt)}</span>

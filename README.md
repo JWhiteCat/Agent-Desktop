@@ -2,9 +2,9 @@
 
 [中文](README.zh-CN.md)
 
-A desktop client for [Cursor CLI](https://cursor.com/cli) (`agent`) and [Codex CLI](https://github.com/openai/codex) (`codex`). Conversations are grouped by project. The window streams thinking, tool calls, and replies, and keeps a local history. The interface is in Chinese.
+A desktop client for [Cursor CLI](https://cursor.com/cli) (`agent`), [Codex CLI](https://github.com/openai/codex) (`codex`), and [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (`claude`). Conversations are grouped by project. The window streams thinking, tool calls, and replies, and keeps a local history. The interface is in Chinese.
 
-The app does not call a model itself. The main process starts the Cursor CLI or Codex CLI on this machine and talks to it over the [Agent Client Protocol](https://agentclientprotocol.com) (ACP). A new conversation uses the CLI selected in Settings and remembers that choice. An existing conversation stays on the CLI it was created with. The sidebar marks each one Cursor or Codex.
+The app does not call a model itself. The main process starts the Cursor CLI, Codex CLI, or Claude Code adapter on this machine and talks to it over the [Agent Client Protocol](https://agentclientprotocol.com) (ACP). A new conversation uses the CLI selected in Settings and remembers that choice. An existing conversation stays on the CLI it was created with. The sidebar marks each one Cursor, Codex, or Claude.
 
 ## Features
 
@@ -12,23 +12,23 @@ The app does not call a model itself. The main process starts the Cursor CLI or 
 - Fork a conversation from the header, the sidebar, a message, or by sending `/fork`. The original thread is left unchanged
 - Slash commands in a conversation: typing `/` lists `/fork` and the commands the CLI advertises. `/fork` runs in the app; other commands are sent as the next message
 - Three modes: Agent (can edit files and run commands), Plan (read-only plan; pick answers and run the plan in one click), Ask (read-only Q&A)
-- Model picker: Cursor and Codex each remember favorite models and a default model, plus optional context length, reasoning effort, and Fast. Codex lists reasoning effort per model, for example Ultra on Astra. Each project remembers the last model chosen for that CLI
-- A new Cursor conversation can run in an isolated git worktree. Codex has no worktree switch
+- Model picker: Cursor, Codex, and Claude each remember favorite models and a default model, plus optional context length, reasoning effort, and Fast. Codex lists reasoning effort per model, for example Ultra on Astra. Claude lists the effort levels the adapter advertises for the current model. Each project remembers the last model chosen for that CLI
+- A new Cursor conversation can run in an isolated git worktree. Codex and Claude have no worktree switch
 - Changes panel with two tabs: files edited in this conversation, and the git branch, status, and diff of the working directory
 - After a turn, the files changed in that turn are listed under the reply; click one to see its diff
 - When a turn finishes, the reply shows elapsed time, tokens, the model used, and a cost estimate from public list prices
-- Import CLI history from `~/.cursor/chats` and `~/.codex/sessions`, grouped into projects by working directory
+- Import CLI history from `~/.cursor/chats`, `~/.codex/sessions`, and `~/.claude/projects`, grouped into projects by working directory
 - Continue a saved session with ACP `session/load`, or rebuild the transcript from CLI storage. Copying the session id lets you resume a Cursor chat in a terminal with `agent --resume`
 - System notification when a task finishes; clicking it returns to that conversation. A finished run that is not on screen leaves an unread dot
 - Theme: follow the system, dark, or light
-- Settings are a left-hand list: CLI, MCP, Skill, Models, Usage, Defaults, Notifications, Remote control, and Appearance and history. The CLI page detects Cursor and Codex separately, and holds paths, API keys, and sign-in. The Models page uses Cursor / Codex tabs for favorites and the default model. History import lives on the Appearance and history page
-- Usage: account quota for Cursor and Codex (5-hour, weekly, or monthly windows and the next reset, when the account returns them). Cursor models and other models also show that pool’s tokens and the account’s price. Other models uses the included API usage percent only. On-demand spend shows used and limit on the same line, and tokens when the account returns them, without repeating the price. Below that, token totals for the last 1, 7, and 30 days and a paginated list of every past session with its models and cumulative usage. That local cost is estimated from [Cursor’s public prices](https://cursor.com/docs/models-and-pricing). Auto and models missing from the price list are shown as unpriced
+- Settings are a left-hand list: CLI, MCP, Skill, Models, Usage, Defaults, Notifications, Remote control, and Appearance and history. The CLI page detects Cursor, Codex, and Claude separately, and holds paths, API keys, and sign-in. The Models page uses Cursor / Codex / Claude tabs for favorites and the default model. History import lives on the Appearance and history page
+- Usage: account quota for Cursor and Codex (5-hour, weekly, or monthly windows and the next reset, when the account returns them). Claude account quota is not shown yet. Cursor models and other models also show that pool’s tokens and the account’s price. Other models uses the included API usage percent only. On-demand spend shows used and limit on the same line, and tokens when the account returns them, without repeating the price. Below that, token totals for the last 1, 7, and 30 days and a paginated list of every past session with its models and cumulative usage. That local cost is estimated from [Cursor’s public prices](https://cursor.com/docs/models-and-pricing). Auto and models missing from the price list are shown as unpriced
 - Remote control: scan a QR code on the LAN, or open the same page from the public internet through an SSH reverse tunnel
 
 ## Requirements
 
 - Node.js 22.12 or newer
-- At least one CLI: a Cursor CLI that is signed in or has an API key, or Codex CLI (the bundled Codex is used when `codex` is not on this machine)
+- At least one CLI: a Cursor CLI that is signed in or has an API key, Codex CLI (the bundled Codex is used when `codex` is not on this machine), or Claude Code (the adapter's bundled Claude is used when `claude` is not on this machine)
 - The git tab of the changes panel needs `git` on `PATH`
 
 Install Cursor CLI:
@@ -51,18 +51,28 @@ npm install -g @openai/codex
 
 A separate install is optional. The app drives Codex through `@agentclientprotocol/codex-acp`. When the path in Settings is empty and `codex` is not on `PATH`, it uses the Codex shipped with the adapter. Settings then says it is using the built-in Codex.
 
+Install Claude Code:
+
+```bash
+npm install -g @anthropic-ai/claude-code
+```
+
+A separate install is optional. The app drives Claude Code through `@agentclientprotocol/claude-agent-acp`. When the path in Settings is empty and `claude` is not on `PATH`, it uses the Claude binary shipped with the adapter. Settings then says it is using the built-in Claude. On Windows, a `.cmd` shim is skipped so the adapter can start the native binary.
+
 The app looks for the CLIs automatically:
 
-| OS | Cursor | Codex |
-| --- | --- | --- |
-| Windows | `%LOCALAPPDATA%\cursor-agent` | `codex` on `PATH` |
-| macOS / Linux | `~/.local/bin/agent`, `/usr/local/bin/agent`, `/opt/homebrew/bin/agent` | `~/.local/bin/codex`, `/usr/local/bin/codex`, `/opt/homebrew/bin/codex`, and `PATH` |
+| OS | Cursor | Codex | Claude |
+| --- | --- | --- | --- |
+| Windows | `%LOCALAPPDATA%\cursor-agent` | `codex` on `PATH` | `claude.exe` on `PATH`, or `%USERPROFILE%\.local\bin\claude.exe` |
+| macOS / Linux | `~/.local/bin/agent`, `/usr/local/bin/agent`, `/opt/homebrew/bin/agent` | `~/.local/bin/codex`, `/usr/local/bin/codex`, `/opt/homebrew/bin/codex`, and `PATH` | `~/.local/bin/claude`, `/usr/local/bin/claude`, `/opt/homebrew/bin/claude`, and `PATH` |
 
 If nothing is found, set the executable or install directory in Settings.
 
 Cursor auth prefers a [Cursor API key](https://cursor.com/dashboard/api). A key saved in Settings overrides the `CURSOR_API_KEY` environment variable. Without a key, the app uses the browser login saved by `agent login`.
 
 Codex auth prefers the key in Settings, then `CODEX_API_KEY`, then `OPENAI_API_KEY`. If none of those are set, it uses ChatGPT sign-in.
+
+Claude auth prefers the key in Settings, then `ANTHROPIC_API_KEY`. If either is set, Claude Code bills the API and does not use a Claude subscription. If neither is set, it uses the login stored in `~/.claude`. The login button runs the adapter's Claude.ai login.
 
 ## Development
 
@@ -85,7 +95,7 @@ On Windows, `start-dev.bat` runs `npm run dev`. `start-preview.bat` builds and t
 | `npm run preview` | Preview the compiled app |
 | `npm run dist` | Package installers into `release/` |
 
-`npm test` does not talk to Cursor CLI or Codex. `npm run test:live` is the one that does: in a temporary empty directory, Ask mode calls `grok-4.7[context=500k,reasoning_effort=high,fast=true]` with the prompt `Reply with exactly ok`. The machine must be signed in or have `CURSOR_API_KEY` set. High still spends a small number of thinking tokens.
+`npm test` does not talk to Cursor CLI, Codex, or Claude. `npm run test:live` is the one that does: in a temporary empty directory, Ask mode calls `grok-4.7[context=500k,reasoning_effort=high,fast=true]` with the prompt `Reply with exactly ok`. The machine must be signed in or have `CURSOR_API_KEY` set. High still spends a small number of thinking tokens.
 
 Package targets: Windows NSIS, macOS DMG, and Linux AppImage.
 
@@ -111,31 +121,31 @@ Shortcuts (on macOS, Ctrl is ⌘):
 | Shift+Enter | New line |
 | Esc | Stop the current run |
 
-The composer picks the mode and model, and can turn on full access (`--force`). Full access lets the CLI run commands without confirming each one. Sandbox (`--sandbox`) is a default under Settings → Defaults: follow the CLI, enabled, or disabled. It is not a composer toggle. On the home screen, a new Cursor conversation can also switch between the project directory and an isolated git worktree (`--worktree`).
+The composer picks the mode and model, and can turn on full access (`--force`). Full access lets the CLI run commands without confirming each one. For Claude, full access is `bypassPermissions`; Agent without it is `acceptEdits`, so file edits are accepted and commands still ask. Ask mode stays on Claude's default permission mode and the app rejects edit and command prompts. Sandbox (`--sandbox`) is a default under Settings → Defaults: follow the CLI, enabled, or disabled. It applies to Cursor. It is not a composer toggle, and Claude does not use it. On the home screen, a new Cursor conversation can also switch between the project directory and an isolated git worktree (`--worktree`).
 
 In a conversation, typing `/` opens a command menu. Arrow keys move through it, Enter or Tab selects, and Esc closes the menu without stopping a run. `/fork` forks locally. A command that takes input is inserted as `/name ` with its hint under the box; Enter then sends it. Commands with no input run immediately. The list also includes whatever the CLI sends in ACP `available_commands_update`. The first `/` in a conversation that already has a CLI session loads that session so those commands can appear. A new conversation and the home screen do not start the CLI. They reuse the last command list that CLI announced, kept on this machine, and the menu stays hidden until a list exists. The next real session refreshes that list. Text that starts with `/` and matches nothing is still sent as a normal message.
 
 ## Plan mode
 
-Cursor does not expose an AskQuestion tool to ACP clients. Codex Plan is a collaboration mode (`collaboration_mode=plan`); its approval mode stays read-only, and it is not Cursor’s `modeId: plan`. Both CLIs get a short instruction in front of Plan messages, wrapped in an `<agent_desktop_client>` tag. That tag is stripped when CLI history is imported. The instruction asks the model to work like this:
+Cursor does not expose an AskQuestion tool to ACP clients. Codex Plan is a collaboration mode (`collaboration_mode=plan`); its approval mode stays read-only, and it is not Cursor’s `modeId: plan`. Claude Plan is the adapter's `plan` permission mode. All three get a short instruction in front of Plan messages, wrapped in an `<agent_desktop_client>` tag. That tag is stripped when CLI history is imported. The instruction asks the model to work like this:
 
 - When it needs a choice, the model emits a fenced code block whose language is `questions` and whose body is JSON. The UI renders it as option cards. After you pick and press Continue, the choice is sent as the next message. Skip lets the model proceed on its own judgment. Only the latest round of cards can be submitted.
-- Once the requirements are clear, Cursor uses CreatePlan, and Codex uses its plan tool, to produce a name, a summary, and a Markdown body. The UI shows a plan card: name, summary, todos, and an expandable full plan. Cursor also offers Open plan file (`~/.cursor/plans/*.plan.md`). Codex hides that button when there is no such file.
+- Once the requirements are clear, Cursor uses CreatePlan, and Codex and Claude emit a plan, to produce a name, a summary, and a Markdown body. The UI shows a plan card: name, summary, todos, and an expandable full plan. Cursor also offers Open plan file (`~/.cursor/plans/*.plan.md`). Codex and Claude hide that button when there is no such file.
 - Run plan switches the composer to Agent mode and sends a message to implement the plan. Only the latest plan shows this button.
 
-Under ACP, the CLI auto-approves a SwitchMode the model starts, and it does not tell the client. If the model switches mode during a Plan turn, the app immediately sets the session mode back to Plan so it does not start editing files.
+Under ACP, the CLI auto-approves a SwitchMode the model starts, and it does not tell the client. If Cursor or Claude switches mode during a Plan turn, the app immediately sets the session mode back to Plan so it does not start editing files.
 
 ## MCP and skills
 
 Add MCP servers in Settings. When enabled, new and resumed sessions pass them in ACP `mcpServers` (stdio, HTTP, or SSE). The list lives in this app’s `state.json`. It does not rewrite `~/.cursor/mcp.json`.
 
-An enabled skill is written to `~/.cursor/skills/<name>/SKILL.md`, and also to Codex paths `~/.agents/skills/<name>/SKILL.md` and `~/.codex/skills/<name>/SKILL.md`. The name may contain only lowercase letters, digits, and hyphens, and it needs a description. The CLI uses that description to decide whether to apply the skill. Disabling or deleting a skill removes only directories this app created. A same-named directory that this app did not create is left in place, and save reports that it could not be overwritten.
+An enabled skill is written to `~/.cursor/skills/<name>/SKILL.md`, to Codex paths `~/.agents/skills/<name>/SKILL.md` and `~/.codex/skills/<name>/SKILL.md`, and to `~/.claude/skills/<name>/SKILL.md`. The name may contain only lowercase letters, digits, and hyphens, and it needs a description. The CLI uses that description to decide whether to apply the skill. Disabling or deleting a skill removes only directories this app created. A same-named directory that this app did not create is left in place, and save reports that it could not be overwritten.
 
 After MCP, skills, the CLI path, the API key, or the sandbox setting changes, an idle CLI process exits. The new configuration is used on the next message.
 
 ## Usage stats
 
-The top of Usage in Settings shows account quota. Cursor shows the current billing cycle: Cursor models, other models, the next reset, and on-demand spend when that cap exists. Cursor models and other models also show that pool’s tokens (input, output, cache read, and cache write) and the account’s price for it, split the way the account labels them. Other models uses the included API usage percent. The plan’s included dollar cap is not shown on that row, because that figure stops at the purchased amount and is not this pool’s spend. On-demand shows used and limit beside the bar, and adds tokens when the account returns on-demand rows, without repeating the price. Codex shows whatever windows the account returns, often 5 hours and weekly, each with its next reset. A window that is not present is left out. Codex signed in with only an API key has no subscription windows, and the card says so. These figures come from the account, not from the local estimate below.
+The top of Usage in Settings shows account quota for Cursor and Codex. Claude account quota is not connected. Cursor shows the current billing cycle: Cursor models, other models, the next reset, and on-demand spend when that cap exists. Cursor models and other models also show that pool’s tokens (input, output, cache read, and cache write) and the account’s price for it, split the way the account labels them. Other models uses the included API usage percent. The plan’s included dollar cap is not shown on that row, because that figure stops at the purchased amount and is not this pool’s spend. On-demand shows used and limit beside the bar, and adds tokens when the account returns on-demand rows, without repeating the price. Codex shows whatever windows the account returns, often 5 hours and weekly, each with its next reset. A window that is not present is left out. Codex signed in with only an API key has no subscription windows, and the card says so. These figures come from the account, not from the local estimate below.
 
 Usage in Settings totals tokens from conversations on this machine for the last 1, 7, and 30 days, and lists an estimated cost per model. Model names are short, for example “Grok 4.7 500K High Fast”, without the full parameter string. The session list below includes every past conversation. Each row shows the models used, cumulative tokens, and cost, and it is not limited by the day range above. More than 20 rows are paginated. Conversations with no token record are still listed, with the cost left blank. When a turn finishes, the reply also shows that turn’s duration, tokens, model, and estimated cost. Tokens come from the usage the CLI reports at the end of the turn: input already excludes cache, and cache reads and writes are counted separately. Cursor models use Cursor’s public prices. Codex GPT models use the same published token prices that are on file (USD per million tokens). This is not remaining quota, and it does not include the Teams Token Rate. Amounts under one cent are shown to four decimal places. Auto and models missing from the price list show tokens only, with the cost marked unpriced. In the totals above, a turn copied by a fork is counted once. The session list sums each conversation’s own records, so the same turn appears in both the original and the fork.
 
@@ -180,7 +190,7 @@ Projects, conversation metadata, and settings are stored in `data/` under Electr
 | macOS | `~/Library/Application Support/Agent Desktop/data` |
 | Linux | `~/.config/Agent Desktop/data` |
 
-`state.json` stores projects, the conversation list, and settings, including MCP servers, skill bodies, and the default CLI. Each conversation remembers whether it uses Cursor or Codex. Messages for each conversation live in `threads/`. Cursor session records stay in `~/.cursor/chats`, and Codex records stay in `~/.codex/sessions`. This app only reads and resumes that storage. It does not rewrite it. Enabled skills are written to `~/.cursor/skills`, `~/.agents/skills`, and `~/.codex/skills`. Codex conversations do not use a git worktree. A fork copies only the local messages; later sends start a new Codex session. A Cursor fork tries to copy the CLI session as well. If that copy fails, later messages start a new Cursor session, and the conversation says so.
+`state.json` stores projects, the conversation list, and settings, including MCP servers, skill bodies, and the default CLI. Each conversation remembers whether it uses Cursor, Codex, or Claude. Messages for each conversation live in `threads/`. Cursor session records stay in `~/.cursor/chats`, Codex records stay in `~/.codex/sessions`, and Claude records stay in `~/.claude/projects`. This app only reads and resumes that storage. It does not rewrite it. Enabled skills are written to `~/.cursor/skills`, `~/.agents/skills`, `~/.codex/skills`, and `~/.claude/skills`. Codex and Claude conversations do not use a git worktree. A fork copies only the local messages; later sends start a new Codex or Claude session. A Cursor fork tries to copy the CLI session as well. If that copy fails, later messages start a new Cursor session, and the conversation says so.
 
 During development, `AGENT_DESKTOP_USER_DATA` points userData at another directory.
 
@@ -194,6 +204,8 @@ src/main              Electron main process
   sessions.ts         One ACP process per conversation: resume, modes, prompts
   cli.ts              Find and spawn Cursor CLI
   codex.ts            Codex adapter: models, login, mode ids
+  claude.ts           Claude adapter: models, login, mode ids
+  claude-history.ts   Import transcripts from ~/.claude/projects
   acp.ts              Newline-delimited JSON-RPC, including Plan-mode hints
   window.ts           Window, title-bar theme, per-process cache directory
   store.ts            state.json and per-conversation files

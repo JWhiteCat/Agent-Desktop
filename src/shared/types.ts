@@ -3,10 +3,25 @@ import type { SlashCommand } from './commands'
 export type AgentMode = 'agent' | 'plan' | 'ask'
 
 /** Which local CLI owns a thread. Missing values on older threads mean Cursor. */
-export type CliProvider = 'cursor' | 'codex'
+export type CliProvider = 'cursor' | 'codex' | 'claude'
+
+export function isCliProvider(value: unknown): value is CliProvider {
+  return value === 'cursor' || value === 'codex' || value === 'claude'
+}
+
+/** Older saved settings and threads omit the field and stay on Cursor. */
+export function normalizeCliProvider(value: unknown): CliProvider {
+  return isCliProvider(value) ? value : 'cursor'
+}
 
 export function threadCli(thread: { cli?: CliProvider }): CliProvider {
-  return thread.cli === 'codex' ? 'codex' : 'cursor'
+  return normalizeCliProvider(thread.cli)
+}
+
+export function cliTitle(cli: CliProvider): string {
+  if (cli === 'codex') return 'Codex'
+  if (cli === 'claude') return 'Claude'
+  return 'Cursor'
 }
 
 export interface Project {
@@ -19,13 +34,15 @@ export interface Project {
   model?: string
   /** Last Codex model chosen in this project. Unset projects use settings.codexDefaultModel. */
   codexModel?: string
+  /** Last Claude model chosen in this project. Unset projects use settings.claudeDefaultModel. */
+  claudeModel?: string
 }
 
 export interface ThreadMeta {
   id: string
   projectId: string
   title: string
-  /** CLI chat/session id, used to resume. Cursor threads use `--resume`; Codex threads use ACP `session/load`. */
+  /** CLI chat/session id, used to resume with ACP `session/load`. Cursor can also resume in a terminal with `agent --resume`. */
   chatId?: string
   /** Which CLI created this thread. Omitted on threads saved before Codex support; those stay on Cursor. */
   cli?: CliProvider
@@ -178,6 +195,14 @@ export interface Settings {
   favoriteModels: string[]
   /** Codex model group bases shown in the chat picker. Empty means show every Codex model. */
   codexFavoriteModels: string[]
+  /** Claude executable. Empty auto-detects, then falls back to the adapter's bundled CLI. */
+  claudePath: string
+  /** Anthropic API key. Empty uses ANTHROPIC_API_KEY, then the Claude login in ~/.claude. A key bills the API instead of a subscription. */
+  claudeApiKey: string
+  /** Default model for new Claude threads. Empty uses the adapter's current model. */
+  claudeDefaultModel: string
+  /** Claude model group bases shown in the chat picker. Empty means show every Claude model. */
+  claudeFavoriteModels: string[]
   defaultMode: AgentMode
   force: boolean
   theme: 'system' | 'dark' | 'light'
@@ -265,7 +290,7 @@ export interface CliInfo {
   version?: string
   status?: string
   hasApiKey?: boolean
-  /** Codex is running from the adapter package rather than a CLI on PATH. */
+  /** The adapter package is used rather than a CLI on PATH. */
   bundled?: boolean
 }
 
@@ -288,10 +313,14 @@ export const DEFAULT_SETTINGS: Settings = {
   apiKey: '',
   codexPath: '',
   codexApiKey: '',
+  claudePath: '',
+  claudeApiKey: '',
   defaultModel: 'auto',
   codexDefaultModel: '',
+  claudeDefaultModel: '',
   favoriteModels: [],
   codexFavoriteModels: [],
+  claudeFavoriteModels: [],
   defaultMode: 'agent',
   force: false,
   theme: 'system',

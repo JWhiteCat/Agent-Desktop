@@ -150,8 +150,36 @@ export function codexPlanModePrompt(prompt: string): string {
   return `${CODEX_PLAN_HINT}\n\n${prompt}`
 }
 
-export function permissionResult(options: { optionId?: string; kind?: string }[], force: boolean): { outcome: { outcome: string; optionId?: string } } {
+/**
+ * Claude Plan is the adapter's `plan` permission mode. The questions block feeds the existing
+ * picker; the plan text feeds the existing plan card.
+ */
+const CLAUDE_PLAN_HINT = `<agent_desktop_client>
+You are running inside the Agent Desktop client, in Claude plan mode.
+When you need the user to choose between options, do not list the options as plain text. Output one fenced code block with the language "${QUESTION_BLOCK_LANG}" whose body is JSON, then end your turn and wait:
+\`\`\`${QUESTION_BLOCK_LANG}
+{"title":"short title","questions":[{"id":"q1","prompt":"question text","allowMultiple":false,"options":[{"id":"a","label":"option text"},{"id":"b","label":"option text"}]}]}
+\`\`\`
+Write the prompts and labels in the user's language. The user's picks arrive as the next message.
+Ask before planning: a turn that contains a questions block must not emit a plan.
+Once the requirements are clear, emit one plan with a short name, a one-paragraph overview, and the full plan as Markdown. Do not change modes and do not edit files. The user starts implementation from the client.
+</agent_desktop_client>`
+
+export function claudePlanModePrompt(prompt: string): string {
+  return `${CLAUDE_PLAN_HINT}\n\n${prompt}`
+}
+
+export function permissionResult(
+  options: { optionId?: string; kind?: string }[],
+  force: boolean,
+  deny = false
+): { outcome: { outcome: string; optionId?: string } } {
   const usable = options.filter((o) => o.optionId)
+  if (deny) {
+    const reject = usable.find((o) => o.kind === 'reject_once') || usable.find((o) => o.kind === 'reject_always')
+    if (!reject?.optionId) return { outcome: { outcome: 'cancelled' } }
+    return { outcome: { outcome: 'selected', optionId: reject.optionId } }
+  }
   const allowAlways = usable.find((o) => o.kind === 'allow_always')
   const allowOnce = usable.find((o) => o.kind === 'allow_once')
   const picked = (force && allowAlways) || allowOnce || allowAlways || usable[0]

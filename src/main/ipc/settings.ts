@@ -1,5 +1,5 @@
 import { normalizeMcpServers, normalizeSkills } from '@shared/agent-config'
-import type { Settings } from '@shared/types'
+import { isCliProvider, type Settings } from '@shared/types'
 import { syncAllManagedSkills } from '../skills'
 import { validClientId, validatePublicHost, validatePublicPort, validatePublicUser } from '../public-tunnel'
 import type { Handler } from '../remote'
@@ -26,18 +26,21 @@ export function settingsHandlers(deps: IpcDeps): Record<string, Handler> {
         next.skills = normalizeSkills(patch.skills)
         syncAllManagedSkills(next.skills)
       }
-      if (patch.cliProvider !== undefined && patch.cliProvider !== 'cursor' && patch.cliProvider !== 'codex') {
+      if (patch.cliProvider !== undefined && !isCliProvider(patch.cliProvider)) {
         next.cliProvider = 'cursor'
       }
       const s = deps.store.updateSettings(next)
       if (patch.theme) deps.applyTheme(patch.theme)
       if (patch.agentPath !== undefined || patch.apiKey !== undefined) deps.modelsCache.delete('cursor')
       if (patch.codexPath !== undefined || patch.codexApiKey !== undefined) deps.modelsCache.delete('codex')
+      if (patch.claudePath !== undefined || patch.claudeApiKey !== undefined) deps.modelsCache.delete('claude')
       if (
         patch.agentPath !== undefined ||
         patch.apiKey !== undefined ||
         patch.codexPath !== undefined ||
         patch.codexApiKey !== undefined ||
+        patch.claudePath !== undefined ||
+        patch.claudeApiKey !== undefined ||
         patch.sandbox !== undefined ||
         patch.mcpServers !== undefined ||
         patch.skills !== undefined

@@ -1,6 +1,7 @@
 import type { Item, ThreadMeta } from '@shared/types'
 import { threadCli } from '@shared/types'
 import { materializeCliFork, planCliFork } from './fork'
+import { readClaudeTranscript } from './claude-history'
 import { findChatDir, readCliTranscript, UNTITLED } from './history'
 import { readCodexTranscript } from './codex-history'
 import { newId } from './id'
@@ -9,6 +10,7 @@ import type { Store } from './store'
 
 const FORK_NOTICE = '未能复制 Cursor CLI 的会话上下文，之后发送的消息会从新会话开始。'
 const CODEX_FORK_NOTICE = '已复制对话记录。之后发送的消息会从新的 Codex 会话开始。'
+const CLAUDE_FORK_NOTICE = '已复制对话记录。之后发送的消息会从新的 Claude 会话开始。'
 
 export interface HistoryDeps {
   store: Store
@@ -60,8 +62,8 @@ export function forkThread(deps: HistoryDeps, id: string, throughItemId?: string
   const cli = threadCli(src)
   let chatId: string | undefined
   let cwd = src.cwd
-  if (cli === 'codex') {
-    if (src.chatId) cloned.push({ id: newId(), kind: 'notice', level: 'info', text: CODEX_FORK_NOTICE })
+  if (cli === 'codex' || cli === 'claude') {
+    if (src.chatId) cloned.push({ id: newId(), kind: 'notice', level: 'info', text: cli === 'claude' ? CLAUDE_FORK_NOTICE : CODEX_FORK_NOTICE })
   } else if (src.chatId) {
     const dir = findChatDir(src.chatId)
     const plan = dir ? planCliFork(dir, items, throughItemId) : { extraBlobs: [], linked: false }
@@ -102,7 +104,8 @@ export function forkThread(deps: HistoryDeps, id: string, throughItemId?: string
 export function syncFromCli(deps: Pick<HistoryDeps, 'store' | 'isRunning'>, threadId: string): Item[] | undefined {
   const t = deps.store.thread(threadId)
   if (!t?.chatId || deps.isRunning(threadId)) return undefined
-  const items = threadCli(t) === 'codex' ? readCodexTranscript(t.chatId) : readCliTranscript(t.chatId)
+  const cli = threadCli(t)
+  const items = cli === 'codex' ? readCodexTranscript(t.chatId) : cli === 'claude' ? readClaudeTranscript(t.chatId) : readCliTranscript(t.chatId)
   if (!items) return undefined
   deps.store.setItems(threadId, items)
   const firstUser = items.find((i) => i.kind === 'user')

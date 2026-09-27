@@ -1,11 +1,18 @@
 import type { AgentMode, PrepareRequest, QuestionAnswer, ThreadMeta } from '@shared/types'
-import { threadCli } from '@shared/types'
+import { threadCli, type CliProvider } from '@shared/types'
+import { claudeChatUpdatedAt } from '../claude-history'
 import { codexChatUpdatedAt } from '../codex-history'
 import { cliChatUpdatedAt } from '../history'
 import { DEFAULT_TITLE } from '../sessions'
 import { forkThread, syncFromCli, type HistoryDeps } from '../thread-history'
 import type { Handler } from '../remote'
 import type { IpcDeps } from './deps'
+
+function missingSessionMessage(cli: CliProvider): string {
+  if (cli === 'codex') return '未在 ~/.codex/sessions 中找到该会话'
+  if (cli === 'claude') return '未在 ~/.claude/projects 中找到该会话'
+  return '未在 ~/.cursor/chats 中找到该会话'
+}
 
 function historyDeps(deps: IpcDeps): HistoryDeps {
   return {
@@ -37,7 +44,8 @@ export function threadHandlers(deps: IpcDeps): Record<string, Handler> {
     'thread:items': (id: string) => {
       const t = store.thread(id)
       if (t?.source === 'cli' && t.chatId && !sessions.isRunning(id)) {
-        const cliUpdated = threadCli(t) === 'codex' ? codexChatUpdatedAt(t.chatId) : cliChatUpdatedAt(t.chatId)
+        const cli = threadCli(t)
+        const cliUpdated = cli === 'codex' ? codexChatUpdatedAt(t.chatId) : cli === 'claude' ? claudeChatUpdatedAt(t.chatId) : cliChatUpdatedAt(t.chatId)
         if (cliUpdated && cliUpdated > (t.syncedAt ?? 0)) {
           try {
             if (syncFromCli(history, id)) broadcast()
@@ -52,7 +60,7 @@ export function threadHandlers(deps: IpcDeps): Record<string, Handler> {
     'thread:syncFromCli': (id: string) => {
       if (sessions.isRunning(id)) throw new Error('对话正在运行，请稍后再同步')
       const items = syncFromCli(history, id)
-      if (!items) throw new Error(threadCli(store.thread(id) ?? { cli: 'cursor' }) === 'codex' ? '未在 ~/.codex/sessions 中找到该会话' : '未在 ~/.cursor/chats 中找到该会话')
+      if (!items) throw new Error(missingSessionMessage(threadCli(store.thread(id) ?? { cli: 'cursor' })))
       broadcast()
       return items
     },

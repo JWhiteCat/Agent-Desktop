@@ -86,6 +86,7 @@ export function sanitizeSlashCommands(raw: unknown): SlashCommand[] {
 export interface CommandCache {
   cursor?: SlashCommand[]
   codex?: SlashCommand[]
+  claude?: SlashCommand[]
 }
 
 /** Reads a persisted per-CLI command cache. An empty list is kept. */
@@ -93,7 +94,7 @@ export function sanitizeCommandCache(raw: unknown): CommandCache {
   if (!raw || typeof raw !== 'object') return {}
   const rec = raw as Record<string, unknown>
   const out: CommandCache = {}
-  for (const cli of ['cursor', 'codex'] as const) {
+  for (const cli of ['cursor', 'codex', 'claude'] as const) {
     if (!(cli in rec)) continue
     out[cli] = sanitizeSlashCommands(rec[cli])
   }

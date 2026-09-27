@@ -2,7 +2,7 @@ import { app } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
 import { normalizeMcpServers, normalizeSkills } from '@shared/agent-config'
-import { DEFAULT_SETTINGS, type Item, type Project, type Settings, type ThreadMeta } from '@shared/types'
+import { DEFAULT_SETTINGS, normalizeCliProvider, type Item, type Project, type Settings, type ThreadMeta } from '@shared/types'
 import { newId } from './id'
 import { newRemoteClientId, validClientId } from './public-tunnel'
 
@@ -51,16 +51,20 @@ export class Store {
       settings: {
         ...DEFAULT_SETTINGS,
         ...loaded?.settings,
-        cliProvider: loaded?.settings?.cliProvider === 'codex' ? 'codex' : 'cursor',
+        cliProvider: normalizeCliProvider(loaded?.settings?.cliProvider),
         codexPath: typeof loaded?.settings?.codexPath === 'string' ? loaded.settings.codexPath : '',
         codexApiKey: typeof loaded?.settings?.codexApiKey === 'string' ? loaded.settings.codexApiKey : '',
+        claudePath: typeof loaded?.settings?.claudePath === 'string' ? loaded.settings.claudePath : '',
+        claudeApiKey: typeof loaded?.settings?.claudeApiKey === 'string' ? loaded.settings.claudeApiKey : '',
         codexDefaultModel: typeof loaded?.settings?.codexDefaultModel === 'string' ? loaded.settings.codexDefaultModel : '',
+        claudeDefaultModel: typeof loaded?.settings?.claudeDefaultModel === 'string' ? loaded.settings.claudeDefaultModel : '',
         favoriteModels: Array.isArray(loaded?.settings?.favoriteModels) ? loaded.settings.favoriteModels : [],
         codexFavoriteModels: Array.isArray(loaded?.settings?.codexFavoriteModels)
           ? loaded.settings.codexFavoriteModels
           : Array.isArray(loaded?.settings?.favoriteModels)
             ? loaded.settings.favoriteModels.slice()
             : [],
+        claudeFavoriteModels: Array.isArray(loaded?.settings?.claudeFavoriteModels) ? loaded.settings.claudeFavoriteModels : [],
         mcpServers: normalizeMcpServers(loaded?.settings?.mcpServers),
         skills: normalizeSkills(loaded?.settings?.skills),
         remoteClientId
