@@ -1,34 +1,37 @@
 # Agent Desktop
 
-面向 [Cursor CLI](https://cursor.com/cli)（`agent`）和 [Codex CLI](https://github.com/openai/codex)（`codex`）的桌面客户端。按项目组织多段对话，流式展示思考、工具调用和回复，并保留本地历史。
+[中文](README.zh-CN.md)
 
-应用本身不调用模型。它启动本机的 Cursor CLI 或 Codex CLI，把提示词交给 CLI，再把协议输出画成对话界面。新建对话用设置里选中的 CLI，并记住这个选择；已有对话继续用创建时的 CLI。
+A desktop client for [Cursor CLI](https://cursor.com/cli) (`agent`) and [Codex CLI](https://github.com/openai/codex) (`codex`). Conversations are grouped by project. The window streams thinking, tool calls, and replies, and keeps a local history. The interface is in Chinese.
 
-## 功能
+The app does not call a model itself. The main process starts the Cursor CLI or Codex CLI on this machine and talks to it over the [Agent Client Protocol](https://agentclientprotocol.com) (ACP). A new conversation uses the CLI selected in Settings and remembers that choice. An existing conversation stays on the CLI it was created with. The sidebar marks each one Cursor or Codex.
 
-- 多项目侧边栏：添加、重命名、排序、搜索对话
-- 分叉对话：整段复制，或从某条消息截断后另开一支，原对话保持不变
-- 三种模式：Agent（可改文件、执行命令）、Plan（只读方案，可点选回答提问、一键执行计划）、Ask（只读问答）
-- 模型选择：Cursor 与 Codex 各自记住常用模型和默认模型，并可选上下文长度、思考强度、Fast。Codex 按每个模型自己的档位列出思考强度，例如 Astra 的 Ultra
-- 新对话可在隔离的 git worktree 中运行
-- 变更面板：查看当前工作目录的分支、状态和 diff
-- 一轮任务结束后，在回复下方列出本轮修改的文件，点开可看 diff
-- 任务结束时，回复下方显示本轮耗时、token、使用的模型，以及按公开标价估算的费用
-- 从 `~/.cursor/chats` 和 `~/.codex/sessions` 导入 CLI 历史，并按工作目录归入项目
-- 已有会话用 `--resume` 续聊；也可从 CLI 存储同步回本地
-- 任务结束时发送系统通知，点击通知回到该对话
-- 主题：跟随系统、深色、浅色
-- 设置按左侧分类切换：CLI、MCP、Skill、模型、用量、默认值、通知、远程控制、外观与历史。CLI 页可分别检测 Cursor 与 Codex、填写路径和 API Key、登录。模型页顶部用 Cursor / Codex 页签分别配置常用模型和默认模型
-- 用量：显示 Cursor 与 Codex 的账号额度（有则显示 5 小时、每周、每月窗口和下次重置时间），并按最近 1 天、7 天、30 天汇总 token，分页列出全部历史会话的模型和累计消耗。费用用 [Cursor 公开标价](https://cursor.com/docs/models-and-pricing) 估算。Auto 和价目表没有的模型显示为未定价
-- 远程控制：局域网扫码，或经 SSH 反向隧道从公网打开同一页面
+## Features
 
-## 环境要求
+- Multi-project sidebar: add, rename, reorder, collapse, and search conversations. Search matches the title, the preview, and the project name
+- Fork a conversation from the header, the sidebar, a message, or by sending `/fork`. The original thread is left unchanged
+- Slash commands in a conversation: typing `/` lists `/fork` and the commands the CLI advertises. `/fork` runs in the app; other commands are sent as the next message
+- Three modes: Agent (can edit files and run commands), Plan (read-only plan; pick answers and run the plan in one click), Ask (read-only Q&A)
+- Model picker: Cursor and Codex each remember favorite models and a default model, plus optional context length, reasoning effort, and Fast. Codex lists reasoning effort per model, for example Ultra on Astra. Each project remembers the last model chosen for that CLI
+- A new Cursor conversation can run in an isolated git worktree. Codex has no worktree switch
+- Changes panel with two tabs: files edited in this conversation, and the git branch, status, and diff of the working directory
+- After a turn, the files changed in that turn are listed under the reply; click one to see its diff
+- When a turn finishes, the reply shows elapsed time, tokens, the model used, and a cost estimate from public list prices
+- Import CLI history from `~/.cursor/chats` and `~/.codex/sessions`, grouped into projects by working directory
+- Continue a saved session with ACP `session/load`, or rebuild the transcript from CLI storage. Copying the session id lets you resume a Cursor chat in a terminal with `agent --resume`
+- System notification when a task finishes; clicking it returns to that conversation. A finished run that is not on screen leaves an unread dot
+- Theme: follow the system, dark, or light
+- Settings are a left-hand list: CLI, MCP, Skill, Models, Usage, Defaults, Notifications, Remote control, and Appearance and history. The CLI page detects Cursor and Codex separately, and holds paths, API keys, and sign-in. The Models page uses Cursor / Codex tabs for favorites and the default model. History import lives on the Appearance and history page
+- Usage: account quota for Cursor and Codex (5-hour, weekly, or monthly windows and the next reset, when the account returns them). Cursor models and other models also show that pool’s tokens and the account’s price. Other models uses the included API usage percent only. On-demand spend shows used and limit on the same line, and tokens when the account returns them, without repeating the price. Below that, token totals for the last 1, 7, and 30 days and a paginated list of every past session with its models and cumulative usage. That local cost is estimated from [Cursor’s public prices](https://cursor.com/docs/models-and-pricing). Auto and models missing from the price list are shown as unpriced
+- Remote control: scan a QR code on the LAN, or open the same page from the public internet through an SSH reverse tunnel
 
-- Node.js 22.12 或更高版本
-- 至少一种 CLI：已配置 API Key 或已登录的 Cursor CLI，或 Codex CLI（找不到本机 `codex` 时使用应用内置的 Codex）
-- 变更面板需要本机可执行 `git`
+## Requirements
 
-安装 Cursor CLI：
+- Node.js 22.12 or newer
+- At least one CLI: a Cursor CLI that is signed in or has an API key, or Codex CLI (the bundled Codex is used when `codex` is not on this machine)
+- The git tab of the changes panel needs `git` on `PATH`
+
+Install Cursor CLI:
 
 ```powershell
 # Windows (PowerShell)
@@ -40,159 +43,172 @@ irm 'https://cursor.com/install?win32=true' | iex
 curl https://cursor.com/install -fsS | bash
 ```
 
-安装 Codex CLI：
+Install Codex CLI:
 
 ```bash
 npm install -g @openai/codex
 ```
 
-也可以不单独安装。应用通过 `@agentclientprotocol/codex-acp` 驱动 Codex；设置里的路径为空且 PATH 上没有 `codex` 时，使用适配器自带的 Codex，设置里会写明「使用内置 Codex」。
+A separate install is optional. The app drives Codex through `@agentclientprotocol/codex-acp`. When the path in Settings is empty and `codex` is not on `PATH`, it uses the Codex shipped with the adapter. Settings then says it is using the built-in Codex.
 
-应用会自动查找 CLI：
+The app looks for the CLIs automatically:
 
-| 系统 | Cursor | Codex |
+| OS | Cursor | Codex |
 | --- | --- | --- |
-| Windows | `%LOCALAPPDATA%\cursor-agent` | PATH 上的 `codex` |
-| macOS / Linux | `~/.local/bin/agent`、`/usr/local/bin/agent`、`/opt/homebrew/bin/agent` | `~/.local/bin/codex`、`/usr/local/bin/codex`、`/opt/homebrew/bin/codex`，以及 PATH |
+| Windows | `%LOCALAPPDATA%\cursor-agent` | `codex` on `PATH` |
+| macOS / Linux | `~/.local/bin/agent`, `/usr/local/bin/agent`, `/opt/homebrew/bin/agent` | `~/.local/bin/codex`, `/usr/local/bin/codex`, `/opt/homebrew/bin/codex`, and `PATH` |
 
-找不到时，在设置里填可执行文件或安装目录。
+If nothing is found, set the executable or install directory in Settings.
 
-Cursor 认证优先使用 [Cursor API Key](https://cursor.com/dashboard/api)（设置中的 Key 优先于环境变量 `CURSOR_API_KEY`）。没有 Key 时使用 `agent login` 保存的浏览器登录。
+Cursor auth prefers a [Cursor API key](https://cursor.com/dashboard/api). A key saved in Settings overrides the `CURSOR_API_KEY` environment variable. Without a key, the app uses the browser login saved by `agent login`.
 
-Codex 认证优先使用设置中的 Key，其次是 `CODEX_API_KEY`，再次是 `OPENAI_API_KEY`。都没有时使用 ChatGPT 登录。
+Codex auth prefers the key in Settings, then `CODEX_API_KEY`, then `OPENAI_API_KEY`. If none of those are set, it uses ChatGPT sign-in.
 
-## 开发
+## Development
+
+The window is Electron, the UI is React, and both sides are TypeScript, built with electron-vite.
 
 ```bash
 npm install
 npm run dev
 ```
 
-Windows 也可以双击 `start.bat`，效果相同。
+On Windows, `start-dev.bat` runs `npm run dev`. `start-preview.bat` builds and then previews the production bundle.
 
-| 命令 | 作用 |
+| Command | What it does |
 | --- | --- |
-| `npm run dev` | 启动开发窗口 |
-| `npm test` | 离线单元测试，不调用模型 |
-| `npm run test:live` | 用 Grok 4.7 500K High Fast 发一次极短提问 |
-| `npm run typecheck` | 类型检查 |
-| `npm run build` | 编译到 `out/` |
-| `npm run preview` | 预览编译结果 |
-| `npm run dist` | 打包安装包到 `release/` |
+| `npm run dev` | Open the development window |
+| `npm test` | Offline unit tests. Does not call a model |
+| `npm run test:live` | One very short prompt with Grok 4.7 500K High Fast |
+| `npm run typecheck` | Typecheck |
+| `npm run build` | Compile into `out/` |
+| `npm run preview` | Preview the compiled app |
+| `npm run dist` | Package installers into `release/` |
 
-`npm test` 不访问 Cursor CLI，也不访问 Codex。`npm run test:live` 才会在临时空目录里用 Ask 模式调用 `grok-4.7[context=500k,reasoning_effort=high,fast=true]`，提示只有一句 `Reply with exactly ok`。需要本机已登录或已设置 `CURSOR_API_KEY`。High 仍会有少量思考 token。
+`npm test` does not talk to Cursor CLI or Codex. `npm run test:live` is the one that does: in a temporary empty directory, Ask mode calls `grok-4.7[context=500k,reasoning_effort=high,fast=true]` with the prompt `Reply with exactly ok`. The machine must be signed in or have `CURSOR_API_KEY` set. High still spends a small number of thinking tokens.
 
-打包目标：Windows NSIS、macOS DMG、Linux AppImage。
+Package targets: Windows NSIS, macOS DMG, and Linux AppImage.
 
-开发时按 `F12` 打开开发者工具。
+Press `F12` to open DevTools. Links that leave the app open in the system browser.
 
-## 使用
+## Usage
 
-1. 添加一个项目文件夹。Agent 在该目录（或对话自己的 worktree）里工作。
-2. 在首页输入任务，选择模型和模式后发送。
-3. 侧边栏管理对话：置顶、归档、重命名、删除。
-4. 需要看改动时打开变更面板，或在 Cursor / 文件管理器中打开工作目录。任务结束后，对话里会列出这一轮改过的文件，点击文件名展开 diff。
+1. Add a project folder. The agent works in that directory, or, for a new Cursor conversation, in that conversation’s own worktree. Removing a project deletes it from this app only. Files on disk stay.
+2. On the home screen, pick the project, type a task or use one of the example prompts, choose a model and mode, and send. The three most recent conversations in that project are listed under the composer.
+3. Manage conversations in the sidebar: pin, archive, rename (double-click the title), fork, sync from CLI storage, copy the session id, or delete. Syncing replaces the transcript shown here. Duration and token records stored by this app are dropped.
+4. Open the changes panel to review edits, or open the working directory in Cursor or the file manager. After a task finishes, the conversation lists the files changed in that turn. Click a file name to expand the diff.
 
-常用快捷键（macOS 上把 Ctrl 换成 ⌘）：
+Shortcuts (on macOS, Ctrl is ⌘):
 
-| 快捷键 | 作用 |
+| Shortcut | Action |
 | --- | --- |
-| Ctrl+N | 回到首页，开始新对话 |
-| Ctrl+K | 聚焦侧边栏搜索 |
-| Ctrl+B | 显示或隐藏侧边栏 |
-| Ctrl+Shift+D | 显示或隐藏变更面板 |
-| Ctrl+, | 打开设置 |
-| Enter | 发送 |
-| Shift+Enter | 换行 |
-| Esc | 停止当前运行 |
+| Ctrl+N | Go home and start a new conversation |
+| Ctrl+K, Ctrl+Shift+F | Focus sidebar search |
+| Ctrl+B | Show or hide the sidebar |
+| Ctrl+Shift+D | Show or hide the changes panel |
+| Ctrl+, | Open Settings |
+| Enter | Send |
+| Shift+Enter | New line |
+| Esc | Stop the current run |
 
-输入框里还可以切换完全访问（`--force`）和沙箱（`--sandbox`）。完全访问会让 CLI 在不逐条确认的情况下执行命令。
+The composer picks the mode and model, and can turn on full access (`--force`). Full access lets the CLI run commands without confirming each one. Sandbox (`--sandbox`) is a default under Settings → Defaults: follow the CLI, enabled, or disabled. It is not a composer toggle. On the home screen, a new Cursor conversation can also switch between the project directory and an isolated git worktree (`--worktree`).
 
-## Plan 模式
+In a conversation, typing `/` opens a command menu. Arrow keys move through it, Enter or Tab selects, and Esc closes the menu without stopping a run. `/fork` forks locally. A command that takes input is inserted as `/name ` with its hint under the box; Enter then sends it. Commands with no input run immediately. The list also includes whatever the CLI sends in ACP `available_commands_update`. The first `/` in a conversation that already has a CLI session loads that session so those commands can appear. A new conversation does not start the CLI until you send, and the home screen does not show the menu. Text that starts with `/` and matches nothing is still sent as a normal message.
 
-Cursor 不给 ACP 客户端提供 AskQuestion 工具。Codex 的 Plan 是协作模式（`collaboration_mode=plan`），审批模式仍是只读，不是 Cursor 的 `modeId: plan`。两种 CLI 的 Plan 消息前都会附一段说明（用 `<agent_desktop_client>` 标签包住，导入 CLI 历史时会去掉），让模型这样工作：
+## Plan mode
 
-- 需要你做选择时，模型输出一个 ```` ```questions ```` 代码块（JSON）。界面把它画成选项卡片，点选后按“继续”，选择结果会作为下一条消息发出；“跳过”则让模型按自己的判断继续。只有最新一轮的卡片可以提交。
-- 需求清楚后，Cursor 用 CreatePlan 生成计划，Codex 用计划工具给出名称、概要和 Markdown 正文。界面显示计划卡片：名称、概要、待办和可展开的完整计划。Cursor 还会提供“打开计划文件”（`~/.cursor/plans/*.plan.md`）；Codex 没有这份文件时不显示该按钮。
-- 点“执行计划”会把输入框切到 Agent 模式，并发送一条按计划实施的消息。只有最新的计划显示这个按钮。
+Cursor does not expose an AskQuestion tool to ACP clients. Codex Plan is a collaboration mode (`collaboration_mode=plan`); its approval mode stays read-only, and it is not Cursor’s `modeId: plan`. Both CLIs get a short instruction in front of Plan messages, wrapped in an `<agent_desktop_client>` tag. That tag is stripped when CLI history is imported. The instruction asks the model to work like this:
 
-ACP 下 CLI 会自动批准模型发起的 SwitchMode，且不通知客户端。Plan 模式的一轮里如果模型自己切了模式，应用会立刻把会话模式设回 Plan，避免它直接开始改文件。
+- When it needs a choice, the model emits a fenced code block whose language is `questions` and whose body is JSON. The UI renders it as option cards. After you pick and press Continue, the choice is sent as the next message. Skip lets the model proceed on its own judgment. Only the latest round of cards can be submitted.
+- Once the requirements are clear, Cursor uses CreatePlan, and Codex uses its plan tool, to produce a name, a summary, and a Markdown body. The UI shows a plan card: name, summary, todos, and an expandable full plan. Cursor also offers Open plan file (`~/.cursor/plans/*.plan.md`). Codex hides that button when there is no such file.
+- Run plan switches the composer to Agent mode and sends a message to implement the plan. Only the latest plan shows this button.
 
-## MCP 与 Skill
+Under ACP, the CLI auto-approves a SwitchMode the model starts, and it does not tell the client. If the model switches mode during a Plan turn, the app immediately sets the session mode back to Plan so it does not start editing files.
 
-在设置中添加 MCP 服务器。启用后，新建或恢复会话时会把它们放进 ACP 的 `mcpServers`（stdio、HTTP 或 SSE）。这份列表存在应用自己的 `state.json` 里，不会改写 `~/.cursor/mcp.json`。
+## MCP and skills
 
-启用的 Skill 会写成 `~/.cursor/skills/<名称>/SKILL.md`，并同时写到 Codex 的 `~/.agents/skills/<名称>/SKILL.md` 和 `~/.codex/skills/<名称>/SKILL.md`。名称只能是小写字母、数字和连字符，并且需要一段描述，CLI 会按描述决定是否使用。停用或删除时，只移除本应用创建的目录。同名且不是本应用创建的目录会保留，保存时会提示无法覆盖。
+Add MCP servers in Settings. When enabled, new and resumed sessions pass them in ACP `mcpServers` (stdio, HTTP, or SSE). The list lives in this app’s `state.json`. It does not rewrite `~/.cursor/mcp.json`.
 
-修改 MCP 或 Skill 后，空闲的 CLI 进程会退出。下一条消息才会用上新配置。
+An enabled skill is written to `~/.cursor/skills/<name>/SKILL.md`, and also to Codex paths `~/.agents/skills/<name>/SKILL.md` and `~/.codex/skills/<name>/SKILL.md`. The name may contain only lowercase letters, digits, and hyphens, and it needs a description. The CLI uses that description to decide whether to apply the skill. Disabling or deleting a skill removes only directories this app created. A same-named directory that this app did not create is left in place, and save reports that it could not be overwritten.
 
-## 用量
+After MCP, skills, the CLI path, the API key, or the sandbox setting changes, an idle CLI process exits. The new configuration is used on the next message.
 
-用量页顶部显示账号额度。Cursor 显示当前账单周期里的 Cursor 模型和其他模型占用，以及下次重置时间；有按需上限时一并显示。Codex 显示接口返回的窗口，常见是 5 小时和每周，并写出下次重置时间。没有的窗口不显示。只用 API Key 登录的 Codex 没有订阅额度，卡片会说明原因。这些数字来自账号接口，不是下面的本机估算。
+## Usage stats
 
-设置里的「用量」按最近 1 天、7 天和 30 天汇总本机对话的 token，并按模型列出估算费用。模型名用短名称，例如「Grok 4.7 500K High Fast」，不显示完整参数串。下方的会话列表包含全部历史对话，每行显示用过的模型、累计 token 和费用，不受上面的天数限制；超过 20 条时翻页。没有 token 记录的对话也会列出，费用留空。每一轮结束时，回复下方也会显示该轮的耗时、token、使用的模型和估算费用。Token 来自 CLI 在回合结束时给出的用量：输入里已经扣除缓存，缓存读写单独计数。Cursor 模型用 Cursor 公开标价，Codex 的 GPT 模型用同一份已收录的公开 token 标价（美元 / 百万 token）。这不是套餐里还剩多少，也不含 Teams 的 Token Rate。不足 1 美分时显示到小数点后四位。Auto 和价目表没有的模型只显示 token，费用写为「未定价」。上方合计里，分叉复制的同一轮只计一次；会话列表按各对话自己的记录累计，所以同一轮会同时出现在原对话和分叉里。
+The top of Usage in Settings shows account quota. Cursor shows the current billing cycle: Cursor models, other models, the next reset, and on-demand spend when that cap exists. Cursor models and other models also show that pool’s tokens (input, output, cache read, and cache write) and the account’s price for it, split the way the account labels them. Other models uses the included API usage percent. The plan’s included dollar cap is not shown on that row, because that figure stops at the purchased amount and is not this pool’s spend. On-demand shows used and limit beside the bar, and adds tokens when the account returns on-demand rows, without repeating the price. Codex shows whatever windows the account returns, often 5 hours and weekly, each with its next reset. A window that is not present is left out. Codex signed in with only an API key has no subscription windows, and the card says so. These figures come from the account, not from the local estimate below.
 
-## 远程控制
+Usage in Settings totals tokens from conversations on this machine for the last 1, 7, and 30 days, and lists an estimated cost per model. Model names are short, for example “Grok 4.7 500K High Fast”, without the full parameter string. The session list below includes every past conversation. Each row shows the models used, cumulative tokens, and cost, and it is not limited by the day range above. More than 20 rows are paginated. Conversations with no token record are still listed, with the cost left blank. When a turn finishes, the reply also shows that turn’s duration, tokens, model, and estimated cost. Tokens come from the usage the CLI reports at the end of the turn: input already excludes cache, and cache reads and writes are counted separately. Cursor models use Cursor’s public prices. Codex GPT models use the same published token prices that are on file (USD per million tokens). This is not remaining quota, and it does not include the Teams Token Rate. Amounts under one cent are shown to four decimal places. Auto and models missing from the price list show tokens only, with the cost marked unpriced. In the totals above, a turn copied by a fork is counted once. The session list sums each conversation’s own records, so the same turn appears in both the original and the fork.
 
-在设置的“远程控制”里打开开关后，应用会在局域网监听一个端口（默认 `8765`），提供与桌面端相同的界面。手机和电脑连同一个网络，扫描二维码即可打开。二维码会带上电脑当前正在查看的项目或对话。电脑有多个网卡时，可以在下拉框里换一个地址。
+## Remote control
 
-再打开“公网访问”后，应用用本机 OpenSSH 建立反向隧道。服务器上的入口程序独占公网端口（默认 `8765`），按链接里的电脑标识把请求转到对应电脑。多台电脑可以同时开着公网，共用这一个端口；每台链接不同，例如 `http://43.167.166.239:8765/c/<电脑标识>/?token=...`。标识在第一次使用时生成并保存在本机，重置链接不会更换它。默认服务器是 `root@43.167.166.239`。SSH 用户、服务器地址和公网端口都可以改。自己的服务器先按下面的方法装好入口。隧道连上后，公网链接会出现在地址下拉和二维码里。地址或端口改完会重新连接；断线后按 1 秒、2 秒、5 秒、10 秒重试。
+Turn the switch on under Remote control in Settings. The app listens on the LAN (port `8765` by default) and serves the same UI as the desktop app. A phone or another computer on the same network can open it by scanning the QR code. The QR code includes the project or conversation currently open on the computer. If the computer has more than one network interface, pick another address from the dropdown.
 
-- 链接里带有访问令牌，手机首次打开后会记住它。同一浏览器里，不同电脑的公网令牌分开保存。拿到链接的人可以完全控制本应用（发任务、改设置），请勿外传。“重置链接”会换一个新令牌，旧的局域网和公网链接、已连接的手机都会立即失效。
-- 手机端看不到 API Key 和令牌，也不能修改远程控制设置。“在 Cursor 中打开”“在文件管理器中打开”等只对电脑有意义的按钮会隐藏；添加项目时需要手动输入电脑上的路径。
-- 只提供 HTTP，没有加密。局域网只适合在可信网络使用。公网链接在传输路径和这台服务器上都是明文，请只在你自己的服务器上开启。首次启用时 Windows 防火墙可能弹出提示，需要允许“专用网络”访问。
-- 公网隧道使用本机默认 SSH 密钥，并且 `BatchMode` 登录，不会弹出密码。每台电脑把隧道接到服务器上的 Unix 套接字 `/run/agent-desktop/<电脑标识>`，不直接占用公网端口。服务器需要允许套接字转发（`AllowStreamLocalForwarding yes`），并设置 `StreamLocalBindUnlink yes`，否则断线后留下的套接字文件会挡住下一次连接。入口程序监听公网端口并转发网页。云安全组要放行所填的公网端口。应用运行时不会改服务器。
-- 屏幕宽度不超过 720px 时，侧边栏改为抽屉，变更面板和设置改为全屏。设置分类在窄屏上改为顶部横向切换。
-- 开发模式下，页面请求会转发到 Vite 开发服务器，且只转发到这一个地址；请求行里的绝对地址不会被跟着访问。热更新不经过转发，改动后需要在手机上手动刷新。
+Turn on public access and the app opens a reverse tunnel with the local OpenSSH client. A gateway on the server owns the public port (default `8765`) and forwards each request to the computer named in the link. Several computers can share that one port at the same time. Each link is different, for example `http://43.167.166.239:8765/c/<computer-id>/?token=...`. The id is created the first time it is needed and stored on this machine. Resetting the link does not change it. The default server is `root@43.167.166.239`. The SSH user, server address, and public port can all be changed. Set up your own server with the steps below before using it. Once the tunnel is up, the public link appears in the address dropdown and in the QR code. Changing the address or port reconnects. After a drop, it retries at 1, 2, 5, and 10 seconds.
 
-### 一键配置自己的公网服务器
+- The link carries an access token. The phone remembers it after the first open. In the same browser, public tokens for different computers are stored separately. Anyone with the link can fully control this app (send tasks, change settings), so do not share it. Reset link issues a new token. Old LAN and public links, and phones already connected, stop working immediately.
+- The phone UI does not show API keys or tokens, and it cannot change remote-control settings. Buttons that only make sense on the computer, such as Open in Cursor and Open in file manager, are hidden. Adding a project requires typing a path on the computer by hand.
+- The server is HTTP only. There is no encryption. Use the LAN only on a network you trust. A public link is plaintext on the path and on this server, so enable it only on a server you control. The first time you enable it, Windows Firewall may prompt you; allow access on private networks.
+- The public tunnel uses the machine’s default SSH key and logs in with `BatchMode`, so it never asks for a password. Each computer connects the tunnel to a Unix socket on the server, `/run/agent-desktop/<computer-id>`, and does not bind the public port itself. The server must allow socket forwarding (`AllowStreamLocalForwarding yes`) and set `StreamLocalBindUnlink yes`. Otherwise a socket file left behind after a disconnect blocks the next connection. The gateway listens on the public port and forwards the page. Open that public port in the cloud security group. The app does not change the server while it is running.
+- At a screen width of 720px or less, the sidebar becomes a drawer, and the changes panel and Settings become full screen. Settings categories switch in a horizontal bar at the top.
+- In development, page requests are forwarded to the Vite dev server, and only to that one address. An absolute URL in the request line is not followed. Hot reload does not go through the proxy; refresh the phone by hand after a change.
 
-在项目目录执行一条命令。它用本机 SSH 登录你的 Linux 服务器，写好隧道所需的 sshd 配置，并安装共用端口的公网入口：
+### Set up your own public server
+
+From the project directory, one command logs into your Linux server over SSH, writes the sshd settings the tunnel needs, and installs the shared-port gateway:
 
 ```bash
-npm run setup:public-server -- --user root --host 你的服务器 --port 8765
+npm run setup:public-server -- --user root --host your-server --port 8765
 ```
 
-`--user` 是 SSH 用户。`--host` 填域名或 IP。`--port` 是手机访问的公网端口。SSH 使用其他端口时加上 `--ssh-port`。全部参数见 `npm run setup:public-server -- --help`。
+`--user` is the SSH user. `--host` is a domain or IP. `--port` is the public port the phone opens. Add `--ssh-port` when SSH listens somewhere other than 22. See every flag with `npm run setup:public-server -- --help`.
 
-脚本使用本机无口令的默认密钥：`~/.ssh/id_rsa`、`id_ecdsa` 或 `id_ed25519`。都没有时生成 `~/.ssh/id_ed25519`。这把公钥还不能登录时，终端会提示输入一次 SSH 密码，并把它写入该用户的 `authorized_keys`。服务器只认另一把私钥时，用 `--identity` 指向那把私钥；脚本仍会装上默认公钥，因为应用建立隧道时只用默认密钥。普通用户需要能 `sudo`，需要密码时按提示输入。服务器没有 `python3` 时，脚本会用 apt、dnf、yum 或 apk 安装。
+The script uses a passphrase-less default key: `~/.ssh/id_rsa`, `id_ecdsa`, or `id_ed25519`. If none exists, it generates `~/.ssh/id_ed25519`. If that public key cannot log in yet, the terminal asks for the SSH password once and writes the key into that user’s `authorized_keys`. If the server only accepts a different private key, point `--identity` at it. The script still installs the default public key, because the app opens the tunnel with the default key only. A non-root user must be able to `sudo`; enter the password when prompted. If the server has no `python3`, the script installs it with apt, dnf, yum, or apk.
 
-脚本会先备份 `sshd_config`。`sshd -t` 失败则恢复备份，然后 `reload` sshd，不断开当前登录。有 systemd 时入口作为服务监听你填的公网端口，没有时在后台运行。firewalld 或 ufw 正在运行时会放行该端口。旧版本会自己占用公网端口，升级后先关掉那些客户端上的公网访问，再执行本脚本。
+The script backs up `sshd_config` first. If `sshd -t` fails, it restores the backup, then `reload`s sshd without dropping the current login. With systemd, the gateway runs as a service on the public port you chose. Without systemd, it runs in the background. If firewalld or ufw is running, that port is opened. Older builds bound the public port themselves. Before upgrading, turn public access off on those clients, then run this script.
 
-命令成功后，在设置的远程控制里填写同一个 SSH 用户、服务器地址和公网端口，再打开远程控制和公网访问。云安全组放行这个公网端口。
+When the command succeeds, enter the same SSH user, server address, and public port under Remote control, then turn on remote control and public access. Open the public port in the cloud security group.
 
-不带参数时，脚本配置默认服务器 `root@43.167.166.239` 的 `8765` 端口。已经登录到服务器，并且 `public-gateway.py` 与脚本在同一目录时，也可以执行 `sudo bash scripts/setup-public-server.sh 8765`。
+With no arguments, the script configures port `8765` on the default server `root@43.167.166.239`. If you are already logged into the server and `public-gateway.py` is next to the script, you can also run `sudo bash scripts/setup-public-server.sh 8765`.
 
-## 数据
+## Data
 
-项目、对话元数据和设置写在 Electron 的 userData 目录下的 `data/`：
+Projects, conversation metadata, and settings are stored in `data/` under Electron’s userData directory:
 
-| 系统 | 路径 |
+| OS | Path |
 | --- | --- |
 | Windows | `%APPDATA%\Agent Desktop\data` |
 | macOS | `~/Library/Application Support/Agent Desktop/data` |
 | Linux | `~/.config/Agent Desktop/data` |
 
-`state.json` 保存项目、对话列表和设置（含 MCP 服务器、Skill 正文，以及默认 CLI）。每段对话记住自己用的是 Cursor 还是 Codex。每段对话的消息在 `threads/` 里。Cursor 的会话记录仍在 `~/.cursor/chats`，Codex 的在 `~/.codex/sessions`。本应用只读取和续接，不改写那份存储。启用的 Skill 写在 `~/.cursor/skills`，以及 `~/.agents/skills` 和 `~/.codex/skills`。Codex 对话不使用 git worktree；分叉只复制本机消息，之后的发送从新的 Codex 会话开始。
+`state.json` stores projects, the conversation list, and settings, including MCP servers, skill bodies, and the default CLI. Each conversation remembers whether it uses Cursor or Codex. Messages for each conversation live in `threads/`. Cursor session records stay in `~/.cursor/chats`, and Codex records stay in `~/.codex/sessions`. This app only reads and resumes that storage. It does not rewrite it. Enabled skills are written to `~/.cursor/skills`, `~/.agents/skills`, and `~/.codex/skills`. Codex conversations do not use a git worktree. A fork copies only the local messages; later sends start a new Codex session. A Cursor fork tries to copy the CLI session as well. If that copy fails, later messages start a new Cursor session, and the conversation says so.
 
-开发时可用环境变量 `AGENT_DESKTOP_USER_DATA` 指定另一份 userData 目录。
+During development, `AGENT_DESKTOP_USER_DATA` points userData at another directory.
 
-可以同时开多个窗口。每个进程的 Chromium 缓存（GPU 缓存、HTTP 缓存、localStorage）写在系统临时目录的 `agent-desktop-sessions/<pid>`，避免互相锁文件。项目和对话仍共用上面的 `data/`；两个窗口同时改同一份数据时，后写入的会覆盖先写入的。退出时会删掉本进程的缓存目录，上次异常退出留下的目录会在下次启动时清掉。
+Several windows can be open at once. Each process writes its Chromium cache (GPU cache, HTTP cache, localStorage) under `agent-desktop-sessions/<pid>` in the system temp directory, so the processes do not lock each other’s files. Projects and conversations still share the `data/` directory above. If two windows write the same data, the later write wins. On exit, the process deletes its own cache directory. Directories left by a crash are removed on the next launch.
 
-## 目录
+## Layout
 
 ```
-src/main           Electron 主进程。index.ts 只负责启动和退出
-  window.ts        窗口、标题栏主题、每个进程自己的缓存目录
-  thread-history.ts 分叉对话，以及从 CLI 存储同步记录
-  cli-catalog.ts   模型列表、CLI 检测和登录
-  remote-runtime.ts 按设置开关局域网服务和公网隧道
-  remote.ts        局域网 HTTP 服务
-  public-tunnel.ts 公网 SSH 反向隧道
-  quota.ts         Cursor 与 Codex 的账号额度
-  ipc/             按项目、对话、设置、CLI、用量和本机操作拆开的 IPC
-scripts            公网入口（public-gateway.py）、服务器安装脚本（setup-public-server.sh）和本机一键配置（setup-public-server.mjs）
-src/preload        渲染进程可用的安全 API
-src/renderer       React 界面。设置各分类在 components/settings。选哪个模型由 lib/model-prefs.ts 决定，不经过界面状态
-src/shared         主进程与界面共用的类型、用量、额度和解析（如 Plan 模式的提问块）
+src/main              Electron main process
+  index.ts            Window, IPC, notifications, and shutdown
+  sessions.ts         One ACP process per conversation: resume, modes, prompts
+  cli.ts              Find and spawn Cursor CLI
+  codex.ts            Codex adapter: models, login, mode ids
+  acp.ts              Newline-delimited JSON-RPC, including Plan-mode hints
+  window.ts           Window, title-bar theme, per-process cache directory
+  store.ts            state.json and per-conversation files
+  thread-history.ts   Fork conversations and sync records from CLI storage
+  cli-catalog.ts      Model list, CLI detection, and sign-in
+  remote.ts           LAN HTTP server
+  public-tunnel.ts    Public SSH reverse tunnel
+  remote-runtime.ts   Turn the LAN server and public tunnel on from settings
+  quota.ts            Cursor and Codex account quota
+  ipc/                IPC split by projects, conversations, settings, CLI, usage, and local actions
+src/preload           The API the renderer is allowed to call
+src/renderer          React UI
+  components/settings Settings pages
+  lib/model-prefs.ts  Which model is selected. The choice is not kept in UI state
+src/shared            Types, prices, usage, quota, slash commands, and Plan question blocks shared by the main process and the UI
+scripts               Public gateway (public-gateway.py), server installer (setup-public-server.sh), and the local one-shot setup (setup-public-server.mjs)
+test                  Offline unit tests, plus the live smoke test
 ```
