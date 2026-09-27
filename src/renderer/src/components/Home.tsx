@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { relativeTime, shortPath } from '../lib/format'
 import { defaultModelFor, favoritesFor, modelForChat, projectModelFor } from '../lib/model-prefs'
-import { addProjectInteractive, goHome, openThread, startThread, useStore } from '../store'
+import { addProjectInteractive, cliCommands, goHome, openThread, startThread, useStore } from '../store'
 import { Composer, type ComposerHandle } from './Composer'
 import { IconChevronDown, IconFolder, IconImport, IconPlus } from './icons'
 import { MenuList, Popover } from './Menu'
@@ -18,6 +18,7 @@ export function Home({ projectId, onOpenImport }: { projectId?: string; onOpenIm
   const threads = useStore((s) => s.app.threads)
   const settings = useStore((s) => s.app.settings)
   const cli = settings.cliProvider === 'codex' ? 'codex' : 'cursor'
+  const slashCommands = useStore((s) => cliCommands(s, cli))
   const models = useStore((s) => s.modelsByCli[cli] ?? s.models)
   const project = projects.find((p) => p.id === projectId) ?? projects[0]
   const composer = useRef<ComposerHandle>(null)
@@ -112,7 +113,12 @@ export function Home({ projectId, onOpenImport }: { projectId?: string; onOpenIm
                 force: settings.force,
                 worktree: false
               }}
-              placeholder={`在 ${project.name} 中让 Agent 做点什么…`}
+              commands={slashCommands}
+              placeholder={
+                slashCommands.length
+                  ? `在 ${project.name} 中让 Agent 做点什么… 输入 / 查看命令`
+                  : `在 ${project.name} 中让 Agent 做点什么…`
+              }
               onSend={async (text, opts) => {
                 await startThread(project.id, text, opts)
               }}

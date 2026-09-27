@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { argumentHint, filterCommands, mergeCommands, parseAvailableCommands, slashQuery, type SlashCommand } from '../src/shared/commands'
+import { argumentHint, filterCommands, mergeCommands, parseAvailableCommands, sanitizeCommandCache, sanitizeSlashCommands, slashQuery, type SlashCommand } from '../src/shared/commands'
 
 const web: SlashCommand = { name: 'web', description: 'Search the web', hint: 'query to search for' }
 const test: SlashCommand = { name: 'test', description: 'Run tests' }
@@ -70,6 +70,29 @@ describe('filterCommands', () => {
 describe('mergeCommands', () => {
   it('keeps the local command when the CLI uses the same name', () => {
     expect(mergeCommands([fork], [{ name: 'fork', description: 'CLI fork' }, web])).toEqual([fork, web])
+  })
+})
+
+describe('sanitizeSlashCommands', () => {
+  it('keeps names, descriptions, and hints', () => {
+    expect(sanitizeSlashCommands([web, test, { name: 'fork', description: 'local', local: true }])).toEqual([web, test])
+  })
+
+  it('drops broken entries and duplicate names', () => {
+    expect(sanitizeSlashCommands([null, { name: 'web' }, { name: 'web', description: 'first' }, { name: 'web', description: 'second' }])).toEqual([
+      { name: 'web', description: 'first' }
+    ])
+  })
+})
+
+describe('sanitizeCommandCache', () => {
+  it('keeps an empty list and ignores other keys', () => {
+    expect(sanitizeCommandCache({ cursor: [], codex: [web], other: [test] })).toEqual({ cursor: [], codex: [web] })
+  })
+
+  it('returns nothing for a missing cache', () => {
+    expect(sanitizeCommandCache(null)).toEqual({})
+    expect(sanitizeCommandCache([])).toEqual({})
   })
 })
 

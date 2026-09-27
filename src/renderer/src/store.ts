@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react'
-import type { SlashCommand } from '@shared/commands'
-import type { AgentMode, AppState, CliProvider, Item, ModelInfo, Project, QuestionAnswer, Settings, ThreadMeta } from '@shared/types'
+import { sanitizeCommandCache, sanitizeSlashCommands, type CommandCache, type SlashCommand } from '@shared/commands'
+import { threadCli, type AgentMode, type AppState, type CliProvider, type Item, type ModelInfo, type Project, type QuestionAnswer, type Settings, type ThreadMeta } from '@shared/types'
 import { findVariant, groupModels, pickVariant, wantFrom } from './lib/models'
 import {
   defaultModelFor,
@@ -19,6 +19,8 @@ export interface UIState {
   app: AppState
   items: Record<string, Item[] | undefined>
   commandsByThread: Record<string, SlashCommand[] | undefined>
+  /** Last slash-command list announced by each CLI. Shared by new conversations. */
+  commandsByCli: CommandCache
   view: View
   models: ModelInfo[]
   modelsByCli: Record<CliProvider, ModelInfo[]>
@@ -29,10 +31,36 @@ export interface UIState {
 
 type Listener = () => void
 
+const COMMANDS_KEY = 'agent-desktop:slash-commands'
+const NO_COMMANDS: SlashCommand[] = []
+
+function readCommandCache(): CommandCache {
+  try {
+    if (typeof localStorage === 'undefined') return {}
+    return sanitizeCommandCache(JSON.parse(localStorage.getItem(COMMANDS_KEY) ?? 'null'))
+  } catch {
+    return {}
+  }
+}
+
+function writeCommandCache(cache: CommandCache): void {
+  try {
+    localStorage.setItem(COMMANDS_KEY, JSON.stringify(cache))
+  } catch {
+    /* Storage can be unavailable. The in-memory list still works for this run. */
+  }
+}
+
+/** Stable empty list for selectors. A missing cache must not allocate on every read. */
+export function cliCommands(s: UIState, cli: CliProvider): SlashCommand[] {
+  return s.commandsByCli[cli] ?? NO_COMMANDS
+}
+
 let state: UIState = {
   app: { projects: [], threads: [], settings: {} as AppState['settings'], running: [] },
   items: {},
   commandsByThread: {},
+  commandsByCli: readCommandCache(),
   view: { kind: 'home' },
   models: [{ id: 'auto', label: 'Auto' }],
   modelsByCli: { cursor: [{ id: 'auto', label: 'Auto' }], codex: [] },
@@ -219,7 +247,15 @@ export async function initStore(): Promise<void> {
         return { items: { ...s.items, [ev.threadId]: next } }
       })
     } else if (ev.type === 'commands') {
-      setState((s) => ({ commandsByThread: { ...s.commandsByThread, [ev.threadId]: ev.commands } }))
+      const thread = state.app.threads.find((t) => t.id === ev.threadId)
+      const cli = thread ? threadCli(thread) : undefined
+      const list = sanitizeSlashCommands(ev.commands)
+      const commandsByCli = cli ? { ...state.commandsByCli, [cli]: list } : state.commandsByCli
+      setState({
+        commandsByThread: { ...state.commandsByThread, [ev.threadId]: list },
+        commandsByCli
+      })
+      if (cli) writeCommandCache(commandsByCli)
     } else if (ev.type === 'running' && !ev.running) {
       const v = state.view
       if (v.kind === 'thread' && v.id === ev.threadId && document.hasFocus()) {
@@ -368,7 +404,14 @@ export async function answerQuestion(threadId: string, questionId: string, answe
 export async function prepareCommands(threadId: string, opts: SendOptions): Promise<void> {
   try {
     const commands = await window.api.prepareCommands(threadId, { model: opts.model, mode: opts.mode, force: opts.force })
-    setState((s) => ({ commandsByThread: { ...s.commandsByThread, [threadId]: commands } }))
+    const thread = state.app.threads.find((t) => t.id === threadId)
+    const cli = thread ? threadCli(thread) : undefined
+    const list = sanitizeSlashCommands(commands)
+    setState((s) => {
+      const commandsByCli = cli && list.length ? { ...s.commandsByCli, [cli]: list } : s.commandsByCli
+      if (cli && list.length) writeCommandCache(commandsByCli)
+      return { commandsByThread: { ...s.commandsByThread, [threadId]: list }, commandsByCli }
+    })
   } catch (err) {
     toast(errorText(err), 'error')
   }

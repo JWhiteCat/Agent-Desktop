@@ -64,6 +64,42 @@ export function mergeCommands(local: SlashCommand[], remote: SlashCommand[]): Sl
   return [...local, ...remote.filter((c) => !names.has(c.name))]
 }
 
+/** Keeps CLI commands. Drops local commands and broken entries. */
+export function sanitizeSlashCommands(raw: unknown): SlashCommand[] {
+  if (!Array.isArray(raw)) return []
+  const out: SlashCommand[] = []
+  const seen = new Set<string>()
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue
+    const rec = item as Record<string, unknown>
+    if (rec.local === true) continue
+    const name = typeof rec.name === 'string' ? rec.name.trim() : ''
+    const description = typeof rec.description === 'string' ? rec.description.trim() : ''
+    if (!name || !description || seen.has(name)) continue
+    seen.add(name)
+    const hint = typeof rec.hint === 'string' ? rec.hint.trim() : ''
+    out.push(hint ? { name, description, hint } : { name, description })
+  }
+  return out
+}
+
+export interface CommandCache {
+  cursor?: SlashCommand[]
+  codex?: SlashCommand[]
+}
+
+/** Reads a persisted per-CLI command cache. An empty list is kept. */
+export function sanitizeCommandCache(raw: unknown): CommandCache {
+  if (!raw || typeof raw !== 'object') return {}
+  const rec = raw as Record<string, unknown>
+  const out: CommandCache = {}
+  for (const cli of ['cursor', 'codex'] as const) {
+    if (!(cli in rec)) continue
+    out[cli] = sanitizeSlashCommands(rec[cli])
+  }
+  return out
+}
+
 /** Hint for a draft that is exactly `/name ` and that command takes input. */
 export function argumentHint(text: string, commands: SlashCommand[]): string | undefined {
   const match = /^\/(\S+) $/.exec(text)

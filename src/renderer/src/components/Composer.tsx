@@ -27,7 +27,7 @@ interface Props {
   placeholder?: string
   showWorktree?: boolean
   cli?: CliProvider
-  /** Slash commands offered when the draft is `/name`. Home leaves this empty. */
+  /** Slash commands offered when the draft is `/name`. */
   commands?: SlashCommand[]
   /** Called once when the user starts a `/` command, so the CLI list can be loaded. */
   onPrepare?: (opts: SendOptions) => void
