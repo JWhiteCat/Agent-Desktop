@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { net } from 'electron'
-import { parseCodexQuota, parseCursorQuota, type ProviderQuota, type QuotaReport } from '@shared/quota'
+import { parseCodexQuota, parseCursorMonthUsage, parseCursorQuota, type ProviderQuota, type QuotaReport } from '@shared/quota'
 import { resolveApiKey } from './cli'
 import { resolveCodexApiKey } from './codex'
 
@@ -32,16 +32,24 @@ async function loadCursorQuota(apiKeySetting: string | undefined): Promise<Provi
       'Content-Type': 'application/json',
       'Connect-Protocol-Version': '1'
     }
-    const [usage, plan] = await Promise.all([
+    const [usage, plan, aggregated] = await Promise.all([
       postJson(`${CURSOR_API}/aiserver.v1.DashboardService/GetCurrentPeriodUsage`, headers),
-      postJson(`${CURSOR_API}/aiserver.v1.DashboardService/GetPlanInfo`, headers)
+      postJson(`${CURSOR_API}/aiserver.v1.DashboardService/GetPlanInfo`, headers),
+      postJson(`${CURSOR_API}/aiserver.v1.DashboardService/GetAggregatedUsageEvents`, headers).catch(() => ({
+        ok: false,
+        status: 0,
+        json: null
+      }))
     ])
     if (usage.status === 401 || usage.status === 403) {
       cursorTokenCache = null
       return { provider: 'cursor', windows: [], note: 'Cursor 登录已过期，请重新登录' }
     }
     if (!usage.ok) return { provider: 'cursor', windows: [], note: `暂时无法获取 Cursor 额度（HTTP ${usage.status}）` }
-    return parseCursorQuota(usage.json, plan.ok ? plan.json : undefined)
+    const quota = parseCursorQuota(usage.json, plan.ok ? plan.json : undefined)
+    const monthUsage = parseCursorMonthUsage(aggregated.ok ? aggregated.json : null, usage.json)
+    if (monthUsage) quota.monthUsage = monthUsage
+    return quota
   } catch (err) {
     const message = err instanceof Error ? err.message : ''
     if (message.startsWith('Cursor ')) return { provider: 'cursor', windows: [], note: message }

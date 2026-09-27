@@ -12,10 +12,24 @@ export interface QuotaWindow {
   resetsAt?: number
 }
 
+/** Actual tokens and billed total for Cursor's current billing cycle. */
+export interface MonthUsage {
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheWriteTokens: number
+  /** False when the account did not return per-model rows, so the token fields are not a real zero. */
+  tokensKnown: boolean
+  /** Billed USD. Null when neither per-model cents nor `totalSpend` came back. */
+  costUsd: number | null
+}
+
 export interface ProviderQuota {
   provider: 'cursor' | 'codex'
   plan?: string
   windows: QuotaWindow[]
+  /** Current-cycle tokens and price. Cursor only. */
+  monthUsage?: MonthUsage
   /** Why the card is empty, or a warning beside the windows. */
   note?: string
 }
@@ -61,6 +75,48 @@ export function parseCursorQuota(usage: unknown, plan: unknown): ProviderQuota {
     return { provider: 'cursor', plan: planName, windows, note: '没有可用的额度数据' }
   }
   return { provider: 'cursor', plan: planName, windows }
+}
+
+/**
+ * Current billing cycle from `GetAggregatedUsageEvents`.
+ * An empty or failed aggregation still keeps `planUsage.totalSpend` when that price is present.
+ */
+export function parseCursorMonthUsage(aggregated: unknown, periodUsage: unknown): MonthUsage | undefined {
+  const rows = pick(asRecord(aggregated), 'aggregations')
+  const list = Array.isArray(rows) ? rows : null
+  let inputTokens = 0
+  let outputTokens = 0
+  let cacheReadTokens = 0
+  let cacheWriteTokens = 0
+  let costCents: number | null = null
+  let tokensKnown = false
+  if (list) {
+    for (const item of list) {
+      const row = asRecord(item)
+      if (!row) continue
+      tokensKnown = true
+      inputTokens += tokenCount(pick(row, 'inputTokens', 'input_tokens'))
+      outputTokens += tokenCount(pick(row, 'outputTokens', 'output_tokens'))
+      cacheReadTokens += tokenCount(pick(row, 'cacheReadTokens', 'cache_read_tokens'))
+      cacheWriteTokens += tokenCount(pick(row, 'cacheWriteTokens', 'cache_write_tokens'))
+      const cents = num(pick(row, 'totalCents', 'total_cents'))
+      if (cents != null) costCents = (costCents ?? 0) + cents
+    }
+  }
+  if (costCents == null) {
+    const planUsage = asRecord(pick(asRecord(periodUsage), 'planUsage', 'plan_usage'))
+    const spend = num(pick(planUsage, 'totalSpend', 'total_spend'))
+    if (spend != null) costCents = spend
+  }
+  if (!tokensKnown && costCents == null) return undefined
+  return {
+    inputTokens,
+    outputTokens,
+    cacheReadTokens,
+    cacheWriteTokens,
+    tokensKnown,
+    costUsd: costCents == null ? null : costCents / 100
+  }
 }
 
 export function parseCodexQuota(body: unknown): ProviderQuota {
@@ -224,6 +280,11 @@ function pick(rec: Record<string, unknown> | null, ...keys: string[]): unknown {
     if (value !== undefined && value !== null) return value
   }
   return undefined
+}
+
+function tokenCount(value: unknown): number {
+  const n = num(value)
+  return n != null && n > 0 ? n : 0
 }
 
 function num(value: unknown): number | null {

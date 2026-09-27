@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseCodexQuota, parseCursorQuota, windowLabel } from '../src/shared/quota'
+import { parseCodexQuota, parseCursorMonthUsage, parseCursorQuota, windowLabel } from '../src/shared/quota'
 
 describe('window labels', () => {
   it('names common periods and leaves other lengths numeric', () => {
@@ -55,6 +55,61 @@ describe('cursor quota', () => {
   it('notes when the payload has no windows', () => {
     expect(parseCursorQuota({}, {}).note).toBe('没有可用的额度数据')
     expect(parseCursorQuota({}, {}).windows).toEqual([])
+  })
+
+  it('sums model tokens and cents for the current cycle', () => {
+    const usage = parseCursorMonthUsage(
+      {
+        aggregations: [
+          {
+            modelIntent: 'composer-2.5',
+            inputTokens: '1000',
+            outputTokens: '200',
+            cacheReadTokens: '3000',
+            cacheWriteTokens: '40',
+            totalCents: 150.5
+          },
+          {
+            model_intent: 'gpt-5',
+            input_tokens: '25',
+            output_tokens: '5',
+            cache_read_tokens: '0',
+            cache_write_tokens: '10',
+            total_cents: 49.5
+          }
+        ]
+      },
+      { planUsage: { totalSpend: 99999 } }
+    )
+    expect(usage).toEqual({
+      inputTokens: 1025,
+      outputTokens: 205,
+      cacheReadTokens: 3000,
+      cacheWriteTokens: 50,
+      tokensKnown: true,
+      costUsd: 2
+    })
+  })
+
+  it('uses totalSpend when the summary has no price', () => {
+    const usage = parseCursorMonthUsage(
+      { aggregations: [{ modelIntent: 'auto', inputTokens: '10', outputTokens: '1' }] },
+      { planUsage: { totalSpend: 1288 } }
+    )
+    expect(usage).toMatchObject({ inputTokens: 10, outputTokens: 1, tokensKnown: true, costUsd: 12.88 })
+  })
+
+  it('keeps the billed total when the model summary is missing', () => {
+    expect(parseCursorMonthUsage(null, { planUsage: { totalSpend: 250 } })).toEqual({
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      tokensKnown: false,
+      costUsd: 2.5
+    })
+    expect(parseCursorMonthUsage({}, {})).toBeUndefined()
+    expect(parseCursorMonthUsage({ aggregations: [] }, {})).toBeUndefined()
   })
 })
 
