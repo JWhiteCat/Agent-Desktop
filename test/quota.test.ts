@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseCodexQuota, parseCursorMonthUsage, parseCursorQuota, windowLabel } from '../src/shared/quota'
+import { applyCursorMonthUsage, parseCodexQuota, parseCursorQuota, windowLabel } from '../src/shared/quota'
 
 describe('window labels', () => {
   it('names common periods and leaves other lengths numeric', () => {
@@ -57,8 +57,16 @@ describe('cursor quota', () => {
     expect(parseCursorQuota({}, {}).windows).toEqual([])
   })
 
-  it('sums model tokens and cents for the current cycle', () => {
-    const usage = parseCursorMonthUsage(
+  it('puts tokens and price on the matching monthly rows', () => {
+    const period = {
+      billingCycleEnd: cycleEnd,
+      planUsage: { autoPercentUsed: 12, apiPercentUsed: 46, includedSpend: 100, limit: 400 },
+      spendLimitUsage: { individualLimit: 10000, individualUsed: 2500 },
+      autoBucketModels: ['composer-2.5']
+    }
+    const quota = parseCursorQuota(period, {})
+    applyCursorMonthUsage(
+      quota,
       {
         aggregations: [
           {
@@ -67,49 +75,88 @@ describe('cursor quota', () => {
             outputTokens: '200',
             cacheReadTokens: '3000',
             cacheWriteTokens: '40',
-            totalCents: 150.5
+            totalCents: 150.5,
+            tier: 2
           },
           {
-            model_intent: 'gpt-5',
-            input_tokens: '25',
-            output_tokens: '5',
-            cache_read_tokens: '0',
-            cache_write_tokens: '10',
-            total_cents: 49.5
+            modelIntent: 'gpt-5',
+            inputTokens: '25',
+            outputTokens: '5',
+            cacheReadTokens: '0',
+            cacheWriteTokens: '10',
+            totalCents: 49.5,
+            tier: 1
+          },
+          {
+            modelIntent: 'claude-sonnet',
+            kind: 'USAGE_EVENT_KIND_USAGE_BASED',
+            inputTokens: '8',
+            outputTokens: '2',
+            totalCents: 20
           }
         ]
       },
-      { planUsage: { totalSpend: 99999 } }
+      period
     )
-    expect(usage).toEqual({
-      inputTokens: 1025,
-      outputTokens: 205,
+    expect(quota.windows.map((row) => row.detail)).toEqual(['Cursor 模型', '其他模型', '按需支出'])
+    expect(quota.windows[0].usage).toEqual({
+      inputTokens: 1000,
+      outputTokens: 200,
       cacheReadTokens: 3000,
-      cacheWriteTokens: 50,
+      cacheWriteTokens: 40,
       tokensKnown: true,
-      costUsd: 2
+      costUsd: 1.505
     })
+    expect(quota.windows[1].usage).toMatchObject({ inputTokens: 25, outputTokens: 5, cacheWriteTokens: 10, tokensKnown: true, costUsd: 0.495 })
+    expect(quota.windows[2].usage).toMatchObject({ inputTokens: 8, outputTokens: 2, tokensKnown: true, costUsd: 0.2 })
   })
 
-  it('uses totalSpend when the summary has no price', () => {
-    const usage = parseCursorMonthUsage(
-      { aggregations: [{ modelIntent: 'auto', inputTokens: '10', outputTokens: '1' }] },
-      { planUsage: { totalSpend: 1288 } }
+  it('falls back to the auto bucket and the grok prefix when tier is missing', () => {
+    const period = {
+      planUsage: { autoPercentUsed: 1, apiPercentUsed: 1, limit: 100, includedSpend: 1 },
+      autoBucketModels: ['custom-model']
+    }
+    const quota = parseCursorQuota(period, {})
+    applyCursorMonthUsage(
+      quota,
+      {
+        aggregations: [
+          { modelIntent: 'custom-model', inputTokens: '3', totalCents: 10 },
+          { model_intent: 'grok-4.5', input_tokens: '4', total_cents: 20 },
+          { modelIntent: 'sand-bot', inputTokens: '100', totalCents: 30 },
+          { modelIntent: 'claude-sonnet', inputTokens: '5', totalCents: 40 }
+        ]
+      },
+      period
     )
-    expect(usage).toMatchObject({ inputTokens: 10, outputTokens: 1, tokensKnown: true, costUsd: 12.88 })
+    expect(quota.windows[0].usage).toMatchObject({ inputTokens: 7, costUsd: 0.3 })
+    expect(quota.windows[1].usage).toMatchObject({ inputTokens: 105, costUsd: 0.7 })
   })
 
-  it('keeps the billed total when the model summary is missing', () => {
-    expect(parseCursorMonthUsage(null, { planUsage: { totalSpend: 250 } })).toEqual({
+  it('uses on-demand spend when that pool has no model rows', () => {
+    const period = {
+      planUsage: { autoPercentUsed: 0 },
+      spendLimitUsage: { pooledLimit: 5000, pooledUsed: 1250 }
+    }
+    const quota = parseCursorQuota(period, {})
+    applyCursorMonthUsage(quota, null, period)
+    expect(quota.windows.map((row) => row.id)).toEqual(['cursor-models', 'on-demand-pooled'])
+    expect(quota.windows[0].usage).toBeUndefined()
+    expect(quota.windows[1].usage).toEqual({
       inputTokens: 0,
       outputTokens: 0,
       cacheReadTokens: 0,
       cacheWriteTokens: 0,
       tokensKnown: false,
-      costUsd: 2.5
+      costUsd: 12.5
     })
-    expect(parseCursorMonthUsage({}, {})).toBeUndefined()
-    expect(parseCursorMonthUsage({ aggregations: [] }, {})).toBeUndefined()
+  })
+
+  it('leaves the rows alone when neither summary nor on-demand spend is present', () => {
+    const quota = parseCursorQuota({ planUsage: { autoPercentUsed: 0 } }, {})
+    applyCursorMonthUsage(quota, { aggregations: [] }, {})
+    expect(quota.windows).toHaveLength(1)
+    expect(quota.windows[0].usage).toBeUndefined()
   })
 })
 

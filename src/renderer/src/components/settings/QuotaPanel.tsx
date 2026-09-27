@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { MonthUsage, ProviderQuota, QuotaReport, QuotaWindow } from '@shared/quota'
+import type { ProviderQuota, QuotaReport, QuotaWindow, WindowUsage } from '@shared/quota'
 import { compactNumber, formatUsd, resetStamp, resetsIn } from '../../lib/format'
 import { errorText } from '../../store'
 
@@ -64,7 +64,6 @@ function QuotaCard({ title, quota }: { title: string; quota: ProviderQuota }) {
       ) : (
         quota.windows.map((row) => <QuotaRow key={row.id} row={row} />)
       )}
-      {quota.monthUsage ? <MonthUsageRow usage={quota.monthUsage} /> : null}
     </div>
   )
 }
@@ -88,25 +87,19 @@ function QuotaRow({ row }: { row: QuotaWindow }) {
           <div className={barClass(used)} style={{ width: `${Math.max(0, Math.min(100, used))}%` }} />
         </div>
       ) : null}
+      {row.usage ? <WindowUsageLine usage={row.usage} /> : null}
       {reset ? <div className="muted small">{reset}</div> : null}
     </div>
   )
 }
 
-function MonthUsageRow({ usage }: { usage: MonthUsage }) {
+function WindowUsageLine({ usage }: { usage: WindowUsage }) {
   const price = usage.costUsd == null ? '未定价' : `总价 ${formatUsd(usage.costUsd)}`
+  if (!usage.tokensKnown) return <div className="muted small">{price}</div>
   return (
-    <div className="quota-row">
-      <div className="quota-row-top">
-        <span>每月 · 实际消耗</span>
-        <span className="muted">{price}</span>
-      </div>
-      {usage.tokensKnown ? (
-        <div className="muted small">
-          输入 <TokenCount n={usage.inputTokens} /> · 输出 <TokenCount n={usage.outputTokens} /> · 缓存读{' '}
-          <TokenCount n={usage.cacheReadTokens} /> · 缓存写 <TokenCount n={usage.cacheWriteTokens} />
-        </div>
-      ) : null}
+    <div className="muted small">
+      输入 <TokenCount n={usage.inputTokens} /> · 输出 <TokenCount n={usage.outputTokens} /> · 缓存读 <TokenCount n={usage.cacheReadTokens} /> · 缓存写{' '}
+      <TokenCount n={usage.cacheWriteTokens} /> · {price}
     </div>
   )
 }

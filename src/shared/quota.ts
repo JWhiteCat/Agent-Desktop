@@ -8,19 +8,21 @@ export interface QuotaWindow {
   usedPercent: number | null
   /** Used and limit, already formatted, such as `$12.50 / $20.00`. */
   amount?: string
+  /** Actual tokens and price for this pool. Cursor monthly rows only. */
+  usage?: WindowUsage
   /** Unix milliseconds. */
   resetsAt?: number
 }
 
-/** Actual tokens and billed total for Cursor's current billing cycle. */
-export interface MonthUsage {
+/** Tokens and billed price for one Cursor monthly pool. */
+export interface WindowUsage {
   inputTokens: number
   outputTokens: number
   cacheReadTokens: number
   cacheWriteTokens: number
-  /** False when the account did not return per-model rows, so the token fields are not a real zero. */
+  /** False when this pool has a price but no per-model rows, so the token fields are not a real zero. */
   tokensKnown: boolean
-  /** Billed USD. Null when neither per-model cents nor `totalSpend` came back. */
+  /** Billed USD. Null when the account did not return a price for this pool. */
   costUsd: number | null
 }
 
@@ -28,8 +30,6 @@ export interface ProviderQuota {
   provider: 'cursor' | 'codex'
   plan?: string
   windows: QuotaWindow[]
-  /** Current-cycle tokens and price. Cursor only. */
-  monthUsage?: MonthUsage
   /** Why the card is empty, or a warning beside the windows. */
   note?: string
 }
@@ -78,45 +78,31 @@ export function parseCursorQuota(usage: unknown, plan: unknown): ProviderQuota {
 }
 
 /**
- * Current billing cycle from `GetAggregatedUsageEvents`.
- * An empty or failed aggregation still keeps `planUsage.totalSpend` when that price is present.
+ * Puts the current billing cycle onto the Cursor rows that already exist.
+ * Tier 2 is Cursor models and tier 1 is other models. On-demand uses spend-limit cents when the summary has no on-demand rows.
  */
-export function parseCursorMonthUsage(aggregated: unknown, periodUsage: unknown): MonthUsage | undefined {
+export function applyCursorMonthUsage(quota: ProviderQuota, aggregated: unknown, periodUsage: unknown): void {
+  const byId = new Map(quota.windows.map((row) => [row.id, row]))
+  const pools: Record<CursorPool, UsageAcc> = {
+    'cursor-models': emptyUsage(),
+    'other-models': emptyUsage(),
+    'on-demand': emptyUsage()
+  }
+  const autoNames = bucketNames(pick(asRecord(periodUsage), 'autoBucketModels', 'auto_bucket_models'))
   const rows = pick(asRecord(aggregated), 'aggregations')
-  const list = Array.isArray(rows) ? rows : null
-  let inputTokens = 0
-  let outputTokens = 0
-  let cacheReadTokens = 0
-  let cacheWriteTokens = 0
-  let costCents: number | null = null
-  let tokensKnown = false
-  if (list) {
-    for (const item of list) {
+  if (Array.isArray(rows)) {
+    for (const item of rows) {
       const row = asRecord(item)
       if (!row) continue
-      tokensKnown = true
-      inputTokens += tokenCount(pick(row, 'inputTokens', 'input_tokens'))
-      outputTokens += tokenCount(pick(row, 'outputTokens', 'output_tokens'))
-      cacheReadTokens += tokenCount(pick(row, 'cacheReadTokens', 'cache_read_tokens'))
-      cacheWriteTokens += tokenCount(pick(row, 'cacheWriteTokens', 'cache_write_tokens'))
-      const cents = num(pick(row, 'totalCents', 'total_cents'))
-      if (cents != null) costCents = (costCents ?? 0) + cents
+      addUsage(pools[classifyPool(row, autoNames)], row)
     }
   }
-  if (costCents == null) {
-    const planUsage = asRecord(pick(asRecord(periodUsage), 'planUsage', 'plan_usage'))
-    const spend = num(pick(planUsage, 'totalSpend', 'total_spend'))
-    if (spend != null) costCents = spend
-  }
-  if (!tokensKnown && costCents == null) return undefined
-  return {
-    inputTokens,
-    outputTokens,
-    cacheReadTokens,
-    cacheWriteTokens,
-    tokensKnown,
-    costUsd: costCents == null ? null : costCents / 100
-  }
+  const demand = onDemandCents(asRecord(pick(asRecord(periodUsage), 'spendLimitUsage', 'spend_limit_usage')))
+  if (demand != null && pools['on-demand'].costCents == null) pools['on-demand'].costCents = demand
+
+  attachUsage(byId.get('cursor-models'), pools['cursor-models'])
+  attachUsage(byId.get('other-models'), pools['other-models'])
+  attachUsage(byId.get('on-demand') ?? byId.get('on-demand-pooled'), pools['on-demand'])
 }
 
 export function parseCodexQuota(body: unknown): ProviderQuota {
@@ -280,6 +266,79 @@ function pick(rec: Record<string, unknown> | null, ...keys: string[]): unknown {
     if (value !== undefined && value !== null) return value
   }
   return undefined
+}
+
+type CursorPool = 'cursor-models' | 'other-models' | 'on-demand'
+
+interface UsageAcc {
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheWriteTokens: number
+  tokensKnown: boolean
+  costCents: number | null
+}
+
+function emptyUsage(): UsageAcc {
+  return { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, tokensKnown: false, costCents: null }
+}
+
+function classifyPool(row: Record<string, unknown>, autoNames: Set<string>): CursorPool {
+  const kind = text(pick(row, 'kind', 'usageKind', 'usage_kind')) ?? ''
+  if (/USAGE_BASED|ON_DEMAND/i.test(kind)) return 'on-demand'
+  const tier = num(pick(row, 'tier'))
+  if (tier === 2) return 'cursor-models'
+  if (tier === 1) return 'other-models'
+  const model = text(pick(row, 'modelIntent', 'model_intent')) ?? ''
+  return isCursorModel(model, autoNames) ? 'cursor-models' : 'other-models'
+}
+
+function isCursorModel(model: string, autoNames: Set<string>): boolean {
+  const name = model.trim().toLowerCase()
+  if (!name || name.startsWith('sand-')) return false
+  if (autoNames.has(name)) return true
+  return name === 'default' || name === 'auto' || name.startsWith('composer') || name.startsWith('vega') || name.startsWith('cursor-') || name.startsWith('grok')
+}
+
+function bucketNames(value: unknown): Set<string> {
+  const names = new Set<string>()
+  if (!Array.isArray(value)) return names
+  for (const item of value) {
+    if (typeof item === 'string' && item.trim()) names.add(item.trim().toLowerCase())
+  }
+  return names
+}
+
+function addUsage(acc: UsageAcc, row: Record<string, unknown>): void {
+  acc.tokensKnown = true
+  acc.inputTokens += tokenCount(pick(row, 'inputTokens', 'input_tokens'))
+  acc.outputTokens += tokenCount(pick(row, 'outputTokens', 'output_tokens'))
+  acc.cacheReadTokens += tokenCount(pick(row, 'cacheReadTokens', 'cache_read_tokens'))
+  acc.cacheWriteTokens += tokenCount(pick(row, 'cacheWriteTokens', 'cache_write_tokens'))
+  const cents = num(pick(row, 'totalCents', 'total_cents'))
+  if (cents != null) acc.costCents = (acc.costCents ?? 0) + cents
+}
+
+function attachUsage(row: QuotaWindow | undefined, acc: UsageAcc): void {
+  if (!row || (!acc.tokensKnown && acc.costCents == null)) return
+  row.usage = {
+    inputTokens: acc.inputTokens,
+    outputTokens: acc.outputTokens,
+    cacheReadTokens: acc.cacheReadTokens,
+    cacheWriteTokens: acc.cacheWriteTokens,
+    tokensKnown: acc.tokensKnown,
+    costUsd: acc.costCents == null ? null : acc.costCents / 100
+  }
+}
+
+/** Used on-demand cents when that row exists. Missing used counts as zero, matching the spend bar. */
+function onDemandCents(spend: Record<string, unknown> | null): number | null {
+  const individualLimit = num(pick(spend, 'individualLimit', 'individual_limit'))
+  const pooledLimit = num(pick(spend, 'pooledLimit', 'pooled_limit'))
+  const pooled = !(individualLimit != null && individualLimit > 0) && pooledLimit != null && pooledLimit > 0
+  const limit = pooled ? pooledLimit : individualLimit
+  if (limit == null || limit <= 0) return null
+  return (pooled ? num(pick(spend, 'pooledUsed', 'pooled_used')) : num(pick(spend, 'individualUsed', 'individual_used'))) ?? 0
 }
 
 function tokenCount(value: unknown): number {

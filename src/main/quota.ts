@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { net } from 'electron'
-import { parseCodexQuota, parseCursorMonthUsage, parseCursorQuota, type ProviderQuota, type QuotaReport } from '@shared/quota'
+import { applyCursorMonthUsage, parseCodexQuota, parseCursorQuota, type ProviderQuota, type QuotaReport } from '@shared/quota'
 import { resolveApiKey } from './cli'
 import { resolveCodexApiKey } from './codex'
 
@@ -47,8 +47,7 @@ async function loadCursorQuota(apiKeySetting: string | undefined): Promise<Provi
     }
     if (!usage.ok) return { provider: 'cursor', windows: [], note: `暂时无法获取 Cursor 额度（HTTP ${usage.status}）` }
     const quota = parseCursorQuota(usage.json, plan.ok ? plan.json : undefined)
-    const monthUsage = parseCursorMonthUsage(aggregated.ok ? aggregated.json : null, usage.json)
-    if (monthUsage) quota.monthUsage = monthUsage
+    applyCursorMonthUsage(quota, aggregated.ok ? aggregated.json : null, usage.json)
     return quota
   } catch (err) {
     const message = err instanceof Error ? err.message : ''
