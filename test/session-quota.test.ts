@@ -194,6 +194,47 @@ describe('Codex account and session usage lifecycle', () => {
       expect(ctx.finished).toHaveBeenCalledOnce()
     })
 
+    it.each([-1_000, 1_000])('saves the estimate after an asynchronous end reading with %i ms of reset drift', async (drift) => {
+      const ctx = setup()
+      const endReading = deferred<Awaited<ReturnType<typeof loadCodexQuota>>>()
+      const startQuota = quotaUsed(74)
+      const endQuota = quotaUsed(79)
+      endQuota.windows[0].resetsAt += drift
+      ctx.readQuota.mockResolvedValueOnce(startQuota).mockReturnValueOnce(endReading.promise)
+
+      await ctx.start()
+      expect(ctx.request).toHaveBeenCalledOnce()
+      expect(ctx.finished).toHaveBeenCalledOnce()
+      expect(ctx.manager.isRunning('thread')).toBe(false)
+      const result = ctx.state.items[0] as ResultItem
+      const savedStart = result.weeklyQuotaEstimate?.start
+      expect(savedStart).toEqual({
+        sampledAt: quotaReading.quotaSampledAt,
+        weekly: { usedPercent: 74, resetsAt: startQuota.windows[0].resetsAt }
+      })
+      expect(result.weeklyQuotaEstimate).not.toHaveProperty('end')
+      expect(result.weeklyQuotaEstimate).not.toHaveProperty('usedPercent')
+      ctx.store.markItemsDirty.mockClear()
+
+      await vi.advanceTimersByTimeAsync(1_000)
+      endReading.resolve(endQuota)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(ctx.state.items[0]).toBe(result)
+      expect(result.weeklyQuotaEstimate).toEqual({
+        start: savedStart,
+        end: {
+          sampledAt: quotaReading.quotaSampledAt + 1_000,
+          weekly: { usedPercent: 79, resetsAt: endQuota.windows[0].resetsAt }
+        },
+        usedPercent: 5
+      })
+      expect(result.weeklyQuotaEstimate?.start).toBe(savedStart)
+      expect(ctx.store.markItemsDirty).toHaveBeenCalledWith('thread')
+      expect(ctx.events.at(-1)).toEqual({ type: 'items', threadId: 'thread', items: [result] })
+      expect(ctx.readQuota).toHaveBeenCalledTimes(2)
+      expect(ctx.finished).toHaveBeenCalledOnce()
+    })
+
     it('continues after the start deadline and never adopts the late baseline', async () => {
       const ctx = setup()
       const before = deferred<Awaited<ReturnType<typeof loadCodexQuota>>>()

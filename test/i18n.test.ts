@@ -226,16 +226,16 @@ describe('English presentation', () => {
         dataAsOf: '2026-09-30T08:00:00Z'
       },
       weeklyQuotaEstimate: {
-        start: { sampledAt: now, weekly: { usedPercent: 30 } },
-        end: { sampledAt: now + 60_000, weekly: { usedPercent: 30.5 } },
-        usedPercent: 0.5
+        start: { sampledAt: now, weekly: { usedPercent: 30, resetsAt: now + 604_800_000 } },
+        end: { sampledAt: now + 60_000, weekly: { usedPercent: 30.5, resetsAt: now + 604_799_000 } }
       }
     }
     const render = () => renderToStaticMarkup(createElement(ResultFooter, { item, cli: 'codex', models: [] }))
 
     setLanguage('en')
     const english = render()
-    expect(english).toContain('Session usage: Weekly quota 8%')
+    expect(english).toContain('Turn weekly quota: 8%')
+    expect(english).toContain('Estimated turn weekly quota: 0.5%')
     expect(english).toContain('start 30%, end 30.5%')
     expect(english).toContain('Calculation: end − start.')
     expect(english).toContain('0% means the readings did not change')
@@ -246,7 +246,8 @@ describe('English presentation', () => {
 
     setLanguage('zh-CN')
     const chinese = render()
-    expect(chinese).toContain('本次会话消耗 周额度 8%')
+    expect(chinese).toContain('本轮周额度 8%')
+    expect(chinese).toContain('本轮预估周额度 0.5%')
     expect(chinese).toContain('开始 30%，结束 30.5%')
     expect(chinese).toContain('>$0.0025</span>')
   })

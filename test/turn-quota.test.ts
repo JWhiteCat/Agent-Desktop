@@ -67,6 +67,29 @@ describe('weekly account quota estimate for a single turn', () => {
     expect(weeklyQuotaEstimate(snapshot(100), snapshot(101.25, finishedAt)).usedPercent).toBe(1.25)
   })
 
+  it.each([-1_000, 1_000])('accepts a reset timestamp difference of %i ms', (difference) => {
+    const start = snapshot(74)
+    const end = snapshot(79, finishedAt, resetsAt + difference)
+    expect(weeklyQuotaEstimate(start, end)).toEqual({ start, end, usedPercent: 5 })
+  })
+
+  it.each([-1_001, 1_001])('rejects a reset timestamp difference of %i ms', (difference) => {
+    expect(weeklyQuotaEstimate(snapshot(74), snapshot(79, finishedAt, resetsAt + difference)).usedPercent).toBeUndefined()
+  })
+
+  it.each([
+    [finishedAt, finishedAt + 1_000],
+    [finishedAt + 1_000, finishedAt],
+    [finishedAt - 1, finishedAt + 999],
+    [finishedAt + 999, finishedAt - 1]
+  ])('rejects an expired reset within tolerance: start %i, end %i', (startReset, endReset) => {
+    expect(weeklyQuotaEstimate(snapshot(30, startedAt, startReset), snapshot(31, finishedAt, endReset)).usedPercent).toBeUndefined()
+  })
+
+  it('accepts nearby reset timestamps only when both are after the end reading', () => {
+    expect(weeklyQuotaEstimate(snapshot(30, startedAt, finishedAt + 1), snapshot(31, finishedAt, finishedAt + 1_001)).usedPercent).toBe(1)
+  })
+
   it('retains available observations without inventing missing readings or reset times', () => {
     const start = snapshot(30)
     const end = snapshot(31, finishedAt)
@@ -88,6 +111,15 @@ describe('weekly account quota estimate for a single turn', () => {
 
   it.each([NaN, Infinity, -Infinity, 0, -1])('rejects invalid matching reset timestamps %s', (reset) => {
     expect(weeklyQuotaEstimate(snapshot(30, startedAt, reset), snapshot(31, finishedAt, reset)).usedPercent).toBeUndefined()
+  })
+
+  it.each([undefined, NaN, Infinity, -Infinity, 0, -1])('rejects an invalid reset timestamp %s on either side', (reset) => {
+    const start = snapshot(30)
+    const end = snapshot(31, finishedAt)
+    start.weekly!.resetsAt = reset
+    expect(weeklyQuotaEstimate(start, end).usedPercent).toBeUndefined()
+    end.weekly!.resetsAt = reset
+    expect(weeklyQuotaEstimate(snapshot(30), end).usedPercent).toBeUndefined()
   })
 
   it.each([NaN, Infinity, -Infinity, -1])('rejects invalid weekly percentages %s at either end', (value) => {

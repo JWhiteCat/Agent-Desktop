@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { t } from '@shared/i18n'
 import { quoteModel } from '@shared/model-prices'
+import { weeklyQuotaEstimate } from '@shared/turn-quota'
 import type { CliProvider, ModelInfo, ResultItem } from '@shared/types'
 import { compactNumber, duration, formatUsd } from '../../lib/format'
 import { groupModels, modelCaption } from '../../lib/models'
@@ -51,12 +52,15 @@ export function ResultFooter({ item, text, fallbackModel, cli = 'cursor', models
 
 function weeklyEstimate(item: ResultItem): { text: string; title: string } {
   const estimate = item.weeklyQuotaEstimate
-  const amount = estimate?.usedPercent
+  // Older results may have complete readings but no difference because reset times drifted.
+  const amount = validQuotaAmount(estimate?.usedPercent)
+    ? estimate.usedPercent
+    : weeklyQuotaEstimate(estimate?.start, estimate?.end).usedPercent
   const start = estimate?.start?.weekly?.usedPercent
   const end = estimate?.end?.weekly?.usedPercent
   const reading = (value: number | undefined) => validQuotaAmount(value) ? `${quotaAmount(value)}%` : t('暂无数据')
   return {
-    text: t('本轮预估消耗 {amount}', { amount: validQuotaAmount(amount) ? t('周额度 {amount}%', { amount: quotaAmount(amount) }) : t('暂无数据') }),
+    text: t('本轮预估周额度 {amount}', { amount: validQuotaAmount(amount) ? `${quotaAmount(amount)}%` : t('暂无数据') }),
     title: t('周额度已用：开始 {start}，结束 {end}。计算：结束 − 开始。{unavailable}账号其他会话、其他客户端的使用和统计延迟可能影响估算。0% 表示读数未变化，不代表本轮没有消耗。', {
       start: reading(start), end: reading(end),
       unavailable: validQuotaAmount(amount) ? '' : t('缺少有效读数或无法确认同一周额度周期，暂不能估算。')
@@ -69,14 +73,14 @@ function sessionConsumption(item: ResultItem): { text: string; title: string } {
   const sampled = usage?.dataAsOf ? t(' 服务统计时间：{time}', { time: usage.dataAsOf }) : ''
   if (usage?.status === 'available' || usage?.status === 'partial') {
     const amounts: string[] = []
-    if (validQuotaAmount(usage.weekly)) amounts.push(t('周额度 {amount}%', { amount: quotaAmount(usage.weekly) }))
+    if (validQuotaAmount(usage.weekly)) amounts.push(`${quotaAmount(usage.weekly)}%`)
     if (validQuotaAmount(usage.fiveHour)) amounts.push(t('5小时额度 {amount}%', { amount: quotaAmount(usage.fiveHour) }))
     const credits = balanceCreditsText(usage.balanceCredits)
     if (credits !== undefined && (credits !== '0' || !amounts.length)) amounts.push(`${credits} credits`)
     if (amounts.length) {
       const partial = usage.status === 'partial'
       return {
-        text: t('本次会话消耗 {amount}{partial}', { amount: amounts.join(' · '), partial: partial ? t('（统计中）') : '' }),
+        text: t('本轮周额度 {amount}{partial}', { amount: amounts.join(' · '), partial: partial ? t('（统计中）') : '' }),
         title: t('Codex 按当前会话单独统计在当前额度周期内的累计消耗，不受其他会话影响。{status}{sampled}', {
           status: partial ? t('统计仍在更新，当前数值尚未完整。') : t('服务端统计可能延迟。'), sampled
         })
@@ -87,12 +91,12 @@ function sessionConsumption(item: ResultItem): { text: string; title: string } {
   if (validQuotaAmount(legacy?.credits)) {
     const cost = validQuotaAmount(legacy.costUsd) ? ` / ${formatUsd(legacy.costUsd)}` : ''
     return {
-      text: t('本次会话消耗 {amount}{partial}', { amount: `${quotaAmount(legacy.credits)} credits${cost}`, partial: '' }),
+      text: t('本轮周额度 {amount}{partial}', { amount: `${quotaAmount(legacy.credits)} credits${cost}`, partial: '' }),
       title: t('Codex 返回的当前会话累计额度消耗估算，单位为 credits，不受其他会话影响。金额仅在 Codex 返回时显示。{sampled}', { sampled })
     }
   }
   return {
-    text: t('本次会话消耗 {amount}{partial}', { amount: usage ? t('服务未返回') : t('暂无数据'), partial: '' }),
+    text: t('本轮周额度 {amount}{partial}', { amount: usage ? t('服务未返回') : t('暂无数据'), partial: '' }),
     title: t('{status}已记录的 token 和公开价格估算仍可参考。{sampled}', {
       status: usage ? t('Codex 尚未返回此会话的可用额度数据，无法确认是统计延迟还是当前会话不受支持。') : t('尚未获得当前会话的额度消耗数据。'), sampled
     })

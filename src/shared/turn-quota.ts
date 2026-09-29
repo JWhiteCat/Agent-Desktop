@@ -1,5 +1,7 @@
 import type { ProviderQuota, QuotaWindow } from './quota'
 
+const RESET_TIME_TOLERANCE_MS = 1_000
+
 /** Legacy stored account-quota deltas; retained only to read older session events. */
 export interface TurnQuotaUsage {
   weekly?: number
@@ -27,9 +29,13 @@ export function weeklyQuotaEstimate(start?: TurnQuotaSnapshot, end?: TurnQuotaSn
   if (!start || !end || !startWindow || !endWindow ||
     !Number.isFinite(start.sampledAt) || !Number.isFinite(end.sampledAt) || start.sampledAt > end.sampledAt ||
     !validPercent(startWindow.usedPercent) || !validPercent(endWindow.usedPercent)) return estimate
-  const resetsAt = startWindow.resetsAt
-  if (resetsAt == null || !Number.isFinite(resetsAt) || resetsAt <= 0 ||
-    resetsAt !== endWindow.resetsAt || resetsAt <= end.sampledAt) return estimate
+  const startReset = startWindow.resetsAt
+  const endReset = endWindow.resetsAt
+  // Account reads can differ by one second when reporting the same reset time.
+  if (startReset == null || !Number.isFinite(startReset) || startReset <= 0 ||
+    endReset == null || !Number.isFinite(endReset) || endReset <= 0 ||
+    Math.abs(startReset - endReset) > RESET_TIME_TOLERANCE_MS ||
+    Math.min(startReset, endReset) <= end.sampledAt) return estimate
   const difference = endWindow.usedPercent - startWindow.usedPercent
   if (Number.isFinite(difference) && difference >= 0) estimate.usedPercent = difference
   return estimate

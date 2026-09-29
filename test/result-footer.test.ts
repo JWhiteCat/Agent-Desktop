@@ -23,7 +23,7 @@ describe('result footer session consumption', () => {
 
   function expectNoAccountQuota(html: string) {
     expect(html).not.toContain('剩余')
-    expect(html).not.toContain('周额度')
+    expect(html).not.toMatch(/本轮周额度 (?:&lt;)?\d+(?:\.\d+)?%/)
     expect(html).not.toContain('5小时')
     expect(html).not.toContain('账号变化估算')
   }
@@ -33,35 +33,35 @@ describe('result footer session consumption', () => {
       quotaSnapshot: accountSnapshot,
       codexThreadUsage: { threadId: 'session', credits: 1.25, costUsd: 0.04 }
     })
-    expect(html).toContain('本次会话消耗 1.25 credits / $0.04')
+    expect(html).toContain('本轮周额度 1.25 credits / $0.04')
     expect(html).toContain('当前会话累计额度消耗估算')
     expect(html).toContain('不受其他会话影响')
     expect(html).toContain('>$0.0025</span>')
-    expect(html.indexOf('本次会话消耗')).toBeGreaterThan(html.indexOf('>$0.0025</span>'))
+    expect(html.indexOf('本轮周额度')).toBeGreaterThan(html.indexOf('>$0.0025</span>'))
     expectNoAccountQuota(html)
   })
 
   it('shows missing readings while preserving independently recorded tokens and price', () => {
     for (const html of [render(), render({ weekly: 0.2, fiveHour: 1 }), render(undefined, 'codex', { quotaSnapshot: accountSnapshot })]) {
-      expect(html).toContain('本次会话消耗 暂无数据')
+      expect(html).toContain('本轮周额度 暂无数据')
       expect(html).toContain('尚未获得当前会话的额度消耗数据')
       expect(html).toContain('token 和公开价格估算仍可参考')
       expect(html).toContain('1.0k tokens')
       expect(html).toContain('>$0.0025</span>')
-      expect(html).not.toContain('本次会话消耗 0')
+      expect(html).not.toContain('本轮周额度 0')
       expectNoAccountQuota(html)
     }
   })
 
   it('shows valid zero credits and zero USD as supplied by Codex', () => {
     const html = render(undefined, 'codex', { codexThreadUsage: { threadId: 'session', credits: 0, costUsd: 0 } })
-    expect(html).toContain('本次会话消耗 0 credits / $0</span>')
+    expect(html).toContain('本轮周额度 0 credits / $0</span>')
     expect(html).not.toContain('未提供')
   })
 
   it('does not round small positive credits to zero or require a USD estimate', () => {
     const html = render(undefined, 'codex', { codexThreadUsage: { threadId: 'session', credits: 0.000001 } })
-    expect(html).toContain('本次会话消耗 &lt;0.0001 credits')
+    expect(html).toContain('本轮周额度 &lt;0.0001 credits')
     expect(html).not.toContain('credits /')
     expect(html).not.toContain('未提供')
   })
@@ -71,7 +71,7 @@ describe('result footer session consumption', () => {
       quotaSnapshot: accountSnapshot,
       codexThreadUsage: { threadId: 'session', credits, costUsd: 0.04 }
     })
-    expect(html).toContain('本次会话消耗 暂无数据')
+    expect(html).toContain('本轮周额度 暂无数据')
     expect(html).not.toContain('credits /')
     expect(html).toContain('>$0.0025</span>')
     expectNoAccountQuota(html)
@@ -79,7 +79,7 @@ describe('result footer session consumption', () => {
 
   it.each([NaN, Infinity, -Infinity, -1])('omits invalid USD %s without hiding valid credits', (costUsd) => {
     const html = render(undefined, 'codex', { codexThreadUsage: { threadId: 'session', credits: 1.25, costUsd } })
-    expect(html).toContain('本次会话消耗 1.25 credits')
+    expect(html).toContain('本轮周额度 1.25 credits')
     expect(html).not.toContain('credits /')
     expect(html).not.toContain('未提供')
   })
@@ -91,7 +91,7 @@ describe('result footer session consumption', () => {
       codexThreadUsage: { threadId: 'session', credits: 1.25, costUsd: 0.04 }
     }
     for (const html of [render({ weekly: 1 }, cli, extra), render({ weekly: 1 }, 'codex', { ...extra, cli })]) {
-      expect(html).not.toContain('本次会话消耗')
+      expect(html).not.toContain('本轮周额度')
       expect(html).not.toContain('credits')
       expectNoAccountQuota(html)
     }
@@ -101,7 +101,7 @@ describe('result footer session consumption', () => {
     const html = render(undefined, 'cursor', {
       cli: 'codex', codexThreadUsage: { threadId: 'session', credits: 1.25 }
     })
-    expect(html).toContain('本次会话消耗 1.25 credits')
+    expect(html).toContain('本轮周额度 1.25 credits')
   })
 
   it('prefers independently attributed consumer allowances over legacy credits and account readings', () => {
@@ -113,7 +113,7 @@ describe('result footer session consumption', () => {
         balanceCredits: '0E-10', dataAsOf: '2026-09-29T12:34:56Z'
       }
     })
-    expect(html).toContain('本次会话消耗 周额度 18.8996% · 5小时额度 0%')
+    expect(html).toContain('本轮周额度 18.8996% · 5小时额度 0%')
     expect(html).toContain('服务统计时间：2026-09-29T12:34:56Z')
     expect(html).toContain('不受其他会话影响')
     expect(html).not.toContain('credits')
@@ -127,21 +127,21 @@ describe('result footer session consumption', () => {
     const weekly = render(undefined, 'codex', {
       codexSessionUsage: { threadId: 'session', status: 'available', weekly: 0.000001 }
     })
-    expect(weekly).toContain('本次会话消耗 周额度 &lt;0.0001%')
+    expect(weekly).toContain('本轮周额度 &lt;0.0001%')
     expect(weekly).not.toContain('5小时')
     expect(weekly).not.toContain('credits')
     const fiveHour = render(undefined, 'codex', {
       codexSessionUsage: { threadId: 'session', status: 'available', fiveHour: 150.25 }
     })
-    expect(fiveHour).toContain('本次会话消耗 5小时额度 150.25%')
-    expect(fiveHour).not.toContain('周额度')
+    expect(fiveHour).toContain('本轮周额度 5小时额度 150.25%')
+    expect(fiveHour).not.toMatch(/本轮周额度 (?:&lt;)?\d+(?:\.\d+)?%/)
   })
 
   it('marks partial readings as still being counted', () => {
     const html = render(undefined, 'codex', {
       codexSessionUsage: { threadId: 'session', status: 'partial', weekly: 0, dataAsOf: '2026-09-29T12:34:56Z' }
     })
-    expect(html).toContain('本次会话消耗 周额度 0%（统计中）')
+    expect(html).toContain('本轮周额度 0%（统计中）')
     expect(html).toContain('当前数值尚未完整')
     expect(html).toContain('服务统计时间：2026-09-29T12:34:56Z')
   })
@@ -154,10 +154,10 @@ describe('result footer session consumption', () => {
         dataAsOf: '2026-09-29T12:34:56Z'
       }
     })
-    expect(html).toContain('本次会话消耗 服务未返回')
+    expect(html).toContain('本轮周额度 服务未返回')
     expect(html).toContain('无法确认是统计延迟还是当前会话不受支持')
     expect(html).toContain('服务统计时间：2026-09-29T12:34:56Z')
-    expect(html).not.toContain('本次会话消耗 0')
+    expect(html).not.toContain('本轮周额度 0')
     expect(html).not.toContain('credits')
     expect(html).not.toContain('未提供')
     expectNoAccountQuota(html)
@@ -168,7 +168,7 @@ describe('result footer session consumption', () => {
       codexSessionUsage: { threadId: 'session', status: 'unavailable', dataAsOf: '2026-09-29T12:34:56Z' },
       codexThreadUsage: { threadId: 'session', credits: 1.25 }
     })
-    expect(html).toContain('本次会话消耗 1.25 credits')
+    expect(html).toContain('本轮周额度 1.25 credits')
     expect(html).toContain('服务统计时间：2026-09-29T12:34:56Z')
     expect(html).not.toContain('服务未返回')
   })
@@ -178,7 +178,7 @@ describe('result footer session consumption', () => {
       const html = render(undefined, 'codex', {
         codexSessionUsage: { threadId: 'session', status: 'available', weekly: 1, balanceCredits }
       })
-      expect(html).toContain(`本次会话消耗 周额度 1% · ${balanceCredits} credits`)
+      expect(html).toContain(`本轮周额度 1% · ${balanceCredits} credits`)
     })
 
   it.each(['0E-10', '-0.000', '0', 'NaN', 'Infinity', '1..2', '1e', ' 1'])
@@ -186,7 +186,7 @@ describe('result footer session consumption', () => {
       const html = render(undefined, 'codex', {
         codexSessionUsage: { threadId: 'session', status: 'available', weekly: 1, balanceCredits }
       })
-      expect(html).toContain('本次会话消耗 周额度 1%')
+      expect(html).toContain('本轮周额度 1%')
       expect(html).not.toContain('credits')
     })
 
@@ -194,7 +194,7 @@ describe('result footer session consumption', () => {
     const html = render(undefined, 'codex', {
       codexSessionUsage: { threadId: 'session', status: 'available', weekly: NaN, fiveHour: -1, balanceCredits: 'NaN' }
     })
-    expect(html).toContain('本次会话消耗 服务未返回')
+    expect(html).toContain('本轮周额度 服务未返回')
     expect(html).not.toContain('NaN')
     expect(html).not.toContain('credits')
     expectNoAccountQuota(html)
@@ -204,7 +204,7 @@ describe('result footer session consumption', () => {
     const html = render(undefined, 'codex', {
       codexSessionUsage: { threadId: 'session', status, balanceCredits: '0E-10' }
     })
-    expect(html).toContain(`本次会话消耗 0 credits${status === 'partial' ? '（统计中）' : ''}`)
+    expect(html).toContain(`本轮周额度 0 credits${status === 'partial' ? '（统计中）' : ''}`)
     expect(html).not.toContain('服务未返回')
     expect(html).not.toContain('暂无数据')
   })
@@ -222,9 +222,12 @@ describe('result footer weekly turn estimate', () => {
       weeklyQuotaEstimate,
       codexSessionUsage: { threadId: 'session', status: 'available', weekly: 8 }
     })
-    expect(html).toContain('本次会话消耗 周额度 8%')
-    expect(html).toContain('本轮预估消耗 周额度 0.5%')
-    expect(html.indexOf('本轮预估消耗')).toBeGreaterThan(html.indexOf('本次会话消耗'))
+    expect(html).toContain('本轮周额度 8%')
+    expect(html).toContain('本轮预估周额度 0.5%')
+    expect(html.indexOf('本轮预估周额度')).toBeGreaterThan(html.indexOf('本轮周额度'))
+    expect(html).not.toContain('周额度 周额度')
+    expect(html).not.toContain('本次会话消耗')
+    expect(html).not.toContain('本轮预估消耗')
     expect(html).toContain('开始 30%，结束 30.5%')
     expect(html).toContain('计算：结束 − 开始')
     expect(html).toContain('账号其他会话、其他客户端的使用和统计延迟可能影响估算')
@@ -233,25 +236,57 @@ describe('result footer weekly turn estimate', () => {
 
   it.each([[0, '0'], [0.000001, '&lt;0.0001'], [0.123456, '0.1235']])('formats an estimate of %s without losing a tiny positive amount', (usedPercent, expected) => {
     const html = render(undefined, 'codex', { weeklyQuotaEstimate: { ...weeklyQuotaEstimate, usedPercent: Number(usedPercent) } })
-    expect(html).toContain(`本轮预估消耗 周额度 ${expected}%`)
+    expect(html).toContain(`本轮预估周额度 ${expected}%`)
   })
 
-  it.each([undefined, NaN, Infinity, -1])('shows unavailable estimates for missing or invalid difference %s', (usedPercent) => {
+  it.each([undefined, NaN, Infinity, -Infinity, -1])('recovers missing or invalid difference %s from saved observations', (usedPercent) => {
     const html = render(undefined, 'codex', { weeklyQuotaEstimate: { ...weeklyQuotaEstimate, usedPercent } })
-    expect(html).toContain('本轮预估消耗 暂无数据')
+    expect(html).toContain('本轮预估周额度 0.5%')
     expect(html).toContain('开始 30%，结束 30.5%')
-    expect(html).not.toContain('本轮预估消耗 周额度')
+    expect(html).not.toContain('暂不能估算')
+  })
+
+  it.each([
+    [74, 79, -1_000, 5],
+    [84, 96, -1_000, 12],
+    [74, 86, 1_000, 12]
+  ])('recovers a saved %s to %s reading with reset drift %s as %s percent', (start, end, drift, expected) => {
+    const estimate = {
+      start: { sampledAt: 1_790_697_364_680, weekly: { usedPercent: start, resetsAt: 1_791_141_433_000 } },
+      end: { sampledAt: 1_790_697_761_791, weekly: { usedPercent: end, resetsAt: 1_791_141_433_000 + drift } }
+    }
+    const saved = structuredClone(estimate)
+    const html = render(undefined, 'codex', { weeklyQuotaEstimate: estimate })
+    expect(html).toContain(`本轮预估周额度 ${expected}%`)
+    expect(html).toContain(`开始 ${start}%，结束 ${end}%`)
+    expect(html).not.toContain('暂不能估算')
+    expect(estimate).toEqual(saved)
+  })
+
+  it('keeps missing or incomparable saved observations unavailable despite a current account snapshot', () => {
+    const start = weeklyQuotaEstimate.start!
+    const end = weeklyQuotaEstimate.end!
+    for (const estimate of [
+      { start },
+      { end },
+      { start: { ...start, weekly: { usedPercent: 30 } }, end },
+      { start, end: { ...end, weekly: { usedPercent: 30.5, resetsAt: start.weekly!.resetsAt! + 604_800_000 } } }
+    ]) {
+      const html = render(undefined, 'codex', { weeklyQuotaEstimate: estimate, quotaSnapshot: end })
+      expect(html).toContain('本轮预估周额度 暂无数据')
+      expect(html).toContain('暂不能估算')
+    }
   })
 
   it('shows unavailable observations but hides the estimate entirely for old results', () => {
-    expect(render(undefined, 'codex', { weeklyQuotaEstimate: {} })).toContain('本轮预估消耗 暂无数据')
+    expect(render(undefined, 'codex', { weeklyQuotaEstimate: {} })).toContain('本轮预估周额度 暂无数据')
     expect(render(undefined, 'codex', { weeklyQuotaEstimate: {} })).toContain('开始 暂无数据，结束 暂无数据')
-    expect(render()).not.toContain('本轮预估消耗')
+    expect(render()).not.toContain('本轮预估周额度')
   })
 
   it.each(['cursor', 'claude'] as const)('uses the saved result provider when a conversation switches to %s', (cli) => {
-    expect(render(undefined, cli, { weeklyQuotaEstimate })).not.toContain('本轮预估消耗')
-    expect(render(undefined, 'codex', { weeklyQuotaEstimate, cli })).not.toContain('本轮预估消耗')
-    expect(render(undefined, cli, { weeklyQuotaEstimate, cli: 'codex' })).toContain('本轮预估消耗 周额度 0.5%')
+    expect(render(undefined, cli, { weeklyQuotaEstimate })).not.toContain('本轮预估周额度')
+    expect(render(undefined, 'codex', { weeklyQuotaEstimate, cli })).not.toContain('本轮预估周额度')
+    expect(render(undefined, cli, { weeklyQuotaEstimate, cli: 'codex' })).toContain('本轮预估周额度 0.5%')
   })
 })
