@@ -1,5 +1,6 @@
-import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
+import { spawn, type ChildProcess } from 'node:child_process'
 import fs from 'node:fs'
+import { createRequire } from 'node:module'
 import os from 'node:os'
 import path from 'node:path'
 import type { AgentMode, ModelInfo } from '@shared/types'
@@ -48,13 +49,13 @@ export function resolveCodexAcpEntry(): string | undefined {
 export function resolveCodex(customPath: string): ResolvedCodex | undefined {
   const acpEntry = resolveCodexAcpEntry()
   if (!acpEntry) return undefined
-  const custom = customPath.trim()
+  const custom = unquotePath(customPath)
   if (custom) {
     const user = findCodexFile(custom)
     if (!user) return undefined
     return { codexPath: user, bundled: false, display: user, acpEntry }
   }
-  const user = findCodexOnPath()
+  const user = findCodexOnPath(acpEntry)
   if (user) return { codexPath: user, bundled: false, display: user, acpEntry }
   return { codexPath: undefined, bundled: true, display: '内置 Codex', acpEntry }
 }
@@ -87,10 +88,11 @@ export function codexLogin(codex: ResolvedCodex): Promise<string> {
   const script = codexBinary(codex)
   if (!script) return Promise.resolve('未找到 Codex CLI')
   return new Promise((resolve) => {
-    const child = spawn(script.command, script.args.concat(['login']), {
+    const child = spawn(codexCommand(script.command), script.args.concat(['login']), {
       env: nodeEnv(),
       stdio: ['ignore', 'pipe', 'pipe'],
-      windowsHide: true
+      windowsHide: true,
+      shell: needsShell(script.command)
     })
     let out = ''
     child.stdout?.on('data', (d) => (out += d.toString()))
@@ -252,10 +254,10 @@ function bundledCodexScript(acpEntry: string): string | undefined {
 
 function runCodex(command: string, args: string[], timeoutMs: number): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve) => {
-    const child = spawn(command, args, {
+    const child = spawn(codexCommand(command), args, {
       windowsHide: true,
       env: nodeEnv(),
-      shell: isWin && !command.toLowerCase().endsWith('.exe')
+      shell: needsShell(command)
     })
     let stdout = ''
     let stderr = ''
@@ -266,41 +268,120 @@ function runCodex(command: string, args: string[], timeoutMs: number): Promise<{
       clearTimeout(timer)
       resolve({ stdout, stderr })
     }
-    child.on('error', finish)
+    child.on('error', (err) => {
+      stderr += err.message
+      finish()
+    })
     child.on('close', finish)
   })
 }
 
-function findCodexOnPath(): string | undefined {
-  const names = isWin ? ['codex.cmd', 'codex.exe', 'codex'] : ['codex']
-  for (const name of names) {
-    const found = whichSync(name)
-    if (found) return found
+function findCodexOnPath(acpEntry: string): string | undefined {
+  const home = os.homedir()
+  const extra = isWin
+    ? [
+        path.join(home, '.local', 'bin'),
+        path.join(process.env.APPDATA || path.join(home, 'AppData', 'Roaming'), 'npm'),
+        path.join(process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local'), 'Microsoft', 'WinGet', 'Links')
+      ]
+    : [path.join(home, '.local', 'bin'), '/usr/local/bin', '/opt/homebrew/bin']
+  const dirs = [...(process.env.PATH ?? '').split(path.delimiter).map(unquotePath).filter(Boolean), ...extra]
+  // npm prepends the app's node_modules/.bin to PATH in dev/preview mode.
+  // Those shims belong to the bundled fallback, not a user installation.
+  const bundledModules = realPath(path.resolve(acpEntry, '..', '..', '..', '..'))
+  for (const dir of new Set(dirs)) {
+    for (const name of codexFileNames()) {
+      const candidate = path.join(dir, name)
+      if (isWithin(bundledModules, candidate)) continue
+      const found = findCodexFile(candidate)
+      if (found && !isWithin(bundledModules, found)) return found
+    }
   }
-  if (isWin) return undefined
-  const candidates = [
-    path.join(os.homedir(), '.local', 'bin', 'codex'),
-    '/usr/local/bin/codex',
-    '/opt/homebrew/bin/codex'
-  ]
-  return candidates.find((file) => fs.existsSync(file))
+  return undefined
 }
 
 function findCodexFile(custom: string): string | undefined {
-  if (!fs.existsSync(custom)) return undefined
-  const stat = fs.statSync(custom)
-  if (!stat.isDirectory()) return custom
-  const names = isWin ? ['codex.exe', 'codex.cmd', 'codex'] : ['codex']
-  return names.map((name) => path.join(custom, name)).find((file) => fs.existsSync(file))
+  try {
+    const stat = fs.statSync(custom)
+    if (stat.isDirectory()) {
+      for (const name of codexFileNames()) {
+        const found = findCodexFile(path.join(custom, name))
+        if (found) return found
+      }
+      return undefined
+    }
+    if (!stat.isFile()) return undefined
+    const file = path.resolve(custom)
+    if (!isWin) {
+      fs.accessSync(file, fs.constants.X_OK)
+      return file
+    }
+    if (file.toLowerCase().endsWith('.exe')) return file
+    // npm's .cmd/.ps1 entrypoints need Node on PATH. Resolve their native CLI so
+    // detection, login and the ACP adapter also work when launched from Explorer.
+    return windowsNpmCodex(file) ?? (/\.(cmd|bat)$/i.test(file) ? file : undefined)
+  } catch {
+    return undefined
+  }
 }
 
-function whichSync(name: string): string | undefined {
-  const r = spawnSync(isWin ? 'where' : 'which', [name], { encoding: 'utf8', windowsHide: true })
-  if (r.status !== 0) return undefined
-  return r.stdout
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .find(Boolean)
+function codexFileNames(): string[] {
+  return isWin ? ['codex.exe', 'codex.cmd', 'codex.ps1', 'codex'] : ['codex']
+}
+
+function windowsNpmCodex(file: string): string | undefined {
+  const name = path.basename(file).toLowerCase()
+  if (!['codex', 'codex.cmd', 'codex.ps1', 'codex.js'].includes(name)) return undefined
+  const dir = path.dirname(file)
+  const scripts = [
+    ...(name === 'codex.js' ? [file] : []),
+    path.join(dir, 'node_modules', '@openai', 'codex', 'bin', 'codex.js'),
+    path.join(dir, '..', '@openai', 'codex', 'bin', 'codex.js')
+  ]
+  const arch = process.arch === 'arm64' ? 'aarch64' : process.arch === 'x64' ? 'x86_64' : undefined
+  if (!arch) return undefined
+  for (const script of scripts) {
+    if (!fs.existsSync(script)) continue
+    const vendors = [path.resolve(script, '..', '..', 'vendor')]
+    try {
+      const pkg = createRequire(script).resolve(`@openai/codex-win32-${process.arch}/package.json`)
+      vendors.unshift(path.join(path.dirname(pkg), 'vendor'))
+    } catch {
+      // Older CLI packages kept the native executable in their own vendor folder.
+    }
+    for (const vendor of vendors) {
+      for (const bin of ['bin', 'codex']) {
+        const executable = path.join(vendor, `${arch}-pc-windows-msvc`, bin, 'codex.exe')
+        if (fs.existsSync(executable) && fs.statSync(executable).isFile()) return preferUnpacked(executable)
+      }
+    }
+  }
+  return undefined
+}
+
+function unquotePath(value: string): string {
+  return value.trim().replace(/^"(.*)"$/, '$1')
+}
+
+function realPath(file: string): string {
+  try {
+    return fs.realpathSync(file)
+  } catch {
+    return path.resolve(file)
+  }
+}
+
+function isWithin(dir: string, file: string): boolean {
+  const relative = path.relative(dir, realPath(file))
+  return relative === '' || (relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative))
+}
+
+function needsShell(command: string): boolean {
+  return isWin && /\.(cmd|bat)$/i.test(command)
+}
+
+function codexCommand(command: string): string {
+  return needsShell(command) ? `"${command}"` : command
 }
 
 function preferUnpacked(file: string): string {
