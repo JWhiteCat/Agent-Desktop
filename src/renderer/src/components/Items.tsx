@@ -258,15 +258,16 @@ export function Notice({ item }: { item: NoticeItem }) {
 }
 
 export function ResultFooter({ item, text, fallbackModel, cli = 'cursor' }: { item: ResultItem; text?: string; fallbackModel?: string; cli?: CliProvider }) {
-  const models = useStore((s) => s.modelsByCli[cli])
+  const provider = item.cli ?? cli
+  const models = useStore((s) => s.modelsByCli[provider])
   const groups = useMemo(() => groupModels(models), [models])
   const u = item.usage
   const tokens = u ? (u.inputTokens ?? 0) + (u.outputTokens ?? 0) + (u.cacheReadTokens ?? 0) + (u.cacheWriteTokens ?? 0) : 0
   const modelId = item.model || fallbackModel || ''
   const caption = modelId ? modelCaption(groups, modelId) : ''
-  const quote = modelId && u ? quoteModel(modelId, u, cli) : undefined
-  const priceSource = cli === 'codex' ? 'OpenAI API 公开标价' : 'Cursor 公开标价'
-  const quota = cli === 'codex' ? item.quotaUsage : undefined
+  const quote = modelId && u ? quoteModel(modelId, u, provider) : undefined
+  const priceSource = provider === 'codex' ? 'OpenAI API 公开标价' : 'Cursor 公开标价'
+  const quota = provider === 'codex' ? item.quotaUsage : undefined
   const quotaText = [
     quotaPercent('周额度', quota?.weekly),
     quotaPercent('5小时', quota?.fiveHour)

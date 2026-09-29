@@ -8,11 +8,16 @@
 import { findCodexPrice } from './codex-model-prices'
 import type { CliProvider } from './types'
 
-export interface TokenUsage {
+export interface TokenCounts {
   inputTokens?: number
   outputTokens?: number
   cacheReadTokens?: number
   cacheWriteTokens?: number
+}
+
+export interface TokenUsage extends TokenCounts {
+  /** Individual requests within the turn, used to apply context pricing per request. */
+  requests?: TokenCounts[]
 }
 
 export interface QuotedUsage {
@@ -217,21 +222,26 @@ export function quoteModel(modelId: string | undefined, usage: TokenUsage, cli: 
   const entry = cli === 'codex' ? findCodexPrice(parsed.name) : findPrice(parsed.name)
   if (!entry) return { label: fallback, costUsd: null, fast: parsed.fast, longContext: false }
 
-  const inputSide = num(usage.inputTokens) + num(usage.cacheReadTokens) + num(usage.cacheWriteTokens)
-  const long = entry.longAfterTokens != null && inputSide > entry.longAfterTokens
-  const rate = pickRates(entry, parsed.fast, long)
-  const cost =
-    (num(usage.inputTokens) * rate.input +
-      num(usage.outputTokens) * rate.output +
-      num(usage.cacheReadTokens) * rate.cacheRead +
-      num(usage.cacheWriteTokens) * rate.cacheWrite) /
-    M
+  const requests = usage.requests?.length ? usage.requests : [usage]
+  let long = false
+  let priced = true
+  let cost = 0
+  for (const request of requests) {
+    const inputSide = num(request.inputTokens) + num(request.cacheReadTokens) + num(request.cacheWriteTokens)
+    const requestLong = entry.longAfterTokens != null && inputSide > entry.longAfterTokens
+    long ||= requestLong
+    // A tier with no published OpenAI price must not silently inherit Standard pricing.
+    if (cli === 'codex' && parsed.fast && !(requestLong ? entry.fastLong : entry.fast)) priced = false
+    const rate = pickRates(entry, parsed.fast, requestLong)
+    cost +=
+      (num(request.inputTokens) * rate.input +
+        num(request.outputTokens) * rate.output +
+        num(request.cacheReadTokens) * rate.cacheRead +
+        num(request.cacheWriteTokens) * rate.cacheWrite) /
+      M
+  }
   const bits = [entry.label]
   if (parsed.fast) bits.push('Fast')
   if (long) bits.push('长上下文')
-  // A tier with no published OpenAI price must not silently inherit Standard pricing.
-  if (cli === 'codex' && parsed.fast && !(long ? entry.fastLong : entry.fast)) {
-    return { label: bits.join(' '), costUsd: null, fast: true, longContext: long }
-  }
-  return { label: bits.join(' '), costUsd: roundUsd(cost), fast: parsed.fast, longContext: long }
+  return { label: bits.join(' '), costUsd: priced ? roundUsd(cost) : null, fast: parsed.fast, longContext: long }
 }

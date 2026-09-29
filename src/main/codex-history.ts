@@ -6,8 +6,9 @@ import { newId } from './id'
 import { compact } from './reducer'
 import { UNTITLED } from './history'
 import { createForkPromptReader, parseForkPrompt } from './fork-context'
+import { parseCodexUsage, type CodexUsageTurn } from './codex-usage'
 
-const sessionsRoot = (): string => path.join(os.homedir(), '.codex', 'sessions')
+const sessionsRoot = (): string => path.join(process.env.CODEX_HOME ? path.resolve(process.env.CODEX_HOME) : path.join(os.homedir(), '.codex'), 'sessions')
 
 export function scanCodexSessions(importedChatIds: Set<string>): CliSession[] {
   const root = sessionsRoot()
@@ -55,6 +56,15 @@ export function readCodexTranscript(chatId: string): Item[] | undefined {
   return items.length ? items : undefined
 }
 
+export function readCodexUsage(chatId: string): CodexUsageTurn[] | undefined {
+  try {
+    const file = findRollout(chatId)
+    return file ? parseCodexUsage(fs.readFileSync(file, 'utf8')) : undefined
+  } catch {
+    return undefined
+  }
+}
+
 interface SessionMeta {
   id?: string
   cwd?: string
@@ -64,17 +74,20 @@ interface SessionMeta {
 /** Parses a Codex rollout JSONL fixture into the same item kinds the thread view already draws. */
 export function transcriptItems(text: string): Item[] {
   const rows = parseLines(text)
-  const items = itemsFrom(rows, false)
+  const usage = parseCodexUsage(text)
+  const items = itemsFrom(rows, false, usage)
   if (items.some((item) => item.kind === 'user' || item.kind === 'assistant')) return items
-  return itemsFrom(rows, true)
+  return itemsFrom(rows, true, usage)
 }
 
-function parseLines(text: string): any[] {
-  const rows: any[] = []
-  for (const line of text.split(/\r?\n/)) {
-    if (!line.trim()) continue
+interface TranscriptRow { row: any; line: number }
+
+function parseLines(text: string): TranscriptRow[] {
+  const rows: TranscriptRow[] = []
+  for (const [line, raw] of text.split(/\r?\n/).entries()) {
+    if (!raw.trim()) continue
     try {
-      rows.push(JSON.parse(line))
+      rows.push({ row: JSON.parse(raw), line })
     } catch {
       /* skip a torn line at the end of a partial read */
     }
@@ -82,16 +95,37 @@ function parseLines(text: string): any[] {
   return rows
 }
 
-function itemsFrom(rows: any[], events: boolean): Item[] {
+function itemsFrom(rows: TranscriptRow[], events: boolean, usage: CodexUsageTurn[]): Item[] {
   const items: Item[] = []
   const tools = new Map<string, ToolItem>()
   const readForkPrompt = createForkPromptReader()
-  for (const row of rows) {
+  let usageIndex = 0
+  function appendUsageBefore(line: number): void {
+    while (usageIndex < usage.length && usage[usageIndex].endLine < line) {
+      const turn = usage[usageIndex++]
+      items.push({
+        id: newId(),
+        kind: 'result',
+        cli: 'codex',
+        usageId: turn.usageId,
+        usage: turn.usage,
+        usageComplete: turn.completed,
+        model: turn.model,
+        createdAt: turn.createdAt,
+        isError: turn.isError,
+        durationMs: turn.completed && turn.startedAt !== undefined && turn.createdAt !== undefined && turn.createdAt >= turn.startedAt
+          ? turn.createdAt - turn.startedAt
+          : undefined
+      })
+    }
+  }
+  for (const { row, line } of rows) {
+    appendUsageBefore(line)
     const payload = row?.payload ?? row
     const kind = String(row?.type ?? '')
     if (kind === 'session_meta') continue
     if (kind === 'event_msg') {
-      if (events) pushEvent(items, payload, readForkPrompt)
+      if (events) pushEvent(items, payload, readForkPrompt, timeOf(row))
       continue
     }
     if (events) continue
@@ -124,14 +158,15 @@ function itemsFrom(rows: any[], events: boolean): Item[] {
       tool.status = 'success'
     }
   }
+  appendUsageBefore(Infinity)
   return items
 }
 
-function pushEvent(items: Item[], payload: any, readForkPrompt: typeof parseForkPrompt): void {
+function pushEvent(items: Item[], payload: any, readForkPrompt: typeof parseForkPrompt, createdAt?: number): void {
   const type = String(payload?.type ?? '')
   if (type === 'user_message') {
     const text = textOf(payload.message ?? payload.content)
-    if (text) appendUser(items, text, timeOf(payload) ?? 0, readForkPrompt)
+    if (text) appendUser(items, text, timeOf(payload) ?? createdAt ?? 0, readForkPrompt)
   } else if (type === 'agent_message') {
     const text = textOf(payload.message ?? payload.content)
     if (text) appendAssistant(items, text)

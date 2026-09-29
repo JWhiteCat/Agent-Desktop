@@ -135,4 +135,56 @@ describe('codex rollout transcripts', () => {
     ].join('\n')
     expect(transcriptItems(text).map((item) => (item.kind === 'user' || item.kind === 'assistant' ? item.text : ''))).toEqual(['只有事件', '收到'])
   })
+
+  it('inserts complete usage after the associated response without disrupting tools or later turns', () => {
+    const event = (payload: object, timestamp = '2026-09-01T00:00:00.000Z') => ({ type: 'event_msg', payload, timestamp })
+    const usage = (input: number, cached: number, output: number) => event({
+      type: 'token_count', info: { total_token_usage: { input_tokens: input, cached_input_tokens: cached, output_tokens: output } }
+    })
+    const text = [
+      event({ type: 'task_started', turn_id: 'first' }),
+      { type: 'turn_context', payload: { turn_id: 'first', model: 'gpt-5.4' } },
+      { type: 'response_item', payload: { type: 'message', role: 'user', content: 'Inspect' } },
+      { type: 'response_item', payload: { type: 'function_call', name: 'shell', call_id: 'call', arguments: '{}' } },
+      usage(100, 20, 10),
+      { type: 'response_item', payload: { type: 'function_call_output', call_id: 'call', output: 'Done' } },
+      { type: 'response_item', payload: { type: 'message', role: 'assistant', content: 'Inspected' } },
+      usage(250, 120, 30),
+      event({ type: 'task_complete', turn_id: 'first' }, '2026-09-01T00:00:10.000Z'),
+      event({ type: 'task_started', turn_id: 'second' }, '2026-09-01T00:00:20.000Z'),
+      { type: 'response_item', payload: { type: 'message', role: 'user', content: 'Again' } },
+      usage(300, 140, 35),
+      event({ type: 'turn_aborted', turn_id: 'second' }, '2026-09-01T00:00:22.000Z')
+    ].map((row) => JSON.stringify(row)).join('\n')
+    const items = transcriptItems(text)
+    expect(items.map((item) => item.kind)).toEqual(['user', 'tool', 'assistant', 'result', 'user', 'result'])
+    expect(items[1]).toMatchObject({ kind: 'tool', result: { success: { stdout: 'Done' } }, status: 'success' })
+    expect(items[3]).toMatchObject({
+      cli: 'codex', usageId: 'codex:first', model: 'gpt-5.4', isError: false, durationMs: 10_000,
+      createdAt: Date.parse('2026-09-01T00:00:10.000Z'),
+      usage: { inputTokens: 130, cacheReadTokens: 120, outputTokens: 30 }
+    })
+    expect(items[5]).toMatchObject({
+      cli: 'codex', usageId: 'codex:second', isError: true, durationMs: 2000,
+      usage: { inputTokens: 30, cacheReadTokens: 20, outputTokens: 5 }
+    })
+  })
+
+  it('includes usage and user timestamps when transcript parsing falls back to event messages', () => {
+    const timestamp = '2026-09-01T00:00:00.000Z'
+    const text = [
+      { type: 'session_meta', payload: { id: 'event-only' } },
+      { type: 'event_msg', timestamp, payload: { type: 'user_message', message: 'Only events' } },
+      { type: 'event_msg', payload: { type: 'token_count', info: { total_token_usage: { input_tokens: 10, output_tokens: 5 } } } },
+      { type: 'event_msg', payload: { type: 'agent_message', message: 'OK' } },
+      { type: 'event_msg', payload: { type: 'task_complete' }, timestamp: '2026-09-01T00:00:01.000Z' }
+    ].map((row) => JSON.stringify(row)).join('\n')
+    const items = transcriptItems(text)
+    expect(items.map((item) => item.kind)).toEqual(['user', 'assistant', 'result'])
+    expect(items[0]).toMatchObject({ text: 'Only events', createdAt: Date.parse(timestamp) })
+    expect(items[2]).toMatchObject({
+      usageId: 'codex:event-only:line:1', cli: 'codex', durationMs: 1000,
+      usage: { inputTokens: 10, outputTokens: 5 }
+    })
+  })
 })

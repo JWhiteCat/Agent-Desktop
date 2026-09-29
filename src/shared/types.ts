@@ -1,4 +1,5 @@
 import type { SlashCommand } from './commands'
+import type { TokenUsage } from './model-prices'
 import type { TurnQuotaUsage } from './turn-quota'
 
 export type AgentMode = 'agent' | 'plan' | 'ask'
@@ -111,9 +112,13 @@ export interface ResultItem {
   createdAt?: number
   /** Model id used for this turn. */
   model?: string
+  /** CLI that ran this turn, retained when the conversation switches CLI. */
+  cli?: CliProvider
   /** Stable across a fork so the same turn is not counted twice. */
   usageId?: string
-  usage?: { inputTokens?: number; outputTokens?: number; cacheReadTokens?: number; cacheWriteTokens?: number }
+  usage?: TokenUsage
+  /** False while a Codex rollout may still be receiving its final usage events. */
+  usageComplete?: boolean
   /** Account quota increases observed during a Codex turn; absent when no comparable snapshots exist. */
   quotaUsage?: TurnQuotaUsage
 }

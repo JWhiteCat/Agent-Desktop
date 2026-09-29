@@ -73,7 +73,7 @@ describe('usage summary', () => {
     expect(summary.costUsd).toBeCloseTo(3.0375)
   })
 
-  it('keeps fork deduplication within each CLI and defaults older threads to Cursor', () => {
+  it('counts a stable usage id once even when a copied thread switches CLI', () => {
     const at = now - hour
     const items = [user(at), result({ id: 'r', usageId: 'same', model: 'gpt-5.4', createdAt: at, usage })]
     const summary = summarizeUsage([
@@ -83,9 +83,45 @@ describe('usage summary', () => {
       { cli: 'codex', items }
     ], '1d', now)
 
-    expect(summary.turns).toBe(2)
-    expect(summary.models.map((row) => row.cli).sort()).toEqual(['codex', 'cursor'])
+    expect(summary.turns).toBe(1)
+    expect(summary.models.map((row) => row.cli)).toEqual(['cursor'])
     expect(summary.models.every((row) => row.turns === 1)).toBe(true)
+  })
+
+  it('keeps each recorded turn on its original CLI after the conversation switches CLI', () => {
+    const at = now - hour
+    const sharedUsage = { inputTokens: 300_000, outputTokens: 1_000 }
+    const thread: UsageThread = {
+      id: 'switched',
+      cli: 'claude',
+      items: [
+        result({ id: 'cursor', usageId: 'cursor-turn', cli: 'cursor', model: 'gpt-5.4', createdAt: at, usage: sharedUsage }),
+        result({ id: 'codex', usageId: 'codex-turn', cli: 'codex', model: 'gpt-5.4', createdAt: at, usage: sharedUsage })
+      ]
+    }
+    const summary = summarizeUsage([thread, { ...thread, id: 'fork', cli: 'cursor' }], '1d', now)
+    expect(summary.turns).toBe(2)
+    expect(summary.models.find((row) => row.cli === 'cursor')?.costUsd).toBeCloseTo(1.515)
+    expect(summary.models.find((row) => row.cli === 'codex')?.costUsd).toBeCloseTo(1.5225)
+    expect(summary.models.some((row) => row.cli === 'claude')).toBe(false)
+    expect(listSessionUsage([thread])[0].costUsd).toBeCloseTo(3.0375)
+  })
+
+  it('counts request details only in the price, without adding their tokens again', () => {
+    const request = { inputTokens: 100_000, cacheReadTokens: 20_000, outputTokens: 1_000 }
+    const thread: UsageThread = {
+      id: 'requests',
+      cli: 'codex',
+      items: [result({
+        id: 'r',
+        model: 'gpt-5.4',
+        createdAt: now - hour,
+        usage: { inputTokens: 300_000, cacheReadTokens: 60_000, outputTokens: 3_000, requests: [request, request, request] }
+      })]
+    }
+    const expected = { turns: 1, inputTokens: 300_000, cacheReadTokens: 60_000, outputTokens: 3_000, costUsd: 0.81 }
+    expect(summarizeUsage([thread], '1d', now)).toMatchObject(expected)
+    expect(listSessionUsage([thread])[0]).toMatchObject(expected)
   })
 
   it('keeps turns inside 1, 7, and 30 day windows', () => {

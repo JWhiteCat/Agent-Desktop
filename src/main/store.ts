@@ -2,9 +2,11 @@ import { app } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
 import { normalizeMcpServers, normalizeSkills } from '@shared/agent-config'
-import { DEFAULT_SETTINGS, normalizeCliProvider, threadCli, type Item, type Project, type Settings, type ThreadMeta } from '@shared/types'
+import { DEFAULT_SETTINGS, normalizeCliProvider, threadCli, type Item, type Project, type ResultItem, type Settings, type ThreadMeta } from '@shared/types'
 import { newId } from './id'
 import { newRemoteClientId, validClientId } from './public-tunnel'
+import { readCodexUsage } from './codex-history'
+import { repairCodexUsage } from './codex-usage-repair'
 
 interface PersistedState {
   version: 1
@@ -160,6 +162,13 @@ export class Store {
     if (!t) return undefined
     const nextCli = patch.cli !== undefined ? normalizeCliProvider(patch.cli) : undefined
     const cliChanged = nextCli !== undefined && nextCli !== threadCli(t)
+    if (cliChanged) {
+      // Stamp legacy results before changing the thread's fallback provider.
+      for (const item of this.items(id)) {
+        if (item.kind === 'result' && !item.cli) item.cli = threadCli(t)
+      }
+      this.markItemsDirty(id)
+    }
     const nextPatch = nextCli !== undefined ? { ...patch, cli: nextCli } : patch
     Object.assign(t, nextPatch, { id: t.id })
     if (cliChanged) delete t.chatId
@@ -180,8 +189,40 @@ export class Store {
     if (!items) {
       items = readJson<Item[]>(this.threadFile(threadId)) ?? []
       this.itemsCache.set(threadId, items)
+      const thread = this.thread(threadId)
+      if (thread?.chatId && threadCli(thread) === 'codex'
+        && items.some((item) => item.kind === 'result' && (!item.usage?.requests || item.usageComplete === false))) {
+        const turns = readCodexUsage(thread.chatId)
+        const previous = new Map(items.filter((item): item is ResultItem => item.kind === 'result').map((item) => [item.id, item.usageId]))
+        if (turns && repairCodexUsage(items, turns)) {
+          this.markItemsDirty(threadId)
+          const repaired = new Map<string, ResultItem>()
+          for (const item of items) {
+            if (item.kind !== 'result') continue
+            const oldId = previous.get(item.id)
+            if (oldId && item.cli === 'codex' && item.usageComplete) repaired.set(oldId, item)
+          }
+          this.repairUsageCopies(repaired)
+        }
+      }
     }
     return items
+  }
+
+  private repairUsageCopies(repaired: Map<string, ResultItem>): void {
+    if (!repaired.size) return
+    for (const thread of this.threads) {
+      const items = this.itemsCache.get(thread.id) ?? readJson<Item[]>(this.threadFile(thread.id)) ?? []
+      let changed = false
+      for (const item of items) {
+        if (item.kind !== 'result' || !item.usageId) continue
+        const source = repaired.get(item.usageId)
+        if (!source) continue
+        Object.assign(item, { usageId: source.usageId, usage: source.usage, cli: source.cli, usageComplete: source.usageComplete })
+        changed = true
+      }
+      if (changed) this.setItems(thread.id, items)
+    }
   }
 
   setItems(threadId: string, items: Item[]): void {

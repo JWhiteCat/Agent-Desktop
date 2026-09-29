@@ -30,6 +30,40 @@ describe('Codex OpenAI API prices', () => {
     expect(quoteModel('gpt-5.4', usage).costUsd).toBeCloseTo(1.65)
   })
 
+  it('prices each request before adding a turn that exceeds the context threshold in total', () => {
+    const request = { inputTokens: 100_000, cacheReadTokens: 20_000, outputTokens: 1_000 }
+    const usage = {
+      inputTokens: 300_000,
+      cacheReadTokens: 60_000,
+      outputTokens: 3_000,
+      requests: [request, request, request]
+    }
+    expect(quoteModel('gpt-5.4', usage, 'codex')).toMatchObject({
+      costUsd: 0.81,
+      longContext: false,
+      label: 'GPT-5.4'
+    })
+    expect(quoteModel('gpt-5.4-fast', usage, 'codex')).toMatchObject({ costUsd: 1.62, longContext: false })
+  })
+
+  it('applies long-context pricing only to requests that cross the threshold', () => {
+    const usage = {
+      inputTokens: 400_000,
+      outputTokens: 2_000,
+      requests: [
+        { inputTokens: 100_000, outputTokens: 1_000 },
+        { inputTokens: 300_000, outputTokens: 1_000 }
+      ]
+    }
+    expect(quoteModel('gpt-5.4', usage, 'codex')).toMatchObject({ costUsd: 1.7875, longContext: true })
+    expect(quoteModel('gpt-5.4-fast', usage, 'codex').costUsd).toBeNull()
+  })
+
+  it('uses legacy totals when request details are absent or empty', () => {
+    const usage = { inputTokens: 300_000, outputTokens: 1_000 }
+    expect(quoteModel('gpt-5.4', { ...usage, requests: [] }, 'codex')).toEqual(quoteModel('gpt-5.4', usage, 'codex'))
+  })
+
   it('uses the published GPT-5.5 Fast multiplier and leaves unlisted Fast tiers unpriced', () => {
     expect(quoteModel('gpt-5.5-fast', { inputTokens: 100_000, outputTokens: 10_000 }, 'codex').costUsd).toBe(2)
     expect(quoteModel('gpt-5.4-nano-fast', { inputTokens: 100 }, 'codex').costUsd).toBeNull()

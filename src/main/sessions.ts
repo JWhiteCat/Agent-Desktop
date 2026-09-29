@@ -15,6 +15,7 @@ import { newId } from './id'
 import { forkPrompt } from './fork-context'
 import { StreamReducer } from './reducer'
 import { CodexTurnQuotaTracker, type CodexQuotaTurn } from './turn-quota'
+import { CodexTurnUsageReader } from './codex-turn-usage'
 import type { Store } from './store'
 
 interface PendingQuestion {
@@ -56,6 +57,7 @@ interface Run {
   killTimer?: NodeJS.Timeout
   quotaTurn?: CodexQuotaTurn
   quotaResultId?: string
+  codexUsage?: CodexTurnUsageReader
 }
 
 export interface RunFinished {
@@ -689,18 +691,22 @@ export class SessionManager {
             ? claudePlanModePrompt(prompt)
             : planModePrompt(prompt)
     if (run.quotaTurn) this.quotaTracker.markPromptStarted(run.quotaTurn)
+    if (run.proc.provider === 'codex') run.codexUsage = new CodexTurnUsageReader(run.proc.sessionId)
     const result = await run.proc.acp.request('session/prompt', {
       sessionId: run.proc.sessionId,
       prompt: [{ type: 'text', text }]
     })
     if (!this.runs.has(threadId) || run.settled) return
     const stop = String(result?.stopReason ?? 'end_turn')
+    const codexUsage = run.codexUsage?.read()
     if (contextThroughId && stop === 'end_turn') {
       this.store.updateThread(threadId, { forkContextThroughItemId: undefined })
       this.onStateChange()
     }
     run.reducer.gotResult = true
-    const usage = normalizeTurnUsage(result?.usage) ?? run.reducer.lastUsage
+    const usage = run.proc.provider === 'codex'
+      ? codexUsage?.usage
+      : normalizeTurnUsage(result?.usage) ?? run.reducer.lastUsage
     const changed = run.reducer.closeSegments()
     const resultId = newId()
     run.quotaResultId = resultId
@@ -712,14 +718,17 @@ export class SessionManager {
         durationMs: Date.now() - started,
         createdAt: Date.now(),
         model: req.model,
-        usageId: newId(),
-        usage
+        cli: run.proc.provider,
+        usageId: codexUsage?.usageId ?? newId(),
+        usage,
+        ...(run.codexUsage ? { usageComplete: codexUsage?.completed ?? false } : {})
       })
     )
     this.queue(threadId, run, changed)
     // The CLI stays up after a turn. Parking it avoids the next message paying
     // for process startup and session/load. A later close still ends the turn.
     this.endRun(threadId, run, null)
+    if (run.codexUsage && !codexUsage?.completed) void this.saveTurnUsage(threadId, resultId, run.codexUsage)
   }
 
   private endRun(threadId: string, run: Run, code: number | null, spawnError?: Error): void {
@@ -744,6 +753,16 @@ export class SessionManager {
     const r = run.reducer
     const items = this.store.items(threadId)
     const changed: Item[] = [...r.closeSegments(), ...r.abortRunningTools(), ...abandonQuestions(items)]
+    if (!r.gotResult) {
+      const recorded = run.codexUsage?.read()
+      if (recorded) {
+        changed.push(r.push({
+          id: newId(), kind: 'result', isError: !run.stopped,
+          cli: 'codex', model: r.init.model || recorded.model,
+          createdAt: Date.now(), usageId: recorded.usageId, usage: recorded.usage, usageComplete: recorded.completed
+        }))
+      }
+    }
     if (run.stopped) {
       changed.push(r.push({ id: newId(), kind: 'notice', level: 'info', text: '已停止' }))
     } else if (spawnError) {
@@ -791,6 +810,18 @@ export class SessionManager {
       failed,
       preview: summary
     })
+  }
+
+  /** Late rollout writes update only their own result, without delaying task completion. */
+  private async saveTurnUsage(threadId: string, resultId: string, reader: CodexTurnUsageReader): Promise<void> {
+    const recorded = await reader.finish()
+    if (!recorded || !this.store.thread(threadId)) return
+    const items = this.store.items(threadId)
+    const item = items.find((item) => item.kind === 'result' && item.id === resultId)
+    if (item?.kind !== 'result') return
+    Object.assign(item, { usage: recorded.usage, usageId: recorded.usageId, usageComplete: recorded.completed })
+    this.store.markItemsDirty(threadId)
+    this.emit({ type: 'items', threadId, items: [item] })
   }
 
   /** Quota refresh runs after the result is available and never delays task completion. */

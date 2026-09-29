@@ -92,7 +92,6 @@ interface Turn {
 
 /** Turns recorded on one session. A copied fork turn stays on that session. */
 function turnsOf(thread: UsageThread): Turn[] {
-  const cli = threadCli(thread)
   const seen = new Set<string>()
   const turns: Turn[] = []
   let lastUserAt: number | undefined
@@ -104,9 +103,10 @@ function turnsOf(thread: UsageThread): Turn[] {
     if (item.kind !== 'result' || !item.usage) continue
     const at = item.createdAt ?? lastUserAt
     if (at == null) continue
+    const cli = item.cli ?? threadCli(thread)
     const model = item.model || thread.model || ''
     const [input, output, cacheRead, cacheWrite] = tokensOf(item.usage)
-    const key = `${cli}|${item.usageId || `${at}|${model}|${input}|${output}|${cacheRead}|${cacheWrite}`}`
+    const key = item.usageId ? `usage|${item.usageId}` : `${cli}|${at}|${model}|${input}|${output}|${cacheRead}|${cacheWrite}`
     if (seen.has(key)) continue
     seen.add(key)
     turns.push({ key, cli, at, model, usage: item.usage })
@@ -127,14 +127,14 @@ function collectTurns(threads: UsageThread[]): Turn[] {
   return turns
 }
 
-function sessionModels(ids: string[], cli: CliProvider): UsageSessionModel[] {
+function sessionModels(turns: { model: string; cli: CliProvider }[]): UsageSessionModel[] {
   const models: UsageSessionModel[] = []
   const seen = new Set<string>()
-  for (const id of ids) {
-    const model = id.trim()
+  for (const turn of turns) {
+    const model = turn.model.trim()
     if (!model || seen.has(model)) continue
     seen.add(model)
-    models.push({ id: model, label: quoteModel(model, {}, cli).label })
+    models.push({ id: model, label: quoteModel(model, {}, turn.cli).label })
   }
   return models
 }
@@ -174,7 +174,7 @@ export function listSessionUsage(threads: UsageThread[]): UsageSessionRow[] {
       if (quote.costUsd == null) unpriced += 1
       else priced += quote.costUsd
     }
-    row.models = sessionModels(turns.length ? turns.map((turn) => turn.model) : [thread.model ?? ''], cli)
+    row.models = sessionModels(turns.length ? turns : [{ model: thread.model ?? '', cli }])
     row.costUsd = !turns.length || unpriced === row.turns ? null : priced
     rows.push(row)
   }
