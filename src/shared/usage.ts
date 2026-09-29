@@ -1,5 +1,5 @@
 import { quoteModel, type TokenUsage } from './model-prices'
-import type { Item } from './types'
+import { threadCli, type CliProvider, type Item } from './types'
 
 export type UsageWindow = '1d' | '7d' | '30d'
 
@@ -10,6 +10,7 @@ const WINDOWS: Record<UsageWindow, number> = {
 }
 
 export interface UsageModelRow {
+  cli: CliProvider
   model: string
   label: string
   turns: number
@@ -42,6 +43,7 @@ export interface UsageSessionModel {
 
 export interface UsageSessionRow {
   threadId: string
+  cli: CliProvider
   title: string
   project?: string
   /** Models used on counted turns, or the session model when none were recorded. */
@@ -64,6 +66,7 @@ export interface UsageReport {
 
 export interface UsageThread {
   id?: string
+  cli?: CliProvider
   title?: string
   project?: string
   model?: string
@@ -81,6 +84,7 @@ function tokensOf(usage: TokenUsage): [number, number, number, number] {
 
 interface Turn {
   key: string
+  cli: CliProvider
   at: number
   model: string
   usage: TokenUsage
@@ -88,6 +92,7 @@ interface Turn {
 
 /** Turns recorded on one session. A copied fork turn stays on that session. */
 function turnsOf(thread: UsageThread): Turn[] {
+  const cli = threadCli(thread)
   const seen = new Set<string>()
   const turns: Turn[] = []
   let lastUserAt: number | undefined
@@ -101,10 +106,10 @@ function turnsOf(thread: UsageThread): Turn[] {
     if (at == null) continue
     const model = item.model || thread.model || ''
     const [input, output, cacheRead, cacheWrite] = tokensOf(item.usage)
-    const key = item.usageId || `${at}|${model}|${input}|${output}|${cacheRead}|${cacheWrite}`
+    const key = `${cli}|${item.usageId || `${at}|${model}|${input}|${output}|${cacheRead}|${cacheWrite}`}`
     if (seen.has(key)) continue
     seen.add(key)
-    turns.push({ key, at, model, usage: item.usage })
+    turns.push({ key, cli, at, model, usage: item.usage })
   }
   return turns
 }
@@ -122,14 +127,14 @@ function collectTurns(threads: UsageThread[]): Turn[] {
   return turns
 }
 
-function sessionModels(ids: string[]): UsageSessionModel[] {
+function sessionModels(ids: string[], cli: CliProvider): UsageSessionModel[] {
   const models: UsageSessionModel[] = []
   const seen = new Set<string>()
   for (const id of ids) {
     const model = id.trim()
     if (!model || seen.has(model)) continue
     seen.add(model)
-    models.push({ id: model, label: quoteModel(model, {}).label })
+    models.push({ id: model, label: quoteModel(model, {}, cli).label })
   }
   return models
 }
@@ -139,9 +144,11 @@ export function listSessionUsage(threads: UsageThread[]): UsageSessionRow[] {
   const rows: UsageSessionRow[] = []
   for (const thread of threads) {
     if (!thread.id) continue
+    const cli = threadCli(thread)
     const turns = turnsOf(thread)
     const row: UsageSessionRow = {
       threadId: thread.id,
+      cli,
       title: thread.title?.trim() || '未命名',
       project: thread.project?.trim() || undefined,
       models: [],
@@ -156,7 +163,7 @@ export function listSessionUsage(threads: UsageThread[]): UsageSessionRow[] {
     let priced = 0
     let unpriced = 0
     for (const turn of turns) {
-      const quote = quoteModel(turn.model, turn.usage)
+      const quote = quoteModel(turn.model, turn.usage, turn.cli)
       const [input, output, cacheRead, cacheWrite] = tokensOf(turn.usage)
       row.turns += 1
       row.inputTokens += input
@@ -167,7 +174,7 @@ export function listSessionUsage(threads: UsageThread[]): UsageSessionRow[] {
       if (quote.costUsd == null) unpriced += 1
       else priced += quote.costUsd
     }
-    row.models = sessionModels(turns.length ? turns.map((turn) => turn.model) : [thread.model ?? ''])
+    row.models = sessionModels(turns.length ? turns.map((turn) => turn.model) : [thread.model ?? ''], cli)
     row.costUsd = !turns.length || unpriced === row.turns ? null : priced
     rows.push(row)
   }
@@ -184,11 +191,12 @@ export function summarizeUsage(threads: UsageThread[], period: UsageWindow, now 
 
   for (const turn of collectTurns(threads)) {
     if (turn.at < from || turn.at > now) continue
-    const quote = quoteModel(turn.model, turn.usage)
-    const group = `${turn.model}\n${quote.label}`
+    const quote = quoteModel(turn.model, turn.usage, turn.cli)
+    const group = `${turn.cli}\n${turn.model}\n${quote.label}`
     let row = rows.get(group)
     if (!row) {
       row = {
+        cli: turn.cli,
         model: turn.model,
         label: quote.label,
         turns: 0,

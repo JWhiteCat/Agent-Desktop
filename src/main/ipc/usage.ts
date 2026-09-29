@@ -8,6 +8,7 @@ export function usageHandlers(deps: IpcDeps): Record<string, Handler> {
     'usage:summary': (period: UsageWindow) => {
       const threads = deps.store.threads.map((t) => ({
         id: t.id,
+        cli: t.cli,
         title: t.title,
         project: deps.store.project(t.projectId)?.name,
         model: t.model,

@@ -13,6 +13,7 @@ import { codexAsCli, codexModeId, resolveCodex, resolveCodexApiKey, spawnCodexAc
 import { syncAllManagedSkills } from './skills'
 import { newId } from './id'
 import { StreamReducer } from './reducer'
+import { CodexTurnQuotaTracker, type CodexQuotaTurn } from './turn-quota'
 import type { Store } from './store'
 
 interface PendingQuestion {
@@ -52,6 +53,8 @@ interface Run {
   /** Terminal UI state for this turn has already been published. */
   settled: boolean
   killTimer?: NodeJS.Timeout
+  quotaTurn?: CodexQuotaTurn
+  quotaResultId?: string
 }
 
 export interface RunFinished {
@@ -86,7 +89,8 @@ export class SessionManager {
     private readonly store: Store,
     private readonly emit: (ev: AgentEvent) => void,
     private readonly onStateChange: () => void,
-    private readonly onFinished: (info: RunFinished) => void
+    private readonly onFinished: (info: RunFinished) => void,
+    private readonly quotaTracker = new CodexTurnQuotaTracker()
   ) {}
 
   running(): string[] {
@@ -185,6 +189,8 @@ export class SessionManager {
     this.emit({ type: 'running', threadId: thread.id, running: true })
     this.onStateChange()
 
+    // Fetch the baseline while the CLI initializes, before any prompt can consume quota.
+    if (provider === 'codex' && !apiKey) run.quotaTurn = this.quotaTracker.start()
     const turn = reusable
       ? this.continueSession(thread.id, run, req)
       : this.drive(thread.id, run, req, cwd, thread.chatId, provider, apiKey, mcpServers)
@@ -598,6 +604,12 @@ export class SessionManager {
   }
 
   private async runPrompt(threadId: string, run: Run, req: SendRequest): Promise<void> {
+    if (run.quotaTurn) await run.quotaTurn.before
+    if (this.runs.get(threadId) !== run || run.settled) return
+    if (run.stopped) {
+      this.endRun(threadId, run, null)
+      return
+    }
     const started = Date.now()
     const text =
       req.mode !== 'plan'
@@ -607,6 +619,7 @@ export class SessionManager {
           : run.proc.provider === 'claude'
             ? claudePlanModePrompt(req.prompt)
             : planModePrompt(req.prompt)
+    if (run.quotaTurn) this.quotaTracker.markPromptStarted(run.quotaTurn)
     const result = await run.proc.acp.request('session/prompt', {
       sessionId: run.proc.sessionId,
       prompt: [{ type: 'text', text }]
@@ -616,9 +629,11 @@ export class SessionManager {
     run.reducer.gotResult = true
     const usage = normalizeTurnUsage(result?.usage) ?? run.reducer.lastUsage
     const changed = run.reducer.closeSegments()
+    const resultId = newId()
+    run.quotaResultId = resultId
     changed.push(
       run.reducer.push({
-        id: newId(),
+        id: resultId,
         kind: 'result',
         isError: stop !== 'end_turn' && stop !== 'cancelled',
         durationMs: Date.now() - started,
@@ -637,6 +652,11 @@ export class SessionManager {
   private endRun(threadId: string, run: Run, code: number | null, spawnError?: Error): void {
     if (run.settled) return
     run.settled = true
+    if (run.quotaTurn) {
+      if (run.quotaResultId) void this.saveTurnQuota(threadId, run.quotaResultId, run.quotaTurn)
+      else this.quotaTracker.cancel(run.quotaTurn)
+      run.quotaTurn = undefined
+    }
     if (run.killTimer) {
       clearTimeout(run.killTimer)
       run.killTimer = undefined
@@ -698,6 +718,25 @@ export class SessionManager {
       failed,
       preview: summary
     })
+  }
+
+  /** Quota refresh runs after the result is available and never delays task completion. */
+  private async saveTurnQuota(threadId: string, resultId: string, turn: CodexQuotaTurn): Promise<void> {
+    try {
+      const quotaUsage = await this.quotaTracker.finish(turn)
+      if (!quotaUsage || !this.store.thread(threadId)) return
+      // The user may have deleted or re-imported the transcript while the request was in flight.
+      const items = this.store.items(threadId)
+      const index = items.findIndex((item) => item.id === resultId && item.kind === 'result')
+      const item = items[index]
+      if (item?.kind !== 'result') return
+      const updated = { ...item, quotaUsage }
+      items[index] = updated
+      this.store.markItemsDirty(threadId)
+      this.emit({ type: 'items', threadId, items: [updated] })
+    } catch {
+      // Account usage is optional; a failed refresh must not fail the completed task.
+    }
   }
 
   private onIdleAcpRequest(proc: AgentProc, method: string, params: any): Promise<unknown> {

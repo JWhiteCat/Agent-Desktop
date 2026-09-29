@@ -1,4 +1,5 @@
 import type { SlashCommand } from './commands'
+import type { TurnQuotaUsage } from './turn-quota'
 
 export type AgentMode = 'agent' | 'plan' | 'ask'
 
@@ -109,6 +110,8 @@ export interface ResultItem {
   /** Stable across a fork so the same turn is not counted twice. */
   usageId?: string
   usage?: { inputTokens?: number; outputTokens?: number; cacheReadTokens?: number; cacheWriteTokens?: number }
+  /** Account quota increases observed during a Codex turn; absent when no comparable snapshots exist. */
+  quotaUsage?: TurnQuotaUsage
 }
 
 export interface NoticeItem {

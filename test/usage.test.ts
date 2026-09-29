@@ -57,6 +57,37 @@ describe('model prices', () => {
 describe('usage summary', () => {
   const usage = { inputTokens: 1000, outputTokens: 10 }
 
+  it('prices the same model separately for Cursor and Codex without merging their turns', () => {
+    const at = now - hour
+    const sharedUsage = { inputTokens: 300_000, outputTokens: 1000 }
+    const items = [user(at), result({ id: 'r', model: 'gpt-5.4[high]', createdAt: at, usage: sharedUsage })]
+    const summary = summarizeUsage([
+      { cli: 'cursor', items },
+      { cli: 'codex', items }
+    ], '1d', now)
+
+    expect(summary.turns).toBe(2)
+    expect(summary.models).toHaveLength(2)
+    expect(summary.models.find((row) => row.cli === 'cursor')?.costUsd).toBeCloseTo(1.515)
+    expect(summary.models.find((row) => row.cli === 'codex')?.costUsd).toBeCloseTo(1.5225)
+    expect(summary.costUsd).toBeCloseTo(3.0375)
+  })
+
+  it('keeps fork deduplication within each CLI and defaults older threads to Cursor', () => {
+    const at = now - hour
+    const items = [user(at), result({ id: 'r', usageId: 'same', model: 'gpt-5.4', createdAt: at, usage })]
+    const summary = summarizeUsage([
+      { items },
+      { cli: 'cursor', items },
+      { cli: 'codex', items },
+      { cli: 'codex', items }
+    ], '1d', now)
+
+    expect(summary.turns).toBe(2)
+    expect(summary.models.map((row) => row.cli).sort()).toEqual(['codex', 'cursor'])
+    expect(summary.models.every((row) => row.turns === 1)).toBe(true)
+  })
+
   it('keeps turns inside 1, 7, and 30 day windows', () => {
     const thread: UsageThread = {
       model: 'grok-4.7',
@@ -115,6 +146,27 @@ describe('usage summary', () => {
 
 describe('session usage', () => {
   const usage = { inputTokens: 1000, outputTokens: 10 }
+
+  it('uses the session CLI for costs and model labels, including sessions with no usage', () => {
+    const at = now - hour
+    const rows = listSessionUsage([
+      { id: 'empty', cli: 'codex', model: 'gpt-6-sol[high]', items: [] },
+      {
+        id: 'codex',
+        cli: 'codex',
+        items: [result({ id: 'r', model: 'gpt-5.4', createdAt: at, usage: { inputTokens: 300_000, outputTokens: 1000 } })]
+      },
+      { id: 'legacy', model: 'gpt-5.4', items: [] }
+    ])
+
+    expect(rows.find((row) => row.threadId === 'codex')).toMatchObject({ cli: 'codex', costUsd: 1.5225 })
+    expect(rows.find((row) => row.threadId === 'empty')).toMatchObject({
+      cli: 'codex',
+      models: [{ id: 'gpt-6-sol[high]', label: 'GPT-6 Sol' }],
+      costUsd: null
+    })
+    expect(rows.find((row) => row.threadId === 'legacy')?.cli).toBe('cursor')
+  })
 
   it('counts every turn on a session, including ones outside the summary window', () => {
     const thread: UsageThread = {

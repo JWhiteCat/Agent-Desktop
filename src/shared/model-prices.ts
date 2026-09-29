@@ -1,8 +1,12 @@
 /**
- * List prices from https://cursor.com/docs/models-and-pricing (USD per million tokens).
+ * Cursor list prices from https://cursor.com/docs/models-and-pricing (USD per million tokens).
+ * Codex uses the separate OpenAI API price table in codex-model-prices.ts.
  * These are published API rates, not remaining included usage, and they omit the Teams token rate.
  * A cache-write cell of "-" is stored as 0.
  */
+
+import { findCodexPrice } from './codex-model-prices'
+import type { CliProvider } from './types'
 
 export interface TokenUsage {
   inputTokens?: number
@@ -26,7 +30,7 @@ interface TokenRates {
   cacheWrite: number
 }
 
-interface ModelPrice {
+export interface ModelPrice {
   keys: string[]
   label: string
   rates: TokenRates
@@ -176,7 +180,9 @@ export function parseModelId(id: string): { name: string; fast: boolean } {
   if (bracket) {
     name = bracket[1]
     const params = bracket[2]
-    if (/(?:^|,)\s*fast\s*=\s*true\b/i.test(params) || /(?:^|,)\s*speed\s*=\s*fast\b/i.test(params)) fast = true
+    fast = /(?:^|,)\s*fast\s*=\s*true\b/i.test(params)
+      || /(?:^|,)\s*speed\s*=\s*fast\b/i.test(params)
+      || /(?:^|,)\s*service_tier\s*=\s*(?:fast|priority)\b/i.test(params)
   }
   name = name.trim().toLowerCase()
   if (name.endsWith('-fast')) {
@@ -202,13 +208,13 @@ function roundUsd(n: number): number {
 }
 
 /** Published list price for one turn. `auto` and unknown models have no price. */
-export function quoteModel(modelId: string | undefined, usage: TokenUsage): QuotedUsage {
+export function quoteModel(modelId: string | undefined, usage: TokenUsage, cli: CliProvider = 'cursor'): QuotedUsage {
   const parsed = parseModelId(modelId ?? '')
   const fallback = !parsed.name ? '未知模型' : parsed.name === 'auto' ? 'Auto' : (modelId ?? '').trim() || '未知模型'
   if (!parsed.name || parsed.name === 'auto') {
     return { label: fallback, costUsd: null, fast: parsed.fast, longContext: false }
   }
-  const entry = findPrice(parsed.name)
+  const entry = cli === 'codex' ? findCodexPrice(parsed.name) : findPrice(parsed.name)
   if (!entry) return { label: fallback, costUsd: null, fast: parsed.fast, longContext: false }
 
   const inputSide = num(usage.inputTokens) + num(usage.cacheReadTokens) + num(usage.cacheWriteTokens)
@@ -223,5 +229,9 @@ export function quoteModel(modelId: string | undefined, usage: TokenUsage): Quot
   const bits = [entry.label]
   if (parsed.fast) bits.push('Fast')
   if (long) bits.push('长上下文')
+  // A tier with no published OpenAI price must not silently inherit Standard pricing.
+  if (cli === 'codex' && parsed.fast && !(long ? entry.fastLong : entry.fast)) {
+    return { label: bits.join(' '), costUsd: null, fast: true, longContext: long }
+  }
   return { label: bits.join(' '), costUsd: roundUsd(cost), fast: parsed.fast, longContext: long }
 }

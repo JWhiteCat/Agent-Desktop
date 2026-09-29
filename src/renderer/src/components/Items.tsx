@@ -3,7 +3,7 @@ import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { quoteModel } from '@shared/model-prices'
 import { formatAnswers, parseQuestionBlock, QUESTION_BLOCK_LANG } from '@shared/questions'
-import type { Item, NoticeItem, QuestionAnswer, QuestionItem, QuestionPrompt, ResultItem, ThinkingItem, ToolItem, UserItem } from '@shared/types'
+import type { CliProvider, Item, NoticeItem, QuestionAnswer, QuestionItem, QuestionPrompt, ResultItem, ThinkingItem, ToolItem, UserItem } from '@shared/types'
 import { answerQuestion, useStore } from '../store'
 import { compactNumber, duration, formatUsd } from '../lib/format'
 import { groupModels, modelCaption } from '../lib/models'
@@ -257,14 +257,20 @@ export function Notice({ item }: { item: NoticeItem }) {
   return <div className={`notice ${item.level}`}>{item.text}</div>
 }
 
-export function ResultFooter({ item, text, fallbackModel }: { item: ResultItem; text?: string; fallbackModel?: string }) {
-  const models = useStore((s) => s.models)
+export function ResultFooter({ item, text, fallbackModel, cli = 'cursor' }: { item: ResultItem; text?: string; fallbackModel?: string; cli?: CliProvider }) {
+  const models = useStore((s) => s.modelsByCli[cli])
   const groups = useMemo(() => groupModels(models), [models])
   const u = item.usage
   const tokens = u ? (u.inputTokens ?? 0) + (u.outputTokens ?? 0) + (u.cacheReadTokens ?? 0) + (u.cacheWriteTokens ?? 0) : 0
   const modelId = item.model || fallbackModel || ''
   const caption = modelId ? modelCaption(groups, modelId) : ''
-  const quote = modelId && u ? quoteModel(modelId, u) : undefined
+  const quote = modelId && u ? quoteModel(modelId, u, cli) : undefined
+  const priceSource = cli === 'codex' ? 'OpenAI API 公开标价' : 'Cursor 公开标价'
+  const quota = cli === 'codex' ? item.quotaUsage : undefined
+  const quotaText = [
+    quotaPercent('周额度', quota?.weekly),
+    quotaPercent('5小时', quota?.fiveHour)
+  ].filter(Boolean).join(' · ')
   return (
     <div className="result-footer">
       {text && <CopyButton text={text} />}
@@ -276,12 +282,23 @@ export function ResultFooter({ item, text, fallbackModel }: { item: ResultItem; 
       )}
       {caption && <span title={caption === modelId ? undefined : modelId}>{caption}</span>}
       {quote && (
-        <span title={quote.costUsd == null ? 'Auto 和价目表没有的模型未计入费用' : `估算 $${quote.costUsd}（Cursor 公开标价）`}>
+        <span title={quote.costUsd == null ? 'Auto 和价目表没有的模型未计入费用' : `估算 $${quote.costUsd}（${priceSource}）`}>
           {formatUsd(quote.costUsd)}
+        </span>
+      )}
+      {quotaText && (
+        <span title="本次额度消耗估算：根据本轮前后账号已用额度的百分点增量计算。接口取整、更新延迟及其他客户端的使用可能影响结果。0% 表示账号百分比未变化，不代表本次没有消耗。">
+          {quotaText}
         </span>
       )}
     </div>
   )
+}
+
+function quotaPercent(label: string, value: number | undefined): string | undefined {
+  if (value == null || !Number.isFinite(value) || value < 0) return undefined
+  const amount = value > 0 && value < 0.01 ? '<0.01' : String(Number(value.toFixed(2)))
+  return `${label} ${amount}%`
 }
 
 /** Actions that only make sense on the newest part of an idle thread. */

@@ -135,7 +135,7 @@ function TurnView({
         />
       ))}
       <TurnFiles steps={turn.steps} cwd={cwd} />
-      {turn.result && <ResultFooter item={turn.result} text={finalText} fallbackModel={fallbackModel} />}
+      {turn.result && <ResultFooter item={turn.result} text={finalText} fallbackModel={fallbackModel} cli={cli} />}
     </div>
   )
 }

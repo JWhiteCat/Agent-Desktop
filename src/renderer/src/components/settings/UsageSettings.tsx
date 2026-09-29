@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { UsageSessionRow, UsageSummary, UsageWindow } from '@shared/usage'
+import { cliTitle, type CliProvider } from '@shared/types'
 import { compactNumber, formatUsd, relativeTime } from '../../lib/format'
 import { groupModels, modelCaption } from '../../lib/models'
 import { errorText, useStore } from '../../store'
@@ -18,14 +19,18 @@ function UsageToken({ n }: { n: number }) {
 }
 
 export function UsageSettings() {
-  const models = useStore((s) => s.models)
-  const groups = useMemo(() => groupModels(models), [models])
+  const modelsByCli = useStore((s) => s.modelsByCli)
+  const groups = useMemo(() => ({
+    cursor: groupModels(modelsByCli.cursor),
+    codex: groupModels(modelsByCli.codex),
+    claude: groupModels(modelsByCli.claude)
+  }), [modelsByCli])
   const [period, setPeriod] = useState<UsageWindow>('7d')
   const [summary, setSummary] = useState<UsageSummary | null>(null)
   const [sessions, setSessions] = useState<UsageSessionRow[] | null>(null)
   const [page, setPage] = useState(1)
   const [error, setError] = useState('')
-  const modelName = (id: string, fallback = '') => (id ? modelCaption(groups, id) : fallback)
+  const modelName = (cli: CliProvider, id: string, fallback = '') => (id ? modelCaption(groups[cli], id) : fallback)
 
   useEffect(() => {
     let cancel = false
@@ -129,8 +134,11 @@ export function UsageSettings() {
               </thead>
               <tbody>
                 {summary.models.map((row) => (
-                  <tr key={`${row.model}\n${row.label}`}>
-                    <td>{modelName(row.model, row.label)}</td>
+                  <tr key={`${row.cli}\n${row.model}\n${row.label}`}>
+                    <td>
+                      <div>{modelName(row.cli, row.model, row.label)}</div>
+                      <div className="muted small">{cliTitle(row.cli)}</div>
+                    </td>
                     <td>{row.turns}</td>
                     <td>
                       <UsageToken n={row.inputTokens} />
@@ -179,13 +187,14 @@ export function UsageSettings() {
                   <tr key={row.threadId}>
                     <td>
                       <div>{row.title}</div>
+                      <div className="muted small">{cliTitle(row.cli)}</div>
                       {row.project && <div className="muted small">{row.project}</div>}
                     </td>
                     <td className="usage-model">
                       {row.models.length === 0 ? (
                         '—'
                       ) : (
-                        row.models.map((model) => <div key={model.id}>{modelName(model.id, model.label)}</div>)
+                        row.models.map((model) => <div key={model.id}>{modelName(row.cli, model.id, model.label)}</div>)
                       )}
                     </td>
                     <td>{row.at ? relativeTime(row.at) : '—'}</td>
@@ -227,7 +236,7 @@ export function UsageSettings() {
         </>
       )}
       <p className="usage-note">
-        Cursor 模型按 Cursor 公开标价估算，Codex 的 GPT 模型用同一份已收录的公开 token 标价（美元 / 百万 token）。这不是套餐剩余额度，也不含 Teams 的 Token Rate。Auto 和价目表没有的模型只计 token。上方合计里，分叉复制的同一轮只计一次。会话列表包含全部历史对话，按各对话自己的记录累计，不受上面的天数限制；没有 token 记录的对话费用留空。
+        Cursor 按 Cursor 公开标价估算，Codex 按 <a href="https://developers.openai.com/api/docs/pricing" target="_blank" rel="noreferrer">OpenAI API 公开标价</a>估算（美元 / 百万 token）。这些金额是用量估算，不代表订阅账单或套餐剩余额度；Cursor 估算不含 Teams 的 Token Rate。Auto 和价目表没有的模型只计 token。上方合计里，分叉复制的同一轮只计一次。会话列表包含全部历史对话，按各对话自己的记录累计，不受上面的天数限制；没有 token 记录的对话费用留空。
       </p>
     </section>
   )

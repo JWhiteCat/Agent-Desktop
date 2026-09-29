@@ -10,9 +10,10 @@ import { resolveCodexApiKey } from './codex'
 const CURSOR_API = 'https://api2.cursor.sh'
 const CODEX_USAGE = 'https://chatgpt.com/backend-api/wham/usage'
 const FETCH_MS = 15_000
+const TURN_FETCH_MS = 5_000
 
 /** Chromium's network stack follows the system proxy. Node's fetch does not. */
-const http = net.fetch.bind(net)
+const http: typeof net.fetch = (...args) => net.fetch(...args)
 
 /** In-memory only. The API key itself is not stored here. */
 let cursorTokenCache: { keyId: string; accessToken: string; exp: number } | null = null
@@ -56,29 +57,57 @@ async function loadCursorQuota(apiKeySetting: string | undefined): Promise<Provi
   }
 }
 
+/** Main-process only: account identities are hashed and never included in session events. */
+export interface CodexQuotaSnapshot {
+  quota: ProviderQuota
+  accountKey: string
+  sampledAt: number
+}
+
+/** A short request for a turn boundary. Missing subscription data is deliberately not a zero. */
+export async function loadCodexQuotaSnapshot(apiKeySetting?: string): Promise<CodexQuotaSnapshot | undefined> {
+  const result = await fetchCodexQuota(apiKeySetting, TURN_FETCH_MS)
+  if (!result.accountKey || !result.quota.windows.length || result.quota.note) return undefined
+  return { quota: result.quota, accountKey: result.accountKey, sampledAt: result.sampledAt }
+}
+
 async function loadCodexQuota(apiKeySetting: string | undefined): Promise<ProviderQuota> {
+  return (await fetchCodexQuota(apiKeySetting, FETCH_MS)).quota
+}
+
+async function fetchCodexQuota(apiKeySetting: string | undefined, timeoutMs: number): Promise<{
+  quota: ProviderQuota
+  accountKey?: string
+  sampledAt: number
+}> {
+  const empty = (note: string) => ({ quota: { provider: 'codex' as const, windows: [], note }, sampledAt: Date.now() })
   try {
+    // ACP explicitly authenticates with this key, even when ChatGPT tokens remain on disk.
+    if (resolveCodexApiKey(apiKeySetting)) return empty('当前使用 API Key，没有 ChatGPT 订阅额度')
     const auth = readCodexAuth()
     if (auth.kind === 'missing') {
-      if (resolveCodexApiKey(apiKeySetting)) {
-        return { provider: 'codex', windows: [], note: '当前使用 API Key，没有 ChatGPT 订阅额度' }
-      }
-      return { provider: 'codex', windows: [], note: '未登录 Codex。请使用 ChatGPT 登录。' }
+      return empty('未登录 Codex。请使用 ChatGPT 登录。')
     }
     if (auth.kind === 'api-key') {
-      return { provider: 'codex', windows: [], note: '当前使用 API Key，没有 ChatGPT 订阅额度' }
+      return empty('当前使用 API Key，没有 ChatGPT 订阅额度')
     }
     const headers: Record<string, string> = { Authorization: `Bearer ${auth.token}` }
     if (auth.accountId) headers['ChatGPT-Account-Id'] = auth.accountId
-    const res = await http(CODEX_USAGE, { headers, signal: AbortSignal.timeout(FETCH_MS) })
+    const res = await http(CODEX_USAGE, { headers, signal: AbortSignal.timeout(timeoutMs) })
     if (res.status === 401 || res.status === 403) {
-      return { provider: 'codex', windows: [], note: 'Codex 登录已过期，请重新登录' }
+      return empty('Codex 登录已过期，请重新登录')
     }
-    if (!res.ok) return { provider: 'codex', windows: [], note: `暂时无法获取 Codex 额度（HTTP ${res.status}）` }
+    if (!res.ok) return empty(`暂时无法获取 Codex 额度（HTTP ${res.status}）`)
     const json = (await res.json().catch(() => null)) as unknown
-    return parseCodexQuota(json)
+    // Stable across access-token refreshes when Codex provides an account id.
+    const identity = auth.accountId ? `account:${auth.accountId}` : `token:${auth.token}`
+    return {
+      quota: parseCodexQuota(json),
+      accountKey: createHash('sha256').update(identity).digest('hex'),
+      sampledAt: Date.now()
+    }
   } catch {
-    return { provider: 'codex', windows: [], note: '暂时无法获取 Codex 额度' }
+    return empty('暂时无法获取 Codex 额度')
   }
 }
 
@@ -140,13 +169,13 @@ function cursorAuthPaths(): string[] {
 type CodexAuth = { kind: 'token'; token: string; accountId?: string } | { kind: 'api-key' } | { kind: 'missing' }
 
 function readCodexAuth(): CodexAuth {
-  const file = path.join(os.homedir(), '.codex', 'auth.json')
+  const file = path.join(process.env.CODEX_HOME?.trim() || path.join(os.homedir(), '.codex'), 'auth.json')
   const root = asRecord(readJson(file))
   if (!root) return { kind: 'missing' }
+  if (stringField(root, 'auth_mode', 'authMode') === 'apikey' || stringField(root, 'OPENAI_API_KEY')) return { kind: 'api-key' }
   const tokens = asRecord(root.tokens)
   const token = stringField(root, 'access_token', 'accessToken') || stringField(tokens, 'access_token', 'accessToken')
   if (!token) {
-    if (stringField(root, 'auth_mode', 'authMode') === 'apikey' || stringField(root, 'OPENAI_API_KEY')) return { kind: 'api-key' }
     return { kind: 'missing' }
   }
   const accountId =
