@@ -204,6 +204,14 @@ export interface SkillConfig {
   body: string
 }
 
+/** Last explicitly selected options for one model, independent of other models and CLIs. */
+export interface ModelPreference {
+  context?: string
+  effort?: string
+  thinking: boolean
+  fast: boolean
+}
+
 export interface Settings {
   /** Application language; System follows the OS or remote browser. */
   language: Language
@@ -231,6 +239,8 @@ export interface Settings {
   claudeDefaultModel: string
   /** Claude model group bases shown in the chat picker. Empty means show every Claude model. */
   claudeFavoriteModels: string[]
+  /** Model options indexed by CLI and model group base. */
+  modelPreferences: Partial<Record<CliProvider, Record<string, ModelPreference>>>
   defaultMode: AgentMode
   force: boolean
   theme: 'system' | 'dark' | 'light'
@@ -358,6 +368,7 @@ export const DEFAULT_SETTINGS: Settings = {
   favoriteModels: [],
   codexFavoriteModels: [],
   claudeFavoriteModels: [],
+  modelPreferences: {},
   defaultMode: 'agent',
   force: false,
   theme: 'system',

@@ -37,7 +37,7 @@ function ModelCliSettings({ provider }: { provider: CliProvider }) {
       <Field label={t('默认模型')} desc={t('每个项目会记住自己上次在这个 CLI 里选的模型。这里只给还没单独选过的项目用。勾选常用模型后，这里也只列出常用模型。')}>
         <ModelPicker
           cli={provider}
-          value={modelForChat(models, favoritesFor(settings, provider), defaultModelFor(settings, provider))}
+          value={modelForChat(models, favoritesFor(settings, provider), defaultModelFor(settings, provider), undefined, settings.modelPreferences?.[provider])}
           onChange={(model) => setDefaultModel(model, provider)}
         />
       </Field>

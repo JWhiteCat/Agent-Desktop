@@ -1,8 +1,8 @@
 import { useT } from '../lib/i18n'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { normalizeCliProvider, type CliProvider } from '@shared/types'
-import { favoritesFor } from '../lib/model-prefs'
-import { loadModels, useStore } from '../store'
+import { favoritesFor, pickRememberedVariant } from '../lib/model-prefs'
+import { loadModels, rememberModelVariant, useStore } from '../store'
 import {
   contextChoices,
   describeModel,
@@ -25,6 +25,7 @@ export function ModelPicker({ value, onChange, cli }: { value: string; onChange:
   const provider = cli ?? settingsCli
   const models = useStore((s) => s.modelsByCli[provider] ?? s.models)
   const favorites = useStore((s) => favoritesFor(s.app.settings, provider))
+  const preferences = useStore((s) => s.app.settings.modelPreferences?.[provider])
   const groups = useMemo(() => groupModels(models), [models])
   const favoritesApply = favorites.some((base) => groups.some((group) => group.base === base))
   const summary = describeModel(groups, value)
@@ -63,11 +64,12 @@ export function ModelPicker({ value, onChange, cli }: { value: string; onChange:
   }, [listed, q])
 
   const select = (id: string) => {
+    rememberModelVariant(id, value, provider)
     if (id !== value) onChange(id)
   }
 
   const chooseGroup = (group: ModelGroup) => {
-    if (group.base !== selected?.base) select(pickVariant(group, wantFrom(selected)).id)
+    if (group.base !== selected?.base) select(pickRememberedVariant(group, preferences, selected).id)
     setQ('')
   }
 

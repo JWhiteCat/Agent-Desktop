@@ -1,11 +1,12 @@
-import { normalizeCliProvider, type CliProvider, type Project, type Settings } from '@shared/types'
-import { findVariant, groupModels, pickVariant, wantFrom } from '../lib/models'
+import { normalizeCliProvider, type CliProvider, type ModelPreference, type Project, type Settings } from '@shared/types'
+import { findVariant, groupModels } from '../lib/models'
 import {
   defaultModelFor,
   favoritesFor,
   inCatalog,
   modelBases,
   modelForChat,
+  pickRememberedVariant,
   projectModelFor,
   pruneFavoriteList,
   sameModel
@@ -52,6 +53,35 @@ function otherModelBases(provider: CliProvider): Set<string> {
   return other
 }
 
+/** Called for picker actions, never for mounting or canonicalizing a saved conversation. */
+export function rememberModelVariant(model: string, previous?: string, cli?: CliProvider): void {
+  const state = getState()
+  const provider = cliOf(cli)
+  const groups = groupModels(state.modelsByCli[provider] ?? [])
+  const modelPreferences = state.app.settings.modelPreferences ?? {}
+  const preferences = { ...modelPreferences[provider] }
+  let changed = false
+  for (const [id, seed] of [[previous, true], [model, false]] as const) {
+    const variant = id ? findVariant(groups, id) : undefined
+    if (!variant || variant.base === 'auto' || (seed && preferences[variant.base])) continue
+    const next: ModelPreference = {
+      context: variant.context,
+      effort: variant.effort,
+      thinking: variant.thinking,
+      fast: variant.fast
+    }
+    const current = preferences[variant.base]
+    if (current && current.context === next.context && current.effort === next.effort &&
+        current.thinking === next.thinking && current.fast === next.fast) continue
+    preferences[variant.base] = next
+    changed = true
+  }
+  if (!changed) return
+  const patch: Partial<Settings> = { modelPreferences: { ...modelPreferences, [provider]: preferences } }
+  setState((s) => ({ app: { ...s.app, settings: { ...s.app.settings, ...patch } } }))
+  void window.api.updateSettings(patch)
+}
+
 export function rememberModel(projectId: string, model: string, previous?: string, cli?: CliProvider): void {
   const state = getState()
   const project = state.app.projects.find((p) => p.id === projectId)
@@ -65,7 +95,7 @@ export function rememberModel(projectId: string, model: string, previous?: strin
   if (canonicalizing) {
     if (!visible || !sameModel(models, visible, model)) return
   } else if (!visible) {
-    const fallback = modelForChat(models, favoritesFor(state.app.settings, provider), defaultModelFor(state.app.settings, provider))
+    const fallback = modelForChat(models, favoritesFor(state.app.settings, provider), defaultModelFor(state.app.settings, provider), undefined, state.app.settings.modelPreferences?.[provider])
     if (sameModel(models, model, fallback)) return
   }
   const patch: Partial<Project> = projectModelPatch(provider, model)
@@ -116,7 +146,7 @@ export function setFavoriteModels(bases: string[], cli?: CliProvider): void {
       if (current && kept.includes(current.base)) return undefined
       const group = groups.find((g) => kept.includes(g.base))
       if (!group) return undefined
-      const next = pickVariant(group, wantFrom(current)).id
+      const next = pickRememberedVariant(group, state.app.settings.modelPreferences?.[provider], current).id
       return next === modelId ? undefined : next
     }
     const snappedDefault = snap(defaultModelFor(state.app.settings, provider) || 'auto')
@@ -184,5 +214,5 @@ export function chatModel(projectId: string, cli: CliProvider): string {
   const provider = normalizeCliProvider(cli)
   const project = state.app.projects.find((p) => p.id === projectId)
   const models = state.modelsByCli[provider] ?? state.models
-  return modelForChat(models, favoritesFor(state.app.settings, provider), defaultModelFor(state.app.settings, provider), projectModelFor(project, provider))
+  return modelForChat(models, favoritesFor(state.app.settings, provider), defaultModelFor(state.app.settings, provider), projectModelFor(project, provider), state.app.settings.modelPreferences?.[provider])
 }

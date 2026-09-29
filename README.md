@@ -12,7 +12,7 @@ The app does not call a model itself. The main process starts the Cursor CLI, Co
 - Fork a conversation from the header, the sidebar, a message, or by sending `/fork`, preserving its history as context for the next message
 - Slash commands in a conversation: typing `/` lists `/fork` and the commands the CLI advertises. `/fork` runs in the app; other commands are sent as the next message
 - Three modes: Agent (can edit files and run commands), Plan (read-only plan; pick answers and run the plan in one click), Ask (read-only Q&A)
-- Model picker: Cursor, Codex, and Claude each remember favorite models and a default model, plus optional context length, reasoning effort, and Fast. Codex lists reasoning effort per model, for example Ultra on Astra. Claude lists the effort levels the adapter advertises for the current model. Each project remembers the last model chosen for that CLI
+- Model picker: Cursor, Codex, and Claude each remember favorite models, a default model, and each model’s context length, reasoning effort, and Fast. Codex lists reasoning effort per model, for example Ultra on Astra. Claude lists the effort levels the adapter advertises for the current model. Each project remembers the last model chosen for that CLI
 - A new Cursor conversation can run in an isolated git worktree. Codex and Claude have no worktree switch
 - Changes panel with two tabs: files edited in this conversation, and the git branch, status, and diff of the working directory
 - After a turn, the files changed in that turn are listed under the reply; click one to see its diff
@@ -131,6 +131,8 @@ Translations live in `src/shared/locales/`. Chinese source text is the fallback,
 4. Open the changes panel to review edits, or open the working directory in Cursor or the file manager. After a task finishes, the conversation lists the files changed in that turn. Click a file name to expand the diff.
 
 Project model choices are independent for Cursor, Codex, and Claude. Changing one CLI's selection or favorites preserves the other CLIs' remembered models.
+
+The model picker also remembers each model's context length, reasoning effort (including Thinking), and Fast setting separately for each CLI. Options are saved as soon as you select them, without sending a message. Switching back to a model restores its options, including after an app restart; choosing a favorite model uses the same saved options. Preferences live in `state.json` and are shared with the remote page. Existing conversations keep their selected variant, and opening an older conversation does not overwrite these preferences. If a saved combination is no longer offered by the CLI, the picker selects an available variant.
 
 Opening or refreshing a conversation keeps streamed messages that arrive while history is loading. Syncing an empty CLI transcript preserves the local conversation. Deleting a conversation, changing CLI configuration, or quitting also stops a CLI process that is still preparing the saved session.
 

@@ -328,7 +328,7 @@ export function ThreadView({ thread, changesOpen, onToggleChanges }: Props) {
             return model
           }}
           initial={{
-            model: thread.model || modelForChat(models, favoritesFor(settings, cli), defaultModelFor(settings, cli), projectModelFor(project, cli)),
+            model: thread.model || modelForChat(models, favoritesFor(settings, cli), defaultModelFor(settings, cli), projectModelFor(project, cli), settings.modelPreferences?.[cli]),
             mode: thread.mode,
             force: thread.force ?? settings.force,
             cli

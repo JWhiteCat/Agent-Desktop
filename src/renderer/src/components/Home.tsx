@@ -117,7 +117,7 @@ export function Home({ projectId, onOpenImport }: { projectId?: string; onOpenIm
               }}
               showWorktree={cli === 'cursor'}
               initial={{
-                model: modelForChat(models, favoritesFor(settings, cli), defaultModelFor(settings, cli), projectModelFor(project, cli)),
+                model: modelForChat(models, favoritesFor(settings, cli), defaultModelFor(settings, cli), projectModelFor(project, cli), settings.modelPreferences?.[cli]),
                 mode: settings.defaultMode,
                 force: settings.force,
                 worktree: false,

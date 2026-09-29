@@ -3,7 +3,7 @@ export { getState, setState, useStore } from './store/state'
 export type { SendOptions, UIState, View } from './store/state'
 export { initStore } from './store/init'
 export { cliCommands, prepareCommands } from './store/commands'
-export { chatModel, rememberModel, setDefaultModel, setFavoriteModels } from './store/model-preferences'
+export { chatModel, rememberModel, rememberModelVariant, setDefaultModel, setFavoriteModels } from './store/model-preferences'
 export { loadModels, setCliProvider } from './store/models'
 export { errorText, toast } from './store/feedback'
 export {

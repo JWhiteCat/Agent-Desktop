@@ -1,5 +1,5 @@
-import type { CliProvider, ModelInfo, Project, Settings } from '@shared/types'
-import { findVariant, groupModels, pickVariant, wantFrom } from './models'
+import type { CliProvider, ModelInfo, ModelPreference, Project, Settings } from '@shared/types'
+import { findVariant, groupModels, pickVariant, wantFrom, type ModelGroup, type ModelVariant } from './models'
 
 function inCatalog(models: ModelInfo[], id: string | undefined): boolean {
   if (!id) return false
@@ -41,15 +41,35 @@ export function modelBases(models: ModelInfo[]): Set<string> {
 }
 
 /** Model shown for a new chat in a project: that project's last choice, otherwise the global default. */
-export function modelForChat(models: ModelInfo[], favoriteBases: string[] | undefined, settingsDefault?: string, projectModel?: string): string {
+export function modelForChat(
+  models: ModelInfo[],
+  favoriteBases: string[] | undefined,
+  settingsDefault?: string,
+  projectModel?: string,
+  preferences?: Record<string, ModelPreference>
+): string {
   const loaded = models.some((model) => model.id !== 'auto')
   if (!loaded) return projectModel || settingsDefault || models[0]?.id || 'auto'
   const fallback = inCatalog(models, settingsDefault) ? settingsDefault! : (models.find((model) => model.id !== 'auto')?.id ?? models[0].id)
   const preferred = inCatalog(models, projectModel) ? projectModel! : fallback
-  return resolveModel(models, favoriteBases, preferred)
+  return resolveModel(models, favoriteBases, preferred, preferences)
 }
 
-function resolveModel(models: ModelInfo[], favoriteBases: string[] | undefined, preferred: string): string {
+/** Restore this model's options; the previous model is only a fallback for a first selection. */
+export function pickRememberedVariant(
+  group: ModelGroup,
+  preferences?: Record<string, ModelPreference>,
+  current?: ModelVariant
+): ModelVariant {
+  return pickVariant(group, preferences?.[group.base] ?? wantFrom(current))
+}
+
+function resolveModel(
+  models: ModelInfo[],
+  favoriteBases: string[] | undefined,
+  preferred: string,
+  preferences?: Record<string, ModelPreference>
+): string {
   const favorites = favoriteBases ?? []
   if (!favorites.length) return preferred
   const groups = groupModels(models)
@@ -57,7 +77,7 @@ function resolveModel(models: ModelInfo[], favoriteBases: string[] | undefined, 
   if (current && favorites.includes(current.base)) return preferred
   const group = groups.find((g) => favorites.includes(g.base))
   if (!group) return preferred
-  return pickVariant(group, wantFrom(current)).id
+  return pickRememberedVariant(group, preferences, current).id
 }
 
 /** Same catalog entry, including a legacy slug and its parameterized id. */
