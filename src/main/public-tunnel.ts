@@ -225,7 +225,8 @@ export class PublicTunnel {
   private launch(): void {
     const target = this.target
     if (!target) return
-    const gen = this.generation
+    // Every SSH attempt owns its probes; replies from a disconnected child may arrive late.
+    const gen = ++this.generation
     this.clearTimer()
     this.setStatus('connecting')
     let stderr = ''
@@ -269,9 +270,10 @@ export class PublicTunnel {
     }
     if (gen !== this.generation || this.child === undefined) return
     this.setStatus('error', UNREACHABLE)
+    this.schedule(gen, () => { void this.confirm(gen, target) })
   }
 
-  private schedule(gen: number): void {
+  private schedule(gen: number, retry: () => void = () => this.launch()): void {
     if (gen !== this.generation || !this.target) return
     this.clearTimer()
     const delay = retryDelay(this.attempt)
@@ -279,7 +281,7 @@ export class PublicTunnel {
     this.timer = setTimeout(() => {
       this.timer = undefined
       if (gen !== this.generation) return
-      this.launch()
+      retry()
     }, delay)
   }
 }

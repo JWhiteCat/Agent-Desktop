@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CliProvider, Item } from '../src/shared/types'
 import { Store } from '../src/main/store'
 import { forkThread, syncFromCli, type HistoryDeps } from '../src/main/thread-history'
-import { findChatDir } from '../src/main/history'
+import { findChatDir, readCliTranscript } from '../src/main/history'
 import { materializeCliFork, planCliFork } from '../src/main/fork'
 
 const electron = vi.hoisted(() => ({ userData: '' }))
@@ -124,5 +124,17 @@ describe('conversation forks', () => {
     await expect(forkThread({ ...deps, isRunning: () => true }, original.id)).rejects.toThrow('正在运行')
     await expect(forkThread(deps, original.id, 'missing')).rejects.toThrow('找不到')
     expect(store.threads).toHaveLength(1)
+  })
+
+  it('preserves saved history when the CLI returns an empty transcript', () => {
+    const original = source('cursor')
+    vi.mocked(readCliTranscript).mockReturnValue([])
+
+    expect(syncFromCli(deps, original.id)).toBeUndefined()
+    expect(store.items(original.id)).toEqual(transcript)
+    expect(store.thread(original.id)?.syncedAt).toBeUndefined()
+    store.flush()
+    const reloaded = new Store()
+    expect(reloaded.items(original.id)).toEqual(transcript)
   })
 })

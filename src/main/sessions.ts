@@ -92,7 +92,7 @@ const CODEX_USAGE_RETRY_MS = [30_000, 120_000, 300_000]
 
 export class SessionManager {
   private runs = new Map<string, Run>()
-  /** Idle CLI processes, keyed by thread id. Not included in `running()`. */
+  /** Idle or preparing CLI processes, keyed by thread id. Not included in `running()`. */
   private agents = new Map<string, AgentProc>()
   /** Last slash-command list for a thread. Kept after the process exits, until the thread is deleted. */
   private commandLists = new Map<string, SlashCommand[]>()
@@ -191,7 +191,11 @@ export class SessionManager {
 
   private enqueue<T>(threadId: string, fn: () => Promise<T>): Promise<T> {
     const prev = this.tails.get(threadId) ?? Promise.resolve()
-    const result = prev.then(fn, fn)
+    const start = () => {
+      if (this.shuttingDown) throw new Error('应用正在关闭')
+      return fn()
+    }
+    const result = prev.then(start, start)
     const settled = result.then(
       () => undefined,
       () => undefined
@@ -381,6 +385,7 @@ export class SessionManager {
     })
     acp.start({
       onNotification: (method, params) => {
+        if (proc.dying) return
         if (method === 'session/update' && params?.update?.sessionUpdate === 'available_commands_update') {
           const sessionId = typeof params?.sessionId === 'string' ? params.sessionId : ''
           if (trackCommands && (!sessionId || !proc.sessionId || sessionId === proc.sessionId)) {
@@ -487,6 +492,9 @@ export class SessionManager {
       proc = this.openProc(threadId, provider, launch, args, cwd, apiKey, fingerprint)
     }
     proc.force = opts.force
+    // Track startup too: deletion, settings changes, and shutdown must be able
+    // to cancel initialize/session/load before the process becomes ready.
+    this.agents.set(threadId, proc)
     try {
       const sessionId = await this.connectSession(proc, cwd, thread.chatId, provider, apiKey, mcpServers)
       await this.applySessionOptions(proc, req)

@@ -164,9 +164,9 @@ export function rememberModel(projectId: string, model: string, previous?: strin
 
 function applyProjectPatch(project: Project, patch: Partial<Project>): Project {
   const next: Project = { ...project, ...patch }
-  if (patch.model === undefined) delete next.model
-  if (patch.codexModel === undefined) delete next.codexModel
-  if (patch.claudeModel === undefined) delete next.claudeModel
+  if (Object.hasOwn(patch, 'model') && patch.model === undefined) delete next.model
+  if (Object.hasOwn(patch, 'codexModel') && patch.codexModel === undefined) delete next.codexModel
+  if (Object.hasOwn(patch, 'claudeModel') && patch.claudeModel === undefined) delete next.claudeModel
   return next
 }
 
@@ -273,19 +273,12 @@ export async function initStore(): Promise<void> {
   })
   window.api.onEvent((ev) => {
     if (ev.type === 'items') {
+      const loading = itemLoads.get(ev.threadId)
+      if (loading) for (const item of ev.items) loading.updates.set(item.id, item)
       setState((s) => {
         const current = s.items[ev.threadId]
         if (!current) return {}
-        const next = current.slice()
-        const index = new Map(next.map((it, i) => [it.id, i]))
-        for (const it of ev.items) {
-          const i = index.get(it.id)
-          if (i === undefined) {
-            index.set(it.id, next.length)
-            next.push(it)
-          } else next[i] = it
-        }
-        return { items: { ...s.items, [ev.threadId]: next } }
+        return { items: { ...s.items, [ev.threadId]: mergeItems(current, ev.items) } }
       })
     } else if (ev.type === 'commands') {
       const thread = state.app.threads.find((t) => t.id === ev.threadId)
@@ -382,14 +375,40 @@ export function rememberProject(projectId: string): void {
   setState({ lastProjectId: projectId })
 }
 
+function mergeItems(current: Item[], updates: Iterable<Item>): Item[] {
+  const next = current.slice()
+  const index = new Map(next.map((item, i) => [item.id, i]))
+  for (const item of updates) {
+    const i = index.get(item.id)
+    if (i === undefined) {
+      index.set(item.id, next.length)
+      next.push(item)
+    } else next[i] = item
+  }
+  return next
+}
+
+const itemLoads = new Map<string, { promise: Promise<void>; updates: Map<string, Item> }>()
+
+/** Apply events received during a history request after its snapshot, including the first load. */
+function loadThreadItems(id: string): Promise<void> {
+  const pending = itemLoads.get(id)
+  if (pending) return pending.promise
+  const updates = new Map<string, Item>()
+  const promise = window.api.getItems(id).then((items) => {
+    setState((s) => ({ items: { ...s.items, [id]: mergeItems(items, updates.values()) } }))
+  }).finally(() => itemLoads.delete(id))
+  itemLoads.set(id, { promise, updates })
+  return promise
+}
+
 export async function openThread(id: string): Promise<void> {
   setState({ view: { kind: 'thread', id } })
   const thread = state.app.threads.find((t) => t.id === id)
   if (thread) rememberProject(thread.projectId)
   const idle = !state.app.running.includes(id)
   if (!state.items[id] || (thread?.source === 'cli' && idle)) {
-    const items = await window.api.getItems(id)
-    setState((s) => ({ items: { ...s.items, [id]: s.items[id] && !idle ? s.items[id] : items } }))
+    await loadThreadItems(id)
   }
   if (thread?.unread) window.api.updateThread(id, { unread: false })
 }
@@ -478,8 +497,7 @@ export async function prepareCommands(threadId: string, opts: SendOptions): Prom
 
 export async function sendMessage(threadId: string, prompt: string, opts: SendOptions): Promise<void> {
   if (!state.items[threadId]) {
-    const items = await window.api.getItems(threadId)
-    setState((s) => ({ items: { ...s.items, [threadId]: items } }))
+    await loadThreadItems(threadId)
   }
   const { cli, ...rest } = opts
   try {

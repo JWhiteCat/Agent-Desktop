@@ -119,6 +119,12 @@ Press `F12` to open DevTools. Links that leave the app open in the system browse
 3. Manage conversations in the sidebar: pin, archive, rename (double-click the title), fork, sync from CLI storage, copy the session id, or delete. Syncing replaces the transcript shown here. Codex restores per-turn tokens and available durations from its rollout log. Other CLIs may drop duration and token records stored only by this app.
 4. Open the changes panel to review edits, or open the working directory in Cursor or the file manager. After a task finishes, the conversation lists the files changed in that turn. Click a file name to expand the diff.
 
+Project model choices are independent for Cursor, Codex, and Claude. Changing one CLI's selection or favorites preserves the other CLIs' remembered models.
+
+Opening or refreshing a conversation keeps streamed messages that arrive while history is loading. Syncing an empty CLI transcript preserves the local conversation. Deleting a conversation, changing CLI configuration, or quitting also stops a CLI process that is still preparing the saved session.
+
+The Git tab compares against the working files, including edits made after staging in a repository with no commits yet.
+
 Shortcuts (on macOS, Ctrl is ⌘):
 
 | Shortcut | Action |
@@ -177,11 +183,13 @@ Turn the switch on under Remote control in Settings. The app listens on the LAN 
 Turn on public access and the app opens a reverse tunnel with the local OpenSSH client. A gateway on the server owns the public port (default `8765`) and forwards each request to the computer named in the link. Several computers can share that one port at the same time. Each link is different, for example `http://43.167.166.239:8765/c/<computer-id>/?token=...`. The id is created the first time it is needed and stored on this machine. Resetting the link does not change it. The default server is `root@43.167.166.239`. The SSH user, server address, and public port can all be changed. Set up your own server with the steps below before using it. Once the tunnel is up, the public link appears in the address dropdown and in the QR code. Changing the address or port reconnects. After a drop, it retries at 1, 2, 5, and 10 seconds.
 
 - The link carries an access token. The phone remembers it after the first open. In the same browser, public tokens for different computers are stored separately. Anyone with the link can fully control this app (send tasks, change settings), so do not share it. Reset link issues a new token. Old LAN and public links, and phones already connected, stop working immediately.
-- The phone UI does not show API keys or tokens, and it cannot change remote-control settings. Buttons that only make sense on the computer, such as Open in Cursor and Open in file manager, are hidden. Adding a project requires typing a path on the computer by hand.
+- Remote settings responses and state updates redact Cursor, Codex, and Claude API keys and the access token. Saving blank key fields from the phone preserves the keys configured on the desktop. The phone cannot change remote-control settings. Buttons that only make sense on the computer, such as Open in Cursor and Open in file manager, are hidden. Adding a project requires typing a path on the computer by hand.
 - The server is HTTP only. There is no encryption. Use the LAN only on a network you trust. A public link is plaintext on the path and on this server, so enable it only on a server you control. The first time you enable it, Windows Firewall may prompt you; allow access on private networks.
 - The public tunnel uses the machine’s default SSH key and logs in with `BatchMode`, so it never asks for a password. Each computer connects the tunnel to a Unix socket on the server, `/run/agent-desktop/<computer-id>`, and does not bind the public port itself. The server must allow socket forwarding (`AllowStreamLocalForwarding yes`) and set `StreamLocalBindUnlink yes`. Otherwise a socket file left behind after a disconnect blocks the next connection. The gateway listens on the public port and forwards the page. Open that public port in the cloud security group. The app does not change the server while it is running.
 - At a screen width of 720px or less, the sidebar becomes a drawer, and the changes panel and Settings become full screen. Settings categories switch in a horizontal bar at the top.
 - In development, page requests are forwarded to the Vite dev server, and only to that one address. An absolute URL in the request line is not followed. Hot reload does not go through the proxy; refresh the phone by hand after a change.
+
+If the gateway is temporarily unreachable while SSH remains connected, health checks continue with retry backoff and restore the public link when the gateway becomes reachable. Health responses from a previous SSH connection are ignored after reconnecting, and stopping public access cancels further retries.
 
 ### Set up your own public server
 

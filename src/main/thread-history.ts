@@ -122,7 +122,9 @@ export function syncFromCli(deps: Pick<HistoryDeps, 'store' | 'isRunning'>, thre
   if (t.forkContextThroughItemId) throw new Error('分叉上下文尚未写入 CLI，请成功发送一条消息后再同步')
   const cli = threadCli(t)
   const items = cli === 'codex' ? readCodexTranscript(t.chatId) : cli === 'claude' ? readClaudeTranscript(t.chatId) : readCliTranscript(t.chatId)
-  if (!items) return undefined
+  // A CLI may have created its database before persisting any messages.
+  // Keep the local transcript until there is history to replace it with.
+  if (!items?.length) return undefined
   deps.store.setItems(threadId, items)
   const firstUser = items.find((i) => i.kind === 'user')
   deps.store.updateThread(threadId, {

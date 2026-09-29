@@ -13,7 +13,7 @@ import {
 import type { Store } from './store'
 
 export function remoteSafeSettings(s: Settings): Settings {
-  return { ...s, apiKey: '', codexApiKey: '', remoteToken: '' }
+  return { ...s, apiKey: '', codexApiKey: '', claudeApiKey: '', remoteToken: '' }
 }
 
 export function remoteSafeState(state: AppState): AppState {
@@ -42,6 +42,7 @@ export function handlersForRemote(handlers: Record<string, Handler>, snapshot: (
     for (const key of REMOTE_ONLY_DESKTOP_SETTINGS) delete safe[key]
     if (!safe.apiKey) delete safe.apiKey
     if (!safe.codexApiKey) delete safe.codexApiKey
+    if (!safe.claudeApiKey) delete safe.claudeApiKey
     return remoteSafeSettings((await handlers['settings:update'](safe)) as Settings)
   }
   return out

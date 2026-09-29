@@ -8,9 +8,10 @@ const MAX_UNTRACKED_BYTES = 256 * 1024
 
 function git(cwd: string, args: string[]): Promise<{ ok: boolean; out: string; err: string }> {
   return new Promise((resolve) => {
-    execFile('git', args, { cwd, maxBuffer: 32 * 1024 * 1024, windowsHide: true }, (error, stdout, stderr) => {
+    const child = execFile('git', args, { cwd, maxBuffer: 32 * 1024 * 1024, windowsHide: true }, (error, stdout, stderr) => {
       resolve({ ok: !error, out: stdout, err: stderr || (error ? String(error) : '') })
     })
+    child.stdin?.end()
   })
 }
 
@@ -41,11 +42,15 @@ export async function gitDiff(cwd: string): Promise<GitDiff> {
     git(cwd, ['-c', 'core.quotepath=false', 'status', '--porcelain=v1', '-uall']),
     git(cwd, ['rev-parse', '--verify', '-q', 'HEAD'])
   ])
+  // Comparing with an empty tree includes edits after staging even before the
+  // first commit. hash-object respects the repository's hash format and does
+  // not write an object without -w.
+  const base = hasHead.ok ? 'HEAD' : (await git(root, ['hash-object', '-t', 'tree', '--stdin'])).out.trim()
   const diff = await git(root, [
     '-c',
     'core.quotepath=false',
     'diff',
-    ...(hasHead.ok ? ['HEAD'] : ['--cached']),
+    base,
     '--no-color',
     '--no-ext-diff'
   ])
