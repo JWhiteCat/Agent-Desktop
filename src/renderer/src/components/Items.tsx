@@ -267,17 +267,9 @@ export function ResultFooter({ item, text, fallbackModel, cli = 'cursor' }: { it
   const caption = modelId ? modelCaption(groups, modelId) : ''
   const quote = modelId && u ? quoteModel(modelId, u, provider) : undefined
   const priceSource = provider === 'codex' ? 'OpenAI API 公开标价' : 'Cursor 公开标价'
-  const quota = provider === 'codex' ? item.quotaUsage : undefined
-  const snapshot = provider === 'codex' ? item.quotaSnapshot : undefined
   const threadUsage = provider === 'codex' ? item.codexThreadUsage : undefined
-  const quotaText = [
-    quotaPercent('周额度', quota?.weekly),
-    quotaPercent('5小时', quota?.fiveHour)
-  ].filter(Boolean).join(' · ')
-  const remainingText = [
-    quotaRemaining('周额度', snapshot?.weekly?.usedPercent),
-    quotaRemaining('5小时', snapshot?.fiveHour?.usedPercent)
-  ].filter(Boolean).join(' · ')
+  const hasThreadUsage = validQuotaAmount(threadUsage?.credits)
+  const threadCost = validQuotaAmount(threadUsage?.costUsd) ? ` / ${formatUsd(threadUsage.costUsd)}` : ''
   return (
     <div className="result-footer">
       {text && <CopyButton text={text} />}
@@ -293,18 +285,13 @@ export function ResultFooter({ item, text, fallbackModel, cli = 'cursor' }: { it
           {formatUsd(quote.costUsd)}
         </span>
       )}
-      {threadUsage && (
-        <span title="Codex 返回的当前会话累计开销估算，单位为 credits；只统计这个会话，不受其他会话影响。金额仅在 Codex 返回时显示。">
-          会话消耗 {quotaAmount(threadUsage.credits)} credits{threadUsage.costUsd !== undefined ? ` / ${formatUsd(threadUsage.costUsd)}` : ''}
-        </span>
-      )}
-      {remainingText ? (
-        <span title={`账号剩余额度快照（${new Date(snapshot!.sampledAt).toLocaleString()}），由所有会话共享。仅显示 Codex 返回的窗口；本轮 token 与费用单独统计。`}>
-          {remainingText}
-        </span>
-      ) : quotaText && (
-        <span title="本次额度消耗估算：根据本轮前后账号已用额度的百分点增量计算。接口取整、更新延迟及其他客户端的使用可能影响结果。0% 表示账号百分比未变化，不代表本次没有消耗。">
-          账号变化估算：{quotaText}
+      {provider === 'codex' && (
+        <span title={hasThreadUsage
+          ? 'Codex 返回的当前会话累计额度消耗估算，单位为 credits，不受其他会话影响。金额仅在 Codex 返回时显示。'
+          : 'Codex 未提供当前会话的额度消耗。已记录的 token 和公开价格估算仍可参考；未提供不代表消耗为零。'}>
+          {hasThreadUsage
+            ? `本次会话消耗 ${quotaAmount(threadUsage!.credits)} credits${threadCost}`
+            : '本次会话消耗 未提供'}
         </span>
       )}
     </div>
@@ -315,15 +302,8 @@ function quotaAmount(value: number): string {
   return value > 0 && value < 0.0001 ? '<0.0001' : String(Number(value.toFixed(4)))
 }
 
-function quotaRemaining(label: string, used: number | undefined): string | undefined {
-  if (used == null || !Number.isFinite(used) || used < 0) return undefined
-  return quotaPercent(`${label}剩余`, Math.max(0, 100 - used))
-}
-
-function quotaPercent(label: string, value: number | undefined): string | undefined {
-  if (value == null || !Number.isFinite(value) || value < 0) return undefined
-  const amount = value > 0 && value < 0.01 ? '<0.01' : String(Number(value.toFixed(2)))
-  return `${label} ${amount}%`
+function validQuotaAmount(value: number | undefined): value is number {
+  return value !== undefined && Number.isFinite(value) && value >= 0
 }
 
 /** Actions that only make sense on the newest part of an idle thread. */
