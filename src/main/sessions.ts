@@ -62,6 +62,14 @@ interface Run {
   codexUsage?: CodexTurnUsageReader
 }
 
+interface CodexUsageRefresh {
+  resultId: string
+  sessionId: string
+  at: number
+  pending: boolean
+  timer?: ReturnType<typeof setTimeout>
+}
+
 export interface RunFinished {
   threadId: string
   title: string
@@ -80,6 +88,7 @@ export function titleFrom(prompt: string): string {
 const CANCEL_KILL_MS = 5000
 const COMMAND_WAIT_MS = 2000
 const FORK_TIMEOUT_MS = 60_000
+const CODEX_USAGE_RETRY_MS = [30_000, 120_000, 300_000]
 
 export class SessionManager {
   private runs = new Map<string, Run>()
@@ -90,6 +99,8 @@ export class SessionManager {
   private commandWaiters = new Map<string, Array<() => void>>()
   /** Serializes prepare and send so one thread cannot start two CLI processes. */
   private tails = new Map<string, Promise<void>>()
+  private codexUsageRefreshes = new Map<string, CodexUsageRefresh>()
+  private shuttingDown = false
 
   constructor(
     private readonly store: Store,
@@ -105,6 +116,16 @@ export class SessionManager {
 
   isRunning(threadId: string): boolean {
     return this.runs.has(threadId)
+  }
+
+  /** Opening a saved conversation also refreshes the latest session consumption. */
+  refreshCodexUsage(threadId: string): void {
+    const thread = this.store.thread(threadId)
+    if (!thread?.chatId || threadCli(thread) !== 'codex' || this.isRunning(threadId)) return
+    if (resolveCodexApiKey(this.store.settings.codexApiKey)) return
+    const item = [...this.store.items(threadId)].reverse().find((item) => item.kind === 'result')
+    if (!item || (item.cli && item.cli !== 'codex')) return
+    void this.saveCodexAccountUsage(threadId, item.id, thread.chatId, this.store.settings.codexPath)
   }
 
   send(req: SendRequest): Promise<void> {
@@ -200,6 +221,7 @@ export class SessionManager {
 
     const cwd = thread.cwd && fs.existsSync(thread.cwd) ? thread.cwd : project.path
     if (!fs.existsSync(cwd)) throw new Error(`项目目录不存在：${cwd}`)
+    this.clearCodexUsageRefresh(thread.id)
 
     const mcpServers = toAcpMcpServers(settings.mcpServers)
     const fingerprint = procFingerprint(launch.cli, provider, cwd, settings.sandbox, req.force, apiKey, mcpServers, enabledSkillFingerprint(settings.skills))
@@ -288,6 +310,7 @@ export class SessionManager {
 
   /** Kill the CLI process for this thread. Used when the thread or app is going away. */
   dispose(threadId: string): void {
+    this.clearCodexUsageRefresh(threadId)
     this.commandLists.delete(threadId)
     this.commandWaiters.delete(threadId)
     const run = this.runs.get(threadId)
@@ -305,6 +328,8 @@ export class SessionManager {
   }
 
   stopAll(): void {
+    this.shuttingDown = true
+    for (const id of this.codexUsageRefreshes.keys()) this.clearCodexUsageRefresh(id)
     for (const id of [...this.runs.keys()]) this.dispose(id)
     for (const id of [...this.agents.keys()]) this.discard(id)
   }
@@ -827,12 +852,28 @@ export class SessionManager {
     this.emit({ type: 'items', threadId, items: [item] })
   }
 
-  /** Read account windows and thread-specific credits independently after completion. */
-  private async saveCodexAccountUsage(threadId: string, resultId: string, sessionId: string, customPath: string): Promise<void> {
+  private clearCodexUsageRefresh(threadId: string): void {
+    clearTimeout(this.codexUsageRefreshes.get(threadId)?.timer)
+    this.codexUsageRefreshes.delete(threadId)
+  }
+
+  /** Read attributed session usage after completion; accounting may arrive later. */
+  private async saveCodexAccountUsage(threadId: string, resultId: string, sessionId: string, customPath: string, retry = 0): Promise<void> {
+    if (this.shuttingDown) return
+    const previous = this.codexUsageRefreshes.get(threadId)
+    if (previous?.resultId === resultId && previous.sessionId === sessionId && (previous.pending || Date.now() - previous.at < 30_000)) return
+    this.clearCodexUsageRefresh(threadId)
+    const refresh: CodexUsageRefresh = { resultId, sessionId, at: Date.now(), pending: true }
+    this.codexUsageRefreshes.set(threadId, refresh)
+    let needsRetry = true
     try {
-      const { quota, quotaSampledAt, threadUsage } = await this.readCodexAccount(customPath, sessionId)
+      const { quota, quotaSampledAt, threadUsage, sessionUsage } = await this.readCodexAccount(customPath, sessionId)
+      if (this.codexUsageRefreshes.get(threadId) !== refresh) return
+      const thread = this.store.thread(threadId)
+      if (!thread || thread.chatId !== sessionId || threadCli(thread) !== 'codex') return
+      needsRetry = sessionUsage ? sessionUsage.status !== 'available' : !threadUsage
       const snapshot = quota && quotaSampledAt !== undefined ? quotaSnapshot(quota, quotaSampledAt) : undefined
-      if ((!snapshot && !threadUsage) || !this.store.thread(threadId)) return
+      if (!snapshot && !threadUsage && !sessionUsage) return
       // The user may have deleted or re-imported the transcript while the request was in flight.
       const items = this.store.items(threadId)
       const index = items.findIndex((item) => item.id === resultId && item.kind === 'result')
@@ -841,14 +882,35 @@ export class SessionManager {
       const updated = {
         ...item,
         ...(snapshot && (!item.quotaSnapshot || snapshot.sampledAt >= item.quotaSnapshot.sampledAt) ? { quotaSnapshot: snapshot } : {}),
-        ...(threadUsage ? { codexThreadUsage: threadUsage } : {})
+        ...(threadUsage ? { codexThreadUsage: threadUsage } : {}),
+        ...(sessionUsage ? { codexSessionUsage: sessionUsage } : {})
       }
       items[index] = updated
       this.store.markItemsDirty(threadId)
       this.emit({ type: 'items', threadId, items: [updated] })
     } catch {
       // Account usage is optional; a failed refresh must not fail the completed task.
+    } finally {
+      refresh.pending = false
+      refresh.at = Date.now()
+      if (needsRetry && retry < CODEX_USAGE_RETRY_MS.length && this.canRetryCodexUsage(threadId, refresh)) {
+        refresh.timer = setTimeout(() => {
+          refresh.timer = undefined
+          if (!this.canRetryCodexUsage(threadId, refresh)) return
+          void this.saveCodexAccountUsage(threadId, resultId, sessionId, this.store.settings.codexPath, retry + 1)
+        }, CODEX_USAGE_RETRY_MS[retry])
+        refresh.timer.unref?.()
+      }
     }
+  }
+
+  private canRetryCodexUsage(threadId: string, refresh: CodexUsageRefresh): boolean {
+    if (this.codexUsageRefreshes.get(threadId) !== refresh || this.isRunning(threadId)) return false
+    const thread = this.store.thread(threadId)
+    if (!thread || thread.chatId !== refresh.sessionId || threadCli(thread) !== 'codex') return false
+    if (resolveCodexApiKey(this.store.settings.codexApiKey)) return false
+    const latest = [...this.store.items(threadId)].reverse().find((item) => item.kind === 'result')
+    return latest?.id === refresh.resultId
   }
 
   private onIdleAcpRequest(proc: AgentProc, method: string, params: any): Promise<unknown> {

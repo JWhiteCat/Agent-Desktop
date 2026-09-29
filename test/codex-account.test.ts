@@ -6,9 +6,14 @@ import { loadCodexAccountUsage } from '../src/main/codex-account'
 import { killTree } from '../src/main/cli'
 import { resolveCodex, spawnCodexAppServer } from '../src/main/codex'
 import { parseCodexThreadUsage } from '../src/shared/codex-account'
+import { loadCodexSessionUsage } from '../src/main/codex-session-usage'
+import { readCodexSessionCreatedAt } from '../src/main/codex-history'
+import type { CodexSessionUsage } from '../src/shared/codex-account'
 
 vi.mock('../src/main/cli', () => ({ killTree: vi.fn((child: ChildProcess) => child.emit('close', 0)) }))
 vi.mock('../src/main/codex', () => ({ resolveCodex: vi.fn(), spawnCodexAppServer: vi.fn() }))
+vi.mock('../src/main/codex-session-usage', () => ({ loadCodexSessionUsage: vi.fn() }))
+vi.mock('../src/main/codex-history', () => ({ readCodexSessionCreatedAt: vi.fn() }))
 
 const quotaResponse = {
   rateLimits: {
@@ -21,6 +26,16 @@ const quotaResponse = {
 
 function threadResponse(threadId = 'thread-a', credits: unknown = 2_500_000, costUsd: unknown = 150_000) {
   return { threadUsage: { threadId, estimatedUsageCreditsMicros: credits, estimatedUsageUsdMicros: costUsd } }
+}
+
+function sessionUsage(threadId = 'thread-a', weekly = 18.899977777777778): CodexSessionUsage {
+  return { threadId, status: 'available', weekly, dataAsOf: '2026-09-29T08:00:00Z' }
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((done) => { resolve = done })
+  return { promise, resolve }
 }
 
 function server() {
@@ -231,5 +246,130 @@ describe('read-only Codex account RPC client', () => {
     expect(await loadCodexAccountUsage('', 'thread-a')).toEqual({})
     vi.mocked(resolveCodex).mockReturnValue(undefined)
     expect(await loadCodexAccountUsage('', 'thread-a')).toEqual({})
+  })
+})
+
+describe('combined Codex account and consumer usage reads', () => {
+  it('queries the Codex session ID with its original rollout creation time', async () => {
+    server()
+    const createdAt = Date.parse('2026-09-26T06:30:00Z')
+    vi.mocked(readCodexSessionCreatedAt).mockReturnValue(createdAt)
+    vi.mocked(loadCodexSessionUsage).mockResolvedValue(sessionUsage())
+    const result = await loadCodexAccountUsage('custom-codex', 'thread-a')
+    expect(readCodexSessionCreatedAt).toHaveBeenCalledExactlyOnceWith('thread-a')
+    expect(loadCodexSessionUsage).toHaveBeenCalledExactlyOnceWith('thread-a', createdAt)
+    expect(result.sessionUsage).toEqual(sessionUsage())
+    expect(result.threadUsage).toEqual({ threadId: 'thread-a', credits: 2.5, costUsd: 0.15 })
+    expect(result.quota?.windows).toHaveLength(2)
+  })
+
+  it('queries by session ID even when there is no local rollout creation time', async () => {
+    vi.mocked(resolveCodex).mockReturnValue(undefined)
+    vi.mocked(readCodexSessionCreatedAt).mockReturnValue(undefined)
+    vi.mocked(loadCodexSessionUsage).mockResolvedValue(sessionUsage())
+    expect(await loadCodexAccountUsage('', 'thread-a')).toEqual({ sessionUsage: sessionUsage() })
+    expect(loadCodexSessionUsage).toHaveBeenCalledExactlyOnceWith('thread-a', undefined)
+    expect(spawnCodexAppServer).not.toHaveBeenCalled()
+  })
+
+  it('retains consumer allowance when enterprise credits and account quota RPCs are unsupported', async () => {
+    const ctx = server()
+    ctx.reply.mockImplementation(async (method) => {
+      if (method !== 'initialize') throw new Error('Method not found')
+      return {}
+    })
+    vi.mocked(loadCodexSessionUsage).mockResolvedValue(sessionUsage())
+    expect(await loadCodexAccountUsage('', 'thread-a')).toEqual({ sessionUsage: sessionUsage() })
+    expect(killTree).toHaveBeenCalledExactlyOnceWith(ctx.child)
+  })
+
+  it('retains consumer allowance when the app-server cannot spawn or initialize', async () => {
+    vi.mocked(loadCodexSessionUsage).mockResolvedValue(sessionUsage())
+    vi.mocked(spawnCodexAppServer).mockImplementationOnce(() => { throw new Error('spawn failed') })
+    expect(await loadCodexAccountUsage('', 'thread-a')).toEqual({ sessionUsage: sessionUsage() })
+    const ctx = server()
+    ctx.reply.mockRejectedValue(new Error('unsupported initialize'))
+    expect(await loadCodexAccountUsage('', 'thread-a')).toEqual({ sessionUsage: sessionUsage() })
+  })
+
+  it('starts consumer HTTP while RPC initialization is still pending and preserves its result through the RPC deadline', async () => {
+    vi.useFakeTimers()
+    const ctx = server()
+    ctx.reply.mockReturnValue(new Promise(() => undefined))
+    vi.mocked(loadCodexSessionUsage).mockResolvedValue(sessionUsage())
+    const pending = loadCodexAccountUsage('', 'thread-a')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(ctx.calls).toHaveLength(1)
+    expect(ctx.calls[0].method).toBe('initialize')
+    expect(loadCodexSessionUsage).toHaveBeenCalledExactlyOnceWith('thread-a', undefined)
+    await vi.advanceTimersByTimeAsync(8_000)
+    expect(await pending).toEqual({ sessionUsage: sessionUsage() })
+    expect(killTree).toHaveBeenCalledExactlyOnceWith(ctx.child)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('finishes and closes the RPC process while consumer usage remains pending', async () => {
+    const ctx = server()
+    const session = deferred<CodexSessionUsage>()
+    vi.mocked(loadCodexSessionUsage).mockReturnValue(session.promise)
+    const pending = loadCodexAccountUsage('', 'thread-a')
+    await vi.waitFor(() => expect(killTree).toHaveBeenCalledExactlyOnceWith(ctx.child))
+    session.resolve(sessionUsage())
+    const result = await pending
+    expect(result.sessionUsage).toEqual(sessionUsage())
+    expect(result.threadUsage?.credits).toBe(2.5)
+  })
+
+  it.each(['missing', 'rejected'])('retains successful RPC readings when consumer usage is %s', async (failure) => {
+    server()
+    if (failure === 'rejected') vi.mocked(loadCodexSessionUsage).mockRejectedValue(new Error('service unavailable'))
+    else vi.mocked(loadCodexSessionUsage).mockResolvedValue(undefined)
+    const result = await loadCodexAccountUsage('', 'thread-a')
+    expect(result).not.toHaveProperty('sessionUsage')
+    expect(result.threadUsage?.credits).toBe(2.5)
+    expect(result.quota?.windows).toHaveLength(2)
+  })
+
+  it('retains explicit partial and unavailable consumer status independently of enterprise credits', async () => {
+    const partial: CodexSessionUsage = { threadId: 'thread-a', status: 'partial', weekly: 0.04 }
+    const unavailable: CodexSessionUsage = { threadId: 'thread-a', status: 'unavailable' }
+    for (const reading of [partial, unavailable]) {
+      server()
+      vi.mocked(loadCodexSessionUsage).mockResolvedValueOnce(reading)
+      const result = await loadCodexAccountUsage('', 'thread-a')
+      expect(result.sessionUsage).toEqual(reading)
+      expect(result.threadUsage?.credits).toBe(2.5)
+    }
+  })
+
+  it('keeps simultaneous session IDs, creation times, and returned usage isolated when replies arrive out of order', async () => {
+    server()
+    server()
+    const first = deferred<CodexSessionUsage>()
+    const second = deferred<CodexSessionUsage>()
+    const firstCreatedAt = Date.parse('2026-09-27T06:30:00Z')
+    const secondCreatedAt = Date.parse('2026-09-28T06:30:00Z')
+    vi.mocked(readCodexSessionCreatedAt).mockImplementation((id) => id === 'thread-a' ? firstCreatedAt : secondCreatedAt)
+    vi.mocked(loadCodexSessionUsage).mockImplementation((id) => id === 'thread-a' ? first.promise : second.promise)
+    const firstResult = loadCodexAccountUsage('', 'thread-a')
+    const secondResult = loadCodexAccountUsage('', 'thread-b')
+    expect(vi.mocked(loadCodexSessionUsage).mock.calls).toEqual([
+      ['thread-a', firstCreatedAt], ['thread-b', secondCreatedAt]
+    ])
+    second.resolve(sessionUsage('thread-b', 0.07))
+    const b = await secondResult
+    expect(b.sessionUsage).toEqual(sessionUsage('thread-b', 0.07))
+    first.resolve(sessionUsage('thread-a', 18.899977777777778))
+    const a = await firstResult
+    expect(a.sessionUsage).toEqual(sessionUsage('thread-a', 18.899977777777778))
+    expect(a.threadUsage?.threadId).toBe('thread-a')
+    expect(b.threadUsage?.threadId).toBe('thread-b')
+  })
+
+  it('does not query account services or local history for a missing session ID', async () => {
+    expect(await loadCodexAccountUsage('', '')).toEqual({})
+    expect(readCodexSessionCreatedAt).not.toHaveBeenCalled()
+    expect(loadCodexSessionUsage).not.toHaveBeenCalled()
+    expect(resolveCodex).not.toHaveBeenCalled()
   })
 })

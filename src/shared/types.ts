@@ -1,7 +1,7 @@
 import type { SlashCommand } from './commands'
 import type { TokenUsage } from './model-prices'
 import type { TurnQuotaSnapshot, TurnQuotaUsage } from './turn-quota'
-import type { CodexThreadUsage } from './codex-account'
+import type { CodexSessionUsage, CodexThreadUsage } from './codex-account'
 
 export type AgentMode = 'agent' | 'plan' | 'ask'
 
@@ -126,6 +126,8 @@ export interface ResultItem {
   quotaSnapshot?: TurnQuotaSnapshot
   /** Codex's own cumulative estimate for this thread when the service provides it. */
   codexThreadUsage?: CodexThreadUsage
+  /** Personal-plan quota attributed by Codex to this session, never an account delta. */
+  codexSessionUsage?: CodexSessionUsage
 }
 
 export interface NoticeItem {

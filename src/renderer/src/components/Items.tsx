@@ -267,9 +267,7 @@ export function ResultFooter({ item, text, fallbackModel, cli = 'cursor' }: { it
   const caption = modelId ? modelCaption(groups, modelId) : ''
   const quote = modelId && u ? quoteModel(modelId, u, provider) : undefined
   const priceSource = provider === 'codex' ? 'OpenAI API 公开标价' : 'Cursor 公开标价'
-  const threadUsage = provider === 'codex' ? item.codexThreadUsage : undefined
-  const hasThreadUsage = validQuotaAmount(threadUsage?.credits)
-  const threadCost = validQuotaAmount(threadUsage?.costUsd) ? ` / ${formatUsd(threadUsage.costUsd)}` : ''
+  const sessionUsage = provider === 'codex' ? sessionConsumption(item) : undefined
   return (
     <div className="result-footer">
       {text && <CopyButton text={text} />}
@@ -285,17 +283,46 @@ export function ResultFooter({ item, text, fallbackModel, cli = 'cursor' }: { it
           {formatUsd(quote.costUsd)}
         </span>
       )}
-      {provider === 'codex' && (
-        <span title={hasThreadUsage
-          ? 'Codex 返回的当前会话累计额度消耗估算，单位为 credits，不受其他会话影响。金额仅在 Codex 返回时显示。'
-          : 'Codex 未提供当前会话的额度消耗。已记录的 token 和公开价格估算仍可参考；未提供不代表消耗为零。'}>
-          {hasThreadUsage
-            ? `本次会话消耗 ${quotaAmount(threadUsage!.credits)} credits${threadCost}`
-            : '本次会话消耗 未提供'}
-        </span>
-      )}
+      {sessionUsage && <span title={sessionUsage.title}>{sessionUsage.text}</span>}
     </div>
   )
+}
+
+function sessionConsumption(item: ResultItem): { text: string; title: string } {
+  const usage = item.codexSessionUsage
+  const sampled = usage?.dataAsOf ? ` 服务统计时间：${usage.dataAsOf}` : ''
+  if (usage?.status === 'available' || usage?.status === 'partial') {
+    const amounts: string[] = []
+    if (validQuotaAmount(usage.weekly)) amounts.push(`周额度 ${quotaAmount(usage.weekly)}%`)
+    if (validQuotaAmount(usage.fiveHour)) amounts.push(`5小时额度 ${quotaAmount(usage.fiveHour)}%`)
+    const credits = balanceCreditsText(usage.balanceCredits)
+    if (credits !== undefined && (credits !== '0' || !amounts.length)) amounts.push(`${credits} credits`)
+    if (amounts.length) {
+      const partial = usage.status === 'partial'
+      return {
+        text: `本次会话消耗 ${amounts.join(' · ')}${partial ? '（统计中）' : ''}`,
+        title: `Codex 按当前会话单独统计在当前额度周期内的累计消耗，不受其他会话影响。${partial ? '统计仍在更新，当前数值尚未完整。' : '服务端统计可能延迟。'}${sampled}`
+      }
+    }
+  }
+  const legacy = item.codexThreadUsage
+  if (validQuotaAmount(legacy?.credits)) {
+    const cost = validQuotaAmount(legacy.costUsd) ? ` / ${formatUsd(legacy.costUsd)}` : ''
+    return {
+      text: `本次会话消耗 ${quotaAmount(legacy.credits)} credits${cost}`,
+      title: `Codex 返回的当前会话累计额度消耗估算，单位为 credits，不受其他会话影响。金额仅在 Codex 返回时显示。${sampled}`
+    }
+  }
+  return {
+    text: `本次会话消耗 ${usage ? '待统计' : '待查询'}`,
+    title: `${usage ? 'Codex 的会话额度统计存在延迟，当前会话仍待统计。' : '尚未查询当前会话的额度消耗。'}已记录的 token 和公开价格估算仍可参考。${sampled}`
+  }
+}
+
+function balanceCreditsText(value: string | undefined): string | undefined {
+  if (typeof value !== 'string' || value.length > 128 || !/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(value)) return undefined
+  // Inspect the mantissa so tiny nonzero decimal strings cannot underflow to zero.
+  return /[1-9]/.test(value.split(/[eE]/)[0]) ? value : '0'
 }
 
 function quotaAmount(value: number): string {

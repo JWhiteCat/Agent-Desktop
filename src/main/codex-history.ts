@@ -65,6 +65,16 @@ export function readCodexUsage(chatId: string): CodexUsageTurn[] | undefined {
   }
 }
 
+/** Creation time narrows the service's search for this session's accounting records. */
+export function readCodexSessionCreatedAt(chatId: string): number | undefined {
+  try {
+    const file = findRollout(chatId)
+    return file ? sessionMeta(readHead(file, 256_000))?.createdAt : undefined
+  } catch {
+    return undefined
+  }
+}
+
 interface SessionMeta {
   id?: string
   cwd?: string

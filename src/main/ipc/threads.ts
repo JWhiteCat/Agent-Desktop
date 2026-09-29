@@ -61,7 +61,9 @@ export function threadHandlers(deps: IpcDeps): Record<string, Handler> {
           }
         }
       }
-      return store.items(id)
+      const items = store.items(id)
+      sessions.refreshCodexUsage(id)
+      return items
     },
     'thread:fork': (id: string, throughItemId?: string) => forkThread(history, id, throughItemId),
     'thread:syncFromCli': (id: string) => {

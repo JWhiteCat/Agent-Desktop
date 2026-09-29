@@ -1,12 +1,15 @@
-import { parseCodexThreadUsage, type CodexThreadUsage } from '@shared/codex-account'
+import { parseCodexThreadUsage, type CodexSessionUsage, type CodexThreadUsage } from '@shared/codex-account'
 import { parseCodexQuota, type ProviderQuota } from '@shared/quota'
 import { AcpConnection, MethodNotFound } from './acp'
 import { killTree } from './cli'
 import { resolveCodex, spawnCodexAppServer } from './codex'
+import { loadCodexSessionUsage } from './codex-session-usage'
+import { readCodexSessionCreatedAt } from './codex-history'
 
 const READ_TIMEOUT_MS = 8_000
 
 export interface CodexAccountUsage {
+  sessionUsage?: CodexSessionUsage
   threadUsage?: CodexThreadUsage
   quota?: ProviderQuota
   /** When the quota RPC returned, independent of a slower thread-usage request. */
@@ -15,6 +18,18 @@ export interface CodexAccountUsage {
 
 /** Read existing account records without loading, resuming, or prompting a thread. */
 export async function loadCodexAccountUsage(customPath: string, threadId: string): Promise<CodexAccountUsage> {
+  if (!threadId) return {}
+  const [account, session] = await Promise.allSettled([
+    loadCodexRpcAccountUsage(customPath, threadId),
+    loadCodexSessionUsage(threadId, readCodexSessionCreatedAt(threadId))
+  ])
+  return {
+    ...(account.status === 'fulfilled' ? account.value : {}),
+    ...(session.status === 'fulfilled' && session.value ? { sessionUsage: session.value } : {})
+  }
+}
+
+async function loadCodexRpcAccountUsage(customPath: string, threadId: string): Promise<CodexAccountUsage> {
   if (!threadId) return {}
   const codex = resolveCodex(customPath)
   if (!codex) return {}

@@ -139,7 +139,7 @@ function cursorAuthPaths(): string[] {
 
 type CodexAuth = { kind: 'token'; token: string; accountId?: string } | { kind: 'api-key' } | { kind: 'missing' }
 
-function readCodexAuth(): CodexAuth {
+export function readCodexAuth(): CodexAuth {
   const file = path.join(process.env.CODEX_HOME?.trim() || path.join(os.homedir(), '.codex'), 'auth.json')
   const root = asRecord(readJson(file))
   if (!root) return { kind: 'missing' }
