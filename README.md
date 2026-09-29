@@ -83,7 +83,12 @@ npm install
 npm run dev
 ```
 
-On Windows, `start-dev.bat` runs `npm run dev`. `start-preview.bat` builds and then previews the production bundle.
+Windows one-click startup requires Node.js 22.12 or newer, including npm:
+
+- Double-click `start-dev.bat` to install dependencies, ensure the Electron runtime is installed, and start development mode with hot reload.
+- Double-click `start-preview.bat` to install dependencies, ensure the Electron runtime is installed, build, and launch the production preview.
+
+The first run needs internet access to download dependencies and Electron. Later runs reuse installed dependencies and the runtime. Both scripts work from any working directory and keep the window open on failure. If the Electron download fails, check your network, proxy, or `ELECTRON_MIRROR` environment variable and retry.
 
 | Command | What it does |
 | --- | --- |

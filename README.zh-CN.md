@@ -83,7 +83,12 @@ npm install
 npm run dev
 ```
 
-在 Windows 上，`start-dev.bat` 会执行 `npm run dev`。`start-preview.bat` 先构建，再预览生产包。
+Windows 一键启动（需先安装 Node.js 22.12 或更高版本，包含 npm）：
+
+- 双击 `start-dev.bat`：自动安装依赖、补齐 Electron 运行时，再启动开发模式（支持热更新）。
+- 双击 `start-preview.bat`：自动安装依赖、补齐 Electron 运行时，构建后启动生产预览。
+
+首次运行需要联网下载依赖和 Electron；之后会复用已安装的依赖与运行时。脚本可从任意工作目录启动，失败时会保留窗口显示错误。Electron 下载失败时，检查网络、代理或 `ELECTRON_MIRROR` 环境变量后重试。
 
 | 命令 | 作用 |
 | --- | --- |
