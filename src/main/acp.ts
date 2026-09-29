@@ -104,7 +104,7 @@ export class AcpConnection {
       const waiter = this.pending.get(msg.id)
       if (!waiter) return
       this.pending.delete(msg.id)
-      if (msg.error) waiter.reject(new Error(msg.error.message || 'ACP 请求失败'))
+      if (msg.error) waiter.reject(new Error(acpErrorText(msg.error)))
       else waiter.resolve(msg.result)
       return
     }
@@ -167,6 +167,26 @@ Once the requirements are clear, emit one plan with a short name, a one-paragrap
 
 export function claudePlanModePrompt(prompt: string): string {
   return `${CLAUDE_PLAN_HINT}\n\n${prompt}`
+}
+
+/** JSON-RPC internal errors often keep the useful text in `data`, not `message`. */
+export function acpErrorText(error: { message?: unknown; data?: unknown } | null | undefined): string {
+  const message = typeof error?.message === 'string' ? error.message.trim() : ''
+  const detail = acpErrorDetail(error?.data)
+  if (detail && (!message || message === 'Internal error')) return detail
+  if (detail && message && !message.includes(detail)) return `${message}: ${detail}`
+  return message || 'ACP 请求失败'
+}
+
+function acpErrorDetail(data: unknown): string {
+  if (typeof data === 'string') return data.trim()
+  if (!data || typeof data !== 'object') return ''
+  const record = data as Record<string, unknown>
+  for (const key of ['details', 'message', 'stderr']) {
+    const value = record[key]
+    if (typeof value === 'string' && value.trim()) return value.trim()
+  }
+  return ''
 }
 
 export function permissionResult(

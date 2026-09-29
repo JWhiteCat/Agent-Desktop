@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { formatAnswers, normalizeQuestions, parseQuestionBlock } from '@shared/questions'
-import { permissionResult, planModePrompt } from '../src/main/acp'
+import { acpErrorText, permissionResult, planModePrompt } from '../src/main/acp'
 import { parseModels, resolveApiKey, stripAnsi } from '../src/main/cli'
 import { leftPlanMode } from '../src/main/sessions'
 
@@ -81,6 +81,12 @@ describe('acp questions', () => {
     expect(leftPlanMode({ sessionUpdate: 'tool_call_update', toolCallId: id, status: 'completed' }, calls)).toBe(true)
     expect(leftPlanMode({ sessionUpdate: 'current_mode_update', currentModeId: 'plan' }, calls)).toBe(false)
     expect(leftPlanMode({ sessionUpdate: 'current_mode_update', currentModeId: 'agent' }, calls)).toBe(true)
+  })
+
+  it('surfaces the detail hidden inside an ACP internal error', () => {
+    expect(acpErrorText({ message: 'Internal error', data: { details: 'spawn EINVAL' } })).toBe('spawn EINVAL')
+    expect(acpErrorText({ message: 'Authentication required', data: { message: 'sign in' } })).toBe('Authentication required: sign in')
+    expect(acpErrorText({ message: 'CLI 进程已退出' })).toBe('CLI 进程已退出')
   })
 
   it('picks allow-always when force is on', () => {

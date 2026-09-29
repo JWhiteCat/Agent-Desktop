@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { claudeModeId, modelsFromClaudeSession } from '../src/main/claude'
+import { claudeModeId, isClaudeShellShim, modelsFromClaudeSession, resolveClaude } from '../src/main/claude'
 import { claudeTranscriptItems, scanClaudeSessions, visibleUserText } from '../src/main/claude-history'
 import { normalizeCliProvider } from '../src/shared/types'
 
@@ -13,6 +13,29 @@ afterEach(() => {
 })
 
 describe('claude mode and models', () => {
+  it('treats Windows npm shims as unspawnable and keeps a native binary', () => {
+    expect(isClaudeShellShim('C:/npm/claude', 'win32')).toBe(true)
+    expect(isClaudeShellShim('C:/npm/claude.cmd', 'win32')).toBe(true)
+    expect(isClaudeShellShim('C:/npm/claude.ps1', 'win32')).toBe(true)
+    expect(isClaudeShellShim('C:/npm/claude.exe', 'win32')).toBe(false)
+    expect(isClaudeShellShim('/usr/local/bin/claude', 'linux')).toBe(false)
+  })
+
+  it('ignores an npm claude shim on PATH and keeps the bundled binary', () => {
+    if (process.platform !== 'win32') return
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-desktop-claude-shim-'))
+    roots.push(dir)
+    fs.writeFileSync(path.join(dir, 'claude'), '#!/bin/sh\nexit 0\n')
+    fs.writeFileSync(path.join(dir, 'claude.cmd'), '@echo off\r\n')
+    const previous = process.env.PATH
+    process.env.PATH = dir
+    try {
+      expect(resolveClaude('')).toMatchObject({ bundled: true, claudePath: undefined })
+    } finally {
+      process.env.PATH = previous
+    }
+  })
+
   it('maps the three app modes onto Claude permission modes', () => {
     expect(claudeModeId('agent', false)).toBe('acceptEdits')
     expect(claudeModeId('agent', true)).toBe('bypassPermissions')

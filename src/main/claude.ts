@@ -217,7 +217,7 @@ export function modelsFromClaudeSession(created: { configOptions?: unknown } | n
 
 function claudeEnv(claude: ResolvedClaude, apiKey: string): NodeJS.ProcessEnv {
   const env = nodeEnv()
-  const executable = claude.claudePath && !isShellShim(claude.claudePath) ? claude.claudePath : ''
+  const executable = claude.claudePath && !isClaudeShellShim(claude.claudePath) ? claude.claudePath : ''
   if (executable) env.CLAUDE_CODE_EXECUTABLE = executable
   else delete env.CLAUDE_CODE_EXECUTABLE
   if (apiKey) env.ANTHROPIC_API_KEY = apiKey
@@ -263,7 +263,7 @@ function runClaude(command: string, args: string[], timeoutMs: number): Promise<
     const child = spawn(command, args, {
       windowsHide: true,
       env: nodeEnv(),
-      shell: isWin && isShellShim(command)
+      shell: isWin && isClaudeShellShim(command)
     })
     let stdout = ''
     let stderr = ''
@@ -280,16 +280,17 @@ function runClaude(command: string, args: string[], timeoutMs: number): Promise<
 }
 
 function findClaudeOnPath(): string | undefined {
-  const names = isWin ? ['claude.exe', 'claude'] : ['claude']
+  // Windows `where claude` hits npm's extensionless shell script before any native binary.
+  const names = isWin ? ['claude.exe'] : ['claude']
   for (const name of names) {
     const found = whichSync(name)
-    if (found && !isShellShim(found)) return found
+    if (found && !isClaudeShellShim(found)) return found
   }
   const home = os.homedir()
   const candidates = isWin
     ? [path.join(home, '.local', 'bin', 'claude.exe'), path.join(home, '.claude', 'local', 'claude.exe')]
     : [path.join(home, '.local', 'bin', 'claude'), '/usr/local/bin/claude', '/opt/homebrew/bin/claude']
-  return candidates.find((file) => fs.existsSync(file) && !isShellShim(file))
+  return candidates.find((file) => fs.existsSync(file) && !isClaudeShellShim(file))
 }
 
 function findClaudeFile(custom: string): string | undefined {
@@ -300,8 +301,14 @@ function findClaudeFile(custom: string): string | undefined {
   return names.map((name) => path.join(custom, name)).find((file) => fs.existsSync(file))
 }
 
-function isShellShim(file: string): boolean {
-  return /\.(cmd|bat|ps1)$/i.test(file)
+/**
+ * npm's global install publishes `claude.cmd`, `claude.ps1`, and an extensionless
+ * shell script also named `claude`. The adapter spawns `CLAUDE_CODE_EXECUTABLE`
+ * directly, and spawning that script on Windows fails with `EINVAL`.
+ */
+export function isClaudeShellShim(file: string, platform: NodeJS.Platform = process.platform): boolean {
+  if (/\.(cmd|bat|ps1)$/i.test(file)) return true
+  return platform === 'win32' && !/\.exe$/i.test(file)
 }
 
 function whichSync(name: string): string | undefined {
@@ -310,7 +317,7 @@ function whichSync(name: string): string | undefined {
   return r.stdout
     .split(/\r?\n/)
     .map((line) => line.trim())
-    .find((line) => !!line && !isShellShim(line))
+    .find((line) => !!line && !isClaudeShellShim(line))
 }
 
 function preferUnpacked(file: string): string {
