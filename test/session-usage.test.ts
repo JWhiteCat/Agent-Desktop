@@ -54,6 +54,25 @@ describe('Codex usage collection during a prompt', () => {
     expect(ctx.items).toEqual([expect.objectContaining({ kind: 'result', cli: 'codex', usageId: 'codex:turn-1', usage: turn().usage })])
   })
 
+  it('stores rollout quota even when account requests are unavailable', async () => {
+    const quotaSnapshot = { sampledAt: now + 500, weekly: { usedPercent: 37 } }
+    vi.mocked(readCodexUsage).mockReturnValueOnce([]).mockReturnValue([turn({ quotaSnapshot })])
+    const ctx = setup()
+    await ctx.start()
+    expect(ctx.items[0]).toMatchObject({ usage: turn().usage, quotaSnapshot })
+  })
+
+  it('keeps a newer account snapshot when an older rollout write arrives late', async () => {
+    const quotaSnapshot = { sampledAt: now + 500, weekly: { usedPercent: 37 } }
+    vi.mocked(readCodexUsage).mockReturnValueOnce([]).mockReturnValue([turn({ completed: false })])
+    const ctx = setup()
+    await ctx.start()
+    Object.assign(ctx.items[0], { quotaSnapshot: { sampledAt: now + 1000, weekly: { usedPercent: 38 } } })
+    vi.mocked(readCodexUsage).mockReturnValue([turn({ quotaSnapshot })])
+    await vi.advanceTimersByTimeAsync(100)
+    expect(ctx.items[0]).toMatchObject({ usageComplete: true, quotaSnapshot: { weekly: { usedPercent: 38 } } })
+  })
+
   it('waits briefly for a completed rollout snapshot', async () => {
     vi.mocked(readCodexUsage).mockReturnValueOnce([]).mockReturnValueOnce([turn({ completed: false, usage: requests[0] })]).mockReturnValue([turn()])
     const ctx = setup()

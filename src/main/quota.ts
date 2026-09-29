@@ -10,7 +10,6 @@ import { resolveCodexApiKey } from './codex'
 const CURSOR_API = 'https://api2.cursor.sh'
 const CODEX_USAGE = 'https://chatgpt.com/backend-api/wham/usage'
 const FETCH_MS = 15_000
-const TURN_FETCH_MS = 5_000
 
 /** Chromium's network stack follows the system proxy. Node's fetch does not. */
 const http: typeof net.fetch = (...args) => net.fetch(...args)
@@ -57,30 +56,8 @@ async function loadCursorQuota(apiKeySetting: string | undefined): Promise<Provi
   }
 }
 
-/** Main-process only: account identities are hashed and never included in session events. */
-export interface CodexQuotaSnapshot {
-  quota: ProviderQuota
-  accountKey: string
-  sampledAt: number
-}
-
-/** A short request for a turn boundary. Missing subscription data is deliberately not a zero. */
-export async function loadCodexQuotaSnapshot(apiKeySetting?: string): Promise<CodexQuotaSnapshot | undefined> {
-  const result = await fetchCodexQuota(apiKeySetting, TURN_FETCH_MS)
-  if (!result.accountKey || !result.quota.windows.length || result.quota.note) return undefined
-  return { quota: result.quota, accountKey: result.accountKey, sampledAt: result.sampledAt }
-}
-
 async function loadCodexQuota(apiKeySetting: string | undefined): Promise<ProviderQuota> {
-  return (await fetchCodexQuota(apiKeySetting, FETCH_MS)).quota
-}
-
-async function fetchCodexQuota(apiKeySetting: string | undefined, timeoutMs: number): Promise<{
-  quota: ProviderQuota
-  accountKey?: string
-  sampledAt: number
-}> {
-  const empty = (note: string) => ({ quota: { provider: 'codex' as const, windows: [], note }, sampledAt: Date.now() })
+  const empty = (note: string): ProviderQuota => ({ provider: 'codex', windows: [], note })
   try {
     // ACP explicitly authenticates with this key, even when ChatGPT tokens remain on disk.
     if (resolveCodexApiKey(apiKeySetting)) return empty('当前使用 API Key，没有 ChatGPT 订阅额度')
@@ -93,19 +70,13 @@ async function fetchCodexQuota(apiKeySetting: string | undefined, timeoutMs: num
     }
     const headers: Record<string, string> = { Authorization: `Bearer ${auth.token}` }
     if (auth.accountId) headers['ChatGPT-Account-Id'] = auth.accountId
-    const res = await http(CODEX_USAGE, { headers, signal: AbortSignal.timeout(timeoutMs) })
+    const res = await http(CODEX_USAGE, { headers, signal: AbortSignal.timeout(FETCH_MS) })
     if (res.status === 401 || res.status === 403) {
       return empty('Codex 登录已过期，请重新登录')
     }
     if (!res.ok) return empty(`暂时无法获取 Codex 额度（HTTP ${res.status}）`)
     const json = (await res.json().catch(() => null)) as unknown
-    // Stable across access-token refreshes when Codex provides an account id.
-    const identity = auth.accountId ? `account:${auth.accountId}` : `token:${auth.token}`
-    return {
-      quota: parseCodexQuota(json),
-      accountKey: createHash('sha256').update(identity).digest('hex'),
-      sampledAt: Date.now()
-    }
+    return parseCodexQuota(json)
   } catch {
     return empty('暂时无法获取 Codex 额度')
   }

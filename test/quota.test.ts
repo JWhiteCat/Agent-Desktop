@@ -179,6 +179,53 @@ describe('cursor quota', () => {
 })
 
 describe('codex quota', () => {
+  it('prefers the Codex pool when the compatibility view describes another limit', () => {
+    const quota = parseCodexQuota({
+      rateLimits: { limitId: 'codex_other', primary: { usedPercent: 90, windowDurationMins: 300 } },
+      rateLimitsByLimitId: { codex: { limitId: 'codex', primary: { usedPercent: 37, windowDurationMins: 10080 } } }
+    })
+    expect(quota.windows).toMatchObject([{ id: 'primary', label: '每周', usedPercent: 37 }])
+  })
+
+  it('reads a weekly primary rollout window when the secondary window is absent', () => {
+    const quota = parseCodexQuota({
+      limit_id: 'codex',
+      plan_type: 'prolite',
+      primary: { used_percent: 37, window_minutes: 10_080, resets_at: 1_780_500_000 },
+      secondary: null
+    })
+    expect(quota.plan).toBe('prolite')
+    expect(quota.windows).toEqual([
+      { id: 'primary', label: '每周', usedPercent: 37, resetsAt: 1_780_500_000_000, detail: undefined }
+    ])
+  })
+
+  it('reads app-server camel-case windows and nested plan information', () => {
+    const quota = parseCodexQuota({
+      rateLimits: {
+        limitId: 'codex',
+        planType: 'plus',
+        primary: { usedPercent: 12, windowDurationMins: 300, resetsAt: 1_780_000_000 },
+        secondary: { usedPercent: 34, windowMinutes: 10_080, resetsAt: 1_780_500_000 }
+      }
+    })
+    expect(quota.plan).toBe('plus')
+    expect(quota.windows.map(({ id, label, usedPercent, resetsAt }) => ({ id, label, usedPercent, resetsAt }))).toEqual([
+      { id: 'primary', label: '5小时', usedPercent: 12, resetsAt: 1_780_000_000_000 },
+      { id: 'secondary', label: '每周', usedPercent: 34, resetsAt: 1_780_500_000_000 }
+    ])
+  })
+
+  it('does not treat another pool as the main account windows', () => {
+    for (const body of [
+      { limit_id: 'codex_other', primary: { used_percent: 75, window_minutes: 300 } },
+      { rateLimits: { limitId: 'code_review', primary: { usedPercent: 75, windowMinutes: 10_080 } } },
+      { limit_id: 'code_review', rate_limit: { primary_window: { used_percent: 75, limit_window_seconds: 18_000 } } }
+    ]) {
+      expect(parseCodexQuota(body).windows).toEqual([])
+    }
+  })
+
   it('reads a 5 hour window, a weekly window, and the reset timestamp', () => {
     const quota = parseCodexQuota({
       plan_type: 'plus',

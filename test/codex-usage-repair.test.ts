@@ -37,6 +37,18 @@ function turn(id: string, start: number, end: number, patch: Partial<CodexUsageT
 }
 
 describe('repairCodexUsage', () => {
+  it('restores a missing quota snapshot without replacing a newer saved reading', () => {
+    const quotaSnapshot = { sampledAt: now + 29_000, weekly: { usedPercent: 37 } }
+    const parsed = turn('one', 1_000, 30_000, { quotaSnapshot })
+    const saved = result(31_000, { usageId: parsed.usageId })
+    expect(repairCodexUsage([saved], [parsed])).toBe(true)
+    expect(saved.quotaSnapshot).toEqual(quotaSnapshot)
+    const newer = { sampledAt: now + 32_000, weekly: { usedPercent: 38 } }
+    saved.quotaSnapshot = newer
+    expect(repairCodexUsage([saved], [parsed])).toBe(false)
+    expect(saved.quotaSnapshot).toBe(newer)
+  })
+
   it('repairs old and missing usage across multiple turns without replacing messages', () => {
     const first = result(32_000, { usageId: 'old-random-id', usage: { inputTokens: 500 } })
     const second = result(122_000, { id: 'result-2' })

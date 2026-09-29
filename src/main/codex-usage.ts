@@ -1,4 +1,6 @@
 import type { TokenUsage } from '@shared/model-prices'
+import { parseCodexQuota } from '@shared/quota'
+import { quotaSnapshot, type TurnQuotaSnapshot } from '@shared/turn-quota'
 
 export interface CodexUsageTurn {
   usageId: string
@@ -7,6 +9,7 @@ export interface CodexUsageTurn {
   createdAt?: number
   model?: string
   usage: TokenUsage
+  quotaSnapshot?: TurnQuotaSnapshot
   isError: boolean
   completed: boolean
   /** Original zero-based JSONL line, including blank or malformed lines. */
@@ -138,6 +141,12 @@ export function parseCodexUsage(text: string): CodexUsageTurn[] {
       continue
     }
     if (type !== 'token_count') continue
+    // Quota-only updates and repeated token counters can carry a fresher account snapshot.
+    const snapshot = quotaSnapshot(parseCodexQuota(payload?.rate_limits ?? payload?.rateLimits), timestamp ?? active?.createdAt ?? active?.startedAt ?? NaN)
+    if (snapshot && active) {
+      active.quotaSnapshot = snapshot
+      active.endLine = line
+    }
     const current = counters(payload?.info?.total_token_usage)
     const last = counters(payload?.info?.last_token_usage)
     if (!current) continue // Quota-only events carry no usage information.
@@ -157,6 +166,7 @@ export function parseCodexUsage(text: string): CodexUsageTurn[] {
     previousLast = last
     if (!increment.input && !increment.output) continue
     if (!active) begin(line, timestamp, turnId)
+    if (snapshot) active!.quotaSnapshot = snapshot
     const request = requestUsage(increment)
     active!.usage.requests!.push(request)
     for (const key of ['inputTokens', 'outputTokens', 'cacheReadTokens', 'cacheWriteTokens'] as const) {

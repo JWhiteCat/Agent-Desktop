@@ -69,6 +69,18 @@ export function spawnCodexAcp(codex: ResolvedCodex, cwd: string, apiKey: string)
   })
 }
 
+/** A separate read-only RPC connection using the same executable as normal sessions. */
+export function spawnCodexAppServer(codex: ResolvedCodex): ChildProcess {
+  const script = codexBinary(codex)
+  if (!script) throw new Error('未找到 Codex CLI')
+  return spawn(codexCommand(script.command), [...script.args, 'app-server'], {
+    env: nodeEnv(),
+    stdio: ['pipe', 'pipe', 'pipe'],
+    windowsHide: true,
+    shell: needsShell(script.command)
+  })
+}
+
 export async function codexVersion(codex: ResolvedCodex): Promise<string> {
   const script = codexBinary(codex)
   if (!script) return ''

@@ -107,14 +107,19 @@ export function applyCursorMonthUsage(quota: ProviderQuota, aggregated: unknown,
 
 export function parseCodexQuota(body: unknown): ProviderQuota {
   const root = asRecord(body)
-  const plan = text(pick(root, 'plan_type', 'planType'))
+  const pools = asRecord(pick(root, 'rateLimitsByLimitId', 'rate_limits_by_limit_id'))
+  const rate = asRecord(pools?.codex) ?? asRecord(pick(root, 'rate_limit', 'rateLimit', 'rate_limits', 'rateLimits')) ?? root
+  const plan = text(pick(root, 'plan_type', 'planType')) ?? text(pick(rate, 'plan_type', 'planType'))
   const windows: QuotaWindow[] = []
-  const rate = asRecord(pick(root, 'rate_limit', 'rateLimit'))
-  pushWindow(windows, 'primary', pick(rate, 'primary_window', 'primaryWindow'))
-  pushWindow(windows, 'secondary', pick(rate, 'secondary_window', 'secondaryWindow'))
+  const limitId = text(pick(rate, 'limit_id', 'limitId')) ?? text(pick(root, 'limit_id', 'limitId'))
+  // WHAM omits the pool ID. Rollout/app-server snapshots may describe another pool.
+  if (!limitId || limitId === 'codex') {
+    pushWindow(windows, 'primary', pick(rate, 'primary_window', 'primaryWindow', 'primary'))
+    pushWindow(windows, 'secondary', pick(rate, 'secondary_window', 'secondaryWindow', 'secondary'))
+  }
   collectAdditional(windows, pick(root, 'additional_rate_limits', 'additionalRateLimits'))
 
-  const credit = creditWindow(asRecord(pick(root, 'credits')))
+  const credit = creditWindow(asRecord(pick(root, 'credits') ?? pick(rate, 'credits')))
   if (credit) windows.push(credit)
 
   if (!windows.length) {
@@ -171,11 +176,12 @@ function quotaWindow(id: string, raw: unknown, detail?: string): QuotaWindow | n
   const win = asRecord(raw)
   if (!win) return null
   const used = num(pick(win, 'used_percent', 'usedPercent'))
-  const seconds = num(pick(win, 'limit_window_seconds', 'limitWindowSeconds'))
+  const minutes = num(pick(win, 'window_minutes', 'windowMinutes', 'window_duration_mins', 'windowDurationMins', 'limit_window_minutes', 'limitWindowMinutes'))
+  const seconds = num(pick(win, 'limit_window_seconds', 'limitWindowSeconds')) ?? (minutes == null ? null : minutes * 60)
   if (used == null || seconds == null || seconds <= 0) return null
   const label = windowLabel(seconds)
   if (!label) return null
-  const reset = num(pick(win, 'reset_at', 'resetAt'))
+  const reset = num(pick(win, 'reset_at', 'resetAt', 'resets_at', 'resetsAt'))
   const name = detail?.trim()
   return {
     id,

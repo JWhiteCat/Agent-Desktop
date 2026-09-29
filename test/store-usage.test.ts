@@ -136,6 +136,24 @@ describe('stored Codex usage repair', () => {
     expect(store.items('fork')[2]).toMatchObject({ usage: turn.usage, usageComplete: true })
   })
 
+  it('restores missing quota for an already complete token record and its fork', () => {
+    const turn = rollout()
+    turn.quotaSnapshot = { sampledAt: now + 29_000, weekly: { usedPercent: 37 } }
+    const saved: Partial<ResultItem> = {
+      cli: 'codex', usageId: turn.usageId, usage: turn.usage, usageComplete: true, quotaUsage: undefined
+    }
+    addThread('source', transcript(saved))
+    addThread('fork', transcript({ ...saved, id: 'fork-result' }))
+    reload()
+    codex.readUsage.mockImplementation((chatId: string) => chatId === 'source-chat' ? [turn] : undefined)
+    expect(store.items('source')[2]).toMatchObject({ quotaSnapshot: turn.quotaSnapshot })
+    expect(store.items('fork')[2]).toMatchObject({ quotaSnapshot: turn.quotaSnapshot })
+    reload()
+    codex.readUsage.mockClear()
+    expect(store.items('source')[2]).toMatchObject({ quotaSnapshot: turn.quotaSnapshot })
+    expect(codex.readUsage).not.toHaveBeenCalled()
+  })
+
   it.each(['cursor', 'codex'] as const)('stamps legacy results as %s before switching the thread CLI', (cli) => {
     const items = transcript()
     items.push({ id: 'tagged-result', kind: 'result', isError: false, cli: 'claude', usage: { inputTokens: 7 } })

@@ -1,28 +1,29 @@
 import type { ProviderQuota, QuotaWindow } from './quota'
 
-/** Account usage increases in percentage points during a Codex turn. */
+/** Legacy stored account-quota deltas; retained only to read older session events. */
 export interface TurnQuotaUsage {
   weekly?: number
   fiveHour?: number
 }
 
-/** Compare the account's main windows only when both snapshots describe the same period. */
-export function quotaDelta(before: ProviderQuota, after: ProviderQuota, startedAt: number, finishedAt: number): TurnQuotaUsage | undefined {
-  if (before.provider !== 'codex' || after.provider !== 'codex') return undefined
-  if (!Number.isFinite(startedAt) || !Number.isFinite(finishedAt) || finishedAt < startedAt) return undefined
+/** Account quota observed during this turn; it includes usage from other sessions. */
+export interface TurnQuotaSnapshot {
+  sampledAt: number
+  weekly?: { usedPercent: number; resetsAt?: number }
+  fiveHour?: { usedPercent: number; resetsAt?: number }
+}
 
-  const usage: TurnQuotaUsage = {}
+/** Keep the account's main windows without interpreting their changes as turn usage. */
+export function quotaSnapshot(quota: ProviderQuota, sampledAt: number): TurnQuotaSnapshot | undefined {
+  if (quota.provider !== 'codex' || !Number.isFinite(sampledAt)) return undefined
+  const snapshot: TurnQuotaSnapshot = { sampledAt }
   for (const [key, label] of [['weekly', '每周'], ['fiveHour', '5小时']] as const) {
-    const start = mainWindow(before, label)
-    const end = mainWindow(after, label)
-    if (!start || !end || start.id !== end.id) continue
-    const reset = start.resetsAt
-    if (reset == null || !Number.isFinite(reset) || reset !== end.resetsAt || reset <= finishedAt) continue
-    if (!validPercent(start.usedPercent) || !validPercent(end.usedPercent) || end.usedPercent < start.usedPercent) continue
-    const delta = end.usedPercent - start.usedPercent
-    if (Number.isFinite(delta)) usage[key] = delta
+    const window = mainWindow(quota, label)
+    if (!window || !validPercent(window.usedPercent)) continue
+    const resetsAt = window.resetsAt != null && Number.isFinite(window.resetsAt) && window.resetsAt > 0 ? window.resetsAt : undefined
+    snapshot[key] = { usedPercent: window.usedPercent, resetsAt }
   }
-  return Object.keys(usage).length ? usage : undefined
+  return snapshot.weekly || snapshot.fiveHour ? snapshot : undefined
 }
 
 function mainWindow(quota: ProviderQuota, label: string): QuotaWindow | undefined {

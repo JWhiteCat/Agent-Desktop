@@ -268,9 +268,15 @@ export function ResultFooter({ item, text, fallbackModel, cli = 'cursor' }: { it
   const quote = modelId && u ? quoteModel(modelId, u, provider) : undefined
   const priceSource = provider === 'codex' ? 'OpenAI API 公开标价' : 'Cursor 公开标价'
   const quota = provider === 'codex' ? item.quotaUsage : undefined
+  const snapshot = provider === 'codex' ? item.quotaSnapshot : undefined
+  const threadUsage = provider === 'codex' ? item.codexThreadUsage : undefined
   const quotaText = [
     quotaPercent('周额度', quota?.weekly),
     quotaPercent('5小时', quota?.fiveHour)
+  ].filter(Boolean).join(' · ')
+  const remainingText = [
+    quotaRemaining('周额度', snapshot?.weekly?.usedPercent),
+    quotaRemaining('5小时', snapshot?.fiveHour?.usedPercent)
   ].filter(Boolean).join(' · ')
   return (
     <div className="result-footer">
@@ -287,13 +293,31 @@ export function ResultFooter({ item, text, fallbackModel, cli = 'cursor' }: { it
           {formatUsd(quote.costUsd)}
         </span>
       )}
-      {quotaText && (
+      {threadUsage && (
+        <span title="Codex 返回的当前会话累计开销估算，单位为 credits；只统计这个会话，不受其他会话影响。金额仅在 Codex 返回时显示。">
+          会话消耗 {quotaAmount(threadUsage.credits)} credits{threadUsage.costUsd !== undefined ? ` / ${formatUsd(threadUsage.costUsd)}` : ''}
+        </span>
+      )}
+      {remainingText ? (
+        <span title={`账号剩余额度快照（${new Date(snapshot!.sampledAt).toLocaleString()}），由所有会话共享。仅显示 Codex 返回的窗口；本轮 token 与费用单独统计。`}>
+          {remainingText}
+        </span>
+      ) : quotaText && (
         <span title="本次额度消耗估算：根据本轮前后账号已用额度的百分点增量计算。接口取整、更新延迟及其他客户端的使用可能影响结果。0% 表示账号百分比未变化，不代表本次没有消耗。">
-          {quotaText}
+          账号变化估算：{quotaText}
         </span>
       )}
     </div>
   )
+}
+
+function quotaAmount(value: number): string {
+  return value > 0 && value < 0.0001 ? '<0.0001' : String(Number(value.toFixed(4)))
+}
+
+function quotaRemaining(label: string, used: number | undefined): string | undefined {
+  if (used == null || !Number.isFinite(used) || used < 0) return undefined
+  return quotaPercent(`${label}剩余`, Math.max(0, 100 - used))
 }
 
 function quotaPercent(label: string, value: number | undefined): string | undefined {

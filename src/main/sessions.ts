@@ -5,6 +5,7 @@ import { parseAvailableCommands, type SlashCommand } from '@shared/commands'
 import type { AgentEvent, CliProvider, Item, PrepareRequest, QuestionAnswer, QuestionItem, SendRequest } from '@shared/types'
 import { isCliProvider, threadCli } from '@shared/types'
 import { normalizeTurnUsage } from '@shared/turn-usage'
+import { quotaSnapshot } from '@shared/turn-quota'
 import { normalizeQuestions } from '@shared/questions'
 import { AcpConnection, claudePlanModePrompt, codexPlanModePrompt, MethodNotFound, permissionResult, planModePrompt } from './acp'
 import { killTree, resolveApiKey, resolveCli, spawnCli, stripAnsi, type ResolvedCli } from './cli'
@@ -14,7 +15,7 @@ import { syncAllManagedSkills } from './skills'
 import { newId } from './id'
 import { forkPrompt } from './fork-context'
 import { StreamReducer } from './reducer'
-import { CodexTurnQuotaTracker, type CodexQuotaTurn } from './turn-quota'
+import { loadCodexAccountUsage } from './codex-account'
 import { CodexTurnUsageReader } from './codex-turn-usage'
 import type { Store } from './store'
 
@@ -55,8 +56,9 @@ interface Run {
   /** Terminal UI state for this turn has already been published. */
   settled: boolean
   killTimer?: NodeJS.Timeout
-  quotaTurn?: CodexQuotaTurn
-  quotaResultId?: string
+  /** Defined only for ChatGPT-authenticated Codex turns; an empty path selects the detected CLI. */
+  codexAccountPath?: string
+  resultId?: string
   codexUsage?: CodexTurnUsageReader
 }
 
@@ -94,7 +96,7 @@ export class SessionManager {
     private readonly emit: (ev: AgentEvent) => void,
     private readonly onStateChange: () => void,
     private readonly onFinished: (info: RunFinished) => void,
-    private readonly quotaTracker = new CodexTurnQuotaTracker()
+    private readonly readCodexAccount = loadCodexAccountUsage
   ) {}
 
   running(): string[] {
@@ -245,8 +247,7 @@ export class SessionManager {
     this.emit({ type: 'running', threadId: thread.id, running: true })
     this.onStateChange()
 
-    // Fetch the baseline while the CLI initializes, before any prompt can consume quota.
-    if (provider === 'codex' && !apiKey) run.quotaTurn = this.quotaTracker.start()
+    if (provider === 'codex' && !apiKey) run.codexAccountPath = settings.codexPath
     const turn = reusable
       ? this.continueSession(thread.id, run, req)
       : this.drive(thread.id, run, req, cwd, thread.chatId, provider, apiKey, mcpServers)
@@ -667,7 +668,6 @@ export class SessionManager {
   }
 
   private async runPrompt(threadId: string, run: Run, req: SendRequest): Promise<void> {
-    if (run.quotaTurn) await run.quotaTurn.before
     if (this.runs.get(threadId) !== run || run.settled) return
     if (run.stopped) {
       this.endRun(threadId, run, null)
@@ -690,7 +690,6 @@ export class SessionManager {
           : run.proc.provider === 'claude'
             ? claudePlanModePrompt(prompt)
             : planModePrompt(prompt)
-    if (run.quotaTurn) this.quotaTracker.markPromptStarted(run.quotaTurn)
     if (run.proc.provider === 'codex') run.codexUsage = new CodexTurnUsageReader(run.proc.sessionId)
     const result = await run.proc.acp.request('session/prompt', {
       sessionId: run.proc.sessionId,
@@ -709,7 +708,7 @@ export class SessionManager {
       : normalizeTurnUsage(result?.usage) ?? run.reducer.lastUsage
     const changed = run.reducer.closeSegments()
     const resultId = newId()
-    run.quotaResultId = resultId
+    run.resultId = resultId
     changed.push(
       run.reducer.push({
         id: resultId,
@@ -721,6 +720,7 @@ export class SessionManager {
         cli: run.proc.provider,
         usageId: codexUsage?.usageId ?? newId(),
         usage,
+        ...(codexUsage?.quotaSnapshot ? { quotaSnapshot: codexUsage.quotaSnapshot } : {}),
         ...(run.codexUsage ? { usageComplete: codexUsage?.completed ?? false } : {})
       })
     )
@@ -734,11 +734,6 @@ export class SessionManager {
   private endRun(threadId: string, run: Run, code: number | null, spawnError?: Error): void {
     if (run.settled) return
     run.settled = true
-    if (run.quotaTurn) {
-      if (run.quotaResultId) void this.saveTurnQuota(threadId, run.quotaResultId, run.quotaTurn)
-      else this.quotaTracker.cancel(run.quotaTurn)
-      run.quotaTurn = undefined
-    }
     if (run.killTimer) {
       clearTimeout(run.killTimer)
       run.killTimer = undefined
@@ -756,10 +751,12 @@ export class SessionManager {
     if (!r.gotResult) {
       const recorded = run.codexUsage?.read()
       if (recorded) {
+        run.resultId = newId()
         changed.push(r.push({
-          id: newId(), kind: 'result', isError: !run.stopped,
+          id: run.resultId, kind: 'result', isError: !run.stopped,
           cli: 'codex', model: r.init.model || recorded.model,
-          createdAt: Date.now(), usageId: recorded.usageId, usage: recorded.usage, usageComplete: recorded.completed
+          createdAt: Date.now(), usageId: recorded.usageId, usage: recorded.usage, usageComplete: recorded.completed,
+          ...(recorded.quotaSnapshot ? { quotaSnapshot: recorded.quotaSnapshot } : {})
         }))
       }
     }
@@ -810,6 +807,9 @@ export class SessionManager {
       failed,
       preview: summary
     })
+    if (run.resultId && run.codexAccountPath !== undefined) {
+      void this.saveCodexAccountUsage(threadId, run.resultId, run.proc.sessionId, run.codexAccountPath)
+    }
   }
 
   /** Late rollout writes update only their own result, without delaying task completion. */
@@ -820,21 +820,29 @@ export class SessionManager {
     const item = items.find((item) => item.kind === 'result' && item.id === resultId)
     if (item?.kind !== 'result') return
     Object.assign(item, { usage: recorded.usage, usageId: recorded.usageId, usageComplete: recorded.completed })
+    if (recorded.quotaSnapshot && (!item.quotaSnapshot || recorded.quotaSnapshot.sampledAt > item.quotaSnapshot.sampledAt)) {
+      item.quotaSnapshot = recorded.quotaSnapshot
+    }
     this.store.markItemsDirty(threadId)
     this.emit({ type: 'items', threadId, items: [item] })
   }
 
-  /** Quota refresh runs after the result is available and never delays task completion. */
-  private async saveTurnQuota(threadId: string, resultId: string, turn: CodexQuotaTurn): Promise<void> {
+  /** Read account windows and thread-specific credits independently after completion. */
+  private async saveCodexAccountUsage(threadId: string, resultId: string, sessionId: string, customPath: string): Promise<void> {
     try {
-      const quotaUsage = await this.quotaTracker.finish(turn)
-      if (!quotaUsage || !this.store.thread(threadId)) return
+      const { quota, quotaSampledAt, threadUsage } = await this.readCodexAccount(customPath, sessionId)
+      const snapshot = quota && quotaSampledAt !== undefined ? quotaSnapshot(quota, quotaSampledAt) : undefined
+      if ((!snapshot && !threadUsage) || !this.store.thread(threadId)) return
       // The user may have deleted or re-imported the transcript while the request was in flight.
       const items = this.store.items(threadId)
       const index = items.findIndex((item) => item.id === resultId && item.kind === 'result')
       const item = items[index]
       if (item?.kind !== 'result') return
-      const updated = { ...item, quotaUsage }
+      const updated = {
+        ...item,
+        ...(snapshot && (!item.quotaSnapshot || snapshot.sampledAt >= item.quotaSnapshot.sampledAt) ? { quotaSnapshot: snapshot } : {}),
+        ...(threadUsage ? { codexThreadUsage: threadUsage } : {})
+      }
       items[index] = updated
       this.store.markItemsDirty(threadId)
       this.emit({ type: 'items', threadId, items: [updated] })

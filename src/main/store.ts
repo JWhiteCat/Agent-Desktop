@@ -191,7 +191,7 @@ export class Store {
       this.itemsCache.set(threadId, items)
       const thread = this.thread(threadId)
       if (thread?.chatId && threadCli(thread) === 'codex'
-        && items.some((item) => item.kind === 'result' && (!item.usage?.requests || item.usageComplete === false))) {
+        && items.some((item) => item.kind === 'result' && (!item.usage?.requests || item.usageComplete === false || (!item.quotaSnapshot && !item.quotaUsage)))) {
         const turns = readCodexUsage(thread.chatId)
         const previous = new Map(items.filter((item): item is ResultItem => item.kind === 'result').map((item) => [item.id, item.usageId]))
         if (turns && repairCodexUsage(items, turns)) {
@@ -219,6 +219,7 @@ export class Store {
         const source = repaired.get(item.usageId)
         if (!source) continue
         Object.assign(item, { usageId: source.usageId, usage: source.usage, cli: source.cli, usageComplete: source.usageComplete })
+        if (source.quotaSnapshot && !item.quotaSnapshot) item.quotaSnapshot = source.quotaSnapshot
         changed = true
       }
       if (changed) this.setItems(thread.id, items)

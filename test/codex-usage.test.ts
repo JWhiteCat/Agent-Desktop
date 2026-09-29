@@ -16,6 +16,77 @@ const tokens = (total: ReturnType<typeof counts>, last = total, second = 1): str
   event('token_count', { info: { total_token_usage: total, last_token_usage: last } }, second)
 
 describe('Codex rollout token usage', () => {
+  it('keeps the latest quota snapshot even when its token counters repeat', () => {
+    const total = counts(100, 40, 20)
+    const snapshot = (percent: number, second: number) => event('token_count', {
+      info: { total_token_usage: total, last_token_usage: total },
+      rate_limits: {
+        limit_id: 'codex', plan_type: 'prolite',
+        primary: { used_percent: percent, window_minutes: 10_080, resets_at: 1_800_000_000 },
+        secondary: null
+      }
+    }, second)
+    const [turn] = parseCodexUsage([
+      event('task_started', { turn_id: 'weekly' }),
+      snapshot(36, 1),
+      snapshot(37, 2),
+      event('task_complete', { turn_id: 'weekly' }, 3)
+    ].join('\n'))
+    expect(turn.usage.requests).toHaveLength(1)
+    expect(turn.quotaSnapshot).toEqual({
+      sampledAt: Date.parse(at(2)), weekly: { usedPercent: 37, resetsAt: 1_800_000_000_000 }
+    })
+  })
+
+  it('updates quota from info=null events, rejects other pools, and never inherits a previous turn snapshot', () => {
+    const [first, second] = parseCodexUsage([
+      event('task_started', { turn_id: 'first' }),
+      tokens(counts(100, 40, 20)),
+      event('token_count', {
+        info: null,
+        rate_limits: {
+          limit_id: 'codex',
+          primary: { used_percent: 12, window_minutes: 300, resets_at: 1_800_000_000 },
+          secondary: { used_percent: 37, window_minutes: 10_080, resets_at: 1_801_000_000 }
+        }
+      }, 2),
+      event('token_count', {
+        info: null,
+        rate_limits: { limit_id: 'code_review', primary: { used_percent: 99, window_minutes: 300 } }
+      }, 3),
+      event('task_complete', { turn_id: 'first' }, 4),
+      event('task_started', { turn_id: 'second' }, 5),
+      tokens(counts(150, 50, 30), counts(50, 10, 10), 6),
+      event('task_complete', { turn_id: 'second' }, 7)
+    ].join('\n'))
+    expect(first.usage.requests).toHaveLength(1)
+    expect(first.quotaSnapshot).toEqual({
+      sampledAt: Date.parse(at(2)),
+      fiveHour: { usedPercent: 12, resetsAt: 1_800_000_000_000 },
+      weekly: { usedPercent: 37, resetsAt: 1_801_000_000_000 }
+    })
+    expect(second.quotaSnapshot).toBeUndefined()
+  })
+
+  it('keeps simultaneous sessions token usage independent of their shared account quota', () => {
+    const rollout = (session: string, input: number, output: number, percent: number) => [
+      row('session_meta', { id: session }),
+      event('task_started', { turn_id: `${session}-turn` }),
+      event('token_count', {
+        info: { total_token_usage: counts(input, 0, output), last_token_usage: counts(input, 0, output) },
+        rate_limits: { limit_id: 'codex', primary: { used_percent: percent, window_minutes: 10_080 } }
+      }, 1),
+      event('task_complete', { turn_id: `${session}-turn` }, 2)
+    ].join('\n')
+    const first = parseCodexUsage(rollout('first', 100, 20, 37))[0]
+    const second = parseCodexUsage(rollout('second', 900, 300, 39))[0]
+    expect(first.usage).toMatchObject({ inputTokens: 100, outputTokens: 20 })
+    expect(second.usage).toMatchObject({ inputTokens: 900, outputTokens: 300 })
+    expect(first.quotaSnapshot?.weekly?.usedPercent).toBe(37)
+    expect(second.quotaSnapshot?.weekly?.usedPercent).toBe(39)
+    expect(parseCodexUsage(rollout('first', 100, 20, 37))[0]).toEqual(first)
+  })
+
   it('sums requests within each turn, subtracts the previous turn, and deduplicates quota snapshots', () => {
     const text = [
       row('session_meta', { id: 'thread' }),
@@ -104,10 +175,10 @@ describe('Codex rollout token usage', () => {
     })
   })
 
-  it('ignores quota-only snapshots and reports no invented usage for empty turns', () => {
+  it('reports no invented token usage for turns containing only quota snapshots', () => {
     expect(parseCodexUsage([
       event('task_started', { turn_id: 'empty' }),
-      event('token_count', { info: null, rate_limits: { primary: { used_percent: 10 } } }),
+      event('token_count', { info: null, rate_limits: { limit_id: 'codex', primary: { used_percent: 10, window_minutes: 300 } } }),
       tokens(counts(0, 0, 0)),
       event('task_complete', { turn_id: 'empty' })
     ].join('\n'))).toEqual([])

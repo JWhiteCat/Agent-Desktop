@@ -40,6 +40,10 @@ export function repairCodexUsage(items: Item[], turns: CodexUsageTurn[]): boolea
   let changed = false
   for (const [entry, turn] of matches) {
     const result = entry.result
+    if (turn.quotaSnapshot && !result.quotaSnapshot) {
+      result.quotaSnapshot = structuredClone(turn.quotaSnapshot)
+      changed = true
+    }
     if (JSON.stringify(result.usage) !== JSON.stringify(turn.usage)) {
       result.usage = structuredClone(turn.usage)
       changed = true

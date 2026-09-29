@@ -1,6 +1,7 @@
 import type { SlashCommand } from './commands'
 import type { TokenUsage } from './model-prices'
-import type { TurnQuotaUsage } from './turn-quota'
+import type { TurnQuotaSnapshot, TurnQuotaUsage } from './turn-quota'
+import type { CodexThreadUsage } from './codex-account'
 
 export type AgentMode = 'agent' | 'plan' | 'ask'
 
@@ -121,6 +122,10 @@ export interface ResultItem {
   usageComplete?: boolean
   /** Account quota increases observed during a Codex turn; absent when no comparable snapshots exist. */
   quotaUsage?: TurnQuotaUsage
+  /** Account windows observed for this result, separate from this session's consumption. */
+  quotaSnapshot?: TurnQuotaSnapshot
+  /** Codex's own cumulative estimate for this thread when the service provides it. */
+  codexThreadUsage?: CodexThreadUsage
 }
 
 export interface NoticeItem {

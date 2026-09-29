@@ -110,6 +110,7 @@ function itemsFrom(rows: TranscriptRow[], events: boolean, usage: CodexUsageTurn
         usageId: turn.usageId,
         usage: turn.usage,
         usageComplete: turn.completed,
+        ...(turn.quotaSnapshot ? { quotaSnapshot: turn.quotaSnapshot } : {}),
         model: turn.model,
         createdAt: turn.createdAt,
         isError: turn.isError,
