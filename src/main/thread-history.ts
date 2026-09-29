@@ -8,13 +8,12 @@ import { newId } from './id'
 import { titleFrom } from './sessions'
 import type { Store } from './store'
 
-const FORK_NOTICE = '未能复制 Cursor CLI 的会话上下文，之后发送的消息会从新会话开始。'
-const CODEX_FORK_NOTICE = '已复制对话记录。之后发送的消息会从新的 Codex 会话开始。'
-const CLAUDE_FORK_NOTICE = '已复制对话记录。之后发送的消息会从新的 Claude 会话开始。'
+const FORK_NOTICE = '已复制所选对话记录。下次发送时会将这些历史作为上下文传给新会话。'
 
 export interface HistoryDeps {
   store: Store
   isRunning(id: string): boolean
+  forkSession(id: string): Promise<{ chatId: string; cwd: string }>
   broadcast(): void
 }
 
@@ -47,10 +46,11 @@ function cloneItems(items: Item[]): Item[] {
 }
 
 /** Copies a conversation into a new thread. `throughItemId` keeps history only up to that message. */
-export function forkThread(deps: HistoryDeps, id: string, throughItemId?: string): { thread: ThreadMeta; items: Item[] } {
+export async function forkThread(deps: HistoryDeps, id: string, throughItemId?: string): Promise<{ thread: ThreadMeta; items: Item[] }> {
   if (deps.isRunning(id)) throw new Error('对话正在运行，请稍后再分叉')
-  const src = deps.store.thread(id)
-  if (!src) throw new Error('对话不存在')
+  const source = deps.store.thread(id)
+  if (!source) throw new Error('对话不存在')
+  const src = { ...source }
   const items = deps.store.items(id)
   const cut = throughItemId ? items.findIndex((it) => it.id === throughItemId) : items.length - 1
   if (cut < 0) throw new Error('找不到要分叉的消息')
@@ -58,33 +58,47 @@ export function forkThread(deps: HistoryDeps, id: string, throughItemId?: string
   if (!prefix.some((it) => it.kind === 'user' || it.kind === 'assistant')) throw new Error('没有可以分叉的内容')
 
   const cloned = cloneItems(prefix)
-  const title = forkTitle(deps.store, src.title, src.projectId)
+  const snapshot = JSON.stringify(items)
+  let title = forkTitle(deps.store, src.title, src.projectId)
   const cli = threadCli(src)
   let chatId: string | undefined
   let cwd = src.cwd
-  if (cli === 'codex' || cli === 'claude') {
-    if (src.chatId) cloned.push({ id: newId(), kind: 'notice', level: 'info', text: cli === 'claude' ? CLAUDE_FORK_NOTICE : CODEX_FORK_NOTICE })
-  } else if (src.chatId) {
-    const dir = findChatDir(src.chatId)
-    const plan = dir ? planCliFork(dir, items, throughItemId) : { extraBlobs: [], linked: false }
-    if (!dir || !plan.linked) {
-      cloned.push({ id: newId(), kind: 'notice', level: 'info', text: FORK_NOTICE })
-    } else {
-      try {
-        const made = materializeCliFork(dir, plan, title)
-        chatId = made.chatId
-        if (made.cwd) cwd = made.cwd
-      } catch (err) {
-        console.error('[fork] copy failed', err)
-        cloned.push({ id: newId(), kind: 'notice', level: 'info', text: FORK_NOTICE })
+  if (src.chatId && !src.forkContextThroughItemId) {
+    try {
+      if (cli === 'cursor') {
+        const dir = findChatDir(src.chatId)
+        const plan = dir ? planCliFork(dir, items, throughItemId) : undefined
+        if (dir && plan?.linked) {
+          const made = materializeCliFork(dir, plan, title)
+          chatId = made.chatId
+          if (made.cwd) cwd = made.cwd
+        }
+      } else if (!throughItemId) {
+        const made = await deps.forkSession(id)
+        // The source may have advanced while the adapter was starting. Keep the
+        // snapshot selected at click time instead of loading newer CLI history.
+        const current = deps.store.thread(id)
+        if (current?.chatId === src.chatId && threadCli(current) === cli
+          && !deps.isRunning(id) && JSON.stringify(deps.store.items(id)) === snapshot) {
+          chatId = made.chatId
+          cwd = made.cwd
+        }
       }
+    } catch (err) {
+      console.error('[fork] copy failed', err)
     }
   }
+
+  if (!deps.store.thread(id)) throw new Error('原对话已删除')
+  title = forkTitle(deps.store, src.title, src.projectId)
+  const forkContextThroughItemId = chatId ? undefined : cloned.at(-1)?.id
+  if (!chatId) cloned.push({ id: newId(), kind: 'notice', level: 'info', text: FORK_NOTICE })
 
   const thread = deps.store.createThread({
     projectId: src.projectId,
     title,
     chatId,
+    forkContextThroughItemId,
     cwd,
     cli,
     model: src.model,
@@ -105,6 +119,7 @@ export function forkThread(deps: HistoryDeps, id: string, throughItemId?: string
 export function syncFromCli(deps: Pick<HistoryDeps, 'store' | 'isRunning'>, threadId: string): Item[] | undefined {
   const t = deps.store.thread(threadId)
   if (!t?.chatId || deps.isRunning(threadId)) return undefined
+  if (t.forkContextThroughItemId) throw new Error('分叉上下文尚未写入 CLI，请成功发送一条消息后再同步')
   const cli = threadCli(t)
   const items = cli === 'codex' ? readCodexTranscript(t.chatId) : cli === 'claude' ? readClaudeTranscript(t.chatId) : readCliTranscript(t.chatId)
   if (!items) return undefined

@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import type { Item } from '@shared/types'
+import { parseForkPrompt } from './fork-context'
 
 export interface ForkBlob {
   id: string
@@ -121,7 +122,18 @@ function sameText(a: string, b: string): boolean {
   const x = plainText(a)
   const y = plainText(b)
   if (!x || !y) return false
-  return x === y || x.startsWith(y) || y.startsWith(x)
+  return x === y
+}
+
+function contentText(content: unknown): string {
+  return typeof content === 'string'
+    ? content
+    : Array.isArray(content)
+      ? content
+          .filter((part: { type?: string; text?: string }) => part?.type === 'text' && typeof part.text === 'string')
+          .map((part: { text: string }) => part.text)
+          .join('\n')
+      : ''
 }
 
 function jsonUserText(data: Buffer): string | undefined {
@@ -129,17 +141,7 @@ function jsonUserText(data: Buffer): string | undefined {
   try {
     const msg = JSON.parse(data.toString('utf8'))
     if (msg?.role !== 'user') return undefined
-    const content = msg.content
-    const raw =
-      typeof content === 'string'
-        ? content
-        : Array.isArray(content)
-          ? content
-              .filter((p: { type?: string; text?: string }) => p?.type === 'text' && typeof p.text === 'string')
-              .map((p: { text: string }) => p.text)
-              .join('\n')
-          : ''
-    return plainText(raw)
+    return plainText(contentText(msg.content))
   } catch {
     return undefined
   }
@@ -244,15 +246,57 @@ function isAgentItem(item: Item): boolean {
   return AGENT_KINDS.has(item.kind)
 }
 
+/** Confirm that native storage contains the same visible conversation as the fork. */
+function historyMatches(db: DatabaseSync, root: Buffer, items: Item[]): boolean {
+  type Message = { kind: 'user' | 'assistant'; text: string }
+  function append(messages: Message[], kind: string, text: string): void {
+    if (kind !== 'user' && kind !== 'assistant') return
+    const normalized = text.replace(/\s+/g, ' ').trim()
+    if (!normalized) return
+    const last = messages.at(-1)
+    // The UI and the CLI may split one response around tool/thinking events.
+    if (kind === 'assistant' && last?.kind === 'assistant') last.text += ` ${normalized}`
+    else messages.push({ kind, text: normalized })
+  }
+  function appendItems(messages: Message[], source: Item[]): void {
+    for (const item of source) {
+      if (item.kind === 'user' || item.kind === 'assistant') append(messages, item.kind, item.text)
+    }
+  }
+
+  const expected: Message[] = []
+  appendItems(expected, items)
+  if (!expected.length) return false
+  const actual: Message[] = []
+  for (const id of blobIds(root, 1)) {
+    const data = loadBlob(db, id)
+    if (!data || data[0] !== 0x7b) return false
+    let message: { role?: string; content?: unknown }
+    try {
+      message = JSON.parse(data.toString('utf8'))
+    } catch {
+      return false
+    }
+    const raw = contentText(message.content)
+    if (message.role === 'user') {
+      const replay = parseForkPrompt(raw)
+      if (replay) appendItems(actual, replay.items)
+      const query = raw.match(/<user_query>\s*([\s\S]*?)\s*<\/user_query>/)
+      const text = replay?.prompt ?? query?.[1] ?? raw.replace(/<([a-zA-Z][\w-]*)(\s[^>]*)?>[\s\S]*?<\/\1>/g, '').trim()
+      const images = Array.isArray(message.content) ? message.content.filter((part) => part?.type === 'image').length : 0
+      append(actual, 'user', text + (images ? `\n[${images} 张图片]` : ''))
+    } else if (message.role === 'assistant') append(actual, 'assistant', raw)
+  }
+  return JSON.stringify(actual) === JSON.stringify(expected)
+}
+
 /**
  * Picks a CLI conversation checkpoint for a fork.
  * Forking the whole chat keeps the latest root. Forking from a message keeps
  * history through that message and drops everything after it.
  */
 export function planCliFork(chatDir: string, items: Item[], throughItemId?: string): CliForkPlan {
-  const empty: CliForkPlan = { extraBlobs: [], linked: true }
-  if (!throughItemId) return empty
-  const cut = items.findIndex((it) => it.id === throughItemId)
+  const cut = throughItemId ? items.findIndex((it) => it.id === throughItemId) : items.length - 1
   if (cut < 0) return { extraBlobs: [], linked: false }
   const prefix = items.slice(0, cut + 1)
   const uiUsers = prefix.filter((it) => it.kind === 'user')
@@ -260,12 +304,20 @@ export function planCliFork(chatDir: string, items: Item[], throughItemId?: stri
 
   const dbPath = path.join(chatDir, 'store.db')
   if (!fs.existsSync(dbPath)) return { extraBlobs: [], linked: false }
-  const db = openRead(dbPath)
+  let db: DatabaseSync | undefined
   try {
+    db = openRead(dbPath)
+    db.exec('BEGIN')
     const meta = readStoreMeta(db)
     const latestId = typeof meta?.latestRootBlobId === 'string' ? meta.latestRootBlobId : ''
     const latest = latestId ? loadBlob(db, latestId) : undefined
     if (!latest) return { extraBlobs: [], linked: false }
+    if (!throughItemId) {
+      // Pin the checked root so a later terminal turn cannot change what gets copied.
+      return historyMatches(db, latest, prefix)
+        ? { rootBlobId: latestId, extraBlobs: [], linked: true }
+        : { extraBlobs: [], linked: false }
+    }
     const turns = turnsOf(db, latest)
     if (turns.length === 0) return { extraBlobs: [], linked: false }
 
@@ -290,12 +342,15 @@ export function planCliFork(chatDir: string, items: Item[], throughItemId?: stri
     const nextUser = afterCut.findIndex((it) => it.kind === 'user')
     const untilNextUser = nextUser < 0 ? afterCut : afterCut.slice(0, nextUser)
     const midTurn = includeResponse && untilNextUser.some(isAgentItem)
+    // A user-only checkpoint cannot represent an assistant/tool prefix. Let the
+    // caller replay that exact prefix instead of silently dropping its response.
+    if (midTurn) return { extraBlobs: [], linked: false }
     const turn = turns[last]
     const afterId = last + 1 < turns.length ? turns[last + 1].beforeStateId : latestId
 
-    if (includeResponse && !midTurn) {
-      if (!afterId) return { extraBlobs: [], linked: false }
-      if (afterId === latestId) return empty
+    if (includeResponse) {
+      const after = afterId ? loadBlob(db, afterId) : undefined
+      if (!after || !historyMatches(db, after, prefix)) return { extraBlobs: [], linked: false }
       return { rootBlobId: afterId, extraBlobs: [], linked: true }
     }
 
@@ -303,13 +358,17 @@ export function planCliFork(chatDir: string, items: Item[], throughItemId?: stri
     const before = loadBlob(db, turn.beforeStateId)
     if (!before) return { extraBlobs: [], linked: false }
     const stripped = stripTurnSteps(turn.turnBlob)
-    if (!stripped) return { rootBlobId: turn.beforeStateId, extraBlobs: [], linked: true }
+    if (!stripped) return { extraBlobs: [], linked: false }
 
     const turnId = sha256(stripped)
     let root = Buffer.concat([before, encodeBytesField(8, Buffer.from(turnId, 'hex'))])
     const after = afterId ? loadBlob(db, afterId) : undefined
     const jsonId = after ? userJsonId(db, before, after, turn.userText) : undefined
-    if (jsonId) root = Buffer.concat([root, encodeBytesField(1, Buffer.from(jsonId, 'hex'))])
+    // The JSON message list supplies the model's context. A turn structure on
+    // its own only restores the transcript displayed by the CLI.
+    if (!jsonId) return { extraBlobs: [], linked: false }
+    root = Buffer.concat([root, encodeBytesField(1, Buffer.from(jsonId, 'hex'))])
+    if (!historyMatches(db, root, prefix)) return { extraBlobs: [], linked: false }
     const rootId = sha256(root)
     const extraBlobs: ForkBlob[] = [
       { id: turnId, data: stripped },
@@ -320,7 +379,7 @@ export function planCliFork(chatDir: string, items: Item[], throughItemId?: stri
     console.error('[fork] plan failed', err)
     return { extraBlobs: [], linked: false }
   } finally {
-    db.close()
+    db?.close()
   }
 }
 
@@ -339,6 +398,7 @@ export function materializeCliFork(
   title: string,
   destParent?: string
 ): { chatId: string; cwd?: string } {
+  if (!plan.linked) throw new Error('该分叉位置不能复制为 CLI 会话')
   const dbPath = path.join(chatDir, 'store.db')
   const src = openRead(dbPath)
   const chatId = randomUUID()
@@ -346,9 +406,22 @@ export function materializeCliFork(
   let dest: DatabaseSync | undefined
   let failed: unknown
   try {
+    // Metadata and blobs must come from the same SQLite snapshot, including
+    // committed WAL entries when the source CLI still has its database open.
+    src.exec('BEGIN')
     const meta = readStoreMeta(src)
     if (!meta || typeof meta.latestRootBlobId !== 'string' || !meta.latestRootBlobId) {
       throw new Error('该会话没有可复制的 CLI 记录')
+    }
+    const rootId = plan.rootBlobId || meta.latestRootBlobId
+    const root = plan.extraBlobs.find((blob) => blob.id === rootId)?.data ?? loadBlob(src, rootId)
+    if (!root || !parseFields(root) || (!blobIds(root, 1).length && !blobIds(root, 8).length)) {
+      throw new Error('该会话的 CLI 上下文缺失或已损坏')
+    }
+    for (const id of [...blobIds(root, 1), ...blobIds(root, 8)]) {
+      if (!plan.extraBlobs.some((blob) => blob.id === id) && !loadBlob(src, id)) {
+        throw new Error('该会话的 CLI 上下文缺失或已损坏')
+      }
     }
     fs.mkdirSync(sessionDir, { recursive: true })
     dest = new DatabaseSync(path.join(sessionDir, 'store.db'))
@@ -359,15 +432,16 @@ export function materializeCliFork(
       agentId: chatId,
       name: title,
       createdAt: now,
-      latestRootBlobId: plan.rootBlobId || meta.latestRootBlobId
+      latestRootBlobId: rootId
     }
     dest.exec('CREATE TABLE blobs (id TEXT PRIMARY KEY, data BLOB)')
     dest.exec('CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT)')
     const insert = dest.prepare('INSERT INTO blobs (id, data) VALUES (?, ?)')
     const insertExtra = dest.prepare('INSERT OR IGNORE INTO blobs (id, data) VALUES (?, ?)')
     dest.exec('BEGIN')
-    for (const row of src.prepare('SELECT id, data FROM blobs').all() as { id: string; data: Uint8Array }[]) {
-      insert.run(row.id, row.data)
+    for (const row of src.prepare('SELECT id, data FROM blobs').iterate()) {
+      // SQLite returns BLOB columns as Uint8Array.
+      insert.run(row.id as string, row.data as Uint8Array)
     }
     for (const blob of plan.extraBlobs) insertExtra.run(blob.id, blob.data)
     dest.prepare('INSERT INTO meta (key, value) VALUES (?, ?)').run('0', Buffer.from(JSON.stringify(nextMeta), 'utf8').toString('hex'))

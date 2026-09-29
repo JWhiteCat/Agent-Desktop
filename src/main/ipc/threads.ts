@@ -18,6 +18,7 @@ function historyDeps(deps: IpcDeps): HistoryDeps {
   return {
     store: deps.store,
     isRunning: (id) => deps.sessions.isRunning(id),
+    forkSession: (id) => deps.sessions.forkSession(id),
     broadcast: deps.broadcast
   }
 }

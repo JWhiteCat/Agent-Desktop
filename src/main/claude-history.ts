@@ -5,6 +5,7 @@ import type { CliSession, Item, ToolItem } from '@shared/types'
 import { newId } from './id'
 import { UNTITLED } from './history'
 import { compact } from './reducer'
+import { createForkPromptReader, parseForkPrompt } from './fork-context'
 
 const CLIENT_BLOCK = /<agent_desktop_client\b[^>]*>[\s\S]*?<\/agent_desktop_client>/gi
 
@@ -60,29 +61,33 @@ export function readClaudeTranscript(chatId: string, root = projectsRoot()): Ite
 export function claudeTranscriptItems(text: string): Item[] {
   const items: Item[] = []
   const tools = new Map<string, ToolItem>()
+  const readForkPrompt = createForkPromptReader()
   for (const row of parseLines(text)) {
     if (row?.isSidechain) continue
     const type = String(row?.type ?? '')
     if (type !== 'user' && type !== 'assistant') continue
     const createdAt = timeOf(row) ?? 0
     const blocks = messageBlocks(row?.message)
-    if (type === 'user') pushUser(items, tools, blocks, createdAt)
+    if (type === 'user') pushUser(items, tools, blocks, createdAt, readForkPrompt)
     else pushAssistant(items, tools, blocks, createdAt)
   }
   return items
 }
 
-function pushUser(items: Item[], tools: Map<string, ToolItem>, blocks: any[], createdAt: number): void {
+function pushUser(items: Item[], tools: Map<string, ToolItem>, blocks: any[], createdAt: number, readForkPrompt: typeof parseForkPrompt): void {
   const textParts: string[] = []
   for (const block of blocks) {
     if (block?.type === 'tool_result') {
       applyToolResult(tools, block)
       continue
     }
-    const text = visibleUserText(blockText(block))
+    const text = blockText(block)
     if (text) textParts.push(text)
   }
-  const text = textParts.join('\n').trim()
+  const raw = textParts.join('\n')
+  const replay = readForkPrompt(raw)
+  if (replay) items.push(...replay.items)
+  const text = replay ? replay.prompt : visibleUserText(raw)
   if (text) items.push({ id: newId(), kind: 'user', text, createdAt })
 }
 
@@ -130,6 +135,8 @@ function applyToolResult(tools: Map<string, ToolItem>, block: any): void {
 
 /** Drops the plan-mode client hint and keeps the text the person typed. */
 export function visibleUserText(raw: string): string {
+  const replay = parseForkPrompt(raw)
+  if (replay) return replay.prompt
   const query = raw.match(/<user_query>\s*([\s\S]*?)\s*<\/user_query>/)
   const body = query ? query[1] : raw
   return body.replace(CLIENT_BLOCK, '').trim()

@@ -45,6 +45,8 @@ export interface ThreadMeta {
   title: string
   /** CLI chat/session id, used to resume with ACP `session/load`. Cursor can also resume in a terminal with `agent --resume`. */
   chatId?: string
+  /** Last copied item to replay into a new session. Cleared after its first successful prompt. */
+  forkContextThroughItemId?: string
   /** Which CLI created this thread. Omitted on threads saved before Codex support; those stay on Cursor. */
   cli?: CliProvider
   /** Actual working directory reported by the CLI (differs from project path for worktrees). */

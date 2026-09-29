@@ -9,7 +9,7 @@ The app does not call a model itself. The main process starts the Cursor CLI, Co
 ## Features
 
 - Multi-project sidebar: add, rename, reorder, collapse, and search conversations. Search matches the title, the preview, and the project name
-- Fork a conversation from the header, the sidebar, a message, or by sending `/fork`. The original thread is left unchanged
+- Fork a conversation from the header, the sidebar, a message, or by sending `/fork`, preserving its history as context for the next message
 - Slash commands in a conversation: typing `/` lists `/fork` and the commands the CLI advertises. `/fork` runs in the app; other commands are sent as the next message
 - Three modes: Agent (can edit files and run commands), Plan (read-only plan; pick answers and run the plan in one click), Ask (read-only Q&A)
 - Model picker: Cursor, Codex, and Claude each remember favorite models and a default model, plus optional context length, reasoning effort, and Fast. Codex lists reasoning effort per model, for example Ultra on Astra. Claude lists the effort levels the adapter advertises for the current model. Each project remembers the last model chosen for that CLI
@@ -197,7 +197,9 @@ Projects, conversation metadata, and settings are stored in `data/` under Electr
 | macOS | `~/Library/Application Support/Agent Desktop/data` |
 | Linux | `~/.config/Agent Desktop/data` |
 
-`state.json` stores projects, the conversation list, and settings, including MCP servers, skill bodies, and the default CLI. Each conversation remembers whether it uses Cursor, Codex, or Claude. Messages for each conversation live in `threads/`. Cursor session records stay in `~/.cursor/chats`, Codex records stay in `~/.codex/sessions`, and Claude records stay in `~/.claude/projects`. This app only reads and resumes that storage. It does not rewrite it. Enabled skills are written to `~/.cursor/skills`, `~/.agents/skills`, `~/.codex/skills`, and `~/.claude/skills`. Codex and Claude conversations do not use a git worktree. A fork copies only the local messages; later sends start a new Codex or Claude session. A Cursor fork tries to copy the CLI session as well. If that copy fails, later messages start a new Cursor session, and the conversation says so.
+`state.json` stores projects, the conversation list, and settings, including MCP servers, skill bodies, and the default CLI. Each conversation remembers whether it uses Cursor, Codex, or Claude. Messages for each conversation live in `threads/`. Cursor session records stay in `~/.cursor/chats`, Codex records stay in `~/.codex/sessions`, and Claude records stay in `~/.claude/projects`. The app reads and resumes those records and creates separate copies when forking. Enabled skills are written to `~/.cursor/skills`, `~/.agents/skills`, `~/.codex/skills`, and `~/.claude/skills`. Codex and Claude conversations do not use a git worktree.
+
+A full fork copies the CLI session into an independent conversation: Cursor copies a consistent database snapshot, while Codex and Claude use their adapters' native fork support. Forking at a message keeps history through that message. When a CLI cannot copy that exact point, or native copying fails, the app saves the selected history and sends it as context with the fork's next message. This includes prior replies and tool results. The pending context survives restarts and failed sends and is cleared after a successful reply. CLI history sync also restores these copied messages. A fork whose context has not yet been delivered must complete a message before syncing. The source conversation is preserved.
 
 During development, `AGENT_DESKTOP_USER_DATA` points userData at another directory.
 

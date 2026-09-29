@@ -5,6 +5,7 @@ import type { CliSession, Item, ToolItem } from '@shared/types'
 import { newId } from './id'
 import { compact } from './reducer'
 import { UNTITLED } from './history'
+import { createForkPromptReader, parseForkPrompt } from './fork-context'
 
 const sessionsRoot = (): string => path.join(os.homedir(), '.codex', 'sessions')
 
@@ -84,18 +85,19 @@ function parseLines(text: string): any[] {
 function itemsFrom(rows: any[], events: boolean): Item[] {
   const items: Item[] = []
   const tools = new Map<string, ToolItem>()
+  const readForkPrompt = createForkPromptReader()
   for (const row of rows) {
     const payload = row?.payload ?? row
     const kind = String(row?.type ?? '')
     if (kind === 'session_meta') continue
     if (kind === 'event_msg') {
-      if (events) pushEvent(items, payload)
+      if (events) pushEvent(items, payload, readForkPrompt)
       continue
     }
     if (events) continue
     const itemType = String(payload?.type ?? '')
     if (itemType === 'message') {
-      pushMessage(items, payload, timeOf(row))
+      pushMessage(items, payload, readForkPrompt, timeOf(row))
       continue
     }
     if (itemType === 'function_call') {
@@ -125,23 +127,30 @@ function itemsFrom(rows: any[], events: boolean): Item[] {
   return items
 }
 
-function pushEvent(items: Item[], payload: any): void {
+function pushEvent(items: Item[], payload: any, readForkPrompt: typeof parseForkPrompt): void {
   const type = String(payload?.type ?? '')
   if (type === 'user_message') {
     const text = textOf(payload.message ?? payload.content)
-    if (text) items.push({ id: newId(), kind: 'user', text, createdAt: timeOf(payload) ?? 0 })
+    if (text) appendUser(items, text, timeOf(payload) ?? 0, readForkPrompt)
   } else if (type === 'agent_message') {
     const text = textOf(payload.message ?? payload.content)
     if (text) appendAssistant(items, text)
   }
 }
 
-function pushMessage(items: Item[], payload: any, createdAt?: number): void {
+function pushMessage(items: Item[], payload: any, readForkPrompt: typeof parseForkPrompt, createdAt?: number): void {
   const role = String(payload?.role ?? '')
   const text = textOf(payload.content ?? payload.message)
   if (!text) return
-  if (role === 'user') items.push({ id: newId(), kind: 'user', text, createdAt: createdAt ?? 0 })
+  if (role === 'user') appendUser(items, text, createdAt ?? 0, readForkPrompt)
   else if (role === 'assistant') appendAssistant(items, text)
+}
+
+function appendUser(items: Item[], raw: string, createdAt: number, readForkPrompt: typeof parseForkPrompt): void {
+  const replay = readForkPrompt(raw)
+  if (replay) items.push(...replay.items)
+  const text = replay ? replay.prompt : raw
+  if (text) items.push({ id: newId(), kind: 'user', text, createdAt })
 }
 
 function appendAssistant(items: Item[], text: string): void {
@@ -180,7 +189,7 @@ function firstUserText(text: string): string {
     const payload = row?.payload ?? row
     if (payload?.type === 'user_message' || (payload?.type === 'message' && payload?.role === 'user') || payload?.role === 'user') {
       const message = textOf(payload.message ?? payload.content)
-      if (message) return message
+      if (message) return parseForkPrompt(message)?.prompt ?? message
     }
   }
   return ''

@@ -9,7 +9,7 @@
 ## 功能
 
 - 多项目侧边栏：添加、重命名、排序、折叠、搜索对话。搜索匹配标题、预览和项目名
-- 分叉对话：可从标题栏、侧边栏、某条消息，或发送 `/fork` 开始。原对话保持不变
+- 分叉对话：可从标题栏、侧边栏、某条消息，或发送 `/fork` 开始，复制的历史会作为后续续聊的上下文
 - 对话里的斜杠命令：输入 `/` 会列出 `/fork` 和 CLI 宣告的命令。`/fork` 在本应用内执行，其他命令作为下一条消息发出
 - 三种模式：Agent（可改文件、执行命令）、Plan（只读方案，可点选回答提问、一键执行计划）、Ask（只读问答）
 - 模型选择：Cursor、Codex 与 Claude 各自记住常用模型和默认模型，并可选上下文长度、思考强度、Fast。Codex 按每个模型自己的档位列出思考强度，例如 Astra 的 Ultra。Claude 列出适配器为当前模型宣告的思考档位。每个项目会记住自己在该 CLI 里上次选的模型
@@ -197,7 +197,9 @@ npm run setup:public-server -- --user root --host 你的服务器 --port 8765
 | macOS | `~/Library/Application Support/Agent Desktop/data` |
 | Linux | `~/.config/Agent Desktop/data` |
 
-`state.json` 保存项目、对话列表和设置，包括 MCP 服务器、Skill 正文和默认 CLI。每段对话记住自己用的是 Cursor、Codex 还是 Claude。每段对话的消息在 `threads/` 里。Cursor 的会话记录仍在 `~/.cursor/chats`，Codex 的在 `~/.codex/sessions`，Claude 的在 `~/.claude/projects`。本应用只读取和续接那份存储，不改写它。启用的 Skill 写到 `~/.cursor/skills`、`~/.agents/skills`、`~/.codex/skills` 和 `~/.claude/skills`。Codex 和 Claude 对话不使用 git worktree。分叉只复制本机消息，之后的发送会开始一段新的 Codex 或 Claude 会话。Cursor 的分叉会尝试一并复制 CLI 会话。复制失败时，之后的消息从新的 Cursor 会话开始，对话里会说明这一点。
+`state.json` 保存项目、对话列表和设置，包括 MCP 服务器、Skill 正文和默认 CLI。每段对话记住自己用的是 Cursor、Codex 还是 Claude。每段对话的消息在 `threads/` 里。Cursor 的会话记录仍在 `~/.cursor/chats`，Codex 的在 `~/.codex/sessions`，Claude 的在 `~/.claude/projects`。本应用读取和续接这些记录，并在分叉时创建独立副本。启用的 Skill 写到 `~/.cursor/skills`、`~/.agents/skills`、`~/.codex/skills` 和 `~/.claude/skills`。Codex 和 Claude 对话不使用 git worktree。
+
+完整分叉会复制出独立的 CLI 会话：Cursor 复制一致的数据库快照，Codex 和 Claude 使用适配器的原生分叉接口。从某条消息分叉时，只保留到该消息为止的历史。如果 CLI 无法精确复制到这个位置，或原生复制失败，应用会保存所选历史，并在下次发送时连同新消息一起传给模型，包括之前的回复和工具结果。这份待发送上下文会保留到首次回复成功，重启或发送失败不会丢失。从 CLI 同步时也能还原这些历史消息；尚未传入上下文的分叉需要先成功发送一条消息再同步。原对话保留。
 
 开发时，`AGENT_DESKTOP_USER_DATA` 把 userData 指到另一个目录。
 

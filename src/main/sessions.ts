@@ -12,6 +12,7 @@ import { claudeAsCli, claudeModeId, CLAUDE_EFFORT_CONFIG_ID, CLAUDE_MODEL_CONFIG
 import { codexAsCli, codexModeId, resolveCodex, resolveCodexApiKey, spawnCodexAcp, type ResolvedCodex } from './codex'
 import { syncAllManagedSkills } from './skills'
 import { newId } from './id'
+import { forkPrompt } from './fork-context'
 import { StreamReducer } from './reducer'
 import { CodexTurnQuotaTracker, type CodexQuotaTurn } from './turn-quota'
 import type { Store } from './store'
@@ -74,6 +75,7 @@ export function titleFrom(prompt: string): string {
 
 const CANCEL_KILL_MS = 5000
 const COMMAND_WAIT_MS = 2000
+const FORK_TIMEOUT_MS = 60_000
 
 export class SessionManager {
   private runs = new Map<string, Run>()
@@ -113,6 +115,53 @@ export class SessionManager {
    */
   prepare(threadId: string, opts: PrepareRequest): Promise<SlashCommand[]> {
     return this.enqueue(threadId, () => this.prepareBody(threadId, opts))
+  }
+
+  /** Copies the persisted CLI session immediately, without prompting or loading the source. */
+  forkSession(threadId: string): Promise<{ chatId: string; cwd: string }> {
+    return this.enqueue(threadId, async () => {
+      if (this.isRunning(threadId)) throw new Error('对话正在运行，请稍后再分叉')
+      const thread = this.store.thread(threadId)
+      if (!thread) throw new Error('对话不存在')
+      if (!thread.chatId) throw new Error('对话没有可复制的 CLI 会话')
+      const sourceChatId = thread.chatId
+      const provider = threadCli(thread)
+      if (provider !== 'codex' && provider !== 'claude') throw new Error('此 CLI 不支持通过 ACP 分叉')
+      const project = this.store.project(thread.projectId)
+      if (!project) throw new Error('项目不存在')
+      const settings = this.store.settings
+      const launch = resolveLaunch(provider, settings.agentPath, settings.codexPath, settings.claudePath)
+      if (!launch) throw new Error(`未找到 ${cliLabel(provider)}。请先安装，或在设置中指定路径。`)
+      const cwd = thread.cwd && fs.existsSync(thread.cwd) ? thread.cwd : project.path
+      if (!fs.existsSync(cwd)) throw new Error(`项目目录不存在：${cwd}`)
+      const apiKey = providerApiKey(provider, settings)
+      const mcpServers = toAcpMcpServers(settings.mcpServers)
+      syncAllManagedSkills(settings.skills)
+      // A separate id keeps this short-lived process from touching the source's live state.
+      const transientId = newId()
+      const proc = this.openProc(transientId, provider, launch, [], cwd, apiKey, '', false)
+      let timer: NodeJS.Timeout | undefined
+      try {
+        return await Promise.race([
+          (async () => {
+            const initialized = await this.initializeSession(proc, provider, apiKey)
+            if (initialized?.agentCapabilities?.sessionCapabilities?.fork == null) {
+              throw new Error(`${cliLabel(provider)} 不支持会话分叉`)
+            }
+            const forked = await proc.acp.request('session/fork', { sessionId: sourceChatId, cwd, mcpServers })
+            const chatId = typeof forked?.sessionId === 'string' ? forked.sessionId.trim() : ''
+            if (!chatId || chatId === sourceChatId) throw new Error(`${cliLabel(provider)} 没有返回独立的分叉会话 id`)
+            return { chatId, cwd }
+          })(),
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(() => reject(new Error(`${cliLabel(provider)} 会话分叉超时`)), FORK_TIMEOUT_MS)
+          })
+        ])
+      } finally {
+        if (timer) clearTimeout(timer)
+        this.killProc(proc)
+      }
+    })
   }
 
   private enqueue<T>(threadId: string, fn: () => Promise<T>): Promise<T> {
@@ -275,7 +324,8 @@ export class SessionManager {
     args: string[],
     cwd: string,
     apiKey: string,
-    fingerprint: string
+    fingerprint: string,
+    trackCommands = true
   ): AgentProc {
     const child =
       provider === 'codex' && launch.codex
@@ -305,7 +355,7 @@ export class SessionManager {
       onNotification: (method, params) => {
         if (method === 'session/update' && params?.update?.sessionUpdate === 'available_commands_update') {
           const sessionId = typeof params?.sessionId === 'string' ? params.sessionId : ''
-          if (!sessionId || !proc.sessionId || sessionId === proc.sessionId) {
+          if (trackCommands && (!sessionId || !proc.sessionId || sessionId === proc.sessionId)) {
             this.rememberCommands(threadId, params.update.availableCommands)
           }
           return
@@ -488,7 +538,24 @@ export class SessionManager {
     mcpServers: Record<string, unknown>[]
   ): Promise<string> {
     const acp = proc.acp
-    await acp.request('initialize', {
+    await this.initializeSession(proc, provider, apiKey)
+
+    let sessionId = chatId
+    if (sessionId) {
+      await acp.request('session/load', { sessionId, cwd, mcpServers })
+    } else {
+      const created = await acp.request('session/new', { cwd, mcpServers })
+      sessionId = created?.sessionId
+      if (!sessionId) throw new Error(`${cliLabel(provider)} 没有返回会话 id`)
+    }
+    proc.sessionId = sessionId
+    proc.ready = true
+    return sessionId
+  }
+
+  private async initializeSession(proc: AgentProc, provider: CliProvider, apiKey: string): Promise<any> {
+    const acp = proc.acp
+    const initialized = await acp.request('initialize', {
       protocolVersion: 1,
       clientCapabilities: {
         fs: { readTextFile: false, writeTextFile: false },
@@ -503,18 +570,7 @@ export class SessionManager {
     if (provider === 'codex' && apiKey) await acp.request('authenticate', { methodId: 'api-key' })
     if (provider === 'codex' && !apiKey) await acp.request('authenticate', { methodId: 'chat-gpt' })
     // Claude uses ANTHROPIC_API_KEY at process start, or the login already stored in ~/.claude.
-
-    let sessionId = chatId
-    if (sessionId) {
-      await acp.request('session/load', { sessionId, cwd, mcpServers })
-    } else {
-      const created = await acp.request('session/new', { cwd, mcpServers })
-      sessionId = created?.sessionId
-      if (!sessionId) throw new Error(`${cliLabel(provider)} 没有返回会话 id`)
-    }
-    proc.sessionId = sessionId
-    proc.ready = true
-    return sessionId
+    return initialized
   }
 
   private async applySessionOptions(proc: AgentProc, req: SendRequest): Promise<void> {
@@ -616,14 +672,22 @@ export class SessionManager {
       return
     }
     const started = Date.now()
+    const contextThroughId = this.store.thread(threadId)?.forkContextThroughItemId
+    let prompt = req.prompt
+    if (contextThroughId) {
+      const items = this.store.items(threadId)
+      const cut = items.findIndex((item) => item.id === contextThroughId)
+      if (cut < 0) throw new Error('分叉历史缺失，无法恢复上下文')
+      prompt = forkPrompt(items.slice(0, cut + 1), prompt)
+    }
     const text =
       req.mode !== 'plan'
-        ? req.prompt
+        ? prompt
         : run.proc.provider === 'codex'
-          ? codexPlanModePrompt(req.prompt)
+          ? codexPlanModePrompt(prompt)
           : run.proc.provider === 'claude'
-            ? claudePlanModePrompt(req.prompt)
-            : planModePrompt(req.prompt)
+            ? claudePlanModePrompt(prompt)
+            : planModePrompt(prompt)
     if (run.quotaTurn) this.quotaTracker.markPromptStarted(run.quotaTurn)
     const result = await run.proc.acp.request('session/prompt', {
       sessionId: run.proc.sessionId,
@@ -631,6 +695,10 @@ export class SessionManager {
     })
     if (!this.runs.has(threadId) || run.settled) return
     const stop = String(result?.stopReason ?? 'end_turn')
+    if (contextThroughId && stop === 'end_turn') {
+      this.store.updateThread(threadId, { forkContextThroughItemId: undefined })
+      this.onStateChange()
+    }
     run.reducer.gotResult = true
     const usage = normalizeTurnUsage(result?.usage) ?? run.reducer.lastUsage
     const changed = run.reducer.closeSegments()

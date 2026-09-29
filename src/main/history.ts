@@ -5,6 +5,7 @@ import { DatabaseSync } from 'node:sqlite'
 import type { CliSession, Item, ToolItem } from '@shared/types'
 import { newId } from './id'
 import { compact } from './reducer'
+import { createForkPromptReader } from './fork-context'
 
 interface CliMeta {
   title?: string
@@ -110,10 +111,8 @@ function messageIds(root: Uint8Array): string[] {
 
 const CONTEXT_BLOCK = /<([a-zA-Z][\w-]*)(\s[^>]*)?>[\s\S]*?<\/\1>/g
 
-/** User turns are wrapped with injected context blocks; keep only what the person typed. */
-function userText(content: unknown): string {
-  const raw =
-    typeof content === 'string'
+function contentText(content: unknown): string {
+  return typeof content === 'string'
       ? content
       : Array.isArray(content)
         ? content
@@ -121,8 +120,17 @@ function userText(content: unknown): string {
             .map((p: any) => p.text)
             .join('\n')
         : ''
+}
+
+function imageSuffix(content: unknown): string {
   const images = Array.isArray(content) ? content.filter((p: any) => p?.type === 'image').length : 0
-  const suffix = images ? `\n[${images} 张图片]` : ''
+  return images ? `\n[${images} 张图片]` : ''
+}
+
+/** User turns are wrapped with injected context blocks; keep only what the person typed. */
+function userText(content: unknown): string {
+  const raw = contentText(content)
+  const suffix = imageSuffix(content)
   const query = raw.match(/<user_query>\s*([\s\S]*?)\s*<\/user_query>/)
   if (query) return query[1] + suffix
   const text = raw.replace(CONTEXT_BLOCK, '').trim()
@@ -145,6 +153,7 @@ export function readCliTranscript(chatId: string): Item[] | undefined {
 
     const items: Item[] = []
     const tools = new Map<string, ToolItem>()
+    const readForkPrompt = createForkPromptReader()
     const createdAt = readMetaFile(dir)?.createdAtMs ?? 0
 
     for (const id of messageIds(root)) {
@@ -157,7 +166,9 @@ export function readCliTranscript(chatId: string): Item[] | undefined {
         continue
       }
       if (msg.role === 'user') {
-        const text = userText(msg.content)
+        const replay = readForkPrompt(contentText(msg.content))
+        if (replay) items.push(...replay.items)
+        const text = replay ? replay.prompt + imageSuffix(msg.content) : userText(msg.content)
         if (text) items.push({ id: newId(), kind: 'user', text, createdAt })
       } else if (msg.role === 'assistant') {
         const parts = typeof msg.content === 'string' ? [{ type: 'text', text: msg.content }] : (msg.content ?? [])
