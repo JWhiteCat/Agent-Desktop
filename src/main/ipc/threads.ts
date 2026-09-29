@@ -26,9 +26,9 @@ export function threadHandlers(deps: IpcDeps): Record<string, Handler> {
   const { store, sessions, broadcast } = deps
   const history = historyDeps(deps)
   return {
-    'thread:create': (projectId: string, mode: AgentMode, model: string) => {
+    'thread:create': (projectId: string, mode: AgentMode, model: string, force?: boolean) => {
       if (!store.project(projectId)) throw new Error('项目不存在')
-      const t = store.createThread({ projectId, title: DEFAULT_TITLE, mode, model, cli: store.settings.cliProvider, source: 'app' })
+      const t = store.createThread({ projectId, title: DEFAULT_TITLE, mode, model, force: force ?? store.settings.force, cli: store.settings.cliProvider, source: 'app' })
       broadcast()
       return t
     },

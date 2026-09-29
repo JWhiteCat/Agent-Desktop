@@ -162,6 +162,7 @@ export class SessionManager {
       title: thread.title === DEFAULT_TITLE ? titleFrom(req.prompt) : thread.title,
       model: req.model,
       mode: req.mode,
+      force: req.force,
       worktree: thread.chatId ? thread.worktree : !!req.worktree,
       updatedAt: Date.now(),
       archived: false

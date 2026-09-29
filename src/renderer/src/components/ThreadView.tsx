@@ -313,7 +313,7 @@ export function ThreadView({ thread, changesOpen, onToggleChanges }: Props) {
           initial={{
             model: thread.model || modelForChat(models, favoritesFor(settings, cli), defaultModelFor(settings, cli), projectModelFor(project, cli)),
             mode: thread.mode,
-            force: settings.force
+            force: thread.force ?? settings.force
           }}
           placeholder={
             thread.chatId
@@ -324,6 +324,7 @@ export function ThreadView({ thread, changesOpen, onToggleChanges }: Props) {
           }
           commands={commands}
           onPrepare={thread.chatId ? (opts) => void prepareCommands(thread.id, opts) : undefined}
+          onForceChange={(force) => void window.api.updateThread(thread.id, { force })}
           onSend={(text, opts) => {
             if (text.trim() === '/fork') {
               void forkThread(thread.id)

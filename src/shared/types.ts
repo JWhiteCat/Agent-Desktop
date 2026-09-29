@@ -52,6 +52,8 @@ export interface ThreadMeta {
   model?: string
   modelLabel?: string
   mode: AgentMode
+  /** Full-access selection for this thread. Older threads use the settings default until selected or sent. */
+  force?: boolean
   worktree?: boolean
   createdAt: number
   updatedAt: number

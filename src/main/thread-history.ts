@@ -90,6 +90,7 @@ export function forkThread(deps: HistoryDeps, id: string, throughItemId?: string
     model: src.model,
     modelLabel: src.modelLabel,
     mode: src.mode,
+    force: src.force,
     worktree: src.worktree,
     preview: previewOf(cloned),
     source: 'app',

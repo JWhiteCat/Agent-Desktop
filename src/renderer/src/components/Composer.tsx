@@ -31,6 +31,7 @@ interface Props {
   commands?: SlashCommand[]
   /** Called once when the user starts a `/` command, so the CLI list can be loaded. */
   onPrepare?: (opts: SendOptions) => void
+  onForceChange?: (force: boolean) => void
   footerLeft?: React.ReactNode
   onSend: (text: string, opts: SendOptions) => Promise<void> | void
   onStop?: () => void
@@ -56,6 +57,10 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
   useEffect(() => {
     setOpts((o) => (o.model === props.initial.model ? o : { ...o, model: props.initial.model }))
   }, [props.initial.model])
+
+  useEffect(() => {
+    setOpts((o) => (o.force === props.initial.force ? o : { ...o, force: props.initial.force }))
+  }, [props.initial.force])
 
   useImperativeHandle(ref, () => ({
     focus: () => ta.current?.focus(),
@@ -215,7 +220,11 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
           <button
             className={`pill ${opts.force ? 'pill-warn' : ''}`}
             title={opts.force ? '完全访问：命令无需确认直接执行（--force）' : '默认权限：遵循 CLI 权限配置'}
-            onClick={() => setOpts((o) => ({ ...o, force: !o.force }))}
+            onClick={() => {
+              const force = !opts.force
+              setOpts((o) => ({ ...o, force }))
+              props.onForceChange?.(force)
+            }}
           >
             <IconShield size={13} />
             <span>{opts.force ? '完全访问' : '默认权限'}</span>

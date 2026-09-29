@@ -472,7 +472,7 @@ export async function sendMessage(threadId: string, prompt: string, opts: SendOp
 }
 
 export async function startThread(projectId: string, prompt: string, opts: SendOptions): Promise<ThreadMeta> {
-  const thread = await window.api.createThread(projectId, opts.mode, opts.model)
+  const thread = await window.api.createThread(projectId, opts.mode, opts.model, opts.force)
   setState((s) => ({
     app: s.app.threads.some((t) => t.id === thread.id) ? s.app : { ...s.app, threads: [...s.app.threads, thread] },
     items: { ...s.items, [thread.id]: [] },
