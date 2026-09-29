@@ -5,6 +5,7 @@ import { parseAvailableCommands, type SlashCommand } from '@shared/commands'
 import type { AgentEvent, CliProvider, Item, PrepareRequest, QuestionAnswer, SendRequest } from '@shared/types'
 import { isCliProvider, threadCli } from '@shared/types'
 import { normalizeTurnUsage } from '@shared/turn-usage'
+import type { WeeklyQuotaEstimate } from '@shared/turn-quota'
 import { AcpConnection } from './acp'
 import { killTree, stripAnsi } from './cli'
 import { syncAllManagedSkills } from './skills'
@@ -14,6 +15,7 @@ import { StreamReducer } from './reducer'
 import { loadCodexAccountUsage } from './codex-account'
 import { CodexTurnUsageReader } from './codex-turn-usage'
 import { SessionUsage } from './session/usage'
+import { loadCodexQuota } from './quota'
 import {
   applySessionOptions, cliLabel, cursorArgs, initializeSession, leftPlanMode,
   planPrompt, procFingerprint, providerApiKey, resolveLaunch, spawnProvider, type AgentLaunch
@@ -54,6 +56,7 @@ interface Run extends InteractionRun {
   codexAccountPath?: string
   resultId?: string
   codexUsage?: CodexTurnUsageReader
+  weeklyQuotaEstimate?: WeeklyQuotaEstimate
 }
 
 export interface RunFinished {
@@ -92,9 +95,10 @@ export class SessionManager {
     private readonly emit: (ev: AgentEvent) => void,
     private readonly onStateChange: () => void,
     private readonly onFinished: (info: RunFinished) => void,
-    readCodexAccount = loadCodexAccountUsage
+    readCodexAccount = loadCodexAccountUsage,
+    readCodexQuota = loadCodexQuota
   ) {
-    this.usage = new SessionUsage(store, emit, (threadId) => this.isRunning(threadId), readCodexAccount)
+    this.usage = new SessionUsage(store, emit, (threadId) => this.isRunning(threadId), readCodexAccount, readCodexQuota)
   }
 
   running(): string[] {
@@ -568,7 +572,6 @@ export class SessionManager {
       this.endRun(threadId, run, null)
       return
     }
-    const started = Date.now()
     const contextThroughId = this.store.thread(threadId)?.forkContextThroughItemId
     let prompt = req.prompt
     if (contextThroughId) {
@@ -578,6 +581,16 @@ export class SessionManager {
       prompt = forkPrompt(items.slice(0, cut + 1), prompt)
     }
     const text = planPrompt(run.proc.provider, req.mode, prompt)
+    if (run.codexAccountPath !== undefined) {
+      const start = await this.usage.sampleQuota()
+      if (this.runs.get(threadId) !== run || run.settled) return
+      if (run.stopped) {
+        this.endRun(threadId, run, null)
+        return
+      }
+      run.weeklyQuotaEstimate = start ? { start } : {}
+    }
+    const started = Date.now()
     if (run.proc.provider === 'codex') run.codexUsage = new CodexTurnUsageReader(run.proc.sessionId)
     const result = await run.proc.acp.request('session/prompt', {
       sessionId: run.proc.sessionId,
@@ -663,9 +676,20 @@ export class SessionManager {
         })
       )
     }
+    if (run.resultId && run.weeklyQuotaEstimate) {
+      const result = items.find((item) => item.kind === 'result' && item.id === run.resultId)
+      if (result?.kind === 'result') {
+        result.weeklyQuotaEstimate = run.weeklyQuotaEstimate
+        changed.push(result)
+      }
+    }
     this.queue(threadId, run, changed)
     this.flushPending(threadId, run)
     this.runs.delete(threadId)
+
+    if (run.resultId && run.weeklyQuotaEstimate) {
+      void this.usage.saveQuotaEstimate(threadId, run.resultId, run.proc.sessionId)
+    }
 
     const keep = !run.proc.dying && !spawnError && r.gotResult && run.proc.child.exitCode === null
     if (keep) this.agents.set(threadId, run.proc)

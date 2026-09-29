@@ -136,6 +136,28 @@ describe('stored Codex usage repair', () => {
     expect(store.items('fork')[2]).toMatchObject({ usage: turn.usage, usageComplete: true })
   })
 
+  it('preserves fixed weekly estimates across restarts and usage repair', () => {
+    const weeklyQuotaEstimate = {
+      start: { sampledAt: now, weekly: { usedPercent: 37, resetsAt: now + 604_800_000 } },
+      end: { sampledAt: now + 30_000, weekly: { usedPercent: 37.5, resetsAt: now + 604_800_000 } },
+      usedPercent: 0.5
+    }
+    addThread('source', transcript({ weeklyQuotaEstimate }))
+    addThread('fork', transcript({ id: 'fork-result', weeklyQuotaEstimate }))
+    addThread('missing', transcript({ weeklyQuotaEstimate: {} }))
+    reload()
+    const turn = rollout()
+    turn.quotaSnapshot = { sampledAt: now + 60_000, weekly: { usedPercent: 99 } }
+    codex.readUsage.mockImplementation((chatId: string) => chatId === 'source-chat' ? [turn] : undefined)
+    expect(store.items('source')[2]).toMatchObject({ weeklyQuotaEstimate, quotaSnapshot: turn.quotaSnapshot, usage: turn.usage })
+    expect(store.items('fork')[2]).toMatchObject({ weeklyQuotaEstimate, usage: turn.usage })
+    expect(store.items('missing')[2]).toHaveProperty('weeklyQuotaEstimate', {})
+    reload()
+    expect(store.items('source')[2]).toHaveProperty('weeklyQuotaEstimate', weeklyQuotaEstimate)
+    expect(store.items('fork')[2]).toHaveProperty('weeklyQuotaEstimate', weeklyQuotaEstimate)
+    expect(store.items('missing')[2]).toHaveProperty('weeklyQuotaEstimate', {})
+  })
+
   it('restores missing quota for an already complete token record and its fork', () => {
     const turn = rollout()
     turn.quotaSnapshot = { sampledAt: now + 29_000, weekly: { usedPercent: 37 } }

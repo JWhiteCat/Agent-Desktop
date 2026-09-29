@@ -56,7 +56,7 @@ async function loadCursorQuota(apiKeySetting: string | undefined): Promise<Provi
   }
 }
 
-async function loadCodexQuota(apiKeySetting: string | undefined): Promise<ProviderQuota> {
+export async function loadCodexQuota(apiKeySetting: string | undefined, timeoutMs = FETCH_MS): Promise<ProviderQuota> {
   const empty = (note: string): ProviderQuota => ({ provider: 'codex', windows: [], note })
   try {
     // ACP explicitly authenticates with this key, even when ChatGPT tokens remain on disk.
@@ -70,7 +70,7 @@ async function loadCodexQuota(apiKeySetting: string | undefined): Promise<Provid
     }
     const headers: Record<string, string> = { Authorization: `Bearer ${auth.token}` }
     if (auth.accountId) headers['ChatGPT-Account-Id'] = auth.accountId
-    const res = await http(CODEX_USAGE, { headers, signal: AbortSignal.timeout(FETCH_MS) })
+    const res = await http(CODEX_USAGE, { headers, signal: AbortSignal.timeout(timeoutMs) })
     if (res.status === 401 || res.status === 403) {
       return empty('Codex 登录已过期，请重新登录')
     }

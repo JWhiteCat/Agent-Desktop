@@ -1,8 +1,9 @@
 import type { AgentEvent } from '@shared/types'
 import { threadCli } from '@shared/types'
-import { quotaSnapshot } from '@shared/turn-quota'
+import { quotaSnapshot, weeklyQuotaEstimate, type TurnQuotaSnapshot } from '@shared/turn-quota'
 import { resolveCodexApiKey } from '../codex'
 import { loadCodexAccountUsage } from '../codex-account'
+import { loadCodexQuota } from '../quota'
 import type { CodexTurnUsageReader } from '../codex-turn-usage'
 import type { Store } from '../store'
 
@@ -15,24 +16,73 @@ interface CodexUsageRefresh {
 }
 
 const CODEX_USAGE_RETRY_MS = [30_000, 120_000, 300_000]
+const CODEX_QUOTA_SAMPLE_MS = 3_000
 
 type UsageStore = Pick<Store, 'thread' | 'items' | 'markItemsDirty' | 'settings'>
 
 /** Owns delayed usage writes and retries without owning a CLI process or turn. */
 export class SessionUsage {
   private refreshes = new Map<string, CodexUsageRefresh>()
+  private estimates = new Map<string, object>()
   private stopped = false
 
   constructor(
     private readonly store: UsageStore,
     private readonly emit: (event: AgentEvent) => void,
     private readonly isRunning: (threadId: string) => boolean,
-    private readonly readCodexAccount = loadCodexAccountUsage
+    private readonly readCodexAccount = loadCodexAccountUsage,
+    private readonly readCodexQuota = loadCodexQuota
   ) {}
 
   stop(): void {
     this.stopped = true
+    this.estimates.clear()
     for (const threadId of this.refreshes.keys()) this.cancel(threadId)
+  }
+
+  /** Both turn boundaries use the same quota source and a short, fixed deadline. */
+  async sampleQuota(): Promise<TurnQuotaSnapshot | undefined> {
+    if (this.stopped) return undefined
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+      const quota = await Promise.race([
+        this.readCodexQuota(this.store.settings.codexApiKey, CODEX_QUOTA_SAMPLE_MS),
+        new Promise<undefined>((resolve) => { timer = setTimeout(() => resolve(undefined), CODEX_QUOTA_SAMPLE_MS) })
+      ])
+      return !this.stopped && quota ? quotaSnapshot(quota, Date.now()) : undefined
+    } catch {
+      return undefined
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+
+  /** Freeze one end reading for this result; history refreshes never repeat it. */
+  async saveQuotaEstimate(threadId: string, resultId: string, sessionId: string): Promise<void> {
+    if (this.stopped || this.isRunning(threadId)) return
+    const items = this.store.items(threadId)
+    const item = items.find((item) => item.kind === 'result' && item.id === resultId)
+    if (item?.kind !== 'result' || !item.weeklyQuotaEstimate) return
+    const estimate = item.weeklyQuotaEstimate
+    const pending = {}
+    this.estimates.set(threadId, pending)
+    try {
+      const end = await this.sampleQuota()
+      if (this.estimates.get(threadId) !== pending || this.stopped || this.isRunning(threadId)) return
+      const thread = this.store.thread(threadId)
+      if (!thread || thread.chatId !== sessionId || threadCli(thread) !== 'codex') return
+      if (resolveCodexApiKey(this.store.settings.codexApiKey)) return
+      // Re-importing may replace the transcript, even when it retains result IDs.
+      if (this.store.items(threadId) !== items) return
+      const current = items.find((item) => item.kind === 'result' && item.id === resultId)
+      if (current?.kind !== 'result' || current.weeklyQuotaEstimate !== estimate) return
+      if (!end) return
+      current.weeklyQuotaEstimate = weeklyQuotaEstimate(estimate.start, end)
+      this.store.markItemsDirty(threadId)
+      this.emit({ type: 'items', threadId, items: [current] })
+    } finally {
+      if (this.estimates.get(threadId) === pending) this.estimates.delete(threadId)
+    }
   }
 
   /** Opening a saved conversation also refreshes the latest session consumption. */
@@ -61,6 +111,11 @@ export class SessionUsage {
   }
 
   cancel(threadId: string): void {
+    this.estimates.delete(threadId)
+    this.cancelRefresh(threadId)
+  }
+
+  private cancelRefresh(threadId: string): void {
     clearTimeout(this.refreshes.get(threadId)?.timer)
     this.refreshes.delete(threadId)
   }
@@ -70,7 +125,7 @@ export class SessionUsage {
     if (this.stopped) return
     const previous = this.refreshes.get(threadId)
     if (previous?.resultId === resultId && previous.sessionId === sessionId && (previous.pending || Date.now() - previous.at < 30_000)) return
-    this.cancel(threadId)
+    this.cancelRefresh(threadId)
     const refresh: CodexUsageRefresh = { resultId, sessionId, at: Date.now(), pending: true }
     this.refreshes.set(threadId, refresh)
     let needsRetry = true

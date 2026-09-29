@@ -1,4 +1,4 @@
-import type { Item, ThreadMeta } from '@shared/types'
+import type { Item, ResultItem, ThreadMeta } from '@shared/types'
 import { threadCli } from '@shared/types'
 import { materializeCliFork, planCliFork } from './fork'
 import { readClaudeTranscript } from './claude-history'
@@ -43,6 +43,23 @@ function cloneItems(items: Item[]): Item[] {
     if (it.kind === 'thinking' && !it.done) it.done = true
   }
   return cloned
+}
+
+/** CLI history has fresh item IDs; only a unique Codex usage ID identifies the same turn. */
+function preserveQuotaEstimates(previous: Item[], imported: Item[]): void {
+  const uniqueResults = (items: Item[]): Map<string, ResultItem | undefined> => {
+    const results = new Map<string, ResultItem | undefined>()
+    for (const item of items) {
+      if (item.kind !== 'result' || (item.cli && item.cli !== 'codex') || !item.usageId) continue
+      results.set(item.usageId, results.has(item.usageId) ? undefined : item)
+    }
+    return results
+  }
+  const saved = uniqueResults(previous)
+  for (const [usageId, item] of uniqueResults(imported)) {
+    const estimate = saved.get(usageId)?.weeklyQuotaEstimate
+    if (item && estimate) item.weeklyQuotaEstimate = structuredClone(estimate)
+  }
 }
 
 /** Copies a conversation into a new thread. `throughItemId` keeps history only up to that message. */
@@ -125,6 +142,7 @@ export function syncFromCli(deps: Pick<HistoryDeps, 'store' | 'isRunning'>, thre
   // A CLI may have created its database before persisting any messages.
   // Keep the local transcript until there is history to replace it with.
   if (!items?.length) return undefined
+  if (cli === 'codex') preserveQuotaEstimates(deps.store.items(threadId), items)
   deps.store.setItems(threadId, items)
   const firstUser = items.find((i) => i.kind === 'user')
   deps.store.updateThread(threadId, {

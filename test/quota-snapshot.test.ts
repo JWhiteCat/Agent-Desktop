@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { loadQuotas } from '../src/main/quota'
+import { loadCodexQuota, loadQuotas } from '../src/main/quota'
 
 const { fetchMock } = vi.hoisted(() => ({ fetchMock: vi.fn() }))
 vi.mock('electron', () => ({ net: { fetch: fetchMock } }))
@@ -95,5 +95,32 @@ describe('Codex settings quota', () => {
     expect((await loadQuotas(undefined, undefined)).codex).toMatchObject({ windows: [], note: '没有可用的额度窗口' })
     fetchMock.mockResolvedValueOnce({ ok: true, status: 200, json: async () => { throw new Error('invalid JSON') } })
     expect((await loadQuotas(undefined, undefined)).codex).toMatchObject({ windows: [], note: '没有可用的额度窗口' })
+  })
+})
+
+describe('Codex turn quota snapshot', () => {
+  it('reads only Codex quota with the configured turn timeout', async () => {
+    const signal = new AbortController().signal
+    const timeout = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(signal)
+    const quota = await loadCodexQuota(undefined, 3_000)
+    expect(quota.windows).toHaveLength(2)
+    expect(timeout).toHaveBeenCalledExactlyOnceWith(3_000)
+    expect(fetchMock).toHaveBeenCalledExactlyOnceWith('https://chatgpt.com/backend-api/wham/usage', {
+      headers: { Authorization: 'Bearer test-access-token', 'ChatGPT-Account-Id': 'account-test' },
+      signal
+    })
+  })
+
+  it('keeps the settings timeout when no override is supplied', async () => {
+    const timeout = vi.spyOn(AbortSignal, 'timeout')
+    await loadCodexQuota(undefined)
+    expect(timeout).toHaveBeenCalledExactlyOnceWith(15_000)
+  })
+
+  it('reports timed out snapshots without rejecting the caller', async () => {
+    fetchMock.mockRejectedValueOnce(new DOMException('The operation was aborted due to timeout', 'TimeoutError'))
+    await expect(loadCodexQuota(undefined, 3_000)).resolves.toMatchObject({
+      provider: 'codex', windows: [], note: '暂时无法获取 Codex 额度'
+    })
   })
 })

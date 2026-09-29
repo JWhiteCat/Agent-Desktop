@@ -2,16 +2,18 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { CliProvider, Item } from '../src/shared/types'
+import type { CliProvider, Item, ResultItem } from '../src/shared/types'
 import { Store } from '../src/main/store'
 import { forkThread, syncFromCli, type HistoryDeps } from '../src/main/thread-history'
 import { findChatDir, readCliTranscript } from '../src/main/history'
 import { materializeCliFork, planCliFork } from '../src/main/fork'
+import { readCodexTranscript } from '../src/main/codex-history'
 
 const electron = vi.hoisted(() => ({ userData: '' }))
 vi.mock('electron', () => ({ app: { getPath: () => electron.userData } }))
 vi.mock('../src/main/history', () => ({ findChatDir: vi.fn(), readCliTranscript: vi.fn(), UNTITLED: 'Untitled' }))
 vi.mock('../src/main/fork', () => ({ materializeCliFork: vi.fn(), planCliFork: vi.fn() }))
+vi.mock('../src/main/codex-history', () => ({ readCodexTranscript: vi.fn(), readCodexUsage: vi.fn() }))
 
 describe('conversation forks', () => {
   let store: Store
@@ -136,5 +138,65 @@ describe('conversation forks', () => {
     store.flush()
     const reloaded = new Store()
     expect(reloaded.items(original.id)).toEqual(transcript)
+  })
+
+  describe('weekly estimate preservation when syncing Codex history', () => {
+    const start = { sampledAt: 1_800_000_000_000, weekly: { usedPercent: 37, resetsAt: 1_900_000_000_000 } }
+    const complete = { start, end: { ...start, sampledAt: start.sampledAt + 1_000, weekly: { ...start.weekly, usedPercent: 37.5 } }, usedPercent: 0.5 }
+
+    it.each([complete, { start }, {}])('preserves a saved estimate by usage ID without keeping the old transcript array: %j', (estimate) => {
+      const original = source('codex')
+      const previous = store.items(original.id)
+      const saved = previous[2] as ResultItem
+      saved.weeklyQuotaEstimate = estimate
+      saved.codexThreadUsage = { threadId: 'original-chat', credits: 1 }
+      const imported = structuredClone(transcript)
+      imported[2] = { id: 'new-result-id', kind: 'result', cli: 'codex', isError: false, usageId: 'original-usage' }
+      vi.mocked(readCodexTranscript).mockReturnValue(imported)
+
+      expect(syncFromCli(deps, original.id)).toBe(imported)
+      expect(store.items(original.id)).not.toBe(previous)
+      const result = imported[2] as ResultItem
+      expect(result.weeklyQuotaEstimate).toEqual(estimate)
+      expect(result.weeklyQuotaEstimate).not.toBe(estimate)
+      expect(result).not.toHaveProperty('codexThreadUsage')
+      store.flush()
+      const reloaded = new Store()
+      expect(reloaded.items(original.id)[2]).toHaveProperty('weeklyQuotaEstimate', estimate)
+    })
+
+    it.each(['saved', 'imported'])('does not guess when the %s transcript has duplicate usage IDs', (side) => {
+      const original = source('codex')
+      const previous = store.items(original.id)
+      const saved = previous[2] as ResultItem
+      saved.weeklyQuotaEstimate = complete
+      const imported = structuredClone(transcript)
+      const duplicate = structuredClone((side === 'saved' ? previous : imported)[2])
+      duplicate.id = 'duplicate-result'
+      if (duplicate.kind === 'result') delete duplicate.weeklyQuotaEstimate
+      if (side === 'saved') previous.push(duplicate)
+      else imported.push(duplicate)
+      vi.mocked(readCodexTranscript).mockReturnValue(imported)
+
+      syncFromCli(deps, original.id)
+      expect(imported.filter((item) => item.kind === 'result').every((item) => !item.weeklyQuotaEstimate)).toBe(true)
+    })
+
+    it('does not backfill historical turns or match another CLI, missing, or different usage IDs', () => {
+      const original = source('codex')
+      const saved: ResultItem = { id: 'saved', kind: 'result', cli: 'codex', isError: false, usageId: 'saved-usage', weeklyQuotaEstimate: complete }
+      store.items(original.id).push(saved, { ...saved, id: 'cursor', cli: 'cursor', usageId: 'cursor-usage' }, { ...saved, id: 'without-usage', usageId: undefined })
+      const imported: Item[] = [
+        ...structuredClone(transcript),
+        { id: 'unmatched', kind: 'result', cli: 'codex', isError: false, usageId: 'other-usage' },
+        { id: 'other-cli', kind: 'result', cli: 'codex', isError: false, usageId: 'cursor-usage' },
+        { id: 'no-usage', kind: 'result', cli: 'codex', isError: false },
+        { id: 'imported-cursor', kind: 'result', cli: 'cursor', isError: false, usageId: 'saved-usage' }
+      ]
+      vi.mocked(readCodexTranscript).mockReturnValue(imported)
+
+      syncFromCli(deps, original.id)
+      expect(imported.filter((item) => item.kind === 'result').every((item) => !item.weeklyQuotaEstimate)).toBe(true)
+    })
   })
 })

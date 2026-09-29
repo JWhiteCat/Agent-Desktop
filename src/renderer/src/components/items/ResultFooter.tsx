@@ -23,6 +23,7 @@ export function ResultFooter({ item, text, fallbackModel, cli = 'cursor', models
   const quote = modelId && u ? quoteModel(modelId, u, provider) : undefined
   const priceSource = provider === 'codex' ? 'OpenAI API 公开标价' : 'Cursor 公开标价'
   const sessionUsage = provider === 'codex' ? sessionConsumption(item) : undefined
+  const turnEstimate = provider === 'codex' && item.weeklyQuotaEstimate !== undefined ? weeklyEstimate(item) : undefined
   return (
     <div className="result-footer">
       {text && <CopyButton text={text} />}
@@ -39,8 +40,21 @@ export function ResultFooter({ item, text, fallbackModel, cli = 'cursor', models
         </span>
       )}
       {sessionUsage && <span title={sessionUsage.title}>{sessionUsage.text}</span>}
+      {turnEstimate && <span title={turnEstimate.title}>{turnEstimate.text}</span>}
     </div>
   )
+}
+
+function weeklyEstimate(item: ResultItem): { text: string; title: string } {
+  const estimate = item.weeklyQuotaEstimate
+  const amount = estimate?.usedPercent
+  const start = estimate?.start?.weekly?.usedPercent
+  const end = estimate?.end?.weekly?.usedPercent
+  const reading = (value: number | undefined) => validQuotaAmount(value) ? `${quotaAmount(value)}%` : '暂无数据'
+  return {
+    text: `本轮预估消耗 ${validQuotaAmount(amount) ? `周额度 ${quotaAmount(amount)}%` : '暂无数据'}`,
+    title: `周额度已用：开始 ${reading(start)}，结束 ${reading(end)}。计算：结束 − 开始。${validQuotaAmount(amount) ? '' : '缺少有效读数或无法确认同一周额度周期，暂不能估算。'}账号其他会话、其他客户端的使用和统计延迟可能影响估算。0% 表示读数未变化，不代表本轮没有消耗。`
+  }
 }
 
 function sessionConsumption(item: ResultItem): { text: string; title: string } {

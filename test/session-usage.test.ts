@@ -67,10 +67,16 @@ describe('Codex usage collection during a prompt', () => {
     vi.mocked(readCodexUsage).mockReturnValueOnce([]).mockReturnValue([turn({ completed: false })])
     const ctx = setup()
     await ctx.start()
-    Object.assign(ctx.items[0], { quotaSnapshot: { sampledAt: now + 1000, weekly: { usedPercent: 38 } } })
+    const weeklyQuotaEstimate = {
+      start: { sampledAt: now, weekly: { usedPercent: 36.5, resetsAt: now + 604_800_000 } },
+      end: { sampledAt: now + 1000, weekly: { usedPercent: 37, resetsAt: now + 604_800_000 } },
+      usedPercent: 0.5
+    }
+    Object.assign(ctx.items[0], { weeklyQuotaEstimate, quotaSnapshot: { sampledAt: now + 1000, weekly: { usedPercent: 38 } } })
     vi.mocked(readCodexUsage).mockReturnValue([turn({ quotaSnapshot })])
     await vi.advanceTimersByTimeAsync(100)
     expect(ctx.items[0]).toMatchObject({ usageComplete: true, quotaSnapshot: { weekly: { usedPercent: 38 } } })
+    expect(ctx.items[0]).toHaveProperty('weeklyQuotaEstimate', weeklyQuotaEstimate)
   })
 
   it('waits briefly for a completed rollout snapshot', async () => {

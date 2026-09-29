@@ -13,6 +13,28 @@ export interface TurnQuotaSnapshot {
   fiveHour?: { usedPercent: number; resetsAt?: number }
 }
 
+/** Fixed account readings around one turn; the difference can include other sessions. */
+export interface WeeklyQuotaEstimate {
+  start?: TurnQuotaSnapshot
+  end?: TurnQuotaSnapshot
+  usedPercent?: number
+}
+
+export function weeklyQuotaEstimate(start?: TurnQuotaSnapshot, end?: TurnQuotaSnapshot): WeeklyQuotaEstimate {
+  const estimate: WeeklyQuotaEstimate = { start, end }
+  const startWindow = start?.weekly
+  const endWindow = end?.weekly
+  if (!start || !end || !startWindow || !endWindow ||
+    !Number.isFinite(start.sampledAt) || !Number.isFinite(end.sampledAt) || start.sampledAt > end.sampledAt ||
+    !validPercent(startWindow.usedPercent) || !validPercent(endWindow.usedPercent)) return estimate
+  const resetsAt = startWindow.resetsAt
+  if (resetsAt == null || !Number.isFinite(resetsAt) || resetsAt <= 0 ||
+    resetsAt !== endWindow.resetsAt || resetsAt <= end.sampledAt) return estimate
+  const difference = endWindow.usedPercent - startWindow.usedPercent
+  if (Number.isFinite(difference) && difference >= 0) estimate.usedPercent = difference
+  return estimate
+}
+
 /** Keep the account's main windows without interpreting their changes as turn usage. */
 export function quotaSnapshot(quota: ProviderQuota, sampledAt: number): TurnQuotaSnapshot | undefined {
   if (quota.provider !== 'codex' || !Number.isFinite(sampledAt)) return undefined

@@ -209,3 +209,49 @@ describe('result footer session consumption', () => {
     expect(html).not.toContain('暂无数据')
   })
 })
+
+describe('result footer weekly turn estimate', () => {
+  const weeklyQuotaEstimate: ResultItem['weeklyQuotaEstimate'] = {
+    start: { sampledAt: 1_800_000_000_000, weekly: { usedPercent: 30, resetsAt: 1_801_000_000_000 } },
+    end: { sampledAt: 1_800_000_060_000, weekly: { usedPercent: 30.5, resetsAt: 1_801_000_000_000 } },
+    usedPercent: 0.5
+  }
+
+  it('shows the turn estimate beside independent cumulative session consumption with its source explained', () => {
+    const html = render(undefined, 'codex', {
+      weeklyQuotaEstimate,
+      codexSessionUsage: { threadId: 'session', status: 'available', weekly: 8 }
+    })
+    expect(html).toContain('本次会话消耗 周额度 8%')
+    expect(html).toContain('本轮预估消耗 周额度 0.5%')
+    expect(html.indexOf('本轮预估消耗')).toBeGreaterThan(html.indexOf('本次会话消耗'))
+    expect(html).toContain('开始 30%，结束 30.5%')
+    expect(html).toContain('计算：结束 − 开始')
+    expect(html).toContain('账号其他会话、其他客户端的使用和统计延迟可能影响估算')
+    expect(html).toContain('0% 表示读数未变化')
+  })
+
+  it.each([[0, '0'], [0.000001, '&lt;0.0001'], [0.123456, '0.1235']])('formats an estimate of %s without losing a tiny positive amount', (usedPercent, expected) => {
+    const html = render(undefined, 'codex', { weeklyQuotaEstimate: { ...weeklyQuotaEstimate, usedPercent: Number(usedPercent) } })
+    expect(html).toContain(`本轮预估消耗 周额度 ${expected}%`)
+  })
+
+  it.each([undefined, NaN, Infinity, -1])('shows unavailable estimates for missing or invalid difference %s', (usedPercent) => {
+    const html = render(undefined, 'codex', { weeklyQuotaEstimate: { ...weeklyQuotaEstimate, usedPercent } })
+    expect(html).toContain('本轮预估消耗 暂无数据')
+    expect(html).toContain('开始 30%，结束 30.5%')
+    expect(html).not.toContain('本轮预估消耗 周额度')
+  })
+
+  it('shows unavailable observations but hides the estimate entirely for old results', () => {
+    expect(render(undefined, 'codex', { weeklyQuotaEstimate: {} })).toContain('本轮预估消耗 暂无数据')
+    expect(render(undefined, 'codex', { weeklyQuotaEstimate: {} })).toContain('开始 暂无数据，结束 暂无数据')
+    expect(render()).not.toContain('本轮预估消耗')
+  })
+
+  it.each(['cursor', 'claude'] as const)('uses the saved result provider when a conversation switches to %s', (cli) => {
+    expect(render(undefined, cli, { weeklyQuotaEstimate })).not.toContain('本轮预估消耗')
+    expect(render(undefined, 'codex', { weeklyQuotaEstimate, cli })).not.toContain('本轮预估消耗')
+    expect(render(undefined, cli, { weeklyQuotaEstimate, cli: 'codex' })).toContain('本轮预估消耗 周额度 0.5%')
+  })
+})

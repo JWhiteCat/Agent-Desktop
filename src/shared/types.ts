@@ -1,6 +1,6 @@
 import type { SlashCommand } from './commands'
 import type { TokenUsage } from './model-prices'
-import type { TurnQuotaSnapshot, TurnQuotaUsage } from './turn-quota'
+import type { TurnQuotaSnapshot, TurnQuotaUsage, WeeklyQuotaEstimate } from './turn-quota'
 import type { CodexSessionUsage, CodexThreadUsage } from './codex-account'
 
 export type AgentMode = 'agent' | 'plan' | 'ask'
@@ -124,6 +124,8 @@ export interface ResultItem {
   quotaUsage?: TurnQuotaUsage
   /** Account windows observed for this result, separate from this session's consumption. */
   quotaSnapshot?: TurnQuotaSnapshot
+  /** Fixed weekly account-quota difference around this turn, separate from attributed session usage. */
+  weeklyQuotaEstimate?: WeeklyQuotaEstimate
   /** Codex's own cumulative estimate for this thread when the service provides it. */
   codexThreadUsage?: CodexThreadUsage
   /** Personal-plan quota attributed by Codex to this session, never an account delta. */
