@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import { enabledSkillFingerprint, toAcpMcpServers } from '@shared/agent-config'
 import { parseAvailableCommands, type SlashCommand } from '@shared/commands'
 import type { AgentEvent, CliProvider, Item, PrepareRequest, QuestionAnswer, QuestionItem, SendRequest } from '@shared/types'
-import { threadCli } from '@shared/types'
+import { isCliProvider, threadCli } from '@shared/types'
 import { normalizeTurnUsage } from '@shared/turn-usage'
 import { normalizeQuestions } from '@shared/questions'
 import { AcpConnection, claudePlanModePrompt, codexPlanModePrompt, MethodNotFound, permissionResult, planModePrompt } from './acp'
@@ -133,6 +133,10 @@ export class SessionManager {
     if (this.runs.has(req.threadId)) throw new Error('该对话正在运行中')
     const thread = this.store.thread(req.threadId)
     if (!thread) throw new Error('对话不存在')
+    if (isCliProvider(req.cli) && req.cli !== threadCli(thread)) {
+      this.store.updateThread(thread.id, { cli: req.cli })
+      this.discard(thread.id)
+    }
     const project = this.store.project(thread.projectId)
     if (!project) throw new Error('项目不存在')
     const settings = this.store.settings

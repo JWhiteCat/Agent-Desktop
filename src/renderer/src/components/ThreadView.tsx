@@ -5,7 +5,7 @@ import { DiffFileView, collectEditedFiles } from '../lib/diff'
 import { duration, shortPath } from '../lib/format'
 import { planPath, planUriOf } from '../lib/tools'
 import { defaultModelFor, favoritesFor, modelForChat, projectModelFor } from '../lib/model-prefs'
-import { cliCommands, forkThread, prepareCommands, sendMessage, useStore } from '../store'
+import { chatModel, cliCommands, forkThread, prepareCommands, sendMessage, setCliProvider, useStore } from '../store'
 import { Composer, type ComposerHandle } from './Composer'
 import { IconBranch, IconChevronDown, IconChevronRight, IconCursor, IconDiff, IconFolder, Spinner } from './icons'
 import { ResultFooter, StepItem, TurnActionsProvider, UserMessage, type TurnActions } from './Items'
@@ -310,10 +310,20 @@ export function ThreadView({ thread, changesOpen, onToggleChanges }: Props) {
           projectId={thread.projectId}
           running={running}
           cli={cli}
+          cliDisabled={running}
+          cliNote={running ? '对话进行中，结束后再切换 CLI' : '切换后，下一条消息会用所选 CLI 新开一段会话，本机记录仍保留'}
+          onCliChange={(next) => {
+            if (running) return
+            setCliProvider(next)
+            const model = chatModel(thread.projectId, next)
+            void window.api.updateThread(thread.id, { cli: next, model })
+            return model
+          }}
           initial={{
             model: thread.model || modelForChat(models, favoritesFor(settings, cli), defaultModelFor(settings, cli), projectModelFor(project, cli)),
             mode: thread.mode,
-            force: thread.force ?? settings.force
+            force: thread.force ?? settings.force,
+            cli
           }}
           placeholder={
             thread.chatId

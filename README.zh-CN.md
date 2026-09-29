@@ -4,7 +4,7 @@
 
 面向 [Cursor CLI](https://cursor.com/cli)（`agent`）、[Codex CLI](https://github.com/openai/codex)（`codex`）和 [Claude Code](https://docs.anthropic.com/en/docs/claude-code)（`claude`）的桌面客户端。对话按项目分组，窗口流式展示思考、工具调用和回复，并保留本地历史。界面语言是中文。
 
-应用本身不调用模型。主进程在本机启动 Cursor CLI、Codex CLI 或 Claude Code 适配器，通过 [Agent Client Protocol](https://agentclientprotocol.com)（ACP）与之通信。新建对话使用设置里选中的 CLI，并记住这个选择。已有对话继续使用创建时的 CLI。侧边栏会标出每一段是 Cursor、Codex 还是 Claude。
+应用本身不调用模型。主进程在本机启动 Cursor CLI、Codex CLI 或 Claude Code 适配器，通过 [Agent Client Protocol](https://agentclientprotocol.com)（ACP）与之通信。输入框可以直接选择 Cursor、Codex 或 Claude。新建对话使用这个选择，并把它记住。已有对话里切换 CLI 时，屏幕上已有的消息保留，下一条消息会用所选 CLI 新开一段会话。侧边栏会标出每一段是 Cursor、Codex 还是 Claude。
 
 ## 功能
 
@@ -109,7 +109,7 @@ Windows 一键启动（需先安装 Node.js 22.12 或更高版本，包含 npm�
 ## 使用
 
 1. 添加一个项目文件夹。Agent 在该目录中工作；新建的 Cursor 对话也可以改到这段对话自己的 worktree。移除项目只从本应用删除，磁盘上的文件会留下。
-2. 在首页选择项目，输入任务或点一条示例提示，选好模型和模式后发送。输入框下方列出该项目最近的三段对话。
+2. 在首页选择项目，输入任务或点一条示例提示，选好 CLI、模型和模式后发送。输入框下方列出该项目最近的三段对话。
 3. 在侧边栏管理对话：置顶、归档、重命名（双击标题）、分叉、从 CLI 存储同步、复制会话 ID、删除。同步会替换这里显示的记录，本应用保存的耗时和 token 会丢掉。
 4. 需要看改动时打开变更面板，或在 Cursor / 文件管理器中打开工作目录。任务结束后，对话里会列出这一轮改过的文件，点击文件名展开 diff。
 
@@ -126,7 +126,7 @@ Windows 一键启动（需先安装 Node.js 22.12 或更高版本，包含 npm�
 | Shift+Enter | 换行 |
 | Esc | 停止当前运行 |
 
-输入框用来选模式和模型，也可以打开完全访问（`--force`）。完全访问会让 CLI 在不逐条确认的情况下执行命令。对 Claude 来说，完全访问是 `bypassPermissions`；不开完全访问的 Agent 是 `acceptEdits`，改文件会自动通过，命令仍会询问。Ask 保持 Claude 的默认权限模式，应用会拒绝改文件和执行命令的请求。沙箱（`--sandbox`）在设置的「默认值」里：遵循 CLI、启用或禁用，只作用于 Cursor，不是输入框上的开关，Claude 不使用它。首页上，新建的 Cursor 对话还可以在项目目录和隔离的 git worktree（`--worktree`）之间切换。
+输入框用来选 CLI、模式和模型，也可以打开完全访问（`--force`）。首页上的 CLI 用于新建对话。对话里切换 CLI 时，已经显示的记录保留，下一条消息会用所选 CLI 新开一段会话。这个选择会记成设置里 CLI 页的默认值。完全访问会让 CLI 在不逐条确认的情况下执行命令。对 Claude 来说，完全访问是 `bypassPermissions`；不开完全访问的 Agent 是 `acceptEdits`，改文件会自动通过，命令仍会询问。Ask 保持 Claude 的默认权限模式，应用会拒绝改文件和执行命令的请求。沙箱（`--sandbox`）在设置的「默认值」里：遵循 CLI、启用或禁用，只作用于 Cursor，不是输入框上的开关，Claude 不使用它。首页上，新建的 Cursor 对话还可以在项目目录和隔离的 git worktree（`--worktree`）之间切换。
 
 在一段对话里输入 `/` 会打开命令菜单。方向键移动，Enter 或 Tab 选中，Esc 只关闭菜单，不会停止正在运行的回合。`/fork` 在本地分叉。需要参数的命令会填成 `/名称 `，并在输入框下方显示提示，再按 Enter 发送。没有参数的命令会立刻执行。列表里还有 CLI 通过 ACP `available_commands_update` 宣告的命令。已有 CLI 会话的对话，第一次输入 `/` 会加载该会话，以便列出这些命令。新对话和首页不启动 CLI，而是复用这个 CLI 上一次宣告的命令列表，并记在本机；还没有任何列表时不显示菜单。下一次真实会话会刷新这份列表。以 `/` 开头但没有匹配项的文本仍按普通消息发送。
 

@@ -2,7 +2,7 @@ import { app } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
 import { normalizeMcpServers, normalizeSkills } from '@shared/agent-config'
-import { DEFAULT_SETTINGS, normalizeCliProvider, type Item, type Project, type Settings, type ThreadMeta } from '@shared/types'
+import { DEFAULT_SETTINGS, normalizeCliProvider, threadCli, type Item, type Project, type Settings, type ThreadMeta } from '@shared/types'
 import { newId } from './id'
 import { newRemoteClientId, validClientId } from './public-tunnel'
 
@@ -158,7 +158,11 @@ export class Store {
   updateThread(id: string, patch: Partial<ThreadMeta>): ThreadMeta | undefined {
     const t = this.thread(id)
     if (!t) return undefined
-    Object.assign(t, patch, { id: t.id })
+    const nextCli = patch.cli !== undefined ? normalizeCliProvider(patch.cli) : undefined
+    const cliChanged = nextCli !== undefined && nextCli !== threadCli(t)
+    const nextPatch = nextCli !== undefined ? { ...patch, cli: nextCli } : patch
+    Object.assign(t, nextPatch, { id: t.id })
+    if (cliChanged) delete t.chatId
     this.scheduleSave()
     return t
   }

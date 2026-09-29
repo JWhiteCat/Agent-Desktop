@@ -35,7 +35,7 @@ export interface DesktopApi {
   updateProject(id: string, patch: Partial<Project>): Promise<void>
   removeProject(id: string): Promise<void>
   reorderProjects(ids: string[]): Promise<void>
-  createThread(projectId: string, mode: AgentMode, model: string, force?: boolean): Promise<ThreadMeta>
+  createThread(projectId: string, mode: AgentMode, model: string, force?: boolean, cli?: CliProvider): Promise<ThreadMeta>
   updateThread(id: string, patch: Partial<ThreadMeta>): Promise<void>
   deleteThread(id: string): Promise<void>
   /** Copies the conversation. `throughItemId` keeps messages only through that item. */

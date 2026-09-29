@@ -1,5 +1,5 @@
 import type { AgentMode, PrepareRequest, QuestionAnswer, ThreadMeta } from '@shared/types'
-import { threadCli, type CliProvider } from '@shared/types'
+import { isCliProvider, normalizeCliProvider, threadCli, type CliProvider } from '@shared/types'
 import { claudeChatUpdatedAt } from '../claude-history'
 import { codexChatUpdatedAt } from '../codex-history'
 import { cliChatUpdatedAt } from '../history'
@@ -26,14 +26,20 @@ export function threadHandlers(deps: IpcDeps): Record<string, Handler> {
   const { store, sessions, broadcast } = deps
   const history = historyDeps(deps)
   return {
-    'thread:create': (projectId: string, mode: AgentMode, model: string, force?: boolean) => {
+    'thread:create': (projectId: string, mode: AgentMode, model: string, force?: boolean, cli?: CliProvider) => {
       if (!store.project(projectId)) throw new Error('项目不存在')
-      const t = store.createThread({ projectId, title: DEFAULT_TITLE, mode, model, force: force ?? store.settings.force, cli: store.settings.cliProvider, source: 'app' })
+      const provider = isCliProvider(cli) ? cli : normalizeCliProvider(store.settings.cliProvider)
+      const t = store.createThread({ projectId, title: DEFAULT_TITLE, mode, model, force: force ?? store.settings.force, cli: provider, source: 'app' })
       broadcast()
       return t
     },
     'thread:update': (id: string, patch: Partial<ThreadMeta>) => {
-      store.updateThread(id, patch)
+      const current = store.thread(id)
+      const switching = !!current && patch.cli !== undefined && normalizeCliProvider(patch.cli) !== threadCli(current)
+      const next = { ...patch }
+      if (switching && sessions.isRunning(id)) delete next.cli
+      store.updateThread(id, next)
+      if (switching && !sessions.isRunning(id)) sessions.dispose(id)
       broadcast()
     },
     'thread:delete': (id: string) => {

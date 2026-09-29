@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { AgentMode, ThreadMeta } from '../src/shared/types'
+import type { AgentMode, CliProvider, ThreadMeta } from '../src/shared/types'
 import type { IpcDeps } from '../src/main/ipc/deps'
 import { threadHandlers } from '../src/main/ipc/threads'
 import { Store } from '../src/main/store'
@@ -23,6 +23,7 @@ describe('thread permission persistence', () => {
   let projectId: string
   let handlers: ReturnType<typeof threadHandlers>
   let send: ReturnType<typeof vi.fn>
+  let dispose: ReturnType<typeof vi.fn>
   let broadcast: ReturnType<typeof vi.fn>
 
   beforeEach(() => {
@@ -31,13 +32,14 @@ describe('thread permission persistence', () => {
     store.updateSettings({ cliProvider: 'codex' })
     projectId = store.addProject(electron.userData, 'Permission regression').id
     send = vi.fn(async () => undefined)
+    dispose = vi.fn()
     broadcast = vi.fn()
-    handlers = threadHandlers({ store, sessions: { send, isRunning: () => false }, broadcast } as unknown as IpcDeps)
+    handlers = threadHandlers({ store, sessions: { send, isRunning: () => false, dispose }, broadcast } as unknown as IpcDeps)
     vi.stubGlobal('localStorage', { setItem: vi.fn() })
     vi.stubGlobal('window', {
       api: {
-        createThread: async (id: string, mode: AgentMode, model: string, force?: boolean) =>
-          handlers['thread:create'](id, mode, model, force),
+        createThread: async (id: string, mode: AgentMode, model: string, force?: boolean, cli?: CliProvider) =>
+          handlers['thread:create'](id, mode, model, force, cli),
         send: async (req: unknown) => handlers['agent:send'](req)
       }
     })
@@ -98,14 +100,41 @@ describe('thread permission persistence', () => {
     expect(reload().thread(thread.id)?.force).toBe(force)
   })
 
-  it.each([true, false])('preserves force=%s when forking a conversation', (force) => {
+  it.each([true, false])('preserves force=%s when forking a conversation', async (force) => {
     store.updateSettings({ force: !force })
     const thread = handlers['thread:create'](projectId, 'agent', 'gpt-5.4', force) as ThreadMeta
     store.setItems(thread.id, [{ id: 'user-1', kind: 'user', text: 'Start here', createdAt: Date.now() }])
 
-    const result = handlers['thread:fork'](thread.id) as { thread: ThreadMeta }
+    const result = await handlers['thread:fork'](thread.id) as { thread: ThreadMeta }
 
     expect(result.thread.id).not.toBe(thread.id)
     expect(reload().thread(result.thread.id)?.force).toBe(force)
+  })
+
+  it('creates the conversation on the CLI chosen in the composer', async () => {
+    store.updateSettings({ cliProvider: 'cursor' })
+    const options = { mode: 'agent' as const, model: 'sonnet', force: false, cli: 'claude' as const }
+
+    const thread = await startThread(projectId, 'Switch CLI', options)
+
+    expect(thread.cli).toBe('claude')
+    expect(send).toHaveBeenCalledExactlyOnceWith({ threadId: thread.id, prompt: 'Switch CLI', ...options })
+    expect(reload().thread(thread.id)?.cli).toBe('claude')
+  })
+
+  it('drops the CLI session when the conversation switches CLI', () => {
+    const thread = handlers['thread:create'](projectId, 'agent', 'gpt-5.4', false, 'cursor') as ThreadMeta
+    handlers['thread:update'](thread.id, { chatId: 'sess-1' })
+    handlers['thread:update'](thread.id, { title: '仍是 Cursor' })
+
+    expect(reload().thread(thread.id)?.chatId).toBe('sess-1')
+    expect(dispose).not.toHaveBeenCalled()
+
+    handlers['thread:update'](thread.id, { cli: 'claude', model: 'sonnet' })
+
+    const saved = reload().thread(thread.id)
+    expect(saved).toMatchObject({ cli: 'claude', model: 'sonnet' })
+    expect(saved?.chatId).toBeUndefined()
+    expect(dispose).toHaveBeenCalledWith(thread.id)
   })
 })

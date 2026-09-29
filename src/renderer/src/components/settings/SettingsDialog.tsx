@@ -79,7 +79,7 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
       {tab === 'cli' && (
         <section className="settings-section">
           <h4>CLI</h4>
-          <Field label="新建对话使用" desc="已有对话继续使用创建时的 CLI。">
+          <Field label="新建对话使用" desc="首页和对话里的输入框也可以切换。已有对话切换后，下一条消息会用新的 CLI 另开会话。">
             <select
               className="input"
               value={cli}

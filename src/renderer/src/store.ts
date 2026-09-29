@@ -431,6 +431,24 @@ export interface SendOptions {
   mode: AgentMode
   force: boolean
   worktree?: boolean
+  cli?: CliProvider
+}
+
+/** Model a project would use for a new or switched conversation on `cli`. */
+export function chatModel(projectId: string, cli: CliProvider): string {
+  const provider = normalizeCliProvider(cli)
+  const project = state.app.projects.find((p) => p.id === projectId)
+  const models = state.modelsByCli[provider] ?? state.models
+  return modelForChat(models, favoritesFor(state.app.settings, provider), defaultModelFor(state.app.settings, provider), projectModelFor(project, provider))
+}
+
+/** Remember which CLI new conversations use. */
+export function setCliProvider(cli: CliProvider): void {
+  const next = normalizeCliProvider(cli)
+  if (normalizeCliProvider(state.app.settings.cliProvider) === next) return
+  setState((s) => ({ app: { ...s.app, settings: { ...s.app.settings, cliProvider: next } } }))
+  void window.api.updateSettings({ cliProvider: next })
+  void loadModels(false, next)
 }
 
 export async function answerQuestion(threadId: string, questionId: string, answers: QuestionAnswer[] | null): Promise<void> {
@@ -463,8 +481,9 @@ export async function sendMessage(threadId: string, prompt: string, opts: SendOp
     const items = await window.api.getItems(threadId)
     setState((s) => ({ items: { ...s.items, [threadId]: items } }))
   }
+  const { cli, ...rest } = opts
   try {
-    await window.api.send({ threadId, prompt, ...opts })
+    await window.api.send({ threadId, prompt, ...rest, ...(cli ? { cli } : {}) })
   } catch (err) {
     toast(errorText(err), 'error')
     throw err
@@ -472,7 +491,7 @@ export async function sendMessage(threadId: string, prompt: string, opts: SendOp
 }
 
 export async function startThread(projectId: string, prompt: string, opts: SendOptions): Promise<ThreadMeta> {
-  const thread = await window.api.createThread(projectId, opts.mode, opts.model, opts.force)
+  const thread = await window.api.createThread(projectId, opts.mode, opts.model, opts.force, opts.cli)
   setState((s) => ({
     app: s.app.threads.some((t) => t.id === thread.id) ? s.app : { ...s.app, threads: [...s.app.threads, thread] },
     items: { ...s.items, [thread.id]: [] },

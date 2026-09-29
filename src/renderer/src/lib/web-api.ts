@@ -79,7 +79,7 @@ export function createWebApi(): DesktopApi {
     updateProject: (id, patch) => call('project:update', id, patch),
     removeProject: (id) => call('project:remove', id),
     reorderProjects: (ids) => call('project:reorder', ids),
-    createThread: (projectId, mode, model, force) => call('thread:create', projectId, mode, model, force),
+    createThread: (projectId, mode, model, force, cli) => call('thread:create', projectId, mode, model, force, cli),
     updateThread: (id, patch) => call('thread:update', id, patch),
     deleteThread: (id) => call('thread:delete', id),
     forkThread: (id, throughItemId) => call('thread:fork', id, throughItemId),

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { normalizeCliProvider } from '@shared/types'
 import { relativeTime, shortPath } from '../lib/format'
 import { defaultModelFor, favoritesFor, modelForChat, projectModelFor } from '../lib/model-prefs'
-import { addProjectInteractive, cliCommands, goHome, openThread, startThread, useStore } from '../store'
+import { addProjectInteractive, chatModel, cliCommands, goHome, openThread, setCliProvider, startThread, useStore } from '../store'
 import { Composer, type ComposerHandle } from './Composer'
 import { IconChevronDown, IconFolder, IconImport, IconPlus } from './icons'
 import { MenuList, Popover } from './Menu'
@@ -107,12 +107,18 @@ export function Home({ projectId, onOpenImport }: { projectId?: string; onOpenIm
               ref={composer}
               projectId={project.id}
               cli={cli}
+              cliNote="新建对话使用的 CLI。已有对话不会跟着改。"
+              onCliChange={(next) => {
+                setCliProvider(next)
+                return chatModel(project.id, next)
+              }}
               showWorktree={cli === 'cursor'}
               initial={{
                 model: modelForChat(models, favoritesFor(settings, cli), defaultModelFor(settings, cli), projectModelFor(project, cli)),
                 mode: settings.defaultMode,
                 force: settings.force,
-                worktree: false
+                worktree: false,
+                cli
               }}
               commands={slashCommands}
               placeholder={

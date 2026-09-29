@@ -263,6 +263,8 @@ export interface SendRequest {
   mode: AgentMode
   force: boolean
   worktree?: boolean
+  /** CLI chosen in the composer. When it differs from the thread, the next message starts a new session. */
+  cli?: CliProvider
 }
 
 /** Options used to resume a session so its slash commands can be listed. */

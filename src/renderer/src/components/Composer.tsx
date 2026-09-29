@@ -1,6 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import { argumentHint, filterCommands, slashQuery, type SlashCommand } from '@shared/commands'
-import type { AgentMode, CliProvider } from '@shared/types'
+import { cliTitle, type AgentMode, type CliProvider } from '@shared/types'
 import { rememberModel, type SendOptions } from '../store'
 import { IconArrowUp, IconBranch, IconChevronDown, IconFolder, IconList, IconShield, IconSparkle, IconStop } from './icons'
 import { MenuList, Popover } from './Menu'
@@ -10,6 +10,12 @@ export const MODES: { id: AgentMode; label: string; desc: string }[] = [
   { id: 'agent', label: 'Agent', desc: '可读写文件、执行命令' },
   { id: 'plan', label: 'Plan', desc: '只读分析，先给出方案' },
   { id: 'ask', label: 'Ask', desc: '只读问答，不做修改' }
+]
+
+const CLIS: { id: CliProvider; label: string; desc: string }[] = [
+  { id: 'cursor', label: 'Cursor', desc: 'Cursor CLI' },
+  { id: 'codex', label: 'Codex', desc: 'Codex CLI' },
+  { id: 'claude', label: 'Claude', desc: 'Claude Code' }
 ]
 
 export interface ComposerHandle {
@@ -27,6 +33,11 @@ interface Props {
   placeholder?: string
   showWorktree?: boolean
   cli?: CliProvider
+  /** Return the model to select for `cli`. Called when the user picks a CLI in the composer. */
+  onCliChange?: (cli: CliProvider) => string | void
+  /** Shown on the CLI pill. While set with `cliDisabled`, the menu stays closed. */
+  cliNote?: string
+  cliDisabled?: boolean
   /** Slash commands offered when the draft is `/name`. */
   commands?: SlashCommand[]
   /** Called once when the user starts a `/` command, so the CLI list can be loaded. */
@@ -57,6 +68,16 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
   useEffect(() => {
     setOpts((o) => (o.model === props.initial.model ? o : { ...o, model: props.initial.model }))
   }, [props.initial.model])
+
+  useEffect(() => {
+    const cli = props.initial.cli
+    if (!cli) return
+    setOpts((o) => {
+      const worktree = cli === 'cursor' ? o.worktree : false
+      if (o.cli === cli && o.worktree === worktree) return o
+      return { ...o, cli, worktree }
+    })
+  }, [props.initial.cli])
 
   useEffect(() => {
     setOpts((o) => (o.force === props.initial.force ? o : { ...o, force: props.initial.force }))
@@ -106,6 +127,18 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
   }, [query, opts, props.onPrepare])
 
   const canSend = !!text.trim() && !running && !disabled && !sending
+  const activeCli = opts.cli ?? props.cli
+
+  const chooseCli = (next: CliProvider) => {
+    if (next === activeCli) return
+    const model = props.onCliChange?.(next)
+    setOpts((o) => ({
+      ...o,
+      cli: next,
+      model: typeof model === 'string' ? model : o.model,
+      worktree: next === 'cursor' ? o.worktree : false
+    }))
+  }
 
   const submit = async () => {
     if (!canSend) return
@@ -208,13 +241,16 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
       </Popover>
       <div className="composer-bar">
         <div className="composer-left">
+          {props.onCliChange && activeCli && (
+            <CliPicker value={activeCli} note={props.cliNote} disabled={props.cliDisabled} onChange={chooseCli} />
+          )}
           <ModePicker value={opts.mode} onChange={(mode) => setOpts((o) => ({ ...o, mode }))} />
           <ModelPicker
-            cli={props.cli}
+            cli={activeCli}
             value={opts.model}
             onChange={(model) => {
               setOpts((o) => ({ ...o, model }))
-              rememberModel(props.projectId, model, opts.model, props.cli)
+              rememberModel(props.projectId, model, opts.model, activeCli)
             }}
           />
           <button
@@ -254,6 +290,46 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
     </div>
   )
 })
+
+function CliPicker({
+  value,
+  note,
+  disabled,
+  onChange
+}: {
+  value: CliProvider
+  note?: string
+  disabled?: boolean
+  onChange: (cli: CliProvider) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const btn = useRef<HTMLButtonElement>(null)
+  return (
+    <>
+      <button
+        ref={btn}
+        className={`pill ${open ? 'active' : ''}`}
+        disabled={disabled}
+        title={note ?? `${cliTitle(value)} CLI`}
+        onClick={() => setOpen((o) => !o)}
+      >
+        <span>{cliTitle(value)}</span>
+        <IconChevronDown size={12} />
+      </button>
+      <Popover anchor={btn.current} open={open && !disabled} onClose={() => setOpen(false)} placement="top-start">
+        <MenuList
+          onClose={() => setOpen(false)}
+          items={CLIS.map((cli) => ({
+            label: cli.label,
+            hint: cli.desc,
+            checked: cli.id === value,
+            onSelect: () => onChange(cli.id)
+          }))}
+        />
+      </Popover>
+    </>
+  )
+}
 
 function ModePicker({ value, onChange }: { value: AgentMode; onChange: (m: AgentMode) => void }) {
   const [open, setOpen] = useState(false)
