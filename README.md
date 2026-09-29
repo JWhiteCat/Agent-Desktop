@@ -232,7 +232,10 @@ Several windows can be open at once. Each process writes its Chromium cache (GPU
 ```
 src/main              Electron main process
   index.ts            Window, IPC, notifications, and shutdown
-  sessions.ts         One ACP process per conversation: resume, modes, prompts
+  sessions.ts         Conversation scheduling, ACP process lifetime, and streamed turns
+  session/provider.ts CLI launch, authentication, session options, and Plan prompts
+  session/requests.ts ACP questions and permission decisions through a turn interface
+  session/usage.ts    Delayed result usage writes and cancellable account-usage retries
   cli.ts              Find and spawn Cursor CLI
   codex.ts            Codex adapter: models, login, mode ids
   claude.ts           Claude adapter: models, login, mode ids
@@ -248,10 +251,22 @@ src/main              Electron main process
   quota.ts            Cursor and Codex account quota
   ipc/                IPC split by projects, conversations, settings, CLI, usage, and local actions
 src/preload           The API the renderer is allowed to call
-src/renderer          React UI
+src/renderer/src      React UI
+  store.ts            Public entry point for state and actions
+  store/              State core, persistence, models, commands, threads, and initialization
+  components/Items.tsx Message dispatch and adapters to the UI store
+  components/items/   Markdown, messages, tools, plans, questions, and result views
   components/settings Settings pages
   lib/model-prefs.ts  Which model is selected. The choice is not kept in UI state
 src/shared            Types, prices, usage, quota, slash commands, and Plan question blocks shared by the main process and the UI
 scripts               Public gateway (public-gateway.py), server installer (setup-public-server.sh), and the local one-shot setup (setup-public-server.mjs)
 test                  Offline unit tests, plus the live smoke test
 ```
+
+### Module boundaries
+
+`SessionManager` owns process lifetime and turn scheduling. The modules in `main/session/` receive only the dependencies they need: an ACP request channel for provider options, turn state and an item callback for questions, and a small store interface for usage refreshes. They do not import the session manager. Starting a new turn, disposing a conversation, and shutdown cancel account-usage retries through the usage module.
+
+The renderer keeps `store.ts` as its public entry point. Modules inside `store/` import the state core and specific helpers directly; they do not import that entry point. Initialization connects API events to the relevant actions. Thread history loading and buffering of concurrent streamed items stay together so splitting the modules preserves their ordering.
+
+`components/Items.tsx` connects messages to the store. Components in `components/items/` receive model catalogs and question actions through props or the shared turn context. The shared context and basic controls live below the message views, avoiding circular imports between Markdown, questions, and plans. Existing imports from `store.ts`, `Items.tsx`, and `main/sessions.ts` remain supported.

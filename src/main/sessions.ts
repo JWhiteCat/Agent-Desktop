@@ -2,27 +2,26 @@ import type { ChildProcess } from 'node:child_process'
 import fs from 'node:fs'
 import { enabledSkillFingerprint, toAcpMcpServers } from '@shared/agent-config'
 import { parseAvailableCommands, type SlashCommand } from '@shared/commands'
-import type { AgentEvent, CliProvider, Item, PrepareRequest, QuestionAnswer, QuestionItem, SendRequest } from '@shared/types'
+import type { AgentEvent, CliProvider, Item, PrepareRequest, QuestionAnswer, SendRequest } from '@shared/types'
 import { isCliProvider, threadCli } from '@shared/types'
 import { normalizeTurnUsage } from '@shared/turn-usage'
-import { quotaSnapshot } from '@shared/turn-quota'
-import { normalizeQuestions } from '@shared/questions'
-import { AcpConnection, claudePlanModePrompt, codexPlanModePrompt, MethodNotFound, permissionResult, planModePrompt } from './acp'
-import { killTree, resolveApiKey, resolveCli, spawnCli, stripAnsi, type ResolvedCli } from './cli'
-import { claudeAsCli, claudeModeId, CLAUDE_EFFORT_CONFIG_ID, CLAUDE_MODEL_CONFIG_ID, resolveClaude, resolveClaudeApiKey, spawnClaudeAcp, type ResolvedClaude } from './claude'
-import { codexAsCli, codexModeId, resolveCodex, resolveCodexApiKey, spawnCodexAcp, type ResolvedCodex } from './codex'
+import { AcpConnection } from './acp'
+import { killTree, stripAnsi } from './cli'
 import { syncAllManagedSkills } from './skills'
 import { newId } from './id'
 import { forkPrompt } from './fork-context'
 import { StreamReducer } from './reducer'
 import { loadCodexAccountUsage } from './codex-account'
 import { CodexTurnUsageReader } from './codex-turn-usage'
+import { SessionUsage } from './session/usage'
+import {
+  applySessionOptions, cliLabel, cursorArgs, initializeSession, leftPlanMode,
+  planPrompt, procFingerprint, providerApiKey, resolveLaunch, spawnProvider, type AgentLaunch
+} from './session/provider'
+import { abandonQuestions, answerPendingQuestion, onAcpRequest, onIdleAcpRequest, settleQuestion, type InteractionRun } from './session/requests'
 import type { Store } from './store'
 
-interface PendingQuestion {
-  itemId: string
-  resolve: (decision: QuestionAnswer[] | 'skip' | 'cancel') => void
-}
+export { leftPlanMode } from './session/provider'
 
 /** One `agent acp` process kept alive so the next message skips startup and session/load. */
 interface AgentProc {
@@ -39,17 +38,12 @@ interface AgentProc {
   force: boolean
 }
 
-interface Run {
+interface Run extends InteractionRun {
   proc: AgentProc
   reducer: StreamReducer
   stopped: boolean
   pending: Map<string, Item>
   flushTimer?: NodeJS.Timeout
-  /** Ignore session/update events while session/load replays history. */
-  acceptUpdates: boolean
-  pendingQuestion?: PendingQuestion
-  force: boolean
-  mode: SendRequest['mode']
   /** SwitchMode tool calls seen this turn; their completion carries no kind. */
   switchCalls: Set<string>
   failText?: string
@@ -60,14 +54,6 @@ interface Run {
   codexAccountPath?: string
   resultId?: string
   codexUsage?: CodexTurnUsageReader
-}
-
-interface CodexUsageRefresh {
-  resultId: string
-  sessionId: string
-  at: number
-  pending: boolean
-  timer?: ReturnType<typeof setTimeout>
 }
 
 export interface RunFinished {
@@ -88,7 +74,6 @@ export function titleFrom(prompt: string): string {
 const CANCEL_KILL_MS = 5000
 const COMMAND_WAIT_MS = 2000
 const FORK_TIMEOUT_MS = 60_000
-const CODEX_USAGE_RETRY_MS = [30_000, 120_000, 300_000]
 
 export class SessionManager {
   private runs = new Map<string, Run>()
@@ -99,7 +84,7 @@ export class SessionManager {
   private commandWaiters = new Map<string, Array<() => void>>()
   /** Serializes prepare and send so one thread cannot start two CLI processes. */
   private tails = new Map<string, Promise<void>>()
-  private codexUsageRefreshes = new Map<string, CodexUsageRefresh>()
+  private readonly usage: SessionUsage
   private shuttingDown = false
 
   constructor(
@@ -107,8 +92,10 @@ export class SessionManager {
     private readonly emit: (ev: AgentEvent) => void,
     private readonly onStateChange: () => void,
     private readonly onFinished: (info: RunFinished) => void,
-    private readonly readCodexAccount = loadCodexAccountUsage
-  ) {}
+    readCodexAccount = loadCodexAccountUsage
+  ) {
+    this.usage = new SessionUsage(store, emit, (threadId) => this.isRunning(threadId), readCodexAccount)
+  }
 
   running(): string[] {
     return [...this.runs.keys()]
@@ -120,12 +107,7 @@ export class SessionManager {
 
   /** Opening a saved conversation also refreshes the latest session consumption. */
   refreshCodexUsage(threadId: string): void {
-    const thread = this.store.thread(threadId)
-    if (!thread?.chatId || threadCli(thread) !== 'codex' || this.isRunning(threadId)) return
-    if (resolveCodexApiKey(this.store.settings.codexApiKey)) return
-    const item = [...this.store.items(threadId)].reverse().find((item) => item.kind === 'result')
-    if (!item || (item.cli && item.cli !== 'codex')) return
-    void this.saveCodexAccountUsage(threadId, item.id, thread.chatId, this.store.settings.codexPath)
+    this.usage.refreshLatest(threadId)
   }
 
   send(req: SendRequest): Promise<void> {
@@ -169,7 +151,7 @@ export class SessionManager {
       try {
         return await Promise.race([
           (async () => {
-            const initialized = await this.initializeSession(proc, provider, apiKey)
+            const initialized = await initializeSession(proc.acp, provider, apiKey)
             if (initialized?.agentCapabilities?.sessionCapabilities?.fork == null) {
               throw new Error(`${cliLabel(provider)} 不支持会话分叉`)
             }
@@ -225,7 +207,7 @@ export class SessionManager {
 
     const cwd = thread.cwd && fs.existsSync(thread.cwd) ? thread.cwd : project.path
     if (!fs.existsSync(cwd)) throw new Error(`项目目录不存在：${cwd}`)
-    this.clearCodexUsageRefresh(thread.id)
+    this.usage.cancel(thread.id)
 
     const mcpServers = toAcpMcpServers(settings.mcpServers)
     const fingerprint = procFingerprint(launch.cli, provider, cwd, settings.sandbox, req.force, apiKey, mcpServers, enabledSkillFingerprint(settings.skills))
@@ -285,11 +267,7 @@ export class SessionManager {
   }
 
   answerQuestion(threadId: string, questionId: string, answers: QuestionAnswer[] | null): void {
-    const run = this.runs.get(threadId)
-    const pending = run?.pendingQuestion
-    if (!run || !pending || pending.itemId !== questionId) throw new Error('这个问题已经不能回答了')
-    run.pendingQuestion = undefined
-    pending.resolve(answers ?? 'skip')
+    answerPendingQuestion(this.runs.get(threadId), questionId, answers)
   }
 
   /** Cancel the current turn and keep the CLI process for the next message. */
@@ -297,7 +275,7 @@ export class SessionManager {
     const run = this.runs.get(threadId)
     if (!run) return
     run.stopped = true
-    this.settleQuestion(run, 'cancel')
+    settleQuestion(run, 'cancel')
     if (run.proc.ready && run.proc.sessionId) {
       run.proc.acp.notify('session/cancel', { sessionId: run.proc.sessionId })
       if (!run.killTimer) {
@@ -314,7 +292,7 @@ export class SessionManager {
 
   /** Kill the CLI process for this thread. Used when the thread or app is going away. */
   dispose(threadId: string): void {
-    this.clearCodexUsageRefresh(threadId)
+    this.usage.cancel(threadId)
     this.commandLists.delete(threadId)
     this.commandWaiters.delete(threadId)
     const run = this.runs.get(threadId)
@@ -324,7 +302,7 @@ export class SessionManager {
         clearTimeout(run.killTimer)
         run.killTimer = undefined
       }
-      this.settleQuestion(run, 'cancel')
+      settleQuestion(run, 'cancel')
       this.killProc(run.proc)
       return
     }
@@ -333,7 +311,7 @@ export class SessionManager {
 
   stopAll(): void {
     this.shuttingDown = true
-    for (const id of this.codexUsageRefreshes.keys()) this.clearCodexUsageRefresh(id)
+    this.usage.stop()
     for (const id of [...this.runs.keys()]) this.dispose(id)
     for (const id of [...this.agents.keys()]) this.discard(id)
   }
@@ -359,12 +337,7 @@ export class SessionManager {
     fingerprint: string,
     trackCommands = true
   ): AgentProc {
-    const child =
-      provider === 'codex' && launch.codex
-        ? spawnCodexAcp(launch.codex, cwd, apiKey)
-        : provider === 'claude' && launch.claude
-          ? spawnClaudeAcp(launch.claude, cwd, apiKey)
-          : spawnCli(launch.cli, args, cwd, 'pipe', apiKey)
+    const child = spawnProvider(provider, launch, args, cwd, apiKey)
     const proc: AgentProc = {
       child,
       acp: undefined as unknown as AcpConnection,
@@ -411,8 +384,8 @@ export class SessionManager {
       },
       onRequest: (method, params) => {
         const run = this.runs.get(threadId)
-        if (run && run.proc === proc) return this.onAcpRequest(threadId, run, method, params)
-        return this.onIdleAcpRequest(proc, method, params)
+        if (run && run.proc === proc) return onAcpRequest(run, method, params, (items) => this.queue(threadId, run, items))
+        return onIdleAcpRequest(proc, method, params)
       }
     })
     child.on('error', (err) => {
@@ -443,7 +416,7 @@ export class SessionManager {
 
   private async continueSession(threadId: string, run: Run, req: SendRequest): Promise<void> {
     run.reducer.init = { sessionId: run.proc.sessionId, cwd: run.proc.cwd, model: req.model }
-    await this.applySessionOptions(run.proc, req)
+    await applySessionOptions(run.proc, req, this.store.settings.sandbox)
     if (!this.runs.has(threadId) || run.settled) return
     run.acceptUpdates = true
     await this.runPrompt(threadId, run, req)
@@ -497,7 +470,7 @@ export class SessionManager {
     this.agents.set(threadId, proc)
     try {
       const sessionId = await this.connectSession(proc, cwd, thread.chatId, provider, apiKey, mcpServers)
-      await this.applySessionOptions(proc, req)
+      await applySessionOptions(proc, req, this.store.settings.sandbox)
       if (proc.dying || proc.child.exitCode !== null) throw new Error('CLI 进程已退出')
       this.store.updateThread(threadId, { chatId: sessionId, cwd })
       this.onStateChange()
@@ -558,7 +531,7 @@ export class SessionManager {
     run.reducer.init = { sessionId, cwd, model: req.model }
     this.store.updateThread(threadId, { chatId: sessionId, cwd })
     this.onStateChange()
-    await this.applySessionOptions(proc, req)
+    await applySessionOptions(proc, req, this.store.settings.sandbox)
     if (!this.runs.has(threadId) || run.settled) return
     run.acceptUpdates = true
     await this.runPrompt(threadId, run, req)
@@ -574,7 +547,7 @@ export class SessionManager {
     mcpServers: Record<string, unknown>[]
   ): Promise<string> {
     const acp = proc.acp
-    await this.initializeSession(proc, provider, apiKey)
+    await initializeSession(proc.acp, provider, apiKey)
 
     let sessionId = chatId
     if (sessionId) {
@@ -587,117 +560,6 @@ export class SessionManager {
     proc.sessionId = sessionId
     proc.ready = true
     return sessionId
-  }
-
-  private async initializeSession(proc: AgentProc, provider: CliProvider, apiKey: string): Promise<any> {
-    const acp = proc.acp
-    const initialized = await acp.request('initialize', {
-      protocolVersion: 1,
-      clientCapabilities: {
-        fs: { readTextFile: false, writeTextFile: false },
-        terminal: false,
-        ...(provider === 'codex' ? { plan: {} } : {})
-      },
-      clientInfo: { name: 'agent-desktop', version: '0.1.0' }
-    })
-    // Cursor API key auth is `--api-key` at process start. `cursor_login` clears stored
-    // API-key credentials, so it only runs when no key is configured.
-    if (provider === 'cursor' && !apiKey) await acp.request('authenticate', { methodId: 'cursor_login' })
-    if (provider === 'codex' && apiKey) await acp.request('authenticate', { methodId: 'api-key' })
-    if (provider === 'codex' && !apiKey) await acp.request('authenticate', { methodId: 'chat-gpt' })
-    // Claude uses ANTHROPIC_API_KEY at process start, or the login already stored in ~/.claude.
-    return initialized
-  }
-
-  private async applySessionOptions(proc: AgentProc, req: SendRequest): Promise<void> {
-    if (proc.provider === 'codex') {
-      await this.applyCodexOptions(proc, req)
-      return
-    }
-    if (proc.provider === 'claude') {
-      await this.applyClaudeOptions(proc, req)
-      return
-    }
-    const { acp, sessionId } = proc
-    try {
-      await acp.request('session/set_mode', { sessionId, modeId: req.mode })
-    } catch {
-      /* --mode on the process is the fallback */
-    }
-    if (req.model) {
-      try {
-        await acp.request('session/set_model', { sessionId, modelId: req.model })
-      } catch {
-        /* --model on the process is the fallback when it is not "auto" */
-      }
-    }
-  }
-
-  private async applyCodexOptions(proc: AgentProc, req: SendRequest): Promise<void> {
-    const { acp, sessionId } = proc
-    const modeId = codexModeId(req.mode, req.force, this.store.settings.sandbox)
-    try {
-      await acp.request('session/set_mode', { sessionId, modeId })
-    } catch {
-      /* the next prompt still runs in whatever mode the process started with */
-    }
-    try {
-      await acp.request('session/set_config_option', {
-        sessionId,
-        configId: 'collaboration_mode',
-        value: req.mode === 'plan' ? 'plan' : 'default'
-      })
-    } catch {
-      /* older adapters ignore the collaboration mode option */
-    }
-    await this.applyCodexModel(proc, req.model)
-  }
-
-  private async applyClaudeOptions(proc: AgentProc, req: SendRequest): Promise<void> {
-    try {
-      await proc.acp.request('session/set_mode', { sessionId: proc.sessionId, modeId: claudeModeId(req.mode, req.force) })
-    } catch {
-      /* the next prompt still runs in whatever mode the process started with */
-    }
-    await this.applyClaudeModel(proc, req.model)
-  }
-
-  private async applyClaudeModel(proc: AgentProc, model: string): Promise<void> {
-    if (!model || model === 'auto') return
-    const bracket = model.match(/^([^[]+)\[([^\]]+)\]$/)
-    const id = bracket?.[1] ?? model
-    try {
-      await proc.acp.request('session/set_config_option', { sessionId: proc.sessionId, configId: CLAUDE_MODEL_CONFIG_ID, value: id })
-    } catch {
-      /* keep the session's current model */
-    }
-    if (!bracket?.[2] || bracket[2] === 'default') return
-    try {
-      await proc.acp.request('session/set_config_option', { sessionId: proc.sessionId, configId: CLAUDE_EFFORT_CONFIG_ID, value: bracket[2] })
-    } catch {
-      /* the model keeps its default effort */
-    }
-  }
-
-  private async applyCodexModel(proc: AgentProc, model: string): Promise<void> {
-    if (!model || model === 'auto') return
-    const bracket = model.match(/^([^[]+)\[([^\]]+)\]$/)
-    const id = bracket?.[1] ?? model
-    try {
-      await proc.acp.request('session/set_config_option', { sessionId: proc.sessionId, configId: 'model', value: id })
-    } catch {
-      /* keep the session's current model */
-    }
-    if (!bracket?.[2]) return
-    try {
-      await proc.acp.request('session/set_config_option', {
-        sessionId: proc.sessionId,
-        configId: 'reasoning_effort',
-        value: bracket[2]
-      })
-    } catch {
-      /* the model keeps its default effort */
-    }
   }
 
   private async runPrompt(threadId: string, run: Run, req: SendRequest): Promise<void> {
@@ -715,14 +577,7 @@ export class SessionManager {
       if (cut < 0) throw new Error('分叉历史缺失，无法恢复上下文')
       prompt = forkPrompt(items.slice(0, cut + 1), prompt)
     }
-    const text =
-      req.mode !== 'plan'
-        ? prompt
-        : run.proc.provider === 'codex'
-          ? codexPlanModePrompt(prompt)
-          : run.proc.provider === 'claude'
-            ? claudePlanModePrompt(prompt)
-            : planModePrompt(prompt)
+    const text = planPrompt(run.proc.provider, req.mode, prompt)
     if (run.proc.provider === 'codex') run.codexUsage = new CodexTurnUsageReader(run.proc.sessionId)
     const result = await run.proc.acp.request('session/prompt', {
       sessionId: run.proc.sessionId,
@@ -761,7 +616,7 @@ export class SessionManager {
     // The CLI stays up after a turn. Parking it avoids the next message paying
     // for process startup and session/load. A later close still ends the turn.
     this.endRun(threadId, run, null)
-    if (run.codexUsage && !codexUsage?.completed) void this.saveTurnUsage(threadId, resultId, run.codexUsage)
+    if (run.codexUsage && !codexUsage?.completed) void this.usage.saveTurnUsage(threadId, resultId, run.codexUsage)
   }
 
   private endRun(threadId: string, run: Run, code: number | null, spawnError?: Error): void {
@@ -771,7 +626,7 @@ export class SessionManager {
       clearTimeout(run.killTimer)
       run.killTimer = undefined
     }
-    this.settleQuestion(run, 'cancel')
+    settleQuestion(run, 'cancel')
     if (!this.store.thread(threadId)) {
       this.runs.delete(threadId)
       this.killProc(run.proc)
@@ -841,172 +696,8 @@ export class SessionManager {
       preview: summary
     })
     if (run.resultId && run.codexAccountPath !== undefined) {
-      void this.saveCodexAccountUsage(threadId, run.resultId, run.proc.sessionId, run.codexAccountPath)
+      void this.usage.saveAccountUsage(threadId, run.resultId, run.proc.sessionId, run.codexAccountPath)
     }
-  }
-
-  /** Late rollout writes update only their own result, without delaying task completion. */
-  private async saveTurnUsage(threadId: string, resultId: string, reader: CodexTurnUsageReader): Promise<void> {
-    const recorded = await reader.finish()
-    if (!recorded || !this.store.thread(threadId)) return
-    const items = this.store.items(threadId)
-    const item = items.find((item) => item.kind === 'result' && item.id === resultId)
-    if (item?.kind !== 'result') return
-    Object.assign(item, { usage: recorded.usage, usageId: recorded.usageId, usageComplete: recorded.completed })
-    if (recorded.quotaSnapshot && (!item.quotaSnapshot || recorded.quotaSnapshot.sampledAt > item.quotaSnapshot.sampledAt)) {
-      item.quotaSnapshot = recorded.quotaSnapshot
-    }
-    this.store.markItemsDirty(threadId)
-    this.emit({ type: 'items', threadId, items: [item] })
-  }
-
-  private clearCodexUsageRefresh(threadId: string): void {
-    clearTimeout(this.codexUsageRefreshes.get(threadId)?.timer)
-    this.codexUsageRefreshes.delete(threadId)
-  }
-
-  /** Read attributed session usage after completion; accounting may arrive later. */
-  private async saveCodexAccountUsage(threadId: string, resultId: string, sessionId: string, customPath: string, retry = 0): Promise<void> {
-    if (this.shuttingDown) return
-    const previous = this.codexUsageRefreshes.get(threadId)
-    if (previous?.resultId === resultId && previous.sessionId === sessionId && (previous.pending || Date.now() - previous.at < 30_000)) return
-    this.clearCodexUsageRefresh(threadId)
-    const refresh: CodexUsageRefresh = { resultId, sessionId, at: Date.now(), pending: true }
-    this.codexUsageRefreshes.set(threadId, refresh)
-    let needsRetry = true
-    try {
-      const { quota, quotaSampledAt, threadUsage, sessionUsage } = await this.readCodexAccount(customPath, sessionId)
-      if (this.codexUsageRefreshes.get(threadId) !== refresh) return
-      const thread = this.store.thread(threadId)
-      if (!thread || thread.chatId !== sessionId || threadCli(thread) !== 'codex') return
-      needsRetry = sessionUsage ? sessionUsage.status !== 'available' : !threadUsage
-      const snapshot = quota && quotaSampledAt !== undefined ? quotaSnapshot(quota, quotaSampledAt) : undefined
-      if (!snapshot && !threadUsage && !sessionUsage) return
-      // The user may have deleted or re-imported the transcript while the request was in flight.
-      const items = this.store.items(threadId)
-      const index = items.findIndex((item) => item.id === resultId && item.kind === 'result')
-      const item = items[index]
-      if (item?.kind !== 'result') return
-      const updated = {
-        ...item,
-        ...(snapshot && (!item.quotaSnapshot || snapshot.sampledAt >= item.quotaSnapshot.sampledAt) ? { quotaSnapshot: snapshot } : {}),
-        ...(threadUsage ? { codexThreadUsage: threadUsage } : {}),
-        ...(sessionUsage ? { codexSessionUsage: sessionUsage } : {})
-      }
-      items[index] = updated
-      this.store.markItemsDirty(threadId)
-      this.emit({ type: 'items', threadId, items: [updated] })
-    } catch {
-      // Account usage is optional; a failed refresh must not fail the completed task.
-    } finally {
-      refresh.pending = false
-      refresh.at = Date.now()
-      if (needsRetry && retry < CODEX_USAGE_RETRY_MS.length && this.canRetryCodexUsage(threadId, refresh)) {
-        refresh.timer = setTimeout(() => {
-          refresh.timer = undefined
-          if (!this.canRetryCodexUsage(threadId, refresh)) return
-          void this.saveCodexAccountUsage(threadId, resultId, sessionId, this.store.settings.codexPath, retry + 1)
-        }, CODEX_USAGE_RETRY_MS[retry])
-        refresh.timer.unref?.()
-      }
-    }
-  }
-
-  private canRetryCodexUsage(threadId: string, refresh: CodexUsageRefresh): boolean {
-    if (this.codexUsageRefreshes.get(threadId) !== refresh || this.isRunning(threadId)) return false
-    const thread = this.store.thread(threadId)
-    if (!thread || thread.chatId !== refresh.sessionId || threadCli(thread) !== 'codex') return false
-    if (resolveCodexApiKey(this.store.settings.codexApiKey)) return false
-    const latest = [...this.store.items(threadId)].reverse().find((item) => item.kind === 'result')
-    return latest?.id === refresh.resultId
-  }
-
-  private onIdleAcpRequest(proc: AgentProc, method: string, params: any): Promise<unknown> {
-    if (method === 'cursor/ask_question' || isQuestionParams(params)) return Promise.resolve({ outcome: { outcome: 'skipped', reason: 'idle' } })
-    if (method === 'cursor/create_plan') return Promise.resolve({ outcome: { outcome: 'accepted' } })
-    if (method === 'session/request_permission') {
-      const options: { optionId?: string; kind?: string }[] = Array.isArray(params?.options) ? params.options : []
-      return Promise.resolve(permissionResult(options, proc.force))
-    }
-    return Promise.reject(new MethodNotFound(method))
-  }
-
-  private onAcpRequest(threadId: string, run: Run, method: string, params: any): Promise<unknown> {
-    if (method === 'cursor/ask_question' || isQuestionParams(params)) return this.answerAskQuestion(threadId, run, params)
-    if (method === 'cursor/create_plan') return Promise.resolve({ outcome: { outcome: 'accepted' } })
-    if (method === 'session/request_permission') return this.answerPermission(threadId, run, params)
-    return Promise.reject(new MethodNotFound(method))
-  }
-
-  private async answerAskQuestion(threadId: string, run: Run, params: any): Promise<unknown> {
-    if (!run.acceptUpdates) return { outcome: { outcome: 'skipped', reason: 'replay' } }
-    const questions = normalizeQuestions(params?.questions)
-    const decision = await this.waitForAnswers(threadId, run, {
-      toolCallId: String(params?.toolCallId ?? ''),
-      title: typeof params?.title === 'string' ? params.title : undefined,
-      questions
-    })
-    if (decision === 'cancel') return { outcome: { outcome: 'cancelled' } }
-    if (decision === 'skip') return { outcome: { outcome: 'skipped', reason: '用户跳过了提问' } }
-    return { outcome: { outcome: 'answered', answers: decision } }
-  }
-
-  private async answerPermission(threadId: string, run: Run, params: any): Promise<unknown> {
-    const options: { optionId?: string; kind?: string; name?: string }[] = Array.isArray(params?.options) ? params.options : []
-    const askFallback = options.some((o) => o.optionId === '__ask_question_skip__')
-    if (run.proc.provider === 'claude' && run.mode === 'ask' && !askFallback) return permissionResult(options, false, true)
-    if (!askFallback || !run.acceptUpdates) return permissionResult(options, run.force)
-    const decision = await this.waitForAnswers(threadId, run, {
-      toolCallId: String(params?.toolCall?.toolCallId ?? ''),
-      title: typeof params?.toolCall?.title === 'string' ? params.toolCall.title : undefined,
-      questions: [
-        {
-          id: 'q',
-          prompt: String(params?.toolCall?.title || params?.toolCall?.content?.[0]?.content?.text || '请选择'),
-          allowMultiple: false,
-          options: options
-            .filter((o) => o.optionId && o.optionId !== '__ask_question_skip__')
-            .map((o) => ({ id: String(o.optionId), label: String(o.name || o.optionId) }))
-        }
-      ]
-    })
-    if (decision === 'cancel' || decision === 'skip') {
-      return { outcome: { outcome: 'selected', optionId: '__ask_question_skip__' } }
-    }
-    const optionId = decision[0]?.selectedOptionIds[0]
-    return { outcome: { outcome: 'selected', optionId: optionId || '__ask_question_skip__' } }
-  }
-
-  private waitForAnswers(
-    threadId: string,
-    run: Run,
-    spec: Pick<QuestionItem, 'toolCallId' | 'title' | 'questions'>
-  ): Promise<QuestionAnswer[] | 'skip' | 'cancel'> {
-    if (spec.questions.length === 0) return Promise.resolve('skip')
-    const item: QuestionItem = { id: newId(), kind: 'question', status: 'pending', ...spec }
-    run.reducer.push(item)
-    this.queue(threadId, run, [item])
-    return new Promise((resolve) => {
-      run.pendingQuestion = {
-        itemId: item.id,
-        resolve: (decision) => {
-          if (decision === 'cancel' || decision === 'skip') item.status = 'skipped'
-          else {
-            item.status = 'answered'
-            item.answers = decision
-          }
-          this.queue(threadId, run, [item])
-          resolve(decision)
-        }
-      }
-    })
-  }
-
-  private settleQuestion(run: Run, decision: 'skip' | 'cancel'): void {
-    const pending = run.pendingQuestion
-    if (!pending) return
-    run.pendingQuestion = undefined
-    pending.resolve(decision)
   }
 
   private queue(threadId: string, run: Run, items: Item[]): void {
@@ -1022,88 +713,4 @@ export class SessionManager {
     this.emit({ type: 'items', threadId, items: [...run.pending.values()] })
     run.pending.clear()
   }
-}
-
-function procFingerprint(
-  cli: ResolvedCli,
-  provider: CliProvider,
-  cwd: string,
-  sandbox: string,
-  force: boolean,
-  apiKey: string,
-  mcpServers: unknown,
-  skills: unknown
-): string {
-  return JSON.stringify([provider, cli.command, cli.prefixArgs, cwd, sandbox, force ? 1 : 0, apiKey, mcpServers, skills])
-}
-
-interface AgentLaunch {
-  cli: ResolvedCli
-  codex?: ResolvedCodex
-  claude?: ResolvedClaude
-}
-
-function resolveLaunch(provider: CliProvider, agentPath: string, codexPath: string, claudePath: string): AgentLaunch | undefined {
-  if (provider === 'codex') {
-    const codex = resolveCodex(codexPath)
-    return codex ? { cli: codexAsCli(codex), codex } : undefined
-  }
-  if (provider === 'claude') {
-    const claude = resolveClaude(claudePath)
-    return claude ? { cli: claudeAsCli(claude), claude } : undefined
-  }
-  const cli = resolveCli(agentPath)
-  return cli ? { cli } : undefined
-}
-
-function providerApiKey(provider: CliProvider, settings: { apiKey: string; codexApiKey: string; claudeApiKey: string }): string {
-  if (provider === 'codex') return resolveCodexApiKey(settings.codexApiKey)
-  if (provider === 'claude') return resolveClaudeApiKey(settings.claudeApiKey)
-  return resolveApiKey(settings.apiKey)
-}
-
-function cursorArgs(req: SendRequest, sandbox: 'default' | 'enabled' | 'disabled', cwd: string, hasChat: boolean): string[] {
-  const args = ['--trust']
-  if (req.model && req.model !== 'auto') args.push('--model', req.model)
-  if (req.mode !== 'agent') args.push('--mode', req.mode)
-  if (req.force) args.push('--force')
-  if (sandbox !== 'default') args.push('--sandbox', sandbox)
-  if (!hasChat && req.worktree) args.push('--worktree')
-  args.push('--workspace', cwd, 'acp')
-  return args
-}
-
-function cliLabel(provider: CliProvider): string {
-  if (provider === 'codex') return 'Codex CLI'
-  if (provider === 'claude') return 'Claude Code'
-  return 'Cursor CLI'
-}
-
-function isQuestionParams(params: any): boolean {
-  return Array.isArray(params?.questions) && params.questions.some((q: any) => q && typeof q === 'object' && ('prompt' in q || 'options' in q))
-}
-
-/**
- * The CLI approves SwitchMode on its own in ACP and sends no mode update, so a plan turn
- * would silently turn into an editing turn. Seeing the switch finish is the only signal.
- */
-export function leftPlanMode(update: any, switchCalls: Set<string>): boolean {
-  if (update?.sessionUpdate === 'current_mode_update') return update.currentModeId !== 'plan'
-  if (update?.sessionUpdate !== 'tool_call' && update?.sessionUpdate !== 'tool_call_update') return false
-  const id = String(update.toolCallId ?? '')
-  if (update.kind === 'switch_mode') switchCalls.add(id)
-  if (update.status !== 'completed' || !switchCalls.has(id)) return false
-  switchCalls.delete(id)
-  return true
-}
-
-function abandonQuestions(items: Item[]): Item[] {
-  const changed: Item[] = []
-  for (const it of items) {
-    if (it.kind === 'question' && it.status === 'pending') {
-      it.status = 'skipped'
-      changed.push(it)
-    }
-  }
-  return changed
 }

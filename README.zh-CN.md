@@ -228,7 +228,10 @@ npm run setup:public-server -- --user root --host 你的服务器 --port 8765
 ```
 src/main              Electron 主进程
   index.ts            窗口、IPC、通知和退出
-  sessions.ts         每个对话一个 ACP 进程：续聊、模式、提示词
+  sessions.ts         对话调度、ACP 进程生命周期和流式轮次
+  session/provider.ts CLI 启动、认证、会话选项和 Plan 提示词
+  session/requests.ts 通过轮次接口处理 ACP 问答和权限请求
+  session/usage.ts    延迟用量写回及可取消的账号用量重试
   cli.ts              查找并启动 Cursor CLI
   codex.ts            Codex 适配器：模型、登录、模式 id
   claude.ts           Claude 适配器：模型、登录、模式 id
@@ -244,10 +247,22 @@ src/main              Electron 主进程
   quota.ts            Cursor 与 Codex 的账号额度
   ipc/                按项目、对话、设置、CLI、用量和本机操作拆开的 IPC
 src/preload           渲染进程可以调用的 API
-src/renderer          React 界面
+src/renderer/src      React 界面
+  store.ts            状态和操作的公共入口
+  store/              状态内核、持久化、模型、命令、对话和初始化
+  components/Items.tsx 消息分派和界面状态适配
+  components/items/   Markdown、消息、工具、计划、问答和结果展示
   components/settings 设置各页
   lib/model-prefs.ts  决定选中哪个模型，不放在界面状态里
 src/shared            主进程和界面共用的类型、价格、用量、额度、斜杠命令，以及 Plan 提问块
 scripts               公网入口（public-gateway.py）、服务器安装脚本（setup-public-server.sh）、本机一键配置（setup-public-server.mjs）
 test                  离线单元测试，以及在线冒烟测试
 ```
+
+### 模块边界
+
+`SessionManager` 负责进程生命周期和轮次调度。`main/session/` 中的模块仅接收所需依赖：模型和模式设置使用 ACP 请求接口，问答使用轮次状态与消息回调，用量刷新使用精简的存储接口，均不反向依赖会话管理器。开始新轮次、删除对话和退出时，通过用量模块取消账号用量重试。
+
+前端保留 `store.ts` 作为公共入口。`store/` 内的功能模块直接依赖状态内核和具体辅助模块，不反向导入公共入口。初始化模块将 API 事件接入对应操作。历史加载与加载期间的流式消息缓冲放在同一个对话模块中，保持事件顺序。
+
+`components/Items.tsx` 负责消息与状态管理的连接。`components/items/` 中的展示组件通过参数或共享的轮次 context 获取模型目录和问答操作。共享 context、基础控件位于消息视图下层，避免 Markdown、问答与计划之间循环依赖。现有 `store.ts`、`Items.tsx` 和 `main/sessions.ts` 的导入方式继续可用。

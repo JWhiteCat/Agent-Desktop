@@ -18,6 +18,7 @@ describe('renderer store', () => {
     onEvent: vi.fn(),
     onFocusThread: vi.fn(),
     listModels: vi.fn(),
+    prepareCommands: vi.fn(),
     updateProject: vi.fn(),
     updateSettings: vi.fn(),
     updateThread: vi.fn(),
@@ -62,6 +63,27 @@ describe('renderer store', () => {
   })
 
   afterEach(() => vi.unstubAllGlobals())
+
+  it.each(['cursor', 'codex', 'claude'] as const)('preserves the %s command cache on empty preparation but clears it on a live announcement', async (cli) => {
+    const commands = [{ name: 'help', description: 'List commands' }]
+    store.setState((s) => ({ app: { ...s.app, threads: [{ ...thread, cli }] } }))
+    onEvent({ type: 'commands', threadId: thread.id, commands })
+
+    expect(store.cliCommands(store.getState(), cli)).toEqual(commands)
+    expect(JSON.parse(localStorage.getItem('agent-desktop:slash-commands')!)).toEqual({ [cli]: commands })
+
+    api.prepareCommands.mockResolvedValueOnce([])
+    await store.prepareCommands(thread.id, { model: 'composer-2.5[fast=true]', mode: 'agent', force: false })
+
+    expect(store.getState().commandsByThread[thread.id]).toEqual([])
+    expect(store.cliCommands(store.getState(), cli)).toEqual(commands)
+    expect(JSON.parse(localStorage.getItem('agent-desktop:slash-commands')!)).toEqual({ [cli]: commands })
+
+    onEvent({ type: 'commands', threadId: thread.id, commands: [] })
+
+    expect(store.cliCommands(store.getState(), cli)).toEqual([])
+    expect(JSON.parse(localStorage.getItem('agent-desktop:slash-commands')!)).toEqual({ [cli]: [] })
+  })
 
   it.each([
     ['cursor', 'model'], ['codex', 'codexModel'], ['claude', 'claudeModel']
