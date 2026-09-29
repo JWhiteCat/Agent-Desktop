@@ -41,10 +41,10 @@ describe('result footer session consumption', () => {
     expectNoAccountQuota(html)
   })
 
-  it('shows pending queries while preserving independently recorded tokens and price', () => {
+  it('shows missing readings while preserving independently recorded tokens and price', () => {
     for (const html of [render(), render({ weekly: 0.2, fiveHour: 1 }), render(undefined, 'codex', { quotaSnapshot: accountSnapshot })]) {
-      expect(html).toContain('本次会话消耗 待查询')
-      expect(html).toContain('尚未查询当前会话的额度消耗')
+      expect(html).toContain('本次会话消耗 暂无数据')
+      expect(html).toContain('尚未获得当前会话的额度消耗数据')
       expect(html).toContain('token 和公开价格估算仍可参考')
       expect(html).toContain('1.0k tokens')
       expect(html).toContain('>$0.0025</span>')
@@ -71,7 +71,7 @@ describe('result footer session consumption', () => {
       quotaSnapshot: accountSnapshot,
       codexThreadUsage: { threadId: 'session', credits, costUsd: 0.04 }
     })
-    expect(html).toContain('本次会话消耗 待查询')
+    expect(html).toContain('本次会话消耗 暂无数据')
     expect(html).not.toContain('credits /')
     expect(html).toContain('>$0.0025</span>')
     expectNoAccountQuota(html)
@@ -146,7 +146,7 @@ describe('result footer session consumption', () => {
     expect(html).toContain('服务统计时间：2026-09-29T12:34:56Z')
   })
 
-  it('explains delayed accounting and never renders stale unavailable allowances as zero usage', () => {
+  it('reports unavailable accounting without promising delayed data or rendering stale allowances', () => {
     const html = render({ weekly: 1 }, 'codex', {
       quotaSnapshot: accountSnapshot,
       codexSessionUsage: {
@@ -154,8 +154,8 @@ describe('result footer session consumption', () => {
         dataAsOf: '2026-09-29T12:34:56Z'
       }
     })
-    expect(html).toContain('本次会话消耗 待统计')
-    expect(html).toContain('会话额度统计存在延迟')
+    expect(html).toContain('本次会话消耗 服务未返回')
+    expect(html).toContain('无法确认是统计延迟还是当前会话不受支持')
     expect(html).toContain('服务统计时间：2026-09-29T12:34:56Z')
     expect(html).not.toContain('本次会话消耗 0')
     expect(html).not.toContain('credits')
@@ -170,7 +170,7 @@ describe('result footer session consumption', () => {
     })
     expect(html).toContain('本次会话消耗 1.25 credits')
     expect(html).toContain('服务统计时间：2026-09-29T12:34:56Z')
-    expect(html).not.toContain('待统计')
+    expect(html).not.toContain('服务未返回')
   })
 
   it.each(['-0.000000000000000001', '1.000000000000000002', '-1E+3', '1e-400'])
@@ -190,11 +190,11 @@ describe('result footer session consumption', () => {
       expect(html).not.toContain('credits')
     })
 
-  it('keeps malformed stored readings pending instead of rendering invalid percentages', () => {
+  it('reports malformed stored readings as unavailable instead of rendering invalid percentages', () => {
     const html = render(undefined, 'codex', {
       codexSessionUsage: { threadId: 'session', status: 'available', weekly: NaN, fiveHour: -1, balanceCredits: 'NaN' }
     })
-    expect(html).toContain('本次会话消耗 待统计')
+    expect(html).toContain('本次会话消耗 服务未返回')
     expect(html).not.toContain('NaN')
     expect(html).not.toContain('credits')
     expectNoAccountQuota(html)
@@ -205,7 +205,7 @@ describe('result footer session consumption', () => {
       codexSessionUsage: { threadId: 'session', status, balanceCredits: '0E-10' }
     })
     expect(html).toContain(`本次会话消耗 0 credits${status === 'partial' ? '（统计中）' : ''}`)
-    expect(html).not.toContain('待统计')
-    expect(html).not.toContain('待查询')
+    expect(html).not.toContain('服务未返回')
+    expect(html).not.toContain('暂无数据')
   })
 })

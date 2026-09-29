@@ -314,8 +314,8 @@ function sessionConsumption(item: ResultItem): { text: string; title: string } {
     }
   }
   return {
-    text: `本次会话消耗 ${usage ? '待统计' : '待查询'}`,
-    title: `${usage ? 'Codex 的会话额度统计存在延迟，当前会话仍待统计。' : '尚未查询当前会话的额度消耗。'}已记录的 token 和公开价格估算仍可参考。${sampled}`
+    text: `本次会话消耗 ${usage ? '服务未返回' : '暂无数据'}`,
+    title: `${usage ? 'Codex 尚未返回此会话的可用额度数据，无法确认是统计延迟还是当前会话不受支持。' : '尚未获得当前会话的额度消耗数据。'}已记录的 token 和公开价格估算仍可参考。${sampled}`
   }
 }
 
