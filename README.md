@@ -21,7 +21,7 @@ The app does not call a model itself. The main process starts the Cursor CLI, Co
 - Continue a saved session with ACP `session/load`, or rebuild the transcript from CLI storage. Copying the session id lets you resume a Cursor chat in a terminal with `agent --resume`
 - System notification when a task finishes; clicking it returns to that conversation. A finished run that is not on screen leaves an unread dot
 - Theme: follow the system, dark, or light
-- Settings are a left-hand list: CLI, MCP, Skill, Models, Usage, Defaults, Notifications, Remote control, and Appearance and history. The CLI page detects Cursor, Codex, and Claude separately, and holds paths, API keys, and sign-in. The Models page uses Cursor / Codex / Claude tabs for favorites and the default model. History import lives on the Appearance and history page
+- Settings are a left-hand list: CLI, MCP, Skill, Models, Usage, Defaults, Notifications, Remote control, and Appearance and history. The CLI page detects Cursor, Codex, and Claude separately, and holds paths, API keys, sign-in, and an Update button next to sign-in. Updates show progress and the command result, then refresh the version and model list. The Models page uses Cursor / Codex / Claude tabs for favorites and the default model. History import lives on the Appearance and history page
 - Usage: account quota for Cursor and Codex (5-hour, weekly, or monthly windows and the next reset, when the account returns them). Claude account quota is not shown yet. Cursor models and other models also show that pool’s tokens and the account’s price. Other models uses the included API usage percent only. On-demand spend shows used and limit on the same line, and tokens when the account returns them, without repeating the price. Below that, token totals for the last 1, 7, and 30 days and a paginated list of every past session with its models and cumulative usage. Local costs use [Cursor’s public prices](https://cursor.com/docs/models-and-pricing) for Cursor and [OpenAI API prices](https://developers.openai.com/api/docs/pricing) for Codex. These are usage estimates, not subscription bills. Auto and models missing from the price list are shown as unpriced
 - Remote control: scan a QR code on the LAN, or open the same page from the public internet through an SSH reverse tunnel
 
@@ -73,6 +73,12 @@ Cursor auth prefers a [Cursor API key](https://cursor.com/dashboard/api). A key 
 Codex auth prefers the key in Settings, then `CODEX_API_KEY`, then `OPENAI_API_KEY`. If none of those are set, it uses ChatGPT sign-in.
 
 Claude auth prefers the key in Settings, then `ANTHROPIC_API_KEY`. If either is set, Claude Code bills the API and does not use a Claude subscription. If neither is set, it uses the login stored in `~/.claude`. The login button runs the adapter's Claude.ai login.
+
+### Updating a CLI
+
+Open Settings → CLI and click **更新** to the right of that CLI's login button. The desktop app runs the update on this computer, including when you use the remote page. The button shows **更新中…** while it runs, and the card keeps the result or error for review. A successful update refreshes that CLI's version and model list.
+
+Cursor and native Claude Code use their `update` command. Codex installed through npm is updated in its existing installation prefix; Homebrew installations use Homebrew. Unsupported installations show instructions instead of updating a different copy. Built-in Codex and Claude versions are updated with Agent Desktop, so their Update buttons are disabled. Install a standalone CLI and select it in Settings to update it separately.
 
 ## Development
 

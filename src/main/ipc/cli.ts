@@ -1,5 +1,6 @@
 import { isCliProvider, normalizeCliProvider, type CliProvider } from '@shared/types'
 import { claudeCliInfo, claudeModelList, codexCliInfo, codexModelList, cursorCliInfo, cursorModelList, loginClaude, loginCodex, loginCursor } from '../cli-catalog'
+import { updateClaude, updateCodex, updateCursor } from '../cli-update'
 import { scanClaudeSessions } from '../claude-history'
 import { scanCodexSessions } from '../codex-history'
 import { scanCliSessions } from '../history'
@@ -20,6 +21,7 @@ function modelList(cli: CliProvider, settings: { agentPath: string; apiKey: stri
 
 export function cliHandlers(deps: IpcDeps): Record<string, Handler> {
   const { store, broadcast, modelsCache } = deps
+  const updating = new Set<CliProvider>()
   const history = {
     store,
     isRunning: (id: string) => deps.sessions.isRunning(id),
@@ -45,6 +47,24 @@ export function cliHandlers(deps: IpcDeps): Record<string, Handler> {
       if (cli === 'codex') return loginCodex(store.settings.codexPath)
       if (cli === 'claude') return loginClaude(store.settings.claudePath)
       return loginCursor(store.settings.agentPath)
+    },
+    'cli:update': async (provider: CliProvider) => {
+      if (!isCliProvider(provider)) throw new Error('请选择要更新的 CLI')
+      if (updating.has(provider)) throw new Error('此 CLI 正在更新，请稍候')
+      updating.add(provider)
+      try {
+        deps.sessions.dropIdle()
+        const result = provider === 'codex'
+          ? await updateCodex(store.settings.codexPath)
+          : provider === 'claude'
+            ? await updateClaude(store.settings.claudePath)
+            : await updateCursor(store.settings.agentPath)
+        modelsCache.delete(provider)
+        deps.sessions.dropIdle()
+        return result
+      } finally {
+        updating.delete(provider)
+      }
     },
     'cli:scan': () => {
       const imported = new Set(store.threads.map((t) => t.chatId).filter((x): x is string => !!x))

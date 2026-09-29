@@ -95,6 +95,7 @@ export function createWebApi(): DesktopApi {
     listModels: (refresh, provider) => call('cli:models', refresh, provider),
     cliInfo: (provider) => call('cli:info', provider),
     login: (provider) => call('cli:login', provider),
+    updateCli: (provider) => call('cli:update', provider),
     scanCliSessions: () => call('cli:scan'),
     importCliSessions: (ids) => call('cli:import', ids),
     gitDiff: (cwd) => call('git:diff', cwd),

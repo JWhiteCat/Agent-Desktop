@@ -21,7 +21,7 @@
 - 已有会话用 ACP 的 `session/load` 续聊，也可以从 CLI 存储把记录同步回来。复制会话 ID 后，可在终端用 `agent --resume` 继续一段 Cursor 对话
 - 任务结束时发送系统通知，点击通知回到该对话。不在当前画面上结束的任务会留下未读点
 - 主题：跟随系统、深色、浅色
-- 设置按左侧分类切换：CLI、MCP、Skill、模型、用量、默认值、通知、远程控制、外观与历史。CLI 页分别检测 Cursor、Codex 与 Claude，并填写路径、API Key 和登录。模型页用 Cursor / Codex / Claude 页签分别配置常用模型和默认模型。导入历史在「外观与历史」页
+- 设置按左侧分类切换：CLI、MCP、Skill、模型、用量、默认值、通知、远程控制、外观与历史。CLI 页分别检测 Cursor、Codex 与 Claude，并填写路径、API Key 和登录；登录右侧的「更新」按钮可更新对应的独立 CLI，显示进度和执行结果，完成后刷新版本与模型列表。模型页用 Cursor / Codex / Claude 页签分别配置常用模型和默认模型。导入历史在「外观与历史」页
 - 用量：显示 Cursor 与 Codex 的账号额度（有则显示 5 小时、每周、每月窗口和下次重置时间）。Claude 的账号额度尚未接入。Cursor 模型和其他模型还会显示该池的实际 token 和账号返回的价格。其他模型只显示包含的 API 用量百分比。按需支出在同一行显示已用和上限，有明细时再显示 token，不重复总价。下面按最近 1 天、7 天、30 天汇总本机 token，分页列出全部历史会话的模型和累计消耗。本机费用中，Cursor 用 [Cursor 公开标价](https://cursor.com/docs/models-and-pricing)，Codex 用 [OpenAI API 公开标价](https://developers.openai.com/api/docs/pricing) 估算。估算金额不代表订阅账单。Auto 和价目表没有的模型显示为未定价
 - 远程控制：局域网扫码，或经 SSH 反向隧道从公网打开同一页面
 
@@ -73,6 +73,12 @@ Cursor 认证优先使用 [Cursor API Key](https://cursor.com/dashboard/api)。�
 Codex 认证优先使用设置中的 Key，其次是 `CODEX_API_KEY`，再次是 `OPENAI_API_KEY`。都没有时使用 ChatGPT 登录。
 
 Claude 认证优先使用设置中的 Key，其次是 `ANTHROPIC_API_KEY`。只要其中有一个，就按 API 计费，不会使用 Claude 订阅。都没有时使用 `~/.claude` 里的登录。登录按钮走适配器的 Claude.ai 登录。
+
+### 更新 CLI
+
+打开「设置 → CLI」，点击对应 CLI 登录按钮右侧的「更新」。通过远程页面点击时，也在桌面应用所在电脑执行。执行期间按钮显示「更新中…」，卡片保留执行结果或错误信息；成功后刷新该 CLI 的版本与模型列表。
+
+Cursor 和原生安装的 Claude Code 使用各自的 `update` 命令。通过 npm 安装的 Codex 在原有安装位置更新，通过 Homebrew 安装的版本由 Homebrew 更新。不支持的安装方式会提示处理方法。内置 Codex 和 Claude 随 Agent Desktop 更新，因此其更新按钮不可用；需要单独更新时，先安装独立 CLI 并在设置中选择。
 
 ## 开发
 

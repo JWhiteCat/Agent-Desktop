@@ -32,6 +32,7 @@ const api: DesktopApi = {
   listModels: (refresh, provider) => ipcRenderer.invoke('cli:models', refresh, provider),
   cliInfo: (provider) => ipcRenderer.invoke('cli:info', provider),
   login: (provider) => ipcRenderer.invoke('cli:login', provider),
+  updateCli: (provider) => ipcRenderer.invoke('cli:update', provider),
   scanCliSessions: () => ipcRenderer.invoke('cli:scan'),
   importCliSessions: (ids) => ipcRenderer.invoke('cli:import', ids),
   gitDiff: (cwd) => ipcRenderer.invoke('git:diff', cwd),

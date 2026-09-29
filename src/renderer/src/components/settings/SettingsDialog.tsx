@@ -105,8 +105,8 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
             keyDesc="有 Key 时优先使用（设置优先于环境变量 CURSOR_API_KEY）。都没有时使用浏览器登录。可在 cursor.com/dashboard/api 创建。"
             missing="未找到 Cursor CLI"
             install="安装方式：Windows 在 PowerShell 执行 irm 'https://cursor.com/install?win32=true' | iex ；macOS / Linux 执行 curl https://cursor.com/install -fsS | bash"
-            onPath={(agentPath) => void saveCli({ agentPath }, 'cursor')}
-            onKey={(apiKey) => void saveCli({ apiKey }, 'cursor')}
+            onPath={(agentPath) => saveCli({ agentPath }, 'cursor')}
+            onKey={(apiKey) => saveCli({ apiKey }, 'cursor')}
           />
           <h4>Codex CLI</h4>
           <CliCard
@@ -119,8 +119,8 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
             keyDesc="有 Key 时优先使用。都没有时使用 ChatGPT 登录。"
             missing="未找到 Codex 适配器"
             install="需要安装本应用依赖里的 Codex 适配器。本机另有 codex 时会优先使用它。"
-            onPath={(codexPath) => void saveCli({ codexPath }, 'codex')}
-            onKey={(codexApiKey) => void saveCli({ codexApiKey }, 'codex')}
+            onPath={(codexPath) => saveCli({ codexPath }, 'codex')}
+            onKey={(codexApiKey) => saveCli({ codexApiKey }, 'codex')}
           />
           <h4>Claude Code</h4>
           <CliCard
@@ -133,8 +133,8 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
             keyDesc="只要设置或环境变量里有 API Key，就按 API 计费，不会使用 Claude 订阅。都没有时使用 ~/.claude 的登录。"
             missing="未找到 Claude 适配器"
             install="需要安装本应用依赖里的 Claude 适配器。本机另有 claude 时会优先使用它。安装 Claude Code：npm install -g @anthropic-ai/claude-code"
-            onPath={(claudePath) => void saveCli({ claudePath }, 'claude')}
-            onKey={(claudeApiKey) => void saveCli({ claudeApiKey }, 'claude')}
+            onPath={(claudePath) => saveCli({ claudePath }, 'claude')}
+            onKey={(claudeApiKey) => saveCli({ claudeApiKey }, 'claude')}
           />
         </section>
       )}
