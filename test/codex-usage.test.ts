@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
-import { readCodexUsage } from '../src/main/codex-history'
+import { readCodexUsage, scanCodexSessions } from '../src/main/codex-history'
 import { parseCodexUsage } from '../src/main/codex-usage'
 
 const at = (second: number): string => new Date(Date.UTC(2026, 8, 29, 0, 0, second)).toISOString()
@@ -255,6 +255,99 @@ describe('Codex rollout token usage', () => {
       expect(readCodexUsage('custom')?.[0].usageId).toBe('codex:custom-turn')
       expect(readCodexUsage('missing')).toBeUndefined()
     } finally {
+      vi.unstubAllEnvs()
+      fs.rmSync(temp, { recursive: true, force: true })
+    }
+  })
+
+  it('reads a named session without opening unrelated rollouts, including a long custom header', () => {
+    const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-usage-test-'))
+    const sessions = path.join(temp, 'sessions', '2026', '03', '13')
+    const namedId = '019ce705-9bed-7ac0-8d1e-c5098e8a1398'
+    const otherId = '019ce754-6cdb-7691-8957-d33b58971e15'
+    const namedFile = path.join(sessions, `rollout-2026-03-13T19-47-10-${namedId}.jsonl`)
+    const otherFile = path.join(sessions, `rollout-2026-03-13T21-13-15-${otherId}.jsonl`)
+    vi.stubEnv('CODEX_HOME', temp)
+    const opened = vi.spyOn(fs, 'openSync')
+    try {
+      fs.mkdirSync(sessions, { recursive: true })
+      const rollout = (id: string, turn: string): string => [
+        row('session_meta', { id, cwd: temp, note: 'x'.repeat(20_000) }),
+        event('task_started', { turn_id: turn }),
+        tokens(counts(20, 0, 10)),
+        event('task_complete', { turn_id: turn })
+      ].join('\n')
+      fs.writeFileSync(namedFile, rollout(namedId, 'named-turn'))
+      fs.writeFileSync(otherFile, rollout(otherId, 'other-turn'))
+      fs.writeFileSync(path.join(temp, 'sessions', 'rollout-wide.jsonl'), rollout('wide', 'wide-turn'))
+      opened.mockClear()
+
+      expect(readCodexUsage(namedId)?.[0].usageId).toBe('codex:named-turn')
+      expect(readCodexUsage('wide')?.[0].usageId).toBe('codex:wide-turn')
+      expect(readCodexUsage('missing-session')).toBeUndefined()
+
+      const paths = opened.mock.calls.map((call) => path.normalize(String(call[0])))
+      expect(paths).toContain(path.normalize(path.join(temp, 'sessions', 'rollout-wide.jsonl')))
+      expect(paths).not.toContain(path.normalize(namedFile))
+      expect(paths).not.toContain(path.normalize(otherFile))
+    } finally {
+      opened.mockRestore()
+      vi.unstubAllEnvs()
+      fs.rmSync(temp, { recursive: true, force: true })
+    }
+  })
+
+  it('uses a header id that is not in the filename after sessions are listed', () => {
+    const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-usage-test-'))
+    const sessions = path.join(temp, 'sessions')
+    const fileId = '019ce767-a8e1-7513-8f54-389cf0280799'
+    const headerId = '01a02a0e-035d-7e10-bf94-f91a8b85b319'
+    vi.stubEnv('CODEX_HOME', temp)
+    try {
+      fs.mkdirSync(sessions)
+      fs.writeFileSync(path.join(sessions, `rollout-2026-03-13T21-34-16-${fileId}.jsonl`), [
+        row('session_meta', { id: headerId, cwd: temp }),
+        event('task_started', { turn_id: 'alias-turn' }),
+        tokens(counts(20, 0, 10)),
+        event('task_complete', { turn_id: 'alias-turn' })
+      ].join('\n'))
+      expect(scanCodexSessions(new Set()).map((session) => session.chatId)).toEqual([headerId])
+      expect(readCodexUsage(headerId)?.[0].usageId).toBe('codex:alias-turn')
+      expect(readCodexUsage(fileId)?.[0].usageId).toBe('codex:alias-turn')
+    } finally {
+      vi.unstubAllEnvs()
+      fs.rmSync(temp, { recursive: true, force: true })
+    }
+  })
+
+  it('finds a mismatched header id without reading every rollout before the lookup returns', async () => {
+    const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-usage-test-'))
+    const sessions = path.join(temp, 'sessions')
+    const fileId = '01a098b5-986d-71c1-8f78-720729d88013'
+    const headerId = '01a098b3-6924-7a12-ab79-d282dca58943'
+    const decoyId = '01a02d52-2d8b-7ea3-b55c-d63fa2d6b973'
+    vi.stubEnv('CODEX_HOME', temp)
+    const opened = vi.spyOn(fs, 'openSync')
+    try {
+      fs.mkdirSync(sessions)
+      const body = (id: string, turn: string): string => [
+        row('session_meta', { id, cwd: temp }),
+        event('task_started', { turn_id: turn }),
+        tokens(counts(20, 0, 10)),
+        event('task_complete', { turn_id: turn })
+      ].join('\n')
+      fs.writeFileSync(path.join(sessions, `rollout-2026-03-13T21-41-30-${fileId}.jsonl`), body(headerId, 'late-alias'))
+      fs.writeFileSync(path.join(sessions, `rollout-2026-03-13T21-56-41-${decoyId}.jsonl`), body(decoyId, 'decoy'))
+      opened.mockClear()
+
+      expect(readCodexUsage(headerId)).toBeUndefined()
+      expect(opened).not.toHaveBeenCalled()
+
+      await vi.waitFor(() => {
+        expect(readCodexUsage(headerId)?.[0].usageId).toBe('codex:late-alias')
+      })
+    } finally {
+      opened.mockRestore()
       vi.unstubAllEnvs()
       fs.rmSync(temp, { recursive: true, force: true })
     }
