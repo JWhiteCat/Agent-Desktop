@@ -143,12 +143,21 @@ describe('model parameter preferences', () => {
     expect(getState().app.settings.modelPreferences).toEqual({ cursor: { 'grok-4.7': longFast } })
   })
 
-  it('uses saved parameters when favorites force a different model, while preserving explicit choices', () => {
+  it('uses saved parameters when favorites force a different model or keep the same model', () => {
     const saved = { 'grok-4.7': longFast }
 
     expect(modelForChat(models, ['grok-4.7'], COMPOSER_STANDARD, undefined, saved)).toBe(GROK_LONG_FAST)
-    expect(modelForChat(models, ['grok-4.7'], GROK_SHORT_STANDARD, undefined, saved)).toBe(GROK_SHORT_STANDARD)
-    expect(modelForChat(models, ['grok-4.7'], COMPOSER_FAST, GROK_SHORT_STANDARD, saved)).toBe(GROK_SHORT_STANDARD)
+    expect(modelForChat(models, ['grok-4.7'], GROK_SHORT_STANDARD, undefined, saved)).toBe(GROK_LONG_FAST)
+    expect(modelForChat(models, ['grok-4.7'], COMPOSER_FAST, GROK_SHORT_STANDARD, saved)).toBe(GROK_LONG_FAST)
+  })
+
+  it('applies the latest saved parameters to the project and default model for a new chat', () => {
+    const saved = { 'grok-4.7': longFast }
+
+    expect(modelForChat(models, [], COMPOSER_STANDARD, GROK_SHORT_STANDARD, saved)).toBe(GROK_LONG_FAST)
+    expect(modelForChat(models, [], GROK_SHORT_STANDARD, undefined, saved)).toBe(GROK_LONG_FAST)
+    expect(modelForChat(models, [], COMPOSER_STANDARD, COMPOSER_FAST, saved)).toBe(COMPOSER_FAST)
+    expect(modelForChat(models, [], 'auto', undefined, saved)).toBe('auto')
   })
 
   it('falls back to an available variant when saved parameters are no longer supported', () => {

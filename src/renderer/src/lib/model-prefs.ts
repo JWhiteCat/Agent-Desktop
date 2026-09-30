@@ -71,10 +71,15 @@ function resolveModel(
   preferences?: Record<string, ModelPreference>
 ): string {
   const favorites = favoriteBases ?? []
-  if (!favorites.length) return preferred
   const groups = groupModels(models)
   const current = findVariant(groups, preferred)
-  if (current && favorites.includes(current.base)) return preferred
+  const remembered = (): string => {
+    const saved = current && current.base !== 'auto' ? preferences?.[current.base] : undefined
+    const group = saved && groups.find((g) => g.base === current!.base)
+    return group ? pickVariant(group, saved).id : preferred
+  }
+  if (!favorites.length) return remembered()
+  if (current && favorites.includes(current.base)) return remembered()
   const group = groups.find((g) => favorites.includes(g.base))
   if (!group) return preferred
   return pickRememberedVariant(group, preferences, current).id
