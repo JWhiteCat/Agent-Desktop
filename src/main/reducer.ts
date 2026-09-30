@@ -327,8 +327,11 @@ export class StreamReducer {
     if (update.title && !item.tool) item.tool = toolNameFrom(update, args)
     if (rawInput && typeof rawInput === 'object') item.args = compact(args)
     if (result !== undefined) item.result = compact(result)
-    item.status = status
-    if (status !== 'running') item.endedAt = Date.now()
+    // ACP updates omit unchanged fields; a missing status must not reopen a finished call.
+    if (update.status !== undefined || status === 'error') {
+      item.status = status
+      if (status !== 'running') item.endedAt = Date.now()
+    }
     return [item]
   }
 }

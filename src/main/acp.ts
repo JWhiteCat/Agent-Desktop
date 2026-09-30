@@ -34,6 +34,9 @@ export class AcpConnection {
   constructor(private readonly child: ChildProcess) {}
 
   start(handlers: Handlers): void {
+    // Writing after the CLI exits raises EPIPE on stdin; unhandled, it crashes the main process.
+    const ignoreWriteError = () => undefined
+    this.child.stdin?.on('error', ignoreWriteError)
     this.child.stdout?.setEncoding('utf8')
     this.child.stdout?.on('data', (chunk: string) => {
       this.buffer += chunk
@@ -46,6 +49,7 @@ export class AcpConnection {
     })
     this.child.on('close', () => {
       this.closed = true
+      this.child.stdin?.removeListener('error', ignoreWriteError)
       const err = new Error(translate('CLI 进程已退出'))
       for (const waiter of this.pending.values()) waiter.reject(err)
       this.pending.clear()
