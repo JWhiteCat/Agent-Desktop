@@ -102,6 +102,15 @@ export function createWebApi(): DesktopApi {
     gitDiff: (cwd) => call('git:diff', cwd),
     openPath: (p) => call('shell:openPath', p),
     openSkillsDir: () => call('shell:openSkills'),
+    localMcpList: () => call('local:mcpList'),
+    localMcpSave: (req) => call('local:mcpSave', req),
+    localMcpToggle: (id, enabled, hash) => call('local:mcpToggle', id, enabled, hash),
+    localMcpDelete: (id, hash) => call('local:mcpDelete', id, hash),
+    localSkillList: () => call('local:skillList'),
+    localSkillRead: (id) => call('local:skillRead', id),
+    localSkillSave: (req) => call('local:skillSave', req),
+    localSkillToggle: (id, enabled) => call('local:skillToggle', id, enabled),
+    localSkillDelete: (id) => call('local:skillDelete', id),
     openInEditor: (p) => call('shell:openInEditor', p),
     openExternal: async (url) => {
       window.open(url, '_blank', 'noopener')

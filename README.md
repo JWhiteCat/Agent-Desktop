@@ -22,7 +22,7 @@ The app does not call a model itself. The main process starts the Cursor CLI, Co
 - System notification when a task finishes; clicking it returns to that conversation. A finished run that is not on screen leaves an unread dot
 - Theme: follow the system, dark, or light
 - Language: follow the system, Simplified Chinese, or English; changes take effect immediately and persist across restarts
-- Settings are a left-hand list: CLI, MCP, Skill, Models, Usage, Defaults, Notifications, Remote control, and Appearance and history. The CLI page detects Cursor, Codex, and Claude separately, and holds paths, API keys, sign-in, and an Update button next to sign-in. Updates show progress and the command result, then refresh the version and model list. The Models page uses Cursor / Codex / Claude tabs for favorites and the default model. History import lives on the Appearance and history page
+- Settings are a left-hand list: CLI, MCP, Skill, Models, Usage, Defaults, Notifications, Remote control, and Appearance and history. The CLI page detects Cursor, Codex, and Claude separately, and holds paths, API keys, sign-in, and an Update button next to sign-in. Updates show progress and the command result, then refresh the version and model list. The Models page uses Cursor / Codex / Claude tabs for favorites and the default model. The MCP and Skill pages switch between This app and All local; the latter manages each CLI's own configuration on this machine. History import lives on the Appearance and history page
 - Usage: account quota for Cursor and Codex (5-hour, weekly, or monthly windows and the next reset, when the account returns them). Claude account quota is not shown yet. Cursor models and other models also show that pool’s tokens and the account’s price. Other models uses the included API usage percent only. On-demand spend shows used and limit on the same line, and tokens when the account returns them, without repeating the price. Below that, token totals for the last 1, 7, and 30 days and a paginated list of every past session with its models and cumulative usage. Local costs use [Cursor’s public prices](https://cursor.com/docs/models-and-pricing) for Cursor and [OpenAI API prices](https://developers.openai.com/api/docs/pricing) for Codex. These are usage estimates, not subscription bills. Auto and models missing from the price list are shown as unpriced
 - Remote control: scan a QR code on the LAN, or open the same page from the public internet through an SSH reverse tunnel
 
@@ -171,6 +171,24 @@ Add MCP servers in Settings. When enabled, new and resumed sessions pass them in
 
 An enabled skill is written to `~/.cursor/skills/<name>/SKILL.md`, to Codex paths `~/.agents/skills/<name>/SKILL.md` and `~/.codex/skills/<name>/SKILL.md`, and to `~/.claude/skills/<name>/SKILL.md`. The name may contain only lowercase letters, digits, and hyphens, and it needs a description. The CLI uses that description to decide whether to apply the skill. Disabling or deleting a skill removes only directories this app created. A same-named directory that this app did not create is left in place, and save reports that it could not be overwritten.
 
+### All local
+
+The All local section of the MCP and Skill pages scans each CLI's own configuration on this machine. You can add, edit, enable, disable, and delete entries directly in those native files:
+
+| CLI | User MCP | Project MCP | Skill folders |
+| --- | --- | --- | --- |
+| Cursor | `~/.cursor/mcp.json` | `<project>/.cursor/mcp.json` | `~/.cursor/skills`, `<project>/.cursor/skills` |
+| Codex | `[mcp_servers.*]` in `~/.codex/config.toml` | `<project>/.codex/config.toml` | `~/.agents/skills`, `~/.codex/skills`, `<project>/.agents/skills`, `<project>/.codex/skills` |
+| Claude | `mcpServers` in `~/.claude.json`, plus `projects[<path>].mcpServers` (local scope) | `<project>/.mcp.json` | `~/.claude/skills`, `<project>/.claude/skills` |
+
+Projects are the ones added to the sidebar. A new entry asks for the CLI and the scope: user, or one of the projects.
+
+- MCP: Codex uses its native `enabled = false`. Edits to `config.toml` replace only that server's `[mcp_servers.<name>]` table and its subtables, so the rest of the file and its comments stay as they were. Cursor and Claude have no disable switch. A disabled server is moved out of the file into `local-config/disabled-mcp.json` in this app's data folder and written back when enabled. Codex servers defined as inline tables under `[mcp_servers]` are read-only. Codex does not support the SSE transport.
+- Skills: disabling moves the folder to `local-config/disabled-skills/`, and enabling moves it back. Deleting moves the folder to the trash. Editing rewrites only `name`, `description`, and the body of `SKILL.md`. Other frontmatter keys and other files in the folder are kept. When the folder name matches the old name, renaming the skill renames the folder too.
+- Read-only sources: CLI built-in skills (`~/.cursor/skills-cursor`, `~/.codex/skills/.system`) and plugin skills (`~/.cursor/plugins`, `~/.codex/plugins`, `~/.claude/plugins`) are overwritten when the CLI updates, so you can only view them and open their folders. Skill folders created by this app are marked This app and are edited in that section.
+- Safety: before this app first changes a configuration file, it saves a copy next to it as `<file>.agent-desktop.bak`. Each write compares the file with what was listed. If another program has changed it, the write is refused and you need to refresh.
+- The remote page can use these features too, without the Open file and Open folder buttons.
+
 After MCP, skills, the CLI path, the API key, or the sandbox setting changes, an idle CLI process exits. The new configuration is used on the next message.
 
 ## Usage stats
@@ -236,7 +254,7 @@ Projects, conversation metadata, and settings are stored in `data/` under Electr
 | macOS | `~/Library/Application Support/Agent Desktop/data` |
 | Linux | `~/.config/Agent Desktop/data` |
 
-`state.json` stores projects, the conversation list, and settings, including MCP servers, skill bodies, and the default CLI. Each conversation remembers whether it uses Cursor, Codex, or Claude. Messages for each conversation live in `threads/`. Cursor session records stay in `~/.cursor/chats`, Codex records stay in `~/.codex/sessions`, and Claude records stay in `~/.claude/projects`. The app reads and resumes those records and creates separate copies when forking. Enabled skills are written to `~/.cursor/skills`, `~/.agents/skills`, `~/.codex/skills`, and `~/.claude/skills`. Codex and Claude conversations do not use a git worktree.
+`state.json` stores projects, the conversation list, and settings, including MCP servers, skill bodies, and the default CLI. Each conversation remembers whether it uses Cursor, Codex, or Claude. Messages for each conversation live in `threads/`. Cursor session records stay in `~/.cursor/chats`, Codex records stay in `~/.codex/sessions`, and Claude records stay in `~/.claude/projects`. The app reads and resumes those records and creates separate copies when forking. Enabled skills are written to `~/.cursor/skills`, `~/.agents/skills`, `~/.codex/skills`, and `~/.claude/skills`. MCP servers and skills disabled in the All local section are held under `local-config/` in the data folder. Codex and Claude conversations do not use a git worktree.
 
 A full fork copies the CLI session into an independent conversation: Cursor copies a consistent database snapshot, while Codex and Claude use their adapters' native fork support. Forking at a message keeps history through that message. When a CLI cannot copy that exact point, or native copying fails, the app saves the selected history and sends it as context with the fork's next message. This includes prior replies and tool results. The pending context survives restarts and failed sends and is cleared after a successful reply. CLI history sync also restores these copied messages. A fork whose context has not yet been delivered must complete a message before syncing. The source conversation is preserved.
 

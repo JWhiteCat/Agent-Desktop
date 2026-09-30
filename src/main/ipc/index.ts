@@ -2,6 +2,7 @@ import type { Handler } from '../remote'
 import type { IpcDeps } from './deps'
 import { cliHandlers } from './cli'
 import { hostHandlers } from './host'
+import { localConfigHandlers } from './local-config'
 import { projectHandlers } from './projects'
 import { settingsHandlers } from './settings'
 import { threadHandlers } from './threads'
@@ -16,6 +17,7 @@ export function createIpcHandlers(deps: IpcDeps): Record<string, Handler> {
     ...settingsHandlers(deps),
     ...cliHandlers(deps),
     ...hostHandlers(),
+    ...localConfigHandlers(deps),
     ...remoteIpcHandlers(deps)
   }
 }

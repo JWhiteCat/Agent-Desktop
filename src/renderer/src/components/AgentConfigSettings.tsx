@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { t } from '@shared/i18n'
 import { isValidSkillName, mcpServerReady, skillReady } from '@shared/agent-config'
 import type { McpServerConfig, McpTransport, NamedValue, Settings, SkillConfig } from '@shared/types'
@@ -8,7 +8,7 @@ import { errorText, toast, useStore } from '../store'
 const EMPTY_SERVERS: McpServerConfig[] = []
 const EMPTY_SKILLS: SkillConfig[] = []
 
-interface McpDraft {
+export interface McpDraft {
   id: string
   name: string
   enabled: boolean
@@ -20,7 +20,7 @@ interface McpDraft {
   headersText: string
 }
 
-interface SkillDraft {
+export interface SkillDraft {
   id: string
   name: string
   description: string
@@ -213,13 +213,15 @@ export function SkillSettings() {
   )
 }
 
-function McpForm({
+export function McpForm({
   draft,
+  extra,
   onChange,
   onSave,
   onCancel
 }: {
   draft: McpDraft
+  extra?: ReactNode
   onChange: (draft: McpDraft) => void
   onSave: () => void
   onCancel: () => void
@@ -229,6 +231,7 @@ function McpForm({
   const remote = draft.transport !== 'stdio'
   return (
     <div className="stack-form">
+      {extra}
       <label className="stack-field">
         <span>{t('名称')}</span>
         <input className="input" value={draft.name} spellCheck={false} onChange={(e) => set({ name: e.target.value })} />
@@ -284,13 +287,17 @@ function McpForm({
   )
 }
 
-function SkillForm({
+export function SkillForm({
   draft,
+  extra,
+  hideEnabled,
   onChange,
   onSave,
   onCancel
 }: {
   draft: SkillDraft
+  extra?: ReactNode
+  hideEnabled?: boolean
   onChange: (draft: SkillDraft) => void
   onSave: () => void
   onCancel: () => void
@@ -299,6 +306,7 @@ function SkillForm({
   const set = (patch: Partial<SkillDraft>) => onChange({ ...draft, ...patch })
   return (
     <div className="stack-form">
+      {extra}
       <label className="stack-field">
         <span>{t('名称')}</span>
         <input className="input" value={draft.name} spellCheck={false} placeholder="review-diff" onChange={(e) => set({ name: e.target.value })} />
@@ -311,10 +319,12 @@ function SkillForm({
         <span>{t('正文')}</span>
         <textarea className="textarea tall" value={draft.body} placeholder={t('写给代理的操作说明')} onChange={(e) => set({ body: e.target.value })} />
       </label>
-      <label className="check-line">
-        <input type="checkbox" checked={draft.enabled} onChange={(e) => set({ enabled: e.target.checked })} />
-        {t('启用')}
-      </label>
+      {!hideEnabled && (
+        <label className="check-line">
+          <input type="checkbox" checked={draft.enabled} onChange={(e) => set({ enabled: e.target.checked })} />
+          {t('启用')}
+        </label>
+      )}
       <div className="row-gap">
         <button className="btn primary" type="button" onClick={onSave}>
           {t('保存')}
@@ -327,11 +337,11 @@ function SkillForm({
   )
 }
 
-function emptyMcpDraft(): McpDraft {
+export function emptyMcpDraft(): McpDraft {
   return { id: newId(), name: '', enabled: true, transport: 'stdio', command: '', argsText: '', envText: '', url: '', headersText: '' }
 }
 
-function toMcpDraft(server: McpServerConfig): McpDraft {
+export function toMcpDraft(server: McpServerConfig): McpDraft {
   return {
     id: server.id,
     name: server.name,
@@ -345,7 +355,7 @@ function toMcpDraft(server: McpServerConfig): McpDraft {
   }
 }
 
-function mcpFromDraft(draft: McpDraft): McpServerConfig {
+export function mcpFromDraft(draft: McpDraft): McpServerConfig {
   return {
     id: draft.id,
     name: draft.name.trim(),
@@ -366,7 +376,7 @@ function validateMcp(server: McpServerConfig, existing: McpServerConfig[]): stri
   return undefined
 }
 
-function emptySkillDraft(): SkillDraft {
+export function emptySkillDraft(): SkillDraft {
   return { id: newId(), name: '', description: '', enabled: true, body: '' }
 }
 
@@ -392,7 +402,7 @@ function validateSkill(skill: SkillConfig, existing: SkillConfig[]): string | un
   return undefined
 }
 
-function pairLineError(text: string, sep: '=' | ':'): string | undefined {
+export function pairLineError(text: string, sep: '=' | ':'): string | undefined {
   const bad = text.split(/\r?\n/).some((line) => {
     const trimmed = line.trim()
     if (!trimmed || trimmed.startsWith('#')) return false

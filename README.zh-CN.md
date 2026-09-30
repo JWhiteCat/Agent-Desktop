@@ -22,7 +22,7 @@
 - 任务结束时发送系统通知，点击通知回到该对话。不在当前画面上结束的任务会留下未读点
 - 主题：跟随系统、深色、浅色
 - 语言：跟随系统、简体中文、English，即时切换并在重启后保留选择
-- 设置按左侧分类切换：CLI、MCP、Skill、模型、用量、默认值、通知、远程控制、外观与历史。CLI 页分别检测 Cursor、Codex 与 Claude，并填写路径、API Key 和登录；登录右侧的「更新」按钮可更新对应的独立 CLI，显示进度和执行结果，完成后刷新版本与模型列表。模型页用 Cursor / Codex / Claude 页签分别配置常用模型和默认模型。导入历史在「外观与历史」页
+- 设置按左侧分类切换：CLI、MCP、Skill、模型、用量、默认值、通知、远程控制、外观与历史。CLI 页分别检测 Cursor、Codex 与 Claude，并填写路径、API Key 和登录；登录右侧的「更新」按钮可更新对应的独立 CLI，显示进度和执行结果，完成后刷新版本与模型列表。模型页用 Cursor / Codex / Claude 页签分别配置常用模型和默认模型。MCP 和 Skill 页可在「本应用」与「本地所有」之间切换，后者直接管理各 CLI 在本机的原生配置。导入历史在「外观与历史」页
 - 用量：显示 Cursor 与 Codex 的账号额度（有则显示 5 小时、每周、每月窗口和下次重置时间）。Claude 的账号额度尚未接入。Cursor 模型和其他模型还会显示该池的实际 token 和账号返回的价格。其他模型只显示包含的 API 用量百分比。按需支出在同一行显示已用和上限，有明细时再显示 token，不重复总价。下面按最近 1 天、7 天、30 天汇总本机 token，分页列出全部历史会话的模型和累计消耗。本机费用中，Cursor 用 [Cursor 公开标价](https://cursor.com/docs/models-and-pricing)，Codex 用 [OpenAI API 公开标价](https://developers.openai.com/api/docs/pricing) 估算。估算金额不代表订阅账单。Auto 和价目表没有的模型显示为未定价
 - 远程控制：局域网扫码，或经 SSH 反向隧道从公网打开同一页面
 
@@ -169,6 +169,24 @@ Cursor 不向 ACP 客户端提供 AskQuestion 工具。Codex 的 Plan 是协作�
 
 启用的 Skill 会写成 `~/.cursor/skills/<name>/SKILL.md`，同时写到 Codex 的路径 `~/.agents/skills/<name>/SKILL.md` 和 `~/.codex/skills/<name>/SKILL.md`，以及 `~/.claude/skills/<name>/SKILL.md`。名称只能包含小写字母、数字和连字符，并且需要一段描述。CLI 凭这段描述决定是否使用该 Skill。停用或删除时，只移除本应用创建的目录。同名但不是本应用创建的目录会留在原地，保存时会提示无法覆盖。
 
+### 本地所有
+
+MCP 和 Skill 页的「本地所有」分区扫描本机上各 CLI 自己的配置，并在原生文件里直接新增、编辑、启用/停用和删除：
+
+| CLI | 用户级 MCP | 项目级 MCP | Skill 目录 |
+| --- | --- | --- | --- |
+| Cursor | `~/.cursor/mcp.json` | `<项目>/.cursor/mcp.json` | `~/.cursor/skills`、`<项目>/.cursor/skills` |
+| Codex | `~/.codex/config.toml` 的 `[mcp_servers.*]` | `<项目>/.codex/config.toml` | `~/.agents/skills`、`~/.codex/skills`、`<项目>/.agents/skills`、`<项目>/.codex/skills` |
+| Claude | `~/.claude.json` 的 `mcpServers`，以及 `projects[<路径>].mcpServers`（本地级） | `<项目>/.mcp.json` | `~/.claude/skills`、`<项目>/.claude/skills` |
+
+项目指已添加到侧边栏的项目。新增条目时选择 CLI 和作用域（用户或某个项目）。
+
+- MCP：Codex 使用原生的 `enabled = false`。修改 `config.toml` 时只替换该服务器的 `[mcp_servers.<名称>]` 及其子表，文件其余部分和注释保持不变。Cursor 和 Claude 没有停用开关，停用的服务器从原文件移到本应用数据目录的 `local-config/disabled-mcp.json`，启用时写回。在 `[mcp_servers]` 里以内联表定义的 Codex 服务器只读。Codex 不支持 SSE 传输。
+- Skill：停用会把目录移到 `local-config/disabled-skills/`，启用时移回；删除会把目录移到回收站。编辑只重写 `SKILL.md` 的 `name`、`description` 和正文，其他 frontmatter 字段与目录里的其他文件保留；目录名与原名称一致时，改名会一并重命名目录。
+- 只读来源：CLI 内置 Skill（`~/.cursor/skills-cursor`、`~/.codex/skills/.system`）和插件 Skill（`~/.cursor/plugins`、`~/.codex/plugins`、`~/.claude/plugins`）会在 CLI 更新时被覆盖，只能查看和打开目录。本应用创建的 Skill 目录标为「本应用」，在「本应用」分区修改。
+- 安全：每个配置文件第一次被本应用修改前，会备份为同目录下的 `<文件名>.agent-desktop.bak`。写入前会比对列表时的文件内容，文件已被其他程序改过时拒绝写入，需要刷新后再试。
+- 远程页面也能使用这些功能，只是不显示「打开文件」和「打开目录」。
+
 MCP、Skill、CLI 路径、API Key 或沙箱设置变更后，空闲的 CLI 进程会退出。下一条消息使用新配置。
 
 ## 用量统计
@@ -230,7 +248,7 @@ npm run setup:public-server -- --user root --host 你的服务器 --port 8765
 | macOS | `~/Library/Application Support/Agent Desktop/data` |
 | Linux | `~/.config/Agent Desktop/data` |
 
-`state.json` 保存项目、对话列表和设置，包括 MCP 服务器、Skill 正文和默认 CLI。每段对话记住自己用的是 Cursor、Codex 还是 Claude。每段对话的消息在 `threads/` 里。Cursor 的会话记录仍在 `~/.cursor/chats`，Codex 的在 `~/.codex/sessions`，Claude 的在 `~/.claude/projects`。本应用读取和续接这些记录，并在分叉时创建独立副本。启用的 Skill 写到 `~/.cursor/skills`、`~/.agents/skills`、`~/.codex/skills` 和 `~/.claude/skills`。Codex 和 Claude 对话不使用 git worktree。
+`state.json` 保存项目、对话列表和设置，包括 MCP 服务器、Skill 正文和默认 CLI。每段对话记住自己用的是 Cursor、Codex 还是 Claude。每段对话的消息在 `threads/` 里。Cursor 的会话记录仍在 `~/.cursor/chats`，Codex 的在 `~/.codex/sessions`，Claude 的在 `~/.claude/projects`。本应用读取和续接这些记录，并在分叉时创建独立副本。启用的 Skill 写到 `~/.cursor/skills`、`~/.agents/skills`、`~/.codex/skills` 和 `~/.claude/skills`。「本地所有」分区停用的 MCP 服务器和 Skill 暂存在数据目录的 `local-config/` 下。Codex 和 Claude 对话不使用 git worktree。
 
 完整分叉会复制出独立的 CLI 会话：Cursor 复制一致的数据库快照，Codex 和 Claude 使用适配器的原生分叉接口。从某条消息分叉时，只保留到该消息为止的历史。如果 CLI 无法精确复制到这个位置，或原生复制失败，应用会保存所选历史，并在下次发送时连同新消息一起传给模型，包括之前的回复和工具结果。这份待发送上下文会保留到首次回复成功，重启或发送失败不会丢失。从 CLI 同步时也能还原这些历史消息；尚未传入上下文的分叉需要先成功发送一条消息再同步。原对话保留。
 

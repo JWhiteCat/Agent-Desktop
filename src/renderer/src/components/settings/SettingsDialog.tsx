@@ -10,6 +10,8 @@ import { Modal } from '../Modal'
 import { CliCard } from './CliCard'
 import { FavoriteModels } from './FavoriteModels'
 import { Field } from './Field'
+import { LocalMcpSettings } from './LocalMcpSettings'
+import { LocalSkillSettings } from './LocalSkillSettings'
 import { RemoteSettings } from './RemoteSettings'
 import { UsageSettings } from './UsageSettings'
 
@@ -26,6 +28,20 @@ const SETTINGS_TABS = [
 ] as const
 
 type SettingsTab = (typeof SETTINGS_TABS)[number]['id']
+type ConfigSource = 'app' | 'local'
+
+function ConfigSourceTabs({ value, onChange }: { value: ConfigSource; onChange: (value: ConfigSource) => void }) {
+  const t = useT()
+  return (
+    <div className="usage-periods" role="tablist" aria-label={t('配置来源')}>
+      {(['app', 'local'] as const).map((id) => (
+        <button key={id} type="button" role="tab" aria-selected={value === id} className={`usage-period ${value === id ? 'active' : ''}`} onClick={() => onChange(id)}>
+          {id === 'app' ? t('本应用') : t('本地所有')}
+        </button>
+      ))}
+    </div>
+  )
+}
 
 function ModelCliSettings({ provider }: { provider: CliProvider }) {
   const t = useT()
@@ -51,6 +67,7 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
   const cli = normalizeCliProvider(settings.cliProvider)
   const [modelCli, setModelCli] = useState<CliProvider>(cli)
   const [tab, setTab] = useState<SettingsTab>('cli')
+  const [configSource, setConfigSource] = useState<ConfigSource>('app')
   const tabs = SETTINGS_TABS.filter((item) => item.id !== 'remote' || !window.api.isRemote)
 
   const update = (patch: Partial<Settings>) => window.api.updateSettings(patch)
@@ -145,14 +162,16 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
       {tab === 'mcp' && (
         <section className="settings-section">
           <h4>MCP</h4>
-          <McpSettings />
+          <ConfigSourceTabs value={configSource} onChange={setConfigSource} />
+          {configSource === 'app' ? <McpSettings /> : <LocalMcpSettings />}
         </section>
       )}
 
       {tab === 'skill' && (
         <section className="settings-section">
           <h4>Skill</h4>
-          <SkillSettings />
+          <ConfigSourceTabs value={configSource} onChange={setConfigSource} />
+          {configSource === 'app' ? <SkillSettings /> : <LocalSkillSettings />}
         </section>
       )}
 

@@ -17,6 +17,7 @@ import type {
   ThreadMeta
 } from './types'
 import type { SlashCommand } from './commands'
+import type { LocalMcpReport, LocalMcpSaveRequest, LocalSkillContent, LocalSkillReport, LocalSkillSaveRequest } from './local-config'
 import type { QuotaReport } from './quota'
 import type { UsageReport, UsageWindow } from './usage'
 
@@ -60,6 +61,18 @@ export interface DesktopApi {
   gitDiff(cwd: string): Promise<GitDiff>
   openPath(path: string): Promise<void>
   openSkillsDir(): Promise<void>
+  /** MCP servers in the CLIs' own config files, including disabled ones held by this app. */
+  localMcpList(): Promise<LocalMcpReport>
+  localMcpSave(req: LocalMcpSaveRequest): Promise<void>
+  localMcpToggle(id: string, enabled: boolean, fileHash?: string): Promise<void>
+  localMcpDelete(id: string, fileHash?: string): Promise<void>
+  /** Skills in user, project, built-in, and plugin directories. */
+  localSkillList(): Promise<LocalSkillReport>
+  localSkillRead(id: string): Promise<LocalSkillContent>
+  localSkillSave(req: LocalSkillSaveRequest): Promise<void>
+  localSkillToggle(id: string, enabled: boolean): Promise<void>
+  /** Moves the skill directory to the trash. */
+  localSkillDelete(id: string): Promise<void>
   openInEditor(path: string): Promise<boolean>
   openExternal(url: string): Promise<void>
   remoteInfo(): Promise<RemoteInfo>
