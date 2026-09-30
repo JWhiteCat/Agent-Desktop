@@ -1456,6 +1456,27 @@ select {
   opacity: 0.8;
 }
 
+.hover-tip-copy {
+  display: none;
+}
+
+.hover-tip-bubble {
+  position: fixed;
+  z-index: 1100;
+  max-width: min(420px, calc(100vw - 16px));
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--bg-elev);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  pointer-events: none;
+}
+
 /* ---------- changes panel ---------- */
 
 .changes {

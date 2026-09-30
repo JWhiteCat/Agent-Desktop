@@ -4,6 +4,7 @@ import { cliTitle, type CliProvider } from '@shared/types'
 import { compactNumber, formatUsd, relativeTime } from '../../lib/format'
 import { groupModels, modelCaption } from '../../lib/models'
 import { errorText, useStore } from '../../store'
+import { HoverTip } from '../HoverTip'
 import { QuotaPanel } from './QuotaPanel'
 
 const USAGE_PERIODS: { id: UsageWindow; label: string }[] = [
@@ -15,7 +16,7 @@ const USAGE_PERIODS: { id: UsageWindow; label: string }[] = [
 const USAGE_PAGE_SIZE = 20
 
 function UsageToken({ n }: { n: number }) {
-  return <span title={n.toLocaleString('zh-CN')}>{compactNumber(n)}</span>
+  return <HoverTip text={n.toLocaleString('zh-CN')}>{compactNumber(n)}</HoverTip>
 }
 
 export function UsageSettings() {

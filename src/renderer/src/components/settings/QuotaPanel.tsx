@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { ProviderQuota, QuotaReport, QuotaWindow, WindowUsage } from '@shared/quota'
 import { compactNumber, formatUsd, resetStamp, resetsIn } from '../../lib/format'
 import { errorText } from '../../store'
+import { HoverTip } from '../HoverTip'
 
 export function QuotaPanel() {
   const [report, setReport] = useState<QuotaReport | null>(null)
@@ -106,7 +107,7 @@ function WindowUsageLine({ usage, hidePrice }: { usage: WindowUsage; hidePrice?:
 }
 
 function TokenCount({ n }: { n: number }) {
-  return <span title={n.toLocaleString('zh-CN')}>{compactNumber(n)}</span>
+  return <HoverTip text={n.toLocaleString('zh-CN')}>{compactNumber(n)}</HoverTip>
 }
 
 function planCaption(plan?: string): string {

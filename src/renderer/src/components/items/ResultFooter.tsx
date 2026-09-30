@@ -3,6 +3,7 @@ import { quoteModel } from '@shared/model-prices'
 import type { CliProvider, ModelInfo, ResultItem } from '@shared/types'
 import { compactNumber, duration, formatUsd } from '../../lib/format'
 import { groupModels, modelCaption } from '../../lib/models'
+import { HoverTip } from '../HoverTip'
 import { CopyButton } from './primitives'
 
 export interface ResultFooterProps {
@@ -29,18 +30,18 @@ export function ResultFooter({ item, text, fallbackModel, cli = 'cursor', models
       {text && <CopyButton text={text} />}
       {item.durationMs !== undefined && <span>{duration(item.durationMs)}</span>}
       {tokens > 0 && (
-        <span title={`输入 ${u?.inputTokens ?? 0} · 输出 ${u?.outputTokens ?? 0} · 缓存读 ${u?.cacheReadTokens ?? 0} · 缓存写 ${u?.cacheWriteTokens ?? 0}`}>
+        <HoverTip text={`输入 ${u?.inputTokens ?? 0} · 输出 ${u?.outputTokens ?? 0} · 缓存读 ${u?.cacheReadTokens ?? 0} · 缓存写 ${u?.cacheWriteTokens ?? 0}`}>
           {compactNumber(tokens)} tokens
-        </span>
+        </HoverTip>
       )}
-      {caption && <span title={caption === modelId ? undefined : modelId}>{caption}</span>}
+      {caption && <HoverTip text={caption === modelId ? undefined : modelId}>{caption}</HoverTip>}
       {quote && (
-        <span title={quote.costUsd == null ? 'Auto 和价目表没有的模型未计入费用' : `估算 $${quote.costUsd}（${priceSource}）`}>
+        <HoverTip text={quote.costUsd == null ? 'Auto 和价目表没有的模型未计入费用' : `估算 $${quote.costUsd}（${priceSource}）`}>
           {formatUsd(quote.costUsd)}
-        </span>
+        </HoverTip>
       )}
-      {sessionUsage && <span title={sessionUsage.title}>{sessionUsage.text}</span>}
-      {turnEstimate && <span title={turnEstimate.title}>{turnEstimate.text}</span>}
+      {sessionUsage && <HoverTip text={sessionUsage.title}>{sessionUsage.text}</HoverTip>}
+      {turnEstimate && <HoverTip text={turnEstimate.title}>{turnEstimate.text}</HoverTip>}
     </div>
   )
 }
