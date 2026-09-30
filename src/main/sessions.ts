@@ -19,8 +19,8 @@ import { CodexTurnUsageReader } from './codex-turn-usage'
 import { SessionUsage } from './session/usage'
 import { loadCodexQuota } from './quota'
 import {
-  applySessionOptions, cliLabel, cursorArgs, initializeSession, leftPlanMode,
-  planPrompt, procFingerprint, providerApiKey, resolveLaunch, spawnProvider, type AgentLaunch
+  applySessionOptions, cliLabel, cursorArgs, fingerprintWithCwd, initializeSession, leftPlanMode,
+  planPrompt, procFingerprint, providerApiKey, resolveLaunch, spawnProvider, worktreePathFrom, type AgentLaunch
 } from './session/provider'
 import { abandonQuestions, answerPendingQuestion, onAcpRequest, onIdleAcpRequest, settleQuestion, type InteractionRun } from './session/requests'
 import type { Store } from './store'
@@ -34,6 +34,8 @@ interface AgentProc {
   provider: CliProvider
   sessionId: string
   cwd: string
+  /** Worktree the CLI created for `--worktree`. New sessions start there instead of `cwd`. */
+  worktree?: string
   fingerprint: string
   stderr: string
   ready: boolean
@@ -363,6 +365,10 @@ export class SessionManager {
       proc.stderr = (proc.stderr + chunk).slice(-8000)
     })
     acp.start({
+      onText: (line) => {
+        const worktree = worktreePathFrom(stripAnsi(line))
+        if (worktree) proc.worktree = worktree
+      },
       onNotification: (method, params) => {
         if (proc.dying) return
         if (method === 'session/update' && params?.update?.sessionUpdate === 'available_commands_update') {
@@ -534,8 +540,8 @@ export class SessionManager {
   ): Promise<void> {
     const { proc } = run
     const sessionId = await this.connectSession(proc, cwd, chatId, provider, apiKey, mcpServers)
-    run.reducer.init = { sessionId, cwd, model: req.model }
-    this.store.updateThread(threadId, { chatId: sessionId, cwd })
+    run.reducer.init = { sessionId, cwd: proc.cwd, model: req.model }
+    this.store.updateThread(threadId, { chatId: sessionId, cwd: proc.cwd })
     this.onStateChange()
     await applySessionOptions(proc, req, this.store.settings.sandbox)
     if (!this.runs.has(threadId) || run.settled) return
@@ -559,9 +565,14 @@ export class SessionManager {
     if (sessionId) {
       await acp.request('session/load', { sessionId, cwd, mcpServers })
     } else {
-      const created = await acp.request('session/new', { cwd, mcpServers })
+      const sessionCwd = proc.worktree ?? cwd
+      const created = await acp.request('session/new', { cwd: sessionCwd, mcpServers })
       sessionId = created?.sessionId
       if (!sessionId) throw new Error(translate('{label} 没有返回会话 id', { label: cliLabel(provider) }))
+      if (sessionCwd !== proc.cwd) {
+        proc.cwd = sessionCwd
+        proc.fingerprint = fingerprintWithCwd(proc.fingerprint, sessionCwd)
+      }
     }
     proc.sessionId = sessionId
     proc.ready = true

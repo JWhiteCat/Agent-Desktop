@@ -17,6 +17,8 @@ interface Pending {
 interface Handlers {
   onRequest: (method: string, params: any) => Promise<unknown>
   onNotification: (method: string, params: any) => void
+  /** Non-JSON stdout lines, such as the CLI's `Using worktree:` notice. */
+  onText?: (line: string) => void
 }
 
 /**
@@ -89,6 +91,7 @@ export class AcpConnection {
     try {
       msg = JSON.parse(trimmed)
     } catch {
+      handlers.onText?.(trimmed)
       return
     }
     if (msg.id !== undefined && typeof msg.method === 'string') {

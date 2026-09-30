@@ -72,6 +72,23 @@ export function procFingerprint(
   return JSON.stringify([provider, cli.command, cli.prefixArgs, cwd, sandbox, force ? 1 : 0, apiKey, mcpServers, skills])
 }
 
+/** Same fingerprint with another working directory, for a process whose session moved into a worktree. */
+export function fingerprintWithCwd(fingerprint: string, cwd: string): string {
+  if (!fingerprint) return fingerprint
+  const parts = JSON.parse(fingerprint)
+  parts[3] = cwd
+  return JSON.stringify(parts)
+}
+
+/**
+ * `agent --worktree acp` prints the worktree path on stdout before any JSON-RPC output.
+ * `session/new` must use that path; the project path would make the agent edit the project itself.
+ */
+export function worktreePathFrom(line: string): string | undefined {
+  const match = /^Using worktree:\s*(.+)$/.exec(line.trim())
+  return match?.[1].trim() || undefined
+}
+
 export function spawnProvider(provider: CliProvider, launch: AgentLaunch, args: string[], cwd: string, apiKey: string): ChildProcess {
   return provider === 'codex' && launch.codex
     ? spawnCodexAcp(launch.codex, cwd, apiKey)
