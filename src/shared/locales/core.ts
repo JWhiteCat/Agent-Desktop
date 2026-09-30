@@ -90,6 +90,8 @@ export const coreMessages: Record<string, string> = {
   '项目不存在': 'Project does not exist',
   '未找到 {label}。请先安装，或在设置中指定路径。': '{label} was not found. Install it or set its path in Settings.',
   '项目目录不存在：{path}': 'Project directory does not exist: {path}',
+  '项目不是 git 仓库，无法创建 worktree': 'The project is not a Git repository, so a worktree cannot be created',
+  '无法创建 worktree：{error}': 'Could not create a worktree: {error}',
   '{label} 不支持会话分叉': '{label} does not support session forking',
   '{label} 没有返回独立的分叉会话 id': '{label} did not return a separate forked session ID',
   '{label} 会话分叉超时': '{label} session fork timed out',

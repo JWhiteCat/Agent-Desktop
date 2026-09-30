@@ -2,6 +2,7 @@ import { localizedMessage, t as translate } from '@shared/i18n'
 import { displayThreadTitle } from '@shared/thread-title'
 import type { ChildProcess } from 'node:child_process'
 import fs from 'node:fs'
+import path from 'node:path'
 import { enabledSkillFingerprint, toAcpMcpServers } from '@shared/agent-config'
 import { parseAvailableCommands, type SlashCommand } from '@shared/commands'
 import type { AgentEvent, CliProvider, Item, PrepareRequest, QuestionAnswer, SendRequest } from '@shared/types'
@@ -10,6 +11,7 @@ import { normalizeTurnUsage } from '@shared/turn-usage'
 import type { WeeklyQuotaEstimate } from '@shared/turn-quota'
 import { AcpConnection } from './acp'
 import { killTree, stripAnsi } from './cli'
+import { createWorktree } from './git'
 import { syncAllManagedSkills } from './skills'
 import { newId } from './id'
 import { forkPrompt } from './fork-context'
@@ -73,6 +75,11 @@ export interface RunFinished {
 
 export const DEFAULT_TITLE = '新对话'
 
+/** Parent directory of the worktrees this app creates for Codex and Claude conversations. */
+export function worktreeRoot(store: Pick<Store, 'dataDir'>): string {
+  return path.join(store.dataDir, 'worktrees')
+}
+
 export function titleFrom(prompt: string): string {
   const line = prompt.trim().split(/\r?\n/).find((l) => l.trim()) ?? DEFAULT_TITLE
   return line.length > 48 ? `${line.slice(0, 48)}…` : line
@@ -119,9 +126,7 @@ export class SessionManager {
   }
 
   send(req: SendRequest): Promise<void> {
-    return this.enqueue(req.threadId, async () => {
-      this.beginSend(req)
-    })
+    return this.enqueue(req.threadId, () => this.beginSend(req))
   }
 
   /**
@@ -197,7 +202,7 @@ export class SessionManager {
     return result
   }
 
-  private beginSend(req: SendRequest): void {
+  private async beginSend(req: SendRequest): Promise<void> {
     if (this.runs.has(req.threadId)) throw new Error(translate('该对话正在运行中'))
     const thread = this.store.thread(req.threadId)
     if (!thread) throw new Error(translate('对话不存在'))
@@ -213,8 +218,14 @@ export class SessionManager {
     if (!launch) throw new Error(translate('未找到 {label}。请先安装，或在设置中指定路径。', { label: cliLabel(provider) }))
     const apiKey = providerApiKey(provider, settings)
 
-    const cwd = thread.cwd && fs.existsSync(thread.cwd) ? thread.cwd : project.path
+    let cwd = thread.cwd && fs.existsSync(thread.cwd) ? thread.cwd : project.path
     if (!fs.existsSync(cwd)) throw new Error(translate('项目目录不存在：{path}', { path: cwd }))
+    // Cursor creates its own worktree from `--worktree`; the Codex and Claude adapters have no such flag.
+    if (provider !== 'cursor' && req.worktree && !thread.chatId && !thread.cwd) {
+      cwd = await createWorktree(cwd, worktreeRoot(this.store))
+      if (!this.store.thread(thread.id)) throw new Error(translate('对话不存在'))
+      this.store.updateThread(thread.id, { cwd, worktree: true })
+    }
     this.usage.cancel(thread.id)
 
     const mcpServers = toAcpMcpServers(settings.mcpServers)
@@ -236,7 +247,7 @@ export class SessionManager {
       model: req.model,
       mode: req.mode,
       force: req.force,
-      worktree: thread.chatId ? thread.worktree : !!req.worktree,
+      worktree: thread.chatId || thread.cwd ? thread.worktree : !!req.worktree,
       updatedAt: Date.now(),
       archived: false
     })

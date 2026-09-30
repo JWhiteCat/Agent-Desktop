@@ -62,7 +62,7 @@ export const shellMessages: Record<string, string> = {
   '默认权限：遵循 CLI 权限配置': 'Default permissions: use the CLI permission settings',
   '完全访问': 'Full access',
   '默认权限': 'Default permissions',
-  '在隔离的 git worktree 中运行（--worktree）': 'Run in an isolated Git worktree (--worktree)',
+  '在隔离的 git worktree 中运行': 'Run in an isolated Git worktree',
   '本地': 'Local',
   '停止 (Esc)': 'Stop (Esc)',
   '发送 (Enter)': 'Send (Enter)',

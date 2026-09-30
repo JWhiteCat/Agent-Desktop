@@ -13,7 +13,7 @@
 - 对话里的斜杠命令：输入 `/` 会列出 `/fork` 和 CLI 宣告的命令。`/fork` 在本应用内执行，其他命令作为下一条消息发出
 - 三种模式：Agent（可改文件、执行命令）、Plan（只读方案，可点选回答提问、一键执行计划）、Ask（只读问答）
 - 模型选择：Cursor、Codex 与 Claude 各自记住常用模型、默认模型，以及每个模型的上下文长度、思考强度和 Fast。Codex 按每个模型自己的档位列出思考强度，例如 Astra 的 Ultra。Claude 列出适配器为当前模型宣告的思考档位。每个项目会记住自己在该 CLI 里上次选的模型
-- 新建的 Cursor 对话可以在隔离的 git worktree 中运行。Codex 和 Claude 没有这个开关
+- 新建的对话可以在隔离的 git worktree 中运行。Cursor 使用 CLI 自带的 `--worktree`；Codex 和 Claude 由本应用在项目 HEAD 上创建 worktree 和新分支 `agent-desktop/<名称>`，未提交的改动不会带过去
 - 变更面板有两个页签：本对话编辑过的文件，以及当前工作目录的 git 分支、状态和 diff
 - 一轮任务结束后，在回复下方列出本轮修改的文件，点开可看 diff
 - 任务结束时，回复下方显示本轮耗时、token、使用的模型，以及按公开标价估算的费用。Codex 的“本轮周额度”使用服务端归属于当前会话的累计额度统计，悬浮说明展示周额度、5 小时额度等读数及统计口径。通过 ChatGPT 登录的新回合还会显示“本轮预估周额度”，取本轮前后账号周额度已用百分比之差；数据缺失或统计未完成时会明确标注
@@ -123,7 +123,7 @@ Windows 一键启动（需先安装 Node.js 22.12 或更高版本，包含 npm�
 
 ## 使用
 
-1. 添加一个项目文件夹。Agent 在该目录中工作；新建的 Cursor 对话也可以改到这段对话自己的 worktree。移除项目只从本应用删除，磁盘上的文件会留下。
+1. 添加一个项目文件夹。Agent 在该目录中工作；新建的对话也可以改到这段对话自己的 worktree。移除项目只从本应用删除，磁盘上的文件会留下。
 2. 在首页选择项目，输入任务或点一条示例提示，选好 CLI、模型和模式后发送。输入框下方列出该项目最近的三段对话。
 3. 在侧边栏管理对话：置顶、归档、重命名（双击标题）、分叉、从 CLI 存储同步、复制会话 ID、删除。同步会替换这里显示的记录。Codex 会从日志恢复每轮 token 和可用的耗时；其他 CLI 可能丢失仅由本应用保存的耗时和 token。
 4. 需要看改动时打开变更面板，或在 Cursor / 文件管理器中打开工作目录。任务结束后，对话里会列出这一轮改过的文件，点击文件名展开 diff。
@@ -141,7 +141,7 @@ Windows 一键启动（需先安装 Node.js 22.12 或更高版本，包含 npm�
 | Shift+Enter | 换行 |
 | Esc | 停止当前运行 |
 
-输入框用来选 CLI、模式和模型，也可以打开完全访问（`--force`）。首页上的 CLI 用于新建对话。对话里切换 CLI 时，已经显示的记录保留，下一条消息会用所选 CLI 新开一段会话。这个选择会记成设置里 CLI 页的默认值。完全访问会让 CLI 在不逐条确认的情况下执行命令。对 Claude 来说，完全访问是 `bypassPermissions`；不开完全访问的 Agent 是 `acceptEdits`，改文件会自动通过，命令仍会询问。Ask 保持 Claude 的默认权限模式，应用会拒绝改文件和执行命令的请求。沙箱（`--sandbox`）在设置的「默认值」里：遵循 CLI、启用或禁用，只作用于 Cursor，不是输入框上的开关，Claude 不使用它。首页上，新建的 Cursor 对话还可以在项目目录和隔离的 git worktree（`--worktree`）之间切换。
+输入框用来选 CLI、模式和模型，也可以打开完全访问（`--force`）。首页上的 CLI 用于新建对话。对话里切换 CLI 时，已经显示的记录保留，下一条消息会用所选 CLI 新开一段会话。这个选择会记成设置里 CLI 页的默认值。完全访问会让 CLI 在不逐条确认的情况下执行命令。对 Claude 来说，完全访问是 `bypassPermissions`；不开完全访问的 Agent 是 `acceptEdits`，改文件会自动通过，命令仍会询问。Ask 保持 Claude 的默认权限模式，应用会拒绝改文件和执行命令的请求。沙箱（`--sandbox`）在设置的「默认值」里：遵循 CLI、启用或禁用，只作用于 Cursor，不是输入框上的开关，Claude 不使用它。首页上，新建的对话还可以在项目目录和隔离的 git worktree 之间切换。Cursor 用 `--worktree`；Codex 和 Claude 的 worktree 由本应用创建，项目必须是有提交的 git 仓库。
 
 在一段对话里输入 `/` 会打开命令菜单。方向键移动，Enter 或 Tab 选中，Esc 只关闭菜单，不会停止正在运行的回合。`/fork` 在本地分叉。需要参数的命令会填成 `/名称 `，并在输入框下方显示提示，再按 Enter 发送。没有参数的命令会立刻执行。列表里还有 CLI 通过 ACP `available_commands_update` 宣告的命令。已有 CLI 会话的对话，第一次输入 `/` 会加载该会话，以便列出这些命令。新对话和首页不启动 CLI，而是复用这个 CLI 上一次宣告的命令列表，并记在本机；还没有任何列表时不显示菜单。下一次真实会话会刷新这份列表。以 `/` 开头但没有匹配项的文本仍按普通消息发送。
 
@@ -248,7 +248,7 @@ npm run setup:public-server -- --user root --host 你的服务器 --port 8765
 | macOS | `~/Library/Application Support/Agent Desktop/data` |
 | Linux | `~/.config/Agent Desktop/data` |
 
-`state.json` 保存项目、对话列表和设置，包括 MCP 服务器、Skill 正文和默认 CLI。每段对话记住自己用的是 Cursor、Codex 还是 Claude。每段对话的消息在 `threads/` 里。Cursor 的会话记录仍在 `~/.cursor/chats`，Codex 的在 `~/.codex/sessions`，Claude 的在 `~/.claude/projects`。本应用读取和续接这些记录，并在分叉时创建独立副本。启用的 Skill 写到 `~/.cursor/skills`、`~/.agents/skills`、`~/.codex/skills` 和 `~/.claude/skills`。「本地所有」分区停用的 MCP 服务器和 Skill 暂存在数据目录的 `local-config/` 下。Codex 和 Claude 对话不使用 git worktree。
+`state.json` 保存项目、对话列表和设置，包括 MCP 服务器、Skill 正文和默认 CLI。每段对话记住自己用的是 Cursor、Codex 还是 Claude。每段对话的消息在 `threads/` 里。Cursor 的会话记录仍在 `~/.cursor/chats`，Codex 的在 `~/.codex/sessions`，Claude 的在 `~/.claude/projects`。本应用读取和续接这些记录，并在分叉时创建独立副本。启用的 Skill 写到 `~/.cursor/skills`、`~/.agents/skills`、`~/.codex/skills` 和 `~/.claude/skills`。「本地所有」分区停用的 MCP 服务器和 Skill 暂存在数据目录的 `local-config/` 下。Codex 和 Claude 对话的 worktree 放在数据目录的 `worktrees/<仓库名>/<分支>-<随机后缀>` 下，分支名为 `agent-desktop/<分支>-<随机后缀>`。删除对话或项目时，如果没有其他对话还在用这个 worktree，会执行 `git worktree remove`；worktree 里有未提交或未跟踪的文件时会保留。分支用 `git branch -d` 删除，含未合并提交的分支会留下。
 
 完整分叉会复制出独立的 CLI 会话：Cursor 复制一致的数据库快照，Codex 和 Claude 使用适配器的原生分叉接口。从某条消息分叉时，只保留到该消息为止的历史。如果 CLI 无法精确复制到这个位置，或原生复制失败，应用会保存所选历史，并在下次发送时连同新消息一起传给模型，包括之前的回复和工具结果。这份待发送上下文会保留到首次回复成功，重启或发送失败不会丢失。从 CLI 同步时也能还原这些历史消息；尚未传入上下文的分叉需要先成功发送一条消息再同步。原对话保留。
 

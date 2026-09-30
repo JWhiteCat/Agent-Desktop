@@ -74,11 +74,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
   useEffect(() => {
     const cli = props.initial.cli
     if (!cli) return
-    setOpts((o) => {
-      const worktree = cli === 'cursor' ? o.worktree : false
-      if (o.cli === cli && o.worktree === worktree) return o
-      return { ...o, cli, worktree }
-    })
+    setOpts((o) => (o.cli === cli ? o : { ...o, cli }))
   }, [props.initial.cli])
 
   useEffect(() => {
@@ -137,8 +133,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
     setOpts((o) => ({
       ...o,
       cli: next,
-      model: typeof model === 'string' ? model : o.model,
-      worktree: next === 'cursor' ? o.worktree : false
+      model: typeof model === 'string' ? model : o.model
     }))
   }
 
@@ -270,7 +265,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
           {props.showWorktree && (
             <button
               className={`pill ${opts.worktree ? 'pill-on' : ''}`}
-              title={t('在隔离的 git worktree 中运行（--worktree）')}
+              title={t('在隔离的 git worktree 中运行')}
               onClick={() => setOpts((o) => ({ ...o, worktree: !o.worktree }))}
             >
               {opts.worktree ? <IconBranch size={13} /> : <IconFolder size={13} />}

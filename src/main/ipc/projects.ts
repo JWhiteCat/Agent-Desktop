@@ -2,7 +2,9 @@ import { t as translate } from '@shared/i18n'
 import { dialog } from 'electron'
 import fs from 'node:fs'
 import type { Project } from '@shared/types'
+import { releaseWorktrees } from '../git'
 import type { Handler } from '../remote'
+import { worktreeRoot } from '../sessions'
 import type { IpcDeps } from './deps'
 
 export function projectHandlers(deps: IpcDeps): Record<string, Handler> {
@@ -29,8 +31,10 @@ export function projectHandlers(deps: IpcDeps): Record<string, Handler> {
       broadcast()
     },
     'project:remove': (id: string) => {
-      for (const t of store.threads.filter((t) => t.projectId === id)) sessions.dispose(t.id)
+      const threads = store.threads.filter((t) => t.projectId === id)
+      for (const t of threads) sessions.dispose(t.id)
       store.removeProject(id)
+      void releaseWorktrees(threads, store.threads, worktreeRoot(store))
       broadcast()
     },
     'project:reorder': (ids: string[]) => {

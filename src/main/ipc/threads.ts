@@ -4,7 +4,8 @@ import { isCliProvider, normalizeCliProvider, threadCli, type CliProvider } from
 import { claudeChatUpdatedAt } from '../claude-history'
 import { codexChatUpdatedAt } from '../codex-history'
 import { cliChatUpdatedAt } from '../history'
-import { DEFAULT_TITLE } from '../sessions'
+import { releaseWorktrees } from '../git'
+import { DEFAULT_TITLE, worktreeRoot } from '../sessions'
 import { forkThread, syncFromCli, type HistoryDeps } from '../thread-history'
 import type { Handler } from '../remote'
 import type { IpcDeps } from './deps'
@@ -45,8 +46,10 @@ export function threadHandlers(deps: IpcDeps): Record<string, Handler> {
       broadcast()
     },
     'thread:delete': (id: string) => {
+      const thread = store.thread(id)
       sessions.dispose(id)
       store.deleteThread(id)
+      if (thread) void releaseWorktrees([thread], store.threads, worktreeRoot(store))
       broadcast()
     },
     'thread:items': (id: string) => {
