@@ -1,5 +1,6 @@
 import type { Item, QuestionItem } from '@shared/types'
 import { answerQuestion, useStore } from '../store'
+import { useT } from '../lib/i18n'
 import { AssistantMessage, Notice, ThinkingBlock } from './items/Messages'
 import { PlanCard } from './items/PlanCard'
 import { QuestionForm } from './items/Questions'
@@ -19,13 +20,14 @@ export function ResultFooter(props: ResultFooterProps) {
 }
 
 export function QuestionCard({ item, threadId }: { item: QuestionItem; threadId: string }) {
+  const t = useT()
   const pending = item.status === 'pending'
   return (
     <QuestionForm
       title={item.title}
       questions={item.questions}
       answers={item.status === 'answered' ? item.answers : undefined}
-      status={pending ? undefined : item.status === 'answered' ? '已提交' : '已跳过'}
+      status={pending ? undefined : item.status === 'answered' ? t('已提交') : t('已跳过')}
       onSubmit={pending ? (answers) => answerQuestion(threadId, item.id, answers) : undefined}
       onSkip={pending ? () => answerQuestion(threadId, item.id, null) : undefined}
     />

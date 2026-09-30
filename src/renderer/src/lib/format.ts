@@ -1,9 +1,21 @@
+import { getLocale, t } from '@shared/i18n'
+
 /** How long until a quota window resets. */
 export function resetsIn(ts: number, now = Date.now()): string {
   const diff = ts - now
-  if (diff <= 0) return '即将重置'
+  if (diff <= 0) return t('即将重置')
   const min = Math.floor(diff / 60_000)
-  if (min < 1) return '1 分钟内'
+  if (min < 1) return t('1 分钟内')
+  if (getLocale() === 'en') {
+    const relative = new Intl.RelativeTimeFormat('en', { numeric: 'always' })
+    if (min < 60) return relative.format(min, 'minute')
+    const hours = Math.floor(min / 60)
+    if (hours < 24) return relative.format(hours, 'hour')
+    const days = Math.floor(hours / 24)
+    if (days < 7) return relative.format(days, 'day')
+    if (days < 30) return relative.format(Math.floor(days / 7), 'week')
+    return relative.format(Math.floor(days / 30), 'month')
+  }
   if (min < 60) return `${min} 分钟后`
   const h = Math.floor(min / 60)
   if (h < 24) return `${h} 小时后`
@@ -15,6 +27,7 @@ export function resetsIn(ts: number, now = Date.now()): string {
 
 export function resetStamp(ts: number): string {
   const date = new Date(ts)
+  if (getLocale() === 'en') return date.toLocaleString('en', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()} ${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
@@ -22,7 +35,17 @@ export function resetStamp(ts: number): string {
 export function relativeTime(ts: number, now = Date.now()): string {
   const diff = Math.max(0, now - ts)
   const min = Math.floor(diff / 60_000)
-  if (min < 1) return '刚刚'
+  if (min < 1) return t('刚刚')
+  if (getLocale() === 'en') {
+    const relative = new Intl.RelativeTimeFormat('en', { numeric: 'always' })
+    if (min < 60) return relative.format(-min, 'minute')
+    const hours = Math.floor(min / 60)
+    if (hours < 24) return relative.format(-hours, 'hour')
+    const days = Math.floor(hours / 24)
+    if (days < 7) return relative.format(-days, 'day')
+    if (days < 30) return relative.format(-Math.floor(days / 7), 'week')
+    return new Date(ts).toLocaleDateString('en', { year: 'numeric', month: 'short', day: 'numeric' })
+  }
   if (min < 60) return `${min} 分钟`
   const h = Math.floor(min / 60)
   if (h < 24) return `${h} 小时`
@@ -49,7 +72,7 @@ export function compactNumber(n: number): string {
 
 /** List-price estimate. Null means the model has no published price. */
 export function formatUsd(cost: number | null): string {
-  if (cost == null) return '未定价'
+  if (cost == null) return t('未定价')
   if (cost === 0) return '$0'
   if (cost < 0.01) {
     const text = cost.toFixed(4).replace(/0+$/, '').replace(/\.$/, '')

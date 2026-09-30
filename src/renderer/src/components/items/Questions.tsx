@@ -1,6 +1,7 @@
 import { useContext, useMemo, useState } from 'react'
 import { formatAnswers, parseQuestionBlock, QUESTION_BLOCK_LANG } from '@shared/questions'
 import type { QuestionAnswer, QuestionPrompt } from '@shared/types'
+import { useT } from '../../lib/i18n'
 import { CodeBlock } from './primitives'
 import { TurnActionsContext } from './TurnActions'
 
@@ -15,6 +16,7 @@ interface QuestionFormProps {
 }
 
 export function QuestionForm({ title, questions, answers, status, onSubmit, onSkip }: QuestionFormProps) {
+  const t = useT()
   const [selected, setSelected] = useState<Record<string, string[]>>(() => {
     const init: Record<string, string[]> = {}
     for (const answer of answers ?? []) init[answer.questionId] = answer.selectedOptionIds
@@ -60,12 +62,12 @@ export function QuestionForm({ title, questions, answers, status, onSubmit, onSk
 
   return (
     <div className={`question-card ${locked ? 'locked' : ''}`}>
-      <div className="question-title">{title || '需要你的选择'}</div>
+      <div className="question-title">{title || t('需要你的选择')}</div>
       {questions.map((q) => (
         <div key={q.id} className="question-block">
           <div className="question-prompt">
             {q.prompt}
-            {q.allowMultiple && <span className="question-hint">可多选</span>}
+            {q.allowMultiple && <span className="question-hint">{t('可多选')}</span>}
           </div>
           <div className="question-options" role={q.allowMultiple ? 'group' : 'radiogroup'}>
             {q.options.map((o) => {
@@ -90,11 +92,11 @@ export function QuestionForm({ title, questions, answers, status, onSubmit, onSk
       {onSubmit ? (
         <div className="question-actions">
           <button type="button" className="question-submit" disabled={!complete || sending} onClick={submit}>
-            {sending ? '提交中' : '继续'}
+            {sending ? t('提交中') : t('继续')}
           </button>
           {onSkip && (
             <button type="button" className="question-skip" disabled={sending} onClick={skip}>
-              跳过
+              {t('跳过')}
             </button>
           )}
         </div>
@@ -107,19 +109,20 @@ export function QuestionForm({ title, questions, answers, status, onSubmit, onSk
 
 /** A ```questions block from the model, answered by sending the picks as the next message. */
 export function QuestionBlock({ body }: { body: string }) {
+  const t = useT()
   const { reply, streaming } = useContext(TurnActionsContext)
   const set = useMemo(() => parseQuestionBlock(body), [body])
   if (!set) {
-    if (streaming) return <div className="question-card locked question-loading">正在准备问题…</div>
+    if (streaming) return <div className="question-card locked question-loading">{t('正在准备问题…')}</div>
     return <CodeBlock lang={QUESTION_BLOCK_LANG} text={body} />
   }
   return (
     <QuestionForm
       title={set.title}
       questions={set.questions}
-      status={reply || streaming ? undefined : '已回答'}
+      status={reply || streaming ? undefined : t('已回答')}
       onSubmit={reply ? (answers) => reply(formatAnswers(set, answers)) : undefined}
-      onSkip={reply ? () => reply('这些问题先跳过，按你的判断继续。') : undefined}
+      onSkip={reply ? () => reply(t('这些问题先跳过，按你的判断继续。')) : undefined}
     />
   )
 }

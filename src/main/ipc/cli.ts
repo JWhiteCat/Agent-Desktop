@@ -1,3 +1,4 @@
+import { localizedMessage, t as translate } from '@shared/i18n'
 import { isCliProvider, normalizeCliProvider, type CliProvider } from '@shared/types'
 import { claudeCliInfo, claudeModelList, codexCliInfo, codexModelList, cursorCliInfo, cursorModelList, loginClaude, loginCodex, loginCursor } from '../cli-catalog'
 import { updateClaude, updateCodex, updateCursor } from '../cli-update'
@@ -49,8 +50,8 @@ export function cliHandlers(deps: IpcDeps): Record<string, Handler> {
       return loginCursor(store.settings.agentPath)
     },
     'cli:update': async (provider: CliProvider) => {
-      if (!isCliProvider(provider)) throw new Error('请选择要更新的 CLI')
-      if (updating.has(provider)) throw new Error('此 CLI 正在更新，请稍候')
+      if (!isCliProvider(provider)) throw new Error(translate('请选择要更新的 CLI'))
+      if (updating.has(provider)) throw new Error(translate('此 CLI 正在更新，请稍候'))
       updating.add(provider)
       try {
         deps.sessions.dropIdle()
@@ -81,6 +82,7 @@ export function cliHandlers(deps: IpcDeps): Record<string, Handler> {
         const thread = store.createThread({
           projectId: project.id,
           title: s.title,
+          titleKind: s.titleKind,
           chatId: s.chatId,
           cwd: s.cwd,
           cli: s.cli,
@@ -100,7 +102,7 @@ export function cliHandlers(deps: IpcDeps): Record<string, Handler> {
             id: newId(),
             kind: 'notice',
             level: 'info',
-            text: '未能读取此会话的历史消息，发送新消息仍会在原会话上下文中继续。'
+            ...localizedMessage('未能读取此会话的历史消息，发送新消息仍会在原会话上下文中继续。')
           })
           store.markItemsDirty(thread.id)
         }

@@ -1,3 +1,4 @@
+import { localizedMessage, t as translate, type LocalizedMessage, type TranslationParams } from '@shared/i18n'
 import crypto from 'node:crypto'
 import { spawn, type ChildProcess } from 'node:child_process'
 import fs from 'node:fs'
@@ -26,6 +27,17 @@ export interface TunnelTarget {
 
 export type SshSpawn = (command: string, args: string[], options: { windowsHide: boolean; stdio: ['ignore', 'ignore', 'pipe'] }) => ChildProcess
 
+/** Preserve application messages when a validation failure is retained in remote status. */
+export class LocalizedTunnelError extends Error {
+  readonly localizedMessage: LocalizedMessage
+
+  constructor(source: string, params?: TranslationParams) {
+    const localized = localizedMessage(source, params)
+    super(localized.text)
+    this.localizedMessage = localized.message
+  }
+}
+
 export function retryDelay(attempt: number): number {
   const i = Math.min(Math.max(0, attempt), RETRY_DELAYS_MS.length - 1)
   return RETRY_DELAYS_MS[i]
@@ -33,24 +45,24 @@ export function retryDelay(attempt: number): number {
 
 export function validatePublicUser(user: string): string {
   const value = user.trim()
-  if (!SSH_USER.test(value)) throw new Error('SSH 用户名无效')
+  if (!SSH_USER.test(value)) throw new LocalizedTunnelError('SSH 用户名无效')
   return value
 }
 
 export function validatePublicHost(host: string): string {
   const value = host.trim()
   if (!value || value.includes('://') || value.includes('/') || value.includes('@') || /[\s:]/.test(value)) {
-    throw new Error('服务器地址不能包含协议、端口或路径')
+    throw new LocalizedTunnelError('服务器地址不能包含协议、端口或路径')
   }
   if (IPV4.test(value)) return value
   const labels = value.split('.')
   if (labels.every((label) => HOST_LABEL.test(label))) return value
-  throw new Error('服务器地址无效')
+  throw new LocalizedTunnelError('服务器地址无效')
 }
 
 export function validatePublicPort(port: number): number {
   const value = Math.trunc(Number(port))
-  if (!(value >= 1 && value <= 65535) || value === 22) throw new Error('公网端口需在 1–65535 之间，且不能是 22')
+  if (!(value >= 1 && value <= 65535) || value === 22) throw new LocalizedTunnelError('公网端口需在 1–65535 之间，且不能是 22')
   return value
 }
 
@@ -63,12 +75,12 @@ export function newRemoteClientId(): string {
 }
 
 export function publicSocketPath(clientId: string): string {
-  if (!validClientId(clientId)) throw new Error('电脑标识无效')
+  if (!validClientId(clientId)) throw new LocalizedTunnelError('电脑标识无效')
   return `${PUBLIC_SOCKET_DIR}/${clientId}`
 }
 
 export function publicRemoteUrl(host: string, port: number, clientId: string, token: string): string {
-  if (!validClientId(clientId)) throw new Error('电脑标识无效')
+  if (!validClientId(clientId)) throw new LocalizedTunnelError('电脑标识无效')
   return `http://${host}:${port}/c/${clientId}/?token=${encodeURIComponent(token)}`
 }
 
@@ -101,20 +113,25 @@ export function resolveSshPath(): string {
 }
 
 export function explainSshFailure(text: string): string {
+  const failure = sshFailure(text)
+  return typeof failure === 'string' ? failure : translate(failure.source, failure.params)
+}
+
+function sshFailure(text: string): string | LocalizedMessage {
   const raw = text.trim()
-  if (/permission denied/i.test(raw)) return '公钥登录失败，请确认本机默认密钥能登录该用户'
+  if (/permission denied/i.test(raw)) return { source: '公钥登录失败，请确认本机默认密钥能登录该用户' }
   if (/remote port forwarding failed|administratively prohibited|streamlocal|unix domain socket/i.test(raw)) {
-    return '反向隧道被拒绝。请重新运行 setup:public-server，确认服务器允许 Unix 套接字转发'
+    return { source: '反向隧道被拒绝。请重新运行 setup:public-server，确认服务器允许 Unix 套接字转发' }
   }
-  if (/connection refused|timed out|no route|network is unreachable/i.test(raw)) return '无法连接服务器'
-  if (/ENOENT|not found/i.test(raw)) return '未找到 OpenSSH 客户端'
+  if (/connection refused|timed out|no route|network is unreachable/i.test(raw)) return { source: '无法连接服务器' }
+  if (/ENOENT|not found/i.test(raw)) return { source: '未找到 OpenSSH 客户端' }
   const line = raw
     .split('\n')
     .map((item) => item.trim())
     .filter(Boolean)
     .slice(-3)
     .join(' ')
-  return line || '隧道已断开'
+  return line || { source: '隧道已断开' }
 }
 
 const UNREACHABLE = '公网入口不可达。请确认已运行 setup:public-server，且安全组放行了该端口'
@@ -162,9 +179,9 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 /** Keeps an SSH reverse tunnel to the configured server and reconnects if it drops. */
 export class PublicTunnel {
   status: PublicLinkStatus = 'off'
-  error: string | undefined
   onChange: (() => void) | undefined
 
+  private failure: string | LocalizedMessage | undefined
   private child: ChildProcess | undefined
   private timer: NodeJS.Timeout | undefined
   private generation = 0
@@ -176,6 +193,14 @@ export class PublicTunnel {
     private sshPath = resolveSshPath(),
     private probe: (host: string, port: number, clientId: string) => Promise<boolean> = probeReachable
   ) {}
+
+  get error(): string | undefined {
+    return typeof this.failure === 'object' ? translate(this.failure.source, this.failure.params) : this.failure
+  }
+
+  get errorMessage(): LocalizedMessage | undefined {
+    return typeof this.failure === 'object' ? this.failure : undefined
+  }
 
   /** Stops any tunnel, then connects. Invalid targets should be rejected by the caller. */
   async start(target: TunnelTarget): Promise<void> {
@@ -202,7 +227,7 @@ export class PublicTunnel {
       })
     }
     this.status = 'off'
-    this.error = undefined
+    this.failure = undefined
     this.emit()
   }
 
@@ -210,9 +235,9 @@ export class PublicTunnel {
     this.onChange?.()
   }
 
-  private setStatus(status: PublicLinkStatus, error?: string): void {
+  private setStatus(status: PublicLinkStatus, error?: string | LocalizedMessage): void {
     this.status = status
-    this.error = error
+    this.failure = error
     this.emit()
   }
 
@@ -234,7 +259,7 @@ export class PublicTunnel {
     try {
       child = this.spawnFn(this.sshPath, buildSshArgs(target), { windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] })
     } catch (err) {
-      this.setStatus('error', explainSshFailure(err instanceof Error ? err.message : String(err)))
+      this.setStatus('error', err instanceof LocalizedTunnelError ? err.localizedMessage : sshFailure(err instanceof Error ? err.message : String(err)))
       this.schedule(gen)
       return
     }
@@ -245,13 +270,13 @@ export class PublicTunnel {
     child.once('error', (err) => {
       if (gen !== this.generation) return
       this.child = undefined
-      this.setStatus('error', explainSshFailure(err.message))
+      this.setStatus('error', sshFailure(err.message))
       this.schedule(gen)
     })
     child.once('exit', (code) => {
       if (gen !== this.generation) return
       this.child = undefined
-      this.setStatus('error', explainSshFailure(stderr || `ssh 退出（${code ?? 'unknown'}）`))
+      this.setStatus('error', stderr ? sshFailure(stderr) : { source: 'ssh 退出（{code}）', params: { code: code ?? 'unknown' } })
       this.schedule(gen)
     })
     void this.confirm(gen, target)
@@ -269,7 +294,7 @@ export class PublicTunnel {
       }
     }
     if (gen !== this.generation || this.child === undefined) return
-    this.setStatus('error', UNREACHABLE)
+    this.setStatus('error', { source: UNREACHABLE })
     this.schedule(gen, () => { void this.confirm(gen, target) })
   }
 

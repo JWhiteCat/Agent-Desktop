@@ -1,3 +1,4 @@
+import { useT } from '../lib/i18n'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { normalizeCliProvider, type CliProvider } from '@shared/types'
 import { favoritesFor } from '../lib/model-prefs'
@@ -19,13 +20,14 @@ import { IconChevronDown, IconRefresh } from './icons'
 import { Popover } from './Menu'
 
 export function ModelPicker({ value, onChange, cli }: { value: string; onChange: (id: string) => void; cli?: CliProvider }) {
+  const t = useT()
   const settingsCli = useStore((s) => normalizeCliProvider(s.app.settings.cliProvider))
   const provider = cli ?? settingsCli
   const models = useStore((s) => s.modelsByCli[provider] ?? s.models)
   const favorites = useStore((s) => favoritesFor(s.app.settings, provider))
   const groups = useMemo(() => groupModels(models), [models])
   const favoritesApply = favorites.some((base) => groups.some((group) => group.base === base))
-  const summary = useMemo(() => describeModel(groups, value), [groups, value])
+  const summary = describeModel(groups, value)
   const selected = useMemo(() => findVariant(groups, value), [groups, value])
   const listed = useMemo(() => listedModelGroups(groups, favorites, selected?.base), [groups, favorites, selected?.base])
   const selectedGroup = groups.find((g) => g.base === selected?.base)
@@ -91,7 +93,7 @@ export function ModelPicker({ value, onChange, cli }: { value: string; onChange:
         <div className="model-search">
           <input
             ref={search}
-            placeholder={favoritesApply ? '搜索常用模型' : '搜索模型'}
+            placeholder={favoritesApply ? t('搜索常用模型') : t('搜索模型')}
             value={q}
             onChange={(e) => setQ(e.target.value)}
             onKeyDown={(e) => {
@@ -100,7 +102,7 @@ export function ModelPicker({ value, onChange, cli }: { value: string; onChange:
           />
           <button
             className="icon-btn tiny"
-            title="刷新模型列表"
+            title={t('刷新模型列表')}
             onClick={async () => {
               setRefreshing(true)
               await loadModels(true, provider)
@@ -110,21 +112,21 @@ export function ModelPicker({ value, onChange, cli }: { value: string; onChange:
             <IconRefresh size={13} className={refreshing ? 'spin' : ''} />
           </button>
         </div>
-        {favoritesApply && <div className="model-scope">仅常用模型</div>}
+        {favoritesApply && <div className="model-scope">{t('仅常用模型')}</div>}
         <div className="model-list" ref={list}>
           {filtered.map((g) => (
             <button key={g.base} className={`menu-item ${g.base === selectedGroup?.base ? 'selected' : ''}`} onClick={() => chooseGroup(g)}>
               <span className="menu-label">{g.name}</span>
-              {favoritesApply && g.base === selected?.base && !favorites.includes(g.base) && <span className="menu-hint">当前</span>}
+              {favoritesApply && g.base === selected?.base && !favorites.includes(g.base) && <span className="menu-hint">{t('当前')}</span>}
               {g.base === selectedGroup?.base && <span className="menu-check">✓</span>}
             </button>
           ))}
-          {filtered.length === 0 && <div className="empty-hint">{q.trim() ? '无匹配模型' : favoritesApply ? '没有可用的常用模型' : '无匹配模型'}</div>}
+          {filtered.length === 0 && <div className="empty-hint">{q.trim() ? t('无匹配模型') : favoritesApply ? t('没有可用的常用模型') : t('无匹配模型')}</div>}
         </div>
         {selected && selectedGroup && (contexts.length > 0 || efforts.length > 0 || showSpeed) && (
           <div className="model-params">
             {contexts.length > 0 && (
-              <ParamRow label="上下文">
+              <ParamRow label={t('上下文')}>
                 {contexts.map((context) => (
                   <button
                     key={context}
@@ -137,7 +139,7 @@ export function ModelPicker({ value, onChange, cli }: { value: string; onChange:
               </ParamRow>
             )}
             {efforts.length > 0 && (
-              <ParamRow label="思考强度">
+              <ParamRow label={t('思考强度')}>
                 {efforts.map((choice) => {
                   const on = selected.effort === choice.effort && selected.thinking === choice.thinking
                   return (
@@ -153,13 +155,13 @@ export function ModelPicker({ value, onChange, cli }: { value: string; onChange:
               </ParamRow>
             )}
             {showSpeed && (
-              <ParamRow label="速度">
+              <ParamRow label={t('速度')}>
                 <button
                   className={`model-opt ${!selected.fast ? 'selected' : ''}`}
                   disabled={!speedAvailable(selectedGroup, selected, false)}
                   onClick={() => select(pickVariant(selectedGroup, { ...wantFrom(selected), fast: false }).id)}
                 >
-                  标准
+                  {t('标准')}
                 </button>
                 <button
                   className={`model-opt ${selected.fast ? 'selected' : ''}`}

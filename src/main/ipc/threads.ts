@@ -1,3 +1,4 @@
+import { t as translate } from '@shared/i18n'
 import type { AgentMode, PrepareRequest, QuestionAnswer, ThreadMeta } from '@shared/types'
 import { isCliProvider, normalizeCliProvider, threadCli, type CliProvider } from '@shared/types'
 import { claudeChatUpdatedAt } from '../claude-history'
@@ -9,9 +10,9 @@ import type { Handler } from '../remote'
 import type { IpcDeps } from './deps'
 
 function missingSessionMessage(cli: CliProvider): string {
-  if (cli === 'codex') return '未在 ~/.codex/sessions 中找到该会话'
-  if (cli === 'claude') return '未在 ~/.claude/projects 中找到该会话'
-  return '未在 ~/.cursor/chats 中找到该会话'
+  if (cli === 'codex') return translate('未在 ~/.codex/sessions 中找到该会话')
+  if (cli === 'claude') return translate('未在 ~/.claude/projects 中找到该会话')
+  return translate('未在 ~/.cursor/chats 中找到该会话')
 }
 
 function historyDeps(deps: IpcDeps): HistoryDeps {
@@ -28,9 +29,9 @@ export function threadHandlers(deps: IpcDeps): Record<string, Handler> {
   const history = historyDeps(deps)
   return {
     'thread:create': (projectId: string, mode: AgentMode, model: string, force?: boolean, cli?: CliProvider) => {
-      if (!store.project(projectId)) throw new Error('项目不存在')
+      if (!store.project(projectId)) throw new Error(translate('项目不存在'))
       const provider = isCliProvider(cli) ? cli : normalizeCliProvider(store.settings.cliProvider)
-      const t = store.createThread({ projectId, title: DEFAULT_TITLE, mode, model, force: force ?? store.settings.force, cli: provider, source: 'app' })
+      const t = store.createThread({ projectId, title: DEFAULT_TITLE, titleKind: 'default', mode, model, force: force ?? store.settings.force, cli: provider, source: 'app' })
       broadcast()
       return t
     },
@@ -67,7 +68,7 @@ export function threadHandlers(deps: IpcDeps): Record<string, Handler> {
     },
     'thread:fork': (id: string, throughItemId?: string) => forkThread(history, id, throughItemId),
     'thread:syncFromCli': (id: string) => {
-      if (sessions.isRunning(id)) throw new Error('对话正在运行，请稍后再同步')
+      if (sessions.isRunning(id)) throw new Error(translate('对话正在运行，请稍后再同步'))
       const items = syncFromCli(history, id)
       if (!items) throw new Error(missingSessionMessage(threadCli(store.thread(id) ?? { cli: 'cursor' })))
       broadcast()

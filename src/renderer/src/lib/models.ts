@@ -1,4 +1,5 @@
 import { quoteModel } from '@shared/model-prices'
+import { t } from '@shared/i18n'
 import type { ModelInfo } from '@shared/types'
 
 export interface ModelVariant {
@@ -251,7 +252,7 @@ export function effortChoices(group: ModelGroup): EffortChoice[] {
     map.set(key, {
       effort: variant.effort,
       thinking: variant.thinking,
-      label: effortText(variant.effort, variant.thinking) ?? '默认'
+      label: effortText(variant.effort, variant.thinking) ?? t('默认')
     })
   }
   const all = [...map.values()].sort((a, b) => effortRank(a) - effortRank(b))
@@ -276,7 +277,7 @@ function preferScore(variant: ModelVariant): number {
 
 export function pickVariant(group: ModelGroup, want: VariantWant): ModelVariant {
   let pool = group.variants
-  if (!pool.length) throw new Error('模型没有可选变体')
+  if (!pool.length) throw new Error(t('模型没有可选变体'))
   if (want.context) {
     const matched = pool.filter((v) => v.context === want.context)
     if (matched.length) pool = matched

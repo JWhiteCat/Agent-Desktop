@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { CliProvider } from '@shared/types'
+import { useT } from '../../lib/i18n'
 import { groupModels } from '../../lib/models'
 import { favoritesFor } from '../../lib/model-prefs'
 import { loadModels, setFavoriteModels, useStore } from '../../store'
 import { IconRefresh } from '../icons'
 
 export function FavoriteModels({ provider }: { provider: CliProvider }) {
+  const t = useT()
   const models = useStore((s) => s.modelsByCli[provider] ?? (provider === 'cursor' ? s.models : []))
   const modelError = useStore((s) => s.modelErrorByCli[provider])
   const favoriteModels = useStore((s) => favoritesFor(s.app.settings, provider))
@@ -55,19 +57,19 @@ export function FavoriteModels({ provider }: { provider: CliProvider }) {
 
   return (
     <div className="favorite-models">
-      <div className="muted small">对话中只能选择这里勾选的模型。都不勾选时，对话中显示全部模型。</div>
+      <div className="muted small">{t('对话中只能选择这里勾选的模型。都不勾选时，对话中显示全部模型。')}</div>
       <div className="favorite-toolbar">
-        <input className="input" placeholder="搜索模型" value={q} onChange={(e) => setQ(e.target.value)} />
+        <input className="input" placeholder={t('搜索模型')} value={q} onChange={(e) => setQ(e.target.value)} />
         <button className="btn" type="button" disabled={!filteredBases.length} onClick={toggleFiltered}>
-          {allFilteredOn ? '取消全选' : q.trim() ? '全选筛选' : '全选'}
+          {allFilteredOn ? t('取消全选') : q.trim() ? t('全选筛选') : t('全选')}
         </button>
         <button className="btn" type="button" disabled={!favoriteModels.length} onClick={() => setFavoriteModels([], provider)}>
-          清空
+          {t('清空')}
         </button>
         <button
           className="icon-btn"
           type="button"
-          title="刷新模型列表"
+          title={t('刷新模型列表')}
           onClick={async () => {
             setRefreshing(true)
             await loadModels(true, provider)
@@ -78,7 +80,7 @@ export function FavoriteModels({ provider }: { provider: CliProvider }) {
         </button>
       </div>
       <div className="muted small">
-        已选 {selectedCount} / {groups.length}
+        {t('已选 {selected} / {total}', { selected: selectedCount, total: groups.length })}
       </div>
       <div className="favorite-list">
         {filtered.map((g) => (
@@ -89,7 +91,7 @@ export function FavoriteModels({ provider }: { provider: CliProvider }) {
           </label>
         ))}
         {filtered.length === 0 && (
-          <div className="empty-hint">{groups.length ? '无匹配模型' : loading || refreshing ? '正在加载模型…' : modelError || '尚未加载模型'}</div>
+          <div className="empty-hint">{groups.length ? t('无匹配模型') : loading || refreshing ? t('正在加载模型…') : modelError ? t(modelError) : t('尚未加载模型')}</div>
         )}
       </div>
     </div>

@@ -1,5 +1,7 @@
+import { useT } from '../lib/i18n'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { FORK_COMMAND, mergeCommands } from '@shared/commands'
+import { displayThreadTitle } from '@shared/thread-title'
 import { cliTitle, threadCli, type AssistantItem, type CliProvider, type Item, type ResultItem, type ThreadMeta, type ToolItem, type UserItem } from '@shared/types'
 import { DiffFileView, collectEditedFiles } from '../lib/diff'
 import { duration, shortPath } from '../lib/format'
@@ -37,14 +39,15 @@ function groupTurns(items: Item[]): Turn[] {
 }
 
 function TurnFiles({ steps, cwd }: { steps: Item[]; cwd: string }) {
-  const files = useMemo(() => collectEditedFiles(steps, cwd), [steps, cwd])
+  const t = useT()
+  const files = useMemo(() => collectEditedFiles(steps, cwd), [steps, cwd, t])
   if (!files.length) return null
   const added = files.reduce((n, f) => n + f.added, 0)
   const removed = files.reduce((n, f) => n + f.removed, 0)
   return (
     <div className="turn-files">
       <div className="turn-files-label">
-        <span>修改了 {files.length} 个文件</span>
+        <span>{t('修改了 {count} 个文件', { count: files.length })}</span>
         {added > 0 && <span className="add">+{added}</span>}
         {removed > 0 && <span className="del">−{removed}</span>}
       </div>
@@ -72,6 +75,7 @@ function TurnView({
   cli: CliProvider
   onFork?: (itemId: string) => void
 }) {
+  const t = useT()
   const [expanded, setExpanded] = useState(false)
   const lastAssistantIdx = useMemo(() => {
     for (let i = turn.steps.length - 1; i >= 0; i--) if (turn.steps[i].kind === 'assistant') return i
@@ -94,7 +98,7 @@ function TurnView({
         {!streamingText && !busy && (
           <div className="working">
             <Spinner size={12} />
-            <span className="shimmer">{turn.steps.length ? '处理中' : cli === 'codex' ? '正在启动 codex' : cli === 'claude' ? '正在启动 claude' : '正在启动 agent'}</span>
+            <span className="shimmer">{turn.steps.length ? t('处理中') : cli === 'codex' ? t('正在启动 codex') : cli === 'claude' ? t('正在启动 claude') : t('正在启动 agent')}</span>
           </div>
         )}
       </div>
@@ -120,7 +124,9 @@ function TurnView({
         <div className="worked">
           <button className="worked-toggle" onClick={() => setExpanded((e) => !e)}>
             <span>
-              已处理{workMs ? ` ${duration(workMs)}` : ''} · {intermediate.length} 个步骤
+              {workMs
+                ? t('已处理 {duration} · {count} 个步骤', { duration: duration(workMs), count: intermediate.length })
+                : t('已处理 · {count} 个步骤', { count: intermediate.length })}
             </span>
             {expanded ? <IconChevronDown size={12} /> : <IconChevronRight size={12} />}
           </button>
@@ -147,6 +153,7 @@ interface Props {
 }
 
 export function ThreadView({ thread, changesOpen, onToggleChanges }: Props) {
+  const t = useT()
   const items = useStore((s) => s.items[thread.id])
   const running = useStore((s) => s.app.running.includes(thread.id))
   const project = useStore((s) => s.app.projects.find((p) => p.id === thread.projectId))
@@ -157,6 +164,7 @@ export function ThreadView({ thread, changesOpen, onToggleChanges }: Props) {
   const stick = useRef(true)
   const composer = useRef<ComposerHandle>(null)
   const [editingTitle, setEditingTitle] = useState(false)
+  const title = displayThreadTitle(thread, t)
 
   const ownCommands = useStore((s) => s.commandsByThread[thread.id])
   const cachedCommands = useStore((s) => cliCommands(s, cli))
@@ -179,8 +187,8 @@ export function ThreadView({ thread, changesOpen, onToggleChanges }: Props) {
       reply: (text) => composer.current?.send(text),
       buildPlan: (plan: ToolItem) => {
         const uri = planUriOf(plan)
-        const name = typeof plan.args?.name === 'string' && plan.args.name ? plan.args.name : '上面的计划'
-        const text = [`按照计划「${name}」开始实施。`, uri ? `计划文件：${planPath(uri)}` : '', '按计划里的待办逐项完成，完成后简要汇报改动。']
+        const name = typeof plan.args?.name === 'string' && plan.args.name ? plan.args.name : t('上面的计划')
+        const text = [t('按照计划「{name}」开始实施。', { name }), uri ? t('计划文件：{path}', { path: planPath(uri) }) : '', t('按计划里的待办逐项完成，完成后简要汇报改动。')]
           .filter(Boolean)
           .join('\n')
         stick.current = true
@@ -188,7 +196,7 @@ export function ThreadView({ thread, changesOpen, onToggleChanges }: Props) {
       },
       planId: latestPlan?.id
     }),
-    [latestPlan?.id]
+    [latestPlan?.id, t]
   )
   const noActions = useMemo<TurnActions>(() => ({}), [])
   const olderActions = useMemo<TurnActions>(() => ({ buildPlan: idleActions.buildPlan, planId: idleActions.planId }), [idleActions])
@@ -220,10 +228,10 @@ export function ThreadView({ thread, changesOpen, onToggleChanges }: Props) {
             <input
               autoFocus
               className="title-input"
-              defaultValue={thread.title}
+              defaultValue={title}
               onBlur={(e) => {
                 const v = e.target.value.trim()
-                if (v && v !== thread.title) window.api.updateThread(thread.id, { title: v })
+                if (v && v !== title) window.api.updateThread(thread.id, { title: v })
                 setEditingTitle(false)
               }}
               onKeyDown={(e) => {
@@ -232,12 +240,12 @@ export function ThreadView({ thread, changesOpen, onToggleChanges }: Props) {
               }}
             />
           ) : (
-            <h1 onDoubleClick={() => setEditingTitle(true)} title="双击重命名">
-              {thread.title}
+            <h1 onDoubleClick={() => setEditingTitle(true)} title={t('双击重命名')}>
+              {title}
             </h1>
           )}
           <span className="header-project" title={cwd}>
-            {project?.name ?? '未知项目'}
+            {project?.name ?? t('未知项目')}
           </span>
           {isWorktree && (
             <span className="badge" title={cwd}>
@@ -245,24 +253,24 @@ export function ThreadView({ thread, changesOpen, onToggleChanges }: Props) {
             </span>
           )}
           <span className="badge">{cliTitle(cli)}</span>
-          {thread.source === 'cli' && <span className="badge">CLI 导入</span>}
+          {thread.source === 'cli' && <span className="badge">{t('CLI 导入')}</span>}
         </div>
         <div className="header-actions no-drag">
           {thread.modelLabel && <span className="muted small model-label">{thread.modelLabel}</span>}
-          <button className="icon-btn" title="分叉对话（/fork）" disabled={running || !items?.length} onClick={() => void forkThread(thread.id)}>
+          <button className="icon-btn" title={t('分叉对话（/fork）')} disabled={running || !items?.length} onClick={() => void forkThread(thread.id)}>
             <IconBranch />
           </button>
           {!window.api.isRemote && (
             <>
-              <button className="icon-btn" title={`在文件管理器中打开 ${shortPath(cwd)}`} onClick={() => window.api.openPath(cwd)}>
+              <button className="icon-btn" title={t('在文件管理器中打开 {path}', { path: shortPath(cwd) })} onClick={() => window.api.openPath(cwd)}>
                 <IconFolder />
               </button>
-              <button className="icon-btn" title="在 Cursor 中打开" onClick={() => window.api.openInEditor(cwd)}>
+              <button className="icon-btn" title={t('在 Cursor 中打开')} onClick={() => window.api.openInEditor(cwd)}>
                 <IconCursor />
               </button>
             </>
           )}
-          <button className={`icon-btn ${changesOpen ? 'active' : ''}`} title="变更面板 (Ctrl+Shift+D)" onClick={onToggleChanges}>
+          <button className={`icon-btn ${changesOpen ? 'active' : ''}`} title={t('变更面板 (Ctrl+Shift+D)')} onClick={onToggleChanges}>
             <IconDiff />
           </button>
         </div>
@@ -299,7 +307,7 @@ export function ThreadView({ thread, changesOpen, onToggleChanges }: Props) {
               </TurnActionsProvider>
             )
           })}
-          {items && items.length === 0 && !running && <div className="center-hint muted">发送第一条消息开始对话</div>}
+          {items && items.length === 0 && !running && <div className="center-hint muted">{t('发送第一条消息开始对话')}</div>}
         </div>
       </div>
 
@@ -311,7 +319,7 @@ export function ThreadView({ thread, changesOpen, onToggleChanges }: Props) {
           running={running}
           cli={cli}
           cliDisabled={running}
-          cliNote={running ? '对话进行中，结束后再切换 CLI' : '切换后，下一条消息会用所选 CLI 新开一段会话，本机记录仍保留'}
+          cliNote={running ? t('对话进行中，结束后再切换 CLI') : t('切换后，下一条消息会用所选 CLI 新开一段会话，本机记录仍保留')}
           onCliChange={(next) => {
             if (running) return
             setCliProvider(next)
@@ -327,10 +335,10 @@ export function ThreadView({ thread, changesOpen, onToggleChanges }: Props) {
           }}
           placeholder={
             thread.chatId
-              ? '继续对话… 输入 / 查看命令'
+              ? t('继续对话… 输入 / 查看命令')
               : commands.length
-                ? '描述任务，输入 / 查看命令，Enter 发送'
-                : '描述任务，Enter 发送，Shift+Enter 换行'
+                ? t('描述任务，输入 / 查看命令，Enter 发送')
+                : t('描述任务，Enter 发送，Shift+Enter 换行')
           }
           commands={commands}
           onPrepare={thread.chatId ? (opts) => void prepareCommands(thread.id, opts) : undefined}

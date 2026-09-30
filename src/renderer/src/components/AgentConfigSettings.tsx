@@ -1,6 +1,8 @@
 import { useState } from 'react'
+import { t } from '@shared/i18n'
 import { isValidSkillName, mcpServerReady, skillReady } from '@shared/agent-config'
 import type { McpServerConfig, McpTransport, NamedValue, Settings, SkillConfig } from '@shared/types'
+import { useT } from '../lib/i18n'
 import { errorText, toast, useStore } from '../store'
 
 const EMPTY_SERVERS: McpServerConfig[] = []
@@ -41,6 +43,7 @@ function newId(): string {
 }
 
 export function McpSettings() {
+  const t = useT()
   const servers = useStore((s) => s.app.settings.mcpServers) ?? EMPTY_SERVERS
   const [draft, setDraft] = useState<McpDraft | null>(null)
 
@@ -49,7 +52,7 @@ export function McpSettings() {
   return (
     <div className="config-block">
       <div className="muted small">
-        启用的服务器会在新建或恢复会话时交给 Cursor CLI。stdio 填写启动命令，HTTP / SSE 填写服务地址。这里的配置不会改写 ~/.cursor/mcp.json。
+        {t('启用的服务器会在新建或恢复会话时交给 Cursor CLI。stdio 填写启动命令，HTTP / SSE 填写服务地址。这里的配置不会改写 ~/.cursor/mcp.json。')}
       </div>
       <div className="config-list">
         {servers.map((server) => (
@@ -58,10 +61,10 @@ export function McpSettings() {
               type="checkbox"
               className="toggle"
               checked={server.enabled}
-              title={server.enabled ? '停用' : '启用'}
+              title={server.enabled ? t('停用') : t('启用')}
               onChange={() => {
                 if (!server.enabled && !mcpServerReady(server)) {
-                  toast('请先补全命令或地址', 'error')
+                  toast(t('请先补全命令或地址'), 'error')
                   return
                 }
                 void saveList(servers.map((item) => (item.id === server.id ? { ...item, enabled: !item.enabled } : item)))
@@ -70,27 +73,27 @@ export function McpSettings() {
             <div className="config-main">
               <div className="config-title">{server.name}</div>
               <div className="config-sub">
-                {server.transport === 'stdio' ? server.command || '未填写命令' : server.url || '未填写地址'}
-                {server.enabled && !mcpServerReady(server) ? ' · 配置不完整' : ''}
+                {server.transport === 'stdio' ? server.command || t('未填写命令') : server.url || t('未填写地址')}
+                {server.enabled && !mcpServerReady(server) ? t(' · 配置不完整') : ''}
               </div>
             </div>
             <button className="btn small" type="button" onClick={() => setDraft(toMcpDraft(server))}>
-              编辑
+              {t('编辑')}
             </button>
             <button
               className="btn small"
               type="button"
               onClick={() => {
-                if (!window.confirm(`删除 MCP 服务器「${server.name}」？`)) return
+                if (!window.confirm(t('删除 MCP 服务器「{name}」？', { name: server.name }))) return
                 if (draft?.id === server.id) setDraft(null)
                 void saveList(servers.filter((item) => item.id !== server.id))
               }}
             >
-              删除
+              {t('删除')}
             </button>
           </div>
         ))}
-        {servers.length === 0 && <div className="empty-hint">还没有 MCP 服务器</div>}
+        {servers.length === 0 && <div className="empty-hint">{t('还没有 MCP 服务器')}</div>}
       </div>
       {draft ? (
         <McpForm
@@ -111,7 +114,7 @@ export function McpSettings() {
         />
       ) : (
         <button className="btn" type="button" onClick={() => setDraft(emptyMcpDraft())}>
-          添加服务器
+          {t('添加服务器')}
         </button>
       )}
     </div>
@@ -119,6 +122,7 @@ export function McpSettings() {
 }
 
 export function SkillSettings() {
+  const t = useT()
   const skills = useStore((s) => s.app.settings.skills) ?? EMPTY_SKILLS
   const [draft, setDraft] = useState<SkillDraft | null>(null)
 
@@ -127,7 +131,7 @@ export function SkillSettings() {
   return (
     <div className="config-block">
       <div className="muted small">
-        启用的 Skill 会写入 ~/.cursor/skills/&lt;名称&gt;/SKILL.md，以及 Codex 的 ~/.agents/skills 和 ~/.codex/skills。CLI 会按描述自动选用。名称只能是小写字母、数字和连字符。已有同名、且不是本应用创建的目录不会被覆盖。
+        {t('启用的 Skill 会写入 ~/.cursor/skills/<名称>/SKILL.md，以及 Codex 的 ~/.agents/skills 和 ~/.codex/skills。CLI 会按描述自动选用。名称只能是小写字母、数字和连字符。已有同名、且不是本应用创建的目录不会被覆盖。')}
       </div>
       <div className="config-list">
         {skills.map((skill) => (
@@ -136,54 +140,54 @@ export function SkillSettings() {
               type="checkbox"
               className="toggle"
               checked={skill.enabled}
-              title={skill.enabled ? '停用' : '启用'}
+              title={skill.enabled ? t('停用') : t('启用')}
               onChange={() => {
                 const enabled = !skill.enabled
                 if (enabled && !isValidSkillName(skill.name.trim())) {
-                  toast('Skill 名称只能使用小写字母、数字和连字符', 'error')
+                  toast(t('Skill 名称只能使用小写字母、数字和连字符'), 'error')
                   return
                 }
                 if (enabled && !skill.description.trim()) {
-                  toast('启用前需要填写描述', 'error')
+                  toast(t('启用前需要填写描述'), 'error')
                   return
                 }
                 void saveList(skills.map((item) => (item.id === skill.id ? { ...item, enabled } : item)))
               }}
             />
             <div className="config-main">
-              <div className="config-title">{skill.name || '未命名'}</div>
+              <div className="config-title">{skill.name || t('未命名')}</div>
               <div className="config-sub">
-                {skill.description || '没有描述'}
-                {skill.enabled && !skillReady(skill) ? ' · 配置不完整' : ''}
+                {skill.description || t('没有描述')}
+                {skill.enabled && !skillReady(skill) ? t(' · 配置不完整') : ''}
               </div>
             </div>
             <button className="btn small" type="button" onClick={() => setDraft(toSkillDraft(skill))}>
-              编辑
+              {t('编辑')}
             </button>
             <button
               className="btn small"
               type="button"
               onClick={() => {
-                if (!window.confirm(`删除 Skill「${skill.name}」？`)) return
+                if (!window.confirm(t('删除 Skill「{name}」？', { name: skill.name }))) return
                 if (draft?.id === skill.id) setDraft(null)
                 void saveList(skills.filter((item) => item.id !== skill.id))
               }}
             >
-              删除
+              {t('删除')}
             </button>
           </div>
         ))}
-        {skills.length === 0 && <div className="empty-hint">还没有 Skill</div>}
+        {skills.length === 0 && <div className="empty-hint">{t('还没有 Skill')}</div>}
       </div>
       <div className="row-gap wrap">
         {draft ? null : (
           <button className="btn" type="button" onClick={() => setDraft(emptySkillDraft())}>
-            添加 Skill
+            {t('添加 Skill')}
           </button>
         )}
         {!window.api.isRemote && (
           <button className="btn" type="button" onClick={() => void window.api.openSkillsDir()}>
-            打开目录
+            {t('打开目录')}
           </button>
         )}
       </div>
@@ -220,16 +224,17 @@ function McpForm({
   onSave: () => void
   onCancel: () => void
 }) {
+  const t = useT()
   const set = (patch: Partial<McpDraft>) => onChange({ ...draft, ...patch })
   const remote = draft.transport !== 'stdio'
   return (
     <div className="stack-form">
       <label className="stack-field">
-        <span>名称</span>
+        <span>{t('名称')}</span>
         <input className="input" value={draft.name} spellCheck={false} onChange={(e) => set({ name: e.target.value })} />
       </label>
       <label className="stack-field">
-        <span>传输</span>
+        <span>{t('传输')}</span>
         <select className="input" value={draft.transport} onChange={(e) => set({ transport: e.target.value as McpTransport })}>
           <option value="stdio">stdio</option>
           <option value="http">HTTP</option>
@@ -239,40 +244,40 @@ function McpForm({
       {remote ? (
         <>
           <label className="stack-field">
-            <span>地址</span>
+            <span>{t('地址')}</span>
             <input className="input" value={draft.url} spellCheck={false} placeholder="https://example.com/mcp" onChange={(e) => set({ url: e.target.value })} />
           </label>
           <label className="stack-field">
-            <span>请求头</span>
+            <span>{t('请求头')}</span>
             <textarea className="textarea" value={draft.headersText} spellCheck={false} placeholder={'Authorization: Bearer token'} onChange={(e) => set({ headersText: e.target.value })} />
           </label>
         </>
       ) : (
         <>
           <label className="stack-field">
-            <span>命令</span>
+            <span>{t('命令')}</span>
             <input className="input" value={draft.command} spellCheck={false} placeholder="npx" onChange={(e) => set({ command: e.target.value })} />
           </label>
           <label className="stack-field">
-            <span>参数</span>
-            <textarea className="textarea" value={draft.argsText} spellCheck={false} placeholder={'一行一个参数\n-y\n@modelcontextprotocol/server-filesystem'} onChange={(e) => set({ argsText: e.target.value })} />
+            <span>{t('参数')}</span>
+            <textarea className="textarea" value={draft.argsText} spellCheck={false} placeholder={t('一行一个参数\n-y\n@modelcontextprotocol/server-filesystem')} onChange={(e) => set({ argsText: e.target.value })} />
           </label>
           <label className="stack-field">
-            <span>环境变量</span>
+            <span>{t('环境变量')}</span>
             <textarea className="textarea" value={draft.envText} spellCheck={false} placeholder="API_KEY=value" onChange={(e) => set({ envText: e.target.value })} />
           </label>
         </>
       )}
       <label className="check-line">
         <input type="checkbox" checked={draft.enabled} onChange={(e) => set({ enabled: e.target.checked })} />
-        启用
+        {t('启用')}
       </label>
       <div className="row-gap">
         <button className="btn primary" type="button" onClick={onSave}>
-          保存
+          {t('保存')}
         </button>
         <button className="btn" type="button" onClick={onCancel}>
-          取消
+          {t('取消')}
         </button>
       </div>
     </div>
@@ -290,31 +295,32 @@ function SkillForm({
   onSave: () => void
   onCancel: () => void
 }) {
+  const t = useT()
   const set = (patch: Partial<SkillDraft>) => onChange({ ...draft, ...patch })
   return (
     <div className="stack-form">
       <label className="stack-field">
-        <span>名称</span>
+        <span>{t('名称')}</span>
         <input className="input" value={draft.name} spellCheck={false} placeholder="review-diff" onChange={(e) => set({ name: e.target.value })} />
       </label>
       <label className="stack-field">
-        <span>描述</span>
-        <input className="input" value={draft.description} placeholder="什么时候该使用这个 Skill" onChange={(e) => set({ description: e.target.value })} />
+        <span>{t('描述')}</span>
+        <input className="input" value={draft.description} placeholder={t('什么时候该使用这个 Skill')} onChange={(e) => set({ description: e.target.value })} />
       </label>
       <label className="stack-field">
-        <span>正文</span>
-        <textarea className="textarea tall" value={draft.body} placeholder="写给代理的操作说明" onChange={(e) => set({ body: e.target.value })} />
+        <span>{t('正文')}</span>
+        <textarea className="textarea tall" value={draft.body} placeholder={t('写给代理的操作说明')} onChange={(e) => set({ body: e.target.value })} />
       </label>
       <label className="check-line">
         <input type="checkbox" checked={draft.enabled} onChange={(e) => set({ enabled: e.target.checked })} />
-        启用
+        {t('启用')}
       </label>
       <div className="row-gap">
         <button className="btn primary" type="button" onClick={onSave}>
-          保存
+          {t('保存')}
         </button>
         <button className="btn" type="button" onClick={onCancel}>
-          取消
+          {t('取消')}
         </button>
       </div>
     </div>
@@ -354,9 +360,9 @@ function mcpFromDraft(draft: McpDraft): McpServerConfig {
 }
 
 function validateMcp(server: McpServerConfig, existing: McpServerConfig[]): string | undefined {
-  if (!server.name) return '请填写名称'
-  if (existing.some((item) => item.id !== server.id && item.name === server.name)) return '已经有同名 MCP 服务器'
-  if (server.enabled && !mcpServerReady(server)) return server.transport === 'stdio' ? '启用前需要填写命令' : '启用前需要填写地址'
+  if (!server.name) return t('请填写名称')
+  if (existing.some((item) => item.id !== server.id && item.name === server.name)) return t('已经有同名 MCP 服务器')
+  if (server.enabled && !mcpServerReady(server)) return server.transport === 'stdio' ? t('启用前需要填写命令') : t('启用前需要填写地址')
   return undefined
 }
 
@@ -379,10 +385,10 @@ function skillFromDraft(draft: SkillDraft): SkillConfig {
 }
 
 function validateSkill(skill: SkillConfig, existing: SkillConfig[]): string | undefined {
-  if (!skill.name) return '请填写名称'
-  if (!isValidSkillName(skill.name)) return '名称只能使用小写字母、数字和连字符'
-  if (existing.some((item) => item.id !== skill.id && item.name === skill.name)) return '已经有同名 Skill'
-  if (skill.enabled && !skill.description) return '启用前需要填写描述'
+  if (!skill.name) return t('请填写名称')
+  if (!isValidSkillName(skill.name)) return t('名称只能使用小写字母、数字和连字符')
+  if (existing.some((item) => item.id !== skill.id && item.name === skill.name)) return t('已经有同名 Skill')
+  if (skill.enabled && !skill.description) return t('启用前需要填写描述')
   return undefined
 }
 
@@ -393,7 +399,7 @@ function pairLineError(text: string, sep: '=' | ':'): string | undefined {
     return trimmed.indexOf(sep) <= 0
   })
   if (!bad) return undefined
-  return sep === '=' ? '环境变量需要写成 KEY=VALUE，一行一个' : '请求头需要写成 Name: Value，一行一个'
+  return sep === '=' ? t('环境变量需要写成 KEY=VALUE，一行一个') : t('请求头需要写成 Name: Value，一行一个')
 }
 
 function lines(text: string): string[] {

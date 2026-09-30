@@ -1,3 +1,4 @@
+import { t as translate } from '@shared/i18n'
 import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
@@ -12,25 +13,25 @@ const OUTPUT_LIMIT = 64 * 1024
 
 export async function updateCursor(agentPath: string): Promise<string> {
   const cli = resolveCli(agentPath)
-  if (!cli) throw new Error('未找到 Cursor CLI，请先检查 CLI 路径。')
+  if (!cli) throw new Error(translate('未找到 Cursor CLI，请先检查 CLI 路径。'))
   return runUpdate('Cursor CLI', cli.command, [...cli.prefixArgs, 'update'], { CURSOR_INVOKED_AS: 'agent' })
 }
 
 export async function updateCodex(codexPath: string): Promise<string> {
   const cli = resolveCodex(codexPath)
-  if (!cli) throw new Error('未找到 Codex CLI，请先检查 CLI 路径。')
+  if (!cli) throw new Error(translate('未找到 Codex CLI，请先检查 CLI 路径。'))
   requireExternal('Codex', cli.codexPath, cli.acpEntry)
   const executable = cli.codexPath!
   const npmPrefix = findNpmPrefix(executable, '@openai/codex', 'codex')
   if (npmPrefix) return updateNpm('Codex', '@openai/codex', npmPrefix)
   const brew = findHomebrew(executable, ['codex'])
   if (brew) return runUpdate('Codex', brew.command, brew.args)
-  throw new Error('无法识别此 Codex CLI 的安装方式。请使用原安装工具更新，或在 CLI 路径中选择 npm / Homebrew 安装的 Codex。')
+  throw new Error(translate('无法识别此 Codex CLI 的安装方式。请使用原安装工具更新，或在 CLI 路径中选择 npm / Homebrew 安装的 Codex。'))
 }
 
 export async function updateClaude(claudePath: string): Promise<string> {
   const cli = resolveClaude(claudePath)
-  if (!cli) throw new Error('未找到 Claude Code，请先检查 CLI 路径。')
+  if (!cli) throw new Error(translate('未找到 Claude Code，请先检查 CLI 路径。'))
   requireExternal('Claude Code', cli.claudePath, cli.acpEntry)
   const executable = cli.claudePath!
   const npmPrefix = findNpmPrefix(executable, '@anthropic-ai/claude-code', 'claude')
@@ -39,13 +40,13 @@ export async function updateClaude(claudePath: string): Promise<string> {
   if (brew) return runUpdate('Claude Code', brew.command, brew.args)
   const real = realPath(executable)
   if (/[/\\]Microsoft[/\\]WinGet[/\\]/i.test(real)) {
-    throw new Error('此 Claude Code 由 WinGet 管理，请运行 winget upgrade Anthropic.ClaudeCode 更新。')
+    throw new Error(translate('此 Claude Code 由 WinGet 管理，请运行 winget upgrade Anthropic.ClaudeCode 更新。'))
   }
   if (!isWin && ['/usr/bin/claude', '/bin/claude'].includes(real)) {
-    throw new Error('此 Claude Code 由系统软件包管理器安装，请使用原安装工具更新。')
+    throw new Error(translate('此 Claude Code 由系统软件包管理器安装，请使用原安装工具更新。'))
   }
   if (isWin && !/\.exe$/i.test(executable)) {
-    throw new Error('无法识别此 Claude Code 启动脚本的安装方式，请选择原生可执行文件或 npm 安装目录。')
+    throw new Error(translate('无法识别此 Claude Code 启动脚本的安装方式，请选择原生可执行文件或 npm 安装目录。'))
   }
   return runUpdate('Claude Code', executable, ['update'])
 }
@@ -54,7 +55,7 @@ function requireExternal(label: string, executable: string | undefined, acpEntry
   // Explicit custom paths must not turn the app's bundled fallback into an update target.
   const modules = path.resolve(acpEntry, '..', '..', '..', '..')
   if (!executable || isWithin(modules, executable) || /[/\\]app\.asar(?:\.unpacked)?[/\\]/i.test(executable)) {
-    throw new Error(`内置 ${label} 随 Agent Desktop 更新。请安装独立 CLI 并在设置中选择其路径后再更新。`)
+    throw new Error(translate('内置 {label} 随 Agent Desktop 更新。请安装独立 CLI 并在设置中选择其路径后再更新。', { label }))
   }
 }
 
@@ -118,7 +119,7 @@ function findNpmScript(): string | undefined {
 
 function updateNpm(label: string, packageName: string, prefix: string): Promise<string> {
   const script = findNpmScript()
-  if (!script) throw new Error('未找到 npm，请安装 Node.js / npm 后重试。')
+  if (!script) throw new Error(translate('未找到 npm，请安装 Node.js / npm 后重试。'))
   // Calling npm's JS entry avoids cmd.exe interpolation and also works in packaged Electron.
   return runUpdate(label, process.execPath, [script, 'install', '--global', '--prefix', prefix, `${packageName}@latest`])
 }
@@ -145,7 +146,7 @@ function runUpdate(label: string, command: string, args: string[], extraEnv: Nod
     let finished = false
     let timedOut = false
     let terminationTimer: ReturnType<typeof setTimeout> | undefined
-    const timeoutMessage = `${label} 更新超时，请检查网络后重试。`
+    const timeoutMessage = translate('{label} 更新超时，请检查网络后重试。', { label })
     const append = (chunk: Buffer) => { output = (output + chunk.toString()).slice(-OUTPUT_LIMIT) }
     child.stdout?.on('data', append)
     child.stderr?.on('data', append)
@@ -156,7 +157,7 @@ function runUpdate(label: string, command: string, args: string[], extraEnv: Nod
       clearTimeout(terminationTimer)
       const details = stripAnsi(output).trim()
       if (error) reject(new Error([error, details].filter(Boolean).join('\n')))
-      else resolve([`${label} 更新完成。`, details].filter(Boolean).join('\n'))
+      else resolve([translate('{label} 更新完成。', { label }), details].filter(Boolean).join('\n'))
     }
     const timer = setTimeout(() => {
       timedOut = true
@@ -165,7 +166,7 @@ function runUpdate(label: string, command: string, args: string[], extraEnv: Nod
       terminationTimer = setTimeout(() => finish(timeoutMessage), 5_000)
       killTree(child)
     }, UPDATE_TIMEOUT)
-    child.once('error', (error) => finish(timedOut ? timeoutMessage : `${label} 更新失败：${error.message}`))
-    child.once('close', (code) => finish(timedOut ? timeoutMessage : code === 0 ? undefined : `${label} 更新失败（退出码 ${code ?? '未知'}）。`))
+    child.once('error', (error) => finish(timedOut ? timeoutMessage : translate('{label} 更新失败：{error}', { label, error: error.message })))
+    child.once('close', (code) => finish(timedOut ? timeoutMessage : code === 0 ? undefined : translate('{label} 更新失败（退出码 {code}）。', { label, code: code ?? translate('未知') })))
   })
 }

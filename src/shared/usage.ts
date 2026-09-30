@@ -1,5 +1,6 @@
 import { quoteModel, type TokenUsage } from './model-prices'
-import { threadCli, type CliProvider, type Item } from './types'
+import { t } from './i18n'
+import { threadCli, type CliProvider, type Item, type ThreadMeta } from './types'
 
 export type UsageWindow = '1d' | '7d' | '30d'
 
@@ -45,6 +46,7 @@ export interface UsageSessionRow {
   threadId: string
   cli: CliProvider
   title: string
+  titleKind?: ThreadMeta['titleKind']
   project?: string
   /** Models used on counted turns, or the session model when none were recorded. */
   models: UsageSessionModel[]
@@ -68,6 +70,7 @@ export interface UsageThread {
   id?: string
   cli?: CliProvider
   title?: string
+  titleKind?: ThreadMeta['titleKind']
   project?: string
   model?: string
   updatedAt?: number
@@ -149,7 +152,8 @@ export function listSessionUsage(threads: UsageThread[]): UsageSessionRow[] {
     const row: UsageSessionRow = {
       threadId: thread.id,
       cli,
-      title: thread.title?.trim() || '未命名',
+      title: thread.title?.trim() || t('未命名'),
+      ...(thread.titleKind ? { titleKind: thread.titleKind } : {}),
       project: thread.project?.trim() || undefined,
       models: [],
       at: thread.updatedAt ?? 0,
@@ -185,7 +189,7 @@ export function listSessionUsage(threads: UsageThread[]): UsageSessionRow[] {
 /** Rolls up local turns. Forks that share a `usageId` (or the same user time and tokens) count once. */
 export function summarizeUsage(threads: UsageThread[], period: UsageWindow, now = Date.now()): UsageSummary {
   const span = WINDOWS[period]
-  if (!span) throw new Error('未知的统计范围')
+  if (!span) throw new Error(t('未知的统计范围'))
   const from = now - span
   const rows = new Map<string, UsageModelRow>()
 

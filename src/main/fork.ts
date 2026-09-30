@@ -1,3 +1,4 @@
+import { t as translate } from '@shared/i18n'
 import { createHash, randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -398,7 +399,7 @@ export function materializeCliFork(
   title: string,
   destParent?: string
 ): { chatId: string; cwd?: string } {
-  if (!plan.linked) throw new Error('该分叉位置不能复制为 CLI 会话')
+  if (!plan.linked) throw new Error(translate('该分叉位置不能复制为 CLI 会话'))
   const dbPath = path.join(chatDir, 'store.db')
   const src = openRead(dbPath)
   const chatId = randomUUID()
@@ -411,16 +412,16 @@ export function materializeCliFork(
     src.exec('BEGIN')
     const meta = readStoreMeta(src)
     if (!meta || typeof meta.latestRootBlobId !== 'string' || !meta.latestRootBlobId) {
-      throw new Error('该会话没有可复制的 CLI 记录')
+      throw new Error(translate('该会话没有可复制的 CLI 记录'))
     }
     const rootId = plan.rootBlobId || meta.latestRootBlobId
     const root = plan.extraBlobs.find((blob) => blob.id === rootId)?.data ?? loadBlob(src, rootId)
     if (!root || !parseFields(root) || (!blobIds(root, 1).length && !blobIds(root, 8).length)) {
-      throw new Error('该会话的 CLI 上下文缺失或已损坏')
+      throw new Error(translate('该会话的 CLI 上下文缺失或已损坏'))
     }
     for (const id of [...blobIds(root, 1), ...blobIds(root, 8)]) {
       if (!plan.extraBlobs.some((blob) => blob.id === id) && !loadBlob(src, id)) {
-        throw new Error('该会话的 CLI 上下文缺失或已损坏')
+        throw new Error(translate('该会话的 CLI 上下文缺失或已损坏'))
       }
     }
     fs.mkdirSync(sessionDir, { recursive: true })

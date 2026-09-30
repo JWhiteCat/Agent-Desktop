@@ -7,11 +7,13 @@ import { IconSidebar } from './components/icons'
 import { Sidebar } from './components/Sidebar'
 import { ThreadView } from './components/ThreadView'
 import { goHome, useStore } from './store'
+import { useT } from './lib/i18n'
 
 const NARROW = '(max-width: 720px)'
 const isNarrow = (): boolean => window.matchMedia(NARROW).matches
 
 export default function App() {
+  const t = useT()
   const view = useStore((s) => s.view)
   const thread = useStore((s) => (s.view.kind === 'thread' ? s.app.threads.find((t) => t.id === (s.view as { id: string }).id) : undefined))
   const toastMsg = useStore((s) => s.toast)
@@ -74,7 +76,7 @@ export default function App() {
       {sidebarOpen && <div className="sidebar-scrim" onClick={() => setSidebarOpen(false)} />}
       <button
         className="icon-btn sidebar-toggle no-drag"
-        title={`${sidebarOpen ? '隐藏' : '显示'}侧边栏 (Ctrl+B)`}
+        title={t(sidebarOpen ? '隐藏侧边栏 (Ctrl+B)' : '显示侧边栏 (Ctrl+B)')}
         onClick={() => setSidebarOpen((o) => !o)}
       >
         <IconSidebar />

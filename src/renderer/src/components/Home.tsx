@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { normalizeCliProvider } from '@shared/types'
+import { displayThreadTitle } from '@shared/thread-title'
+import { useT } from '../lib/i18n'
 import { relativeTime, shortPath } from '../lib/format'
 import { defaultModelFor, favoritesFor, modelForChat, projectModelFor } from '../lib/model-prefs'
 import { addProjectInteractive, chatModel, cliCommands, goHome, openThread, setCliProvider, startThread, useStore } from '../store'
@@ -15,6 +17,7 @@ const SUGGESTIONS = [
 ]
 
 export function Home({ projectId, onOpenImport }: { projectId?: string; onOpenImport: () => void }) {
+  const t = useT()
   const projects = useStore((s) => s.app.projects)
   const threads = useStore((s) => s.app.threads)
   const settings = useStore((s) => s.app.settings)
@@ -47,16 +50,16 @@ export function Home({ projectId, onOpenImport }: { projectId?: string; onOpenIm
             <path d="M3 7l9 5 9-5M12 12v10" />
           </svg>
         </div>
-        <h2 className="home-title">要构建点什么？</h2>
+        <h2 className="home-title">{t('要构建点什么？')}</h2>
         {projects.length === 0 ? (
           <div className="home-empty">
-            <p className="muted">先添加一个项目文件夹，Agent 将在该目录中工作。</p>
+            <p className="muted">{t('先添加一个项目文件夹，Agent 将在该目录中工作。')}</p>
             <div className="home-empty-actions">
               <button className="btn primary" onClick={() => addProjectInteractive().then((id) => id && goHome(id))}>
-                <IconPlus size={14} /> 添加项目
+                <IconPlus size={14} /> {t('添加项目')}
               </button>
               <button className="btn" onClick={onOpenImport}>
-                <IconImport size={14} /> 导入 Cursor CLI 历史
+                <IconImport size={14} /> {t('导入 Cursor CLI 历史')}
               </button>
             </div>
           </div>
@@ -81,7 +84,7 @@ export function Home({ projectId, onOpenImport }: { projectId?: string; onOpenIm
                   })),
                   'separator' as const,
                   {
-                    label: '添加项目…',
+                    label: t('添加项目…'),
                     icon: <IconPlus size={14} />,
                     onSelect: () => addProjectInteractive().then((id) => id && goHome(id))
                   }
@@ -96,8 +99,8 @@ export function Home({ projectId, onOpenImport }: { projectId?: string; onOpenIm
         <div className="home-bottom">
           <div className="suggestions">
             {SUGGESTIONS.map((s) => (
-              <button key={s} className="suggestion" onClick={() => composer.current?.setText(s)}>
-                {s}
+              <button key={s} className="suggestion" onClick={() => composer.current?.setText(t(s))}>
+                {t(s)}
               </button>
             ))}
           </div>
@@ -107,7 +110,7 @@ export function Home({ projectId, onOpenImport }: { projectId?: string; onOpenIm
               ref={composer}
               projectId={project.id}
               cli={cli}
-              cliNote="新建对话使用的 CLI。已有对话不会跟着改。"
+              cliNote={t('新建对话使用的 CLI。已有对话不会跟着改。')}
               onCliChange={(next) => {
                 setCliProvider(next)
                 return chatModel(project.id, next)
@@ -123,8 +126,8 @@ export function Home({ projectId, onOpenImport }: { projectId?: string; onOpenIm
               commands={slashCommands}
               placeholder={
                 slashCommands.length
-                  ? `在 ${project.name} 中让 Agent 做点什么… 输入 / 查看命令`
-                  : `在 ${project.name} 中让 Agent 做点什么…`
+                  ? t('在 {project} 中让 Agent 做点什么… 输入 / 查看命令', { project: project.name })
+                  : t('在 {project} 中让 Agent 做点什么…', { project: project.name })
               }
               onSend={async (text, opts) => {
                 await startThread(project.id, text, opts)
@@ -133,11 +136,11 @@ export function Home({ projectId, onOpenImport }: { projectId?: string; onOpenIm
           </div>
           {recent.length > 0 && (
             <div className="recent">
-              <div className="recent-title muted small">最近的对话</div>
-              {recent.map((t) => (
-                <button key={t.id} className="recent-item" onClick={() => openThread(t.id)}>
-                  <span className="recent-name">{t.title}</span>
-                  <span className="muted small">{relativeTime(t.updatedAt)}</span>
+              <div className="recent-title muted small">{t('最近的对话')}</div>
+              {recent.map((thread) => (
+                <button key={thread.id} className="recent-item" onClick={() => openThread(thread.id)}>
+                  <span className="recent-name">{displayThreadTitle(thread, t)}</span>
+                  <span className="muted small">{relativeTime(thread.updatedAt)}</span>
                 </button>
               ))}
             </div>

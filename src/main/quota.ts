@@ -1,3 +1,4 @@
+import { t as translate } from '@shared/i18n'
 import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
@@ -43,16 +44,16 @@ async function loadCursorQuota(apiKeySetting: string | undefined): Promise<Provi
     ])
     if (usage.status === 401 || usage.status === 403) {
       cursorTokenCache = null
-      return { provider: 'cursor', windows: [], note: 'Cursor 登录已过期，请重新登录' }
+      return { provider: 'cursor', windows: [], note: translate('Cursor 登录已过期，请重新登录') }
     }
-    if (!usage.ok) return { provider: 'cursor', windows: [], note: `暂时无法获取 Cursor 额度（HTTP ${usage.status}）` }
+    if (!usage.ok) return { provider: 'cursor', windows: [], note: translate('暂时无法获取 Cursor 额度（HTTP {status}）', { status: usage.status }) }
     const quota = parseCursorQuota(usage.json, plan.ok ? plan.json : undefined)
     applyCursorMonthUsage(quota, aggregated.ok ? aggregated.json : null, usage.json)
     return quota
   } catch (err) {
     const message = err instanceof Error ? err.message : ''
     if (message.startsWith('Cursor ')) return { provider: 'cursor', windows: [], note: message }
-    return { provider: 'cursor', windows: [], note: '暂时无法获取 Cursor 额度' }
+    return { provider: 'cursor', windows: [], note: translate('暂时无法获取 Cursor 额度') }
   }
 }
 
@@ -60,25 +61,25 @@ export async function loadCodexQuota(apiKeySetting: string | undefined, timeoutM
   const empty = (note: string): ProviderQuota => ({ provider: 'codex', windows: [], note })
   try {
     // ACP explicitly authenticates with this key, even when ChatGPT tokens remain on disk.
-    if (resolveCodexApiKey(apiKeySetting)) return empty('当前使用 API Key，没有 ChatGPT 订阅额度')
+    if (resolveCodexApiKey(apiKeySetting)) return empty(translate('当前使用 API Key，没有 ChatGPT 订阅额度'))
     const auth = readCodexAuth()
     if (auth.kind === 'missing') {
-      return empty('未登录 Codex。请使用 ChatGPT 登录。')
+      return empty(translate('未登录 Codex。请使用 ChatGPT 登录。'))
     }
     if (auth.kind === 'api-key') {
-      return empty('当前使用 API Key，没有 ChatGPT 订阅额度')
+      return empty(translate('当前使用 API Key，没有 ChatGPT 订阅额度'))
     }
     const headers: Record<string, string> = { Authorization: `Bearer ${auth.token}` }
     if (auth.accountId) headers['ChatGPT-Account-Id'] = auth.accountId
     const res = await http(CODEX_USAGE, { headers, signal: AbortSignal.timeout(timeoutMs) })
     if (res.status === 401 || res.status === 403) {
-      return empty('Codex 登录已过期，请重新登录')
+      return empty(translate('Codex 登录已过期，请重新登录'))
     }
-    if (!res.ok) return empty(`暂时无法获取 Codex 额度（HTTP ${res.status}）`)
+    if (!res.ok) return empty(translate('暂时无法获取 Codex 额度（HTTP {status}）', { status: res.status }))
     const json = (await res.json().catch(() => null)) as unknown
     return parseCodexQuota(json)
   } catch {
-    return empty('暂时无法获取 Codex 额度')
+    return empty(translate('暂时无法获取 Codex 额度'))
   }
 }
 
@@ -86,8 +87,8 @@ async function cursorAccessToken(apiKeySetting: string | undefined): Promise<{ o
   const apiKey = resolveApiKey(apiKeySetting)
   if (apiKey) return { ok: true, accessToken: await exchangeCursorKey(apiKey) }
   const stored = readCursorFileToken()
-  if (stored === 'expired') return { ok: false, note: 'Cursor 登录已过期，请重新登录' }
-  if (!stored) return { ok: false, note: '未登录 Cursor。请填写 API Key，或使用 agent login。' }
+  if (stored === 'expired') return { ok: false, note: translate('Cursor 登录已过期，请重新登录') }
+  if (!stored) return { ok: false, note: translate('未登录 Cursor。请填写 API Key，或使用 agent login。') }
   return { ok: true, accessToken: stored }
 }
 
@@ -103,11 +104,11 @@ async function exchangeCursorKey(apiKey: string): Promise<string> {
     body: '{}',
     signal: AbortSignal.timeout(FETCH_MS)
   })
-  if (res.status === 401 || res.status === 403) throw new Error('Cursor API Key 无效')
-  if (!res.ok) throw new Error(`Cursor 登录失败（HTTP ${res.status}）`)
+  if (res.status === 401 || res.status === 403) throw new Error(translate('Cursor API Key 无效'))
+  if (!res.ok) throw new Error(translate('Cursor 登录失败（HTTP {status}）', { status: res.status }))
   const body = (await res.json().catch(() => null)) as Record<string, unknown> | null
   const accessToken = stringField(body, 'accessToken', 'access_token')
-  if (!accessToken) throw new Error('Cursor 没有返回登录令牌')
+  if (!accessToken) throw new Error(translate('Cursor 没有返回登录令牌'))
   const exp = jwtExpMs(accessToken) ?? now + 50 * 60_000
   cursorTokenCache = { keyId, accessToken, exp }
   return accessToken

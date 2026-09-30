@@ -1,4 +1,5 @@
 import type { QuestionAnswer, QuestionPrompt } from './types'
+import { t } from './i18n'
 
 export interface QuestionSet {
   title?: string
@@ -58,7 +59,7 @@ export function formatAnswers(set: QuestionSet, answers: QuestionAnswer[]): stri
   const lines = set.questions.map((q) => {
     const ids = answers.find((a) => a.questionId === q.id)?.selectedOptionIds ?? []
     const labels = q.options.filter((o) => ids.includes(o.id)).map((o) => o.label)
-    return `- ${q.prompt}：${labels.length ? labels.join('、') : '（未选择）'}`
+    return t('- {question}：{answers}', { question: q.prompt, answers: labels.length ? labels.join(t('、')) : t('（未选择）') })
   })
-  return `我的选择：\n${lines.join('\n')}`
+  return t('我的选择：\n{answers}', { answers: lines.join('\n') })
 }

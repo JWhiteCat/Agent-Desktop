@@ -1,12 +1,14 @@
 import { useState } from 'react'
+import { useT } from '../../lib/i18n'
 import { IconBranch, IconCheck, IconCopy } from '../icons'
 
 export function CopyButton({ text, className }: { text: string; className?: string }) {
+  const t = useT()
   const [done, setDone] = useState(false)
   return (
     <button
       className={className ?? 'icon-btn tiny'}
-      title="复制"
+      title={t('复制')}
       onClick={(e) => {
         e.stopPropagation()
         navigator.clipboard.writeText(text)
@@ -34,10 +36,11 @@ export function CodeBlock({ lang, text }: { lang?: string; text: string }) {
 }
 
 export function ForkButton({ onFork }: { onFork: () => void }) {
+  const t = useT()
   return (
     <button
       className="icon-btn tiny"
-      title="从这里分叉"
+      title={t('从这里分叉')}
       onClick={(e) => {
         e.stopPropagation()
         onFork()

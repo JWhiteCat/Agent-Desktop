@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react'
 import type { Item } from '@shared/types'
+import { t } from '@shared/i18n'
+import { useT } from './i18n'
 import { IconChevronDown, IconChevronRight } from '../components/icons'
 import { relativePath } from './format'
 import { toolDiff, toolPath } from './tools'
@@ -65,7 +67,7 @@ export function collectEditedFiles(items: Item[], cwd?: string): DiffFile[] {
     const diff = toolDiff(it)
     if (!diff) continue
     for (const file of parseUnifiedDiff(diff)) {
-      const p = relativePath(file.path || toolPath(it) || '(未知文件)', cwd).replace(/\\/g, '/')
+      const p = relativePath(file.path || toolPath(it) || t('(未知文件)'), cwd).replace(/\\/g, '/')
       const prev = byPath.get(p)
       if (!prev) {
         byPath.set(p, { ...file, path: p })
@@ -96,6 +98,7 @@ export function DiffLines({ lines }: { lines: string[] }) {
 }
 
 export function DiffFileView({ file, defaultOpen = true, onOpen }: { file: DiffFile; defaultOpen?: boolean; onOpen?: () => void }) {
+  const t = useT()
   const [open, setOpen] = useState(defaultOpen)
   return (
     <div className="diff-file">
@@ -108,12 +111,12 @@ export function DiffFileView({ file, defaultOpen = true, onOpen }: { file: DiffF
             onOpen?.()
           }}
         >
-          {file.path || '(未知文件)'}
+          {file.path || t('(未知文件)')}
         </span>
         <span className="diff-stat">
           {file.added > 0 && <span className="add">+{file.added}</span>}
           {file.removed > 0 && <span className="del">−{file.removed}</span>}
-          {file.binary && <span className="muted">二进制</span>}
+          {file.binary && <span className="muted">{t('二进制')}</span>}
         </span>
       </div>
       {open && file.lines.length > 0 && <DiffLines lines={file.lines} />}

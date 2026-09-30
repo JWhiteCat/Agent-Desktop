@@ -1,3 +1,4 @@
+import { t as translate } from '@shared/i18n'
 import crypto from 'node:crypto'
 import fs from 'node:fs'
 import http from 'node:http'
@@ -110,7 +111,7 @@ function readBody(req: http.IncomingMessage): Promise<string> {
     req.on('data', (c: Buffer) => {
       size += c.length
       if (size > MAX_BODY) {
-        reject(new Error('请求体过大'))
+        reject(new Error(translate('请求体过大')))
         req.destroy()
       } else chunks.push(c)
     })
@@ -183,7 +184,7 @@ export class RemoteServer {
     if (!url.pathname.startsWith('/api/')) return this.serveStatic(req, res, url)
 
     const token = (req.headers['x-token'] as string | undefined) ?? url.searchParams.get('token')
-    if (!sameToken(token, opts.token)) return sendJson(res, 401, { ok: false, error: '远程访问令牌无效，请重新扫描二维码' })
+    if (!sameToken(token, opts.token)) return sendJson(res, 401, { ok: false, error: translate('远程访问令牌无效，请重新扫描二维码') })
 
     if (url.pathname === '/api/events' && req.method === 'GET') {
       res.writeHead(200, {
@@ -202,12 +203,12 @@ export class RemoteServer {
     if (rpc && req.method === 'POST') {
       const name = decodeURIComponent(rpc[1])
       const fn = Object.hasOwn(opts.handlers, name) ? opts.handlers[name] : undefined
-      if (!fn) return sendJson(res, 404, { ok: false, error: `远程端不支持：${name}` })
+      if (!fn) return sendJson(res, 404, { ok: false, error: translate('远程端不支持：{name}', { name }) })
       let args: unknown[]
       try {
         const body = await readBody(req)
         args = body ? JSON.parse(body) : []
-        if (!Array.isArray(args)) throw new Error('参数必须是数组')
+        if (!Array.isArray(args)) throw new Error(translate('参数必须是数组'))
       } catch (err) {
         return sendJson(res, 400, { ok: false, error: err instanceof Error ? err.message : String(err) })
       }

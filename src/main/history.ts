@@ -41,6 +41,7 @@ export function scanCliSessions(importedChatIds: Set<string>): CliSession[] {
         chatId: chat.name,
         cli: 'cursor',
         title: meta.title?.trim() || UNTITLED,
+        ...(!meta.title?.trim() ? { titleKind: 'untitled' as const } : {}),
         cwd: meta.cwd,
         createdAt: meta.createdAtMs ?? 0,
         updatedAt: meta.updatedAtMs ?? meta.createdAtMs ?? 0,

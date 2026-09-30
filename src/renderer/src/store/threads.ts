@@ -1,4 +1,5 @@
 import type { Item, QuestionAnswer, ThreadMeta } from '@shared/types'
+import { t } from '@shared/i18n'
 import { errorText, toast } from './feedback'
 import { LAST_PROJECT_KEY } from './persistence'
 import { getState, setState, type SendOptions } from './state'
@@ -68,7 +69,7 @@ export async function forkThread(threadId: string, throughItemId?: string): Prom
       view: { kind: 'thread', id: thread.id }
     }))
     rememberProject(thread.projectId)
-    toast(`已分叉为「${thread.title}」`)
+    toast(t('已分叉为「{title}」', { title: thread.title }))
   } catch (err) {
     toast(errorText(err), 'error')
   }
@@ -78,7 +79,7 @@ export async function syncThreadFromCli(id: string): Promise<void> {
   try {
     const items = await window.api.syncFromCli(id)
     setState((s) => ({ items: { ...s.items, [id]: items } }))
-    toast(`已从 CLI 同步 ${items.length} 条记录`)
+    toast(t('已从 CLI 同步 {count} 条记录', { count: items.length }))
   } catch (err) {
     toast(errorText(err), 'error')
   }

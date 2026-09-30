@@ -1,4 +1,5 @@
 import fs from 'node:fs'
+import { t as translate } from '@shared/i18n'
 import os from 'node:os'
 import path from 'node:path'
 import { renderSkillMarkdown, skillReady } from '@shared/agent-config'
@@ -44,7 +45,7 @@ export function syncManagedSkills(skills: SkillConfig[] | undefined, root = user
     const name = skill.name.trim()
     const kind = dirKind(path.join(root, name))
     if (kind === 'other' || (kind === 'dir' && !isManaged(path.join(root, name)))) {
-      throw new SkillSyncError(`无法写入 Skill「${name}」：${path.join(root, name)} 已存在，且不是本应用创建的`)
+      throw new SkillSyncError(translate('无法写入 Skill「{name}」：{path} 已存在，且不是本应用创建的', { name, path: path.join(root, name) }))
     }
   }
 

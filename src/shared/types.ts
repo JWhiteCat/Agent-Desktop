@@ -1,4 +1,5 @@
 import type { SlashCommand } from './commands'
+import type { Language, LocalizedMessage } from './i18n'
 import type { TokenUsage } from './model-prices'
 import type { TurnQuotaSnapshot, TurnQuotaUsage, WeeklyQuotaEstimate } from './turn-quota'
 import type { CodexSessionUsage, CodexThreadUsage } from './codex-account'
@@ -45,6 +46,8 @@ export interface ThreadMeta {
   id: string
   projectId: string
   title: string
+  /** Only explicit application-generated placeholders are localized; user and legacy titles stay literal. */
+  titleKind?: 'default' | 'untitled'
   /** CLI chat/session id, used to resume with ACP `session/load`. Cursor can also resume in a terminal with `agent --resume`. */
   chatId?: string
   /** Last copied item to replay into a new session. Cleared after its first successful prompt. */
@@ -137,6 +140,8 @@ export interface NoticeItem {
   kind: 'notice'
   level: 'info' | 'error'
   text: string
+  /** Present only on app-authored notices, so CLI and historical text stay verbatim. */
+  message?: LocalizedMessage
 }
 
 export interface QuestionOption {
@@ -200,6 +205,8 @@ export interface SkillConfig {
 }
 
 export interface Settings {
+  /** Application language; System follows the OS or remote browser. */
+  language: Language
   /** CLI used for new threads. Existing threads keep the CLI stored on them. */
   cliProvider: CliProvider
   agentPath: string
@@ -259,13 +266,17 @@ export interface RemoteInfo {
   /** LAN links, plus the public link once the tunnel is up. Token included. */
   urls: string[]
   error?: string
+  errorMessage?: LocalizedMessage
   publicStatus: PublicLinkStatus
   /** Set while the tunnel is up. Also present in `urls`. */
   publicUrl?: string
   publicError?: string
+  publicErrorMessage?: LocalizedMessage
 }
 
 export interface AppState {
+  /** Desktop OS locale shared with remote clients for the System preference. */
+  systemLocale?: string
   projects: Project[]
   threads: ThreadMeta[]
   settings: Settings
@@ -301,6 +312,8 @@ export interface CliSession {
   chatId: string
   cli: CliProvider
   title: string
+  /** Marks a missing CLI title without guessing from the title text. */
+  titleKind?: 'default' | 'untitled'
   cwd: string
   createdAt: number
   updatedAt: number
@@ -331,6 +344,7 @@ export type AgentEvent =
   | { type: 'commands'; threadId: string; commands: SlashCommand[] }
 
 export const DEFAULT_SETTINGS: Settings = {
+  language: 'system',
   cliProvider: 'cursor',
   agentPath: '',
   apiKey: '',

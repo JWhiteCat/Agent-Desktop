@@ -1,3 +1,5 @@
+import { localizedMessage, t as translate } from '@shared/i18n'
+import { displayThreadTitle } from '@shared/thread-title'
 import type { ChildProcess } from 'node:child_process'
 import fs from 'node:fs'
 import { enabledSkillFingerprint, toAcpMcpServers } from '@shared/agent-config'
@@ -131,20 +133,20 @@ export class SessionManager {
   /** Copies the persisted CLI session immediately, without prompting or loading the source. */
   forkSession(threadId: string): Promise<{ chatId: string; cwd: string }> {
     return this.enqueue(threadId, async () => {
-      if (this.isRunning(threadId)) throw new Error('对话正在运行，请稍后再分叉')
+      if (this.isRunning(threadId)) throw new Error(translate('对话正在运行，请稍后再分叉'))
       const thread = this.store.thread(threadId)
-      if (!thread) throw new Error('对话不存在')
-      if (!thread.chatId) throw new Error('对话没有可复制的 CLI 会话')
+      if (!thread) throw new Error(translate('对话不存在'))
+      if (!thread.chatId) throw new Error(translate('对话没有可复制的 CLI 会话'))
       const sourceChatId = thread.chatId
       const provider = threadCli(thread)
-      if (provider !== 'codex' && provider !== 'claude') throw new Error('此 CLI 不支持通过 ACP 分叉')
+      if (provider !== 'codex' && provider !== 'claude') throw new Error(translate('此 CLI 不支持通过 ACP 分叉'))
       const project = this.store.project(thread.projectId)
-      if (!project) throw new Error('项目不存在')
+      if (!project) throw new Error(translate('项目不存在'))
       const settings = this.store.settings
       const launch = resolveLaunch(provider, settings.agentPath, settings.codexPath, settings.claudePath)
-      if (!launch) throw new Error(`未找到 ${cliLabel(provider)}。请先安装，或在设置中指定路径。`)
+      if (!launch) throw new Error(translate('未找到 {label}。请先安装，或在设置中指定路径。', { label: cliLabel(provider) }))
       const cwd = thread.cwd && fs.existsSync(thread.cwd) ? thread.cwd : project.path
-      if (!fs.existsSync(cwd)) throw new Error(`项目目录不存在：${cwd}`)
+      if (!fs.existsSync(cwd)) throw new Error(translate('项目目录不存在：{path}', { path: cwd }))
       const apiKey = providerApiKey(provider, settings)
       const mcpServers = toAcpMcpServers(settings.mcpServers)
       syncAllManagedSkills(settings.skills)
@@ -157,15 +159,15 @@ export class SessionManager {
           (async () => {
             const initialized = await initializeSession(proc.acp, provider, apiKey)
             if (initialized?.agentCapabilities?.sessionCapabilities?.fork == null) {
-              throw new Error(`${cliLabel(provider)} 不支持会话分叉`)
+              throw new Error(translate('{label} 不支持会话分叉', { label: cliLabel(provider) }))
             }
             const forked = await proc.acp.request('session/fork', { sessionId: sourceChatId, cwd, mcpServers })
             const chatId = typeof forked?.sessionId === 'string' ? forked.sessionId.trim() : ''
-            if (!chatId || chatId === sourceChatId) throw new Error(`${cliLabel(provider)} 没有返回独立的分叉会话 id`)
+            if (!chatId || chatId === sourceChatId) throw new Error(translate('{label} 没有返回独立的分叉会话 id', { label: cliLabel(provider) }))
             return { chatId, cwd }
           })(),
           new Promise<never>((_, reject) => {
-            timer = setTimeout(() => reject(new Error(`${cliLabel(provider)} 会话分叉超时`)), FORK_TIMEOUT_MS)
+            timer = setTimeout(() => reject(new Error(translate('{label} 会话分叉超时', { label: cliLabel(provider) }))), FORK_TIMEOUT_MS)
           })
         ])
       } finally {
@@ -178,7 +180,7 @@ export class SessionManager {
   private enqueue<T>(threadId: string, fn: () => Promise<T>): Promise<T> {
     const prev = this.tails.get(threadId) ?? Promise.resolve()
     const start = () => {
-      if (this.shuttingDown) throw new Error('应用正在关闭')
+      if (this.shuttingDown) throw new Error(translate('应用正在关闭'))
       return fn()
     }
     const result = prev.then(start, start)
@@ -194,23 +196,23 @@ export class SessionManager {
   }
 
   private beginSend(req: SendRequest): void {
-    if (this.runs.has(req.threadId)) throw new Error('该对话正在运行中')
+    if (this.runs.has(req.threadId)) throw new Error(translate('该对话正在运行中'))
     const thread = this.store.thread(req.threadId)
-    if (!thread) throw new Error('对话不存在')
+    if (!thread) throw new Error(translate('对话不存在'))
     if (isCliProvider(req.cli) && req.cli !== threadCli(thread)) {
       this.store.updateThread(thread.id, { cli: req.cli })
       this.discard(thread.id)
     }
     const project = this.store.project(thread.projectId)
-    if (!project) throw new Error('项目不存在')
+    if (!project) throw new Error(translate('项目不存在'))
     const settings = this.store.settings
     const provider = threadCli(thread)
     const launch = resolveLaunch(provider, settings.agentPath, settings.codexPath, settings.claudePath)
-    if (!launch) throw new Error(`未找到 ${cliLabel(provider)}。请先安装，或在设置中指定路径。`)
+    if (!launch) throw new Error(translate('未找到 {label}。请先安装，或在设置中指定路径。', { label: cliLabel(provider) }))
     const apiKey = providerApiKey(provider, settings)
 
     const cwd = thread.cwd && fs.existsSync(thread.cwd) ? thread.cwd : project.path
-    if (!fs.existsSync(cwd)) throw new Error(`项目目录不存在：${cwd}`)
+    if (!fs.existsSync(cwd)) throw new Error(translate('项目目录不存在：{path}', { path: cwd }))
     this.usage.cancel(thread.id)
 
     const mcpServers = toAcpMcpServers(settings.mcpServers)
@@ -228,7 +230,7 @@ export class SessionManager {
     items.push(userItem)
 
     this.store.updateThread(thread.id, {
-      title: thread.title === DEFAULT_TITLE ? titleFrom(req.prompt) : thread.title,
+      ...(thread.titleKind ? { title: titleFrom(req.prompt), titleKind: undefined } : {}),
       model: req.model,
       mode: req.mode,
       force: req.force,
@@ -431,17 +433,17 @@ export class SessionManager {
     if (known) return known
     if (this.runs.has(threadId)) return []
     const thread = this.store.thread(threadId)
-    if (!thread) throw new Error('对话不存在')
+    if (!thread) throw new Error(translate('对话不存在'))
     if (!thread.chatId) return []
     const project = this.store.project(thread.projectId)
-    if (!project) throw new Error('项目不存在')
+    if (!project) throw new Error(translate('项目不存在'))
     const settings = this.store.settings
     const provider = threadCli(thread)
     const launch = resolveLaunch(provider, settings.agentPath, settings.codexPath, settings.claudePath)
-    if (!launch) throw new Error(`未找到 ${cliLabel(provider)}。请先安装，或在设置中指定路径。`)
+    if (!launch) throw new Error(translate('未找到 {label}。请先安装，或在设置中指定路径。', { label: cliLabel(provider) }))
     const apiKey = providerApiKey(provider, settings)
     const cwd = thread.cwd && fs.existsSync(thread.cwd) ? thread.cwd : project.path
-    if (!fs.existsSync(cwd)) throw new Error(`项目目录不存在：${cwd}`)
+    if (!fs.existsSync(cwd)) throw new Error(translate('项目目录不存在：{path}', { path: cwd }))
 
     const mcpServers = toAcpMcpServers(settings.mcpServers)
     const fingerprint = procFingerprint(
@@ -475,7 +477,7 @@ export class SessionManager {
     try {
       const sessionId = await this.connectSession(proc, cwd, thread.chatId, provider, apiKey, mcpServers)
       await applySessionOptions(proc, req, this.store.settings.sandbox)
-      if (proc.dying || proc.child.exitCode !== null) throw new Error('CLI 进程已退出')
+      if (proc.dying || proc.child.exitCode !== null) throw new Error(translate('CLI 进程已退出'))
       this.store.updateThread(threadId, { chatId: sessionId, cwd })
       this.onStateChange()
       this.agents.set(threadId, proc)
@@ -559,7 +561,7 @@ export class SessionManager {
     } else {
       const created = await acp.request('session/new', { cwd, mcpServers })
       sessionId = created?.sessionId
-      if (!sessionId) throw new Error(`${cliLabel(provider)} 没有返回会话 id`)
+      if (!sessionId) throw new Error(translate('{label} 没有返回会话 id', { label: cliLabel(provider) }))
     }
     proc.sessionId = sessionId
     proc.ready = true
@@ -577,7 +579,7 @@ export class SessionManager {
     if (contextThroughId) {
       const items = this.store.items(threadId)
       const cut = items.findIndex((item) => item.id === contextThroughId)
-      if (cut < 0) throw new Error('分叉历史缺失，无法恢复上下文')
+      if (cut < 0) throw new Error(translate('分叉历史缺失，无法恢复上下文'))
       prompt = forkPrompt(items.slice(0, cut + 1), prompt)
     }
     const text = planPrompt(run.proc.provider, req.mode, prompt)
@@ -662,9 +664,9 @@ export class SessionManager {
       }
     }
     if (run.stopped) {
-      changed.push(r.push({ id: newId(), kind: 'notice', level: 'info', text: '已停止' }))
+      changed.push(r.push({ id: newId(), kind: 'notice', level: 'info', ...localizedMessage('已停止') }))
     } else if (spawnError) {
-      changed.push(r.push({ id: newId(), kind: 'notice', level: 'error', text: `无法启动 ${cliLabel(run.proc.provider)}：${spawnError.message}` }))
+      changed.push(r.push({ id: newId(), kind: 'notice', level: 'error', ...localizedMessage('无法启动 {label}：{error}', { label: cliLabel(run.proc.provider), error: spawnError.message }) }))
     } else if (!r.gotResult) {
       const detail = [run.failText, stripAnsi(run.proc.stderr).trim()].filter(Boolean).join('\n').slice(-4000)
       changed.push(
@@ -672,7 +674,7 @@ export class SessionManager {
           id: newId(),
           kind: 'notice',
           level: 'error',
-          text: detail || `${cliLabel(run.proc.provider)} 意外退出（退出码 ${code ?? '未知'}）`
+          ...(detail ? { text: detail } : localizedMessage('{label} 意外退出（退出码 {code}）', { label: cliLabel(run.proc.provider), code: code ?? 'unknown' }))
         })
       )
     }
@@ -714,7 +716,7 @@ export class SessionManager {
     }
     this.onFinished({
       threadId,
-      title: updated?.title || DEFAULT_TITLE,
+      title: updated ? displayThreadTitle(updated) : translate(DEFAULT_TITLE),
       stopped: run.stopped,
       failed,
       preview: summary

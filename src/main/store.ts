@@ -2,6 +2,7 @@ import { app } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
 import { normalizeMcpServers, normalizeSkills } from '@shared/agent-config'
+import { normalizeLanguage } from '@shared/i18n'
 import { DEFAULT_SETTINGS, normalizeCliProvider, threadCli, type Item, type Project, type ResultItem, type Settings, type ThreadMeta } from '@shared/types'
 import { newId } from './id'
 import { newRemoteClientId, validClientId } from './public-tunnel'
@@ -53,6 +54,7 @@ export class Store {
       settings: {
         ...DEFAULT_SETTINGS,
         ...loaded?.settings,
+        language: normalizeLanguage(loaded?.settings?.language),
         cliProvider: normalizeCliProvider(loaded?.settings?.cliProvider),
         codexPath: typeof loaded?.settings?.codexPath === 'string' ? loaded.settings.codexPath : '',
         codexApiKey: typeof loaded?.settings?.codexApiKey === 'string' ? loaded.settings.codexApiKey : '',
@@ -171,6 +173,8 @@ export class Store {
     }
     const nextPatch = nextCli !== undefined ? { ...patch, cli: nextCli } : patch
     Object.assign(t, nextPatch, { id: t.id })
+    // A title supplied without an explicit placeholder marker is a literal name.
+    if (typeof patch.title === 'string' && !Object.hasOwn(patch, 'titleKind')) delete t.titleKind
     if (cliChanged) delete t.chatId
     this.scheduleSave()
     return t

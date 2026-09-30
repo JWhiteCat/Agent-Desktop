@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
+import { getLocale } from '@shared/i18n'
 import type { UsageSessionRow, UsageSummary, UsageWindow } from '@shared/usage'
 import { cliTitle, type CliProvider } from '@shared/types'
+import { useT } from '../../lib/i18n'
+import { displayThreadTitle } from '@shared/thread-title'
 import { compactNumber, formatUsd, relativeTime } from '../../lib/format'
 import { groupModels, modelCaption } from '../../lib/models'
 import { errorText, useStore } from '../../store'
@@ -16,10 +19,12 @@ const USAGE_PERIODS: { id: UsageWindow; label: string }[] = [
 const USAGE_PAGE_SIZE = 20
 
 function UsageToken({ n }: { n: number }) {
-  return <HoverTip text={n.toLocaleString('zh-CN')}>{compactNumber(n)}</HoverTip>
+  useT()
+  return <HoverTip text={n.toLocaleString(getLocale())}>{compactNumber(n)}</HoverTip>
 }
 
 export function UsageSettings() {
+  const t = useT()
   const modelsByCli = useStore((s) => s.modelsByCli)
   const groups = useMemo(() => ({
     cursor: groupModels(modelsByCli.cursor),
@@ -31,7 +36,7 @@ export function UsageSettings() {
   const [sessions, setSessions] = useState<UsageSessionRow[] | null>(null)
   const [page, setPage] = useState(1)
   const [error, setError] = useState('')
-  const modelName = (cli: CliProvider, id: string, fallback = '') => (id ? modelCaption(groups[cli], id) : fallback)
+  const modelName = (cli: CliProvider, id: string, fallback = '') => (id ? modelCaption(groups[cli], id) : t(fallback))
 
   useEffect(() => {
     let cancel = false
@@ -52,7 +57,7 @@ export function UsageSettings() {
     return () => {
       cancel = true
     }
-  }, [period])
+  }, [period, t])
 
   const pageCount = Math.max(1, Math.ceil((sessions?.length ?? 0) / USAGE_PAGE_SIZE))
   const currentPage = Math.min(page, pageCount)
@@ -61,8 +66,8 @@ export function UsageSettings() {
   return (
     <section className="settings-section">
       <QuotaPanel />
-      <h4>本机用量</h4>
-      <div className="usage-periods" role="group" aria-label="统计范围">
+      <h4>{t('本机用量')}</h4>
+      <div className="usage-periods" role="group" aria-label={t('统计范围')}>
         {USAGE_PERIODS.map((item) => (
           <button
             key={item.id}
@@ -71,66 +76,66 @@ export function UsageSettings() {
             aria-pressed={period === item.id}
             onClick={() => setPeriod(item.id)}
           >
-            {item.label}
+            {t(item.label)}
           </button>
         ))}
       </div>
       {error ? (
         <div className="notice error">{error}</div>
       ) : !summary ? (
-        <div className="muted small">正在统计…</div>
+        <div className="muted small">{t('正在统计…')}</div>
       ) : summary.turns === 0 ? (
-        <div className="muted small">这段时间没有用量</div>
+        <div className="muted small">{t('这段时间没有用量')}</div>
       ) : (
         <>
           <div className="usage-stats">
             <div className="usage-stat">
-              <div className="label">费用</div>
+              <div className="label">{t('费用')}</div>
               <div className="value">{formatUsd(summary.costUsd)}</div>
             </div>
             <div className="usage-stat">
-              <div className="label">回合</div>
+              <div className="label">{t('回合')}</div>
               <div className="value">{summary.turns}</div>
             </div>
             <div className="usage-stat">
-              <div className="label">输入</div>
+              <div className="label">{t('输入')}</div>
               <div className="value">
                 <UsageToken n={summary.inputTokens} />
               </div>
             </div>
             <div className="usage-stat">
-              <div className="label">输出</div>
+              <div className="label">{t('输出')}</div>
               <div className="value">
                 <UsageToken n={summary.outputTokens} />
               </div>
             </div>
             <div className="usage-stat">
-              <div className="label">缓存读</div>
+              <div className="label">{t('缓存读')}</div>
               <div className="value">
                 <UsageToken n={summary.cacheReadTokens} />
               </div>
             </div>
             <div className="usage-stat">
-              <div className="label">缓存写</div>
+              <div className="label">{t('缓存写')}</div>
               <div className="value">
                 <UsageToken n={summary.cacheWriteTokens} />
               </div>
             </div>
           </div>
           {summary.unpricedTurns > 0 && summary.costUsd != null && (
-            <div className="muted small">另有 {summary.unpricedTurns} 轮未定价，未计入费用。</div>
+            <div className="muted small">{t('另有 {count} 轮未定价，未计入费用。', { count: summary.unpricedTurns })}</div>
           )}
           <div className="usage-table-wrap">
             <table className="usage-table">
               <thead>
                 <tr>
-                  <th>模型</th>
-                  <th>回合</th>
-                  <th>输入</th>
-                  <th>输出</th>
-                  <th>缓存读</th>
-                  <th>缓存写</th>
-                  <th>费用</th>
+                  <th>{t('模型')}</th>
+                  <th>{t('回合')}</th>
+                  <th>{t('输入')}</th>
+                  <th>{t('输出')}</th>
+                  <th>{t('缓存读')}</th>
+                  <th>{t('缓存写')}</th>
+                  <th>{t('费用')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -161,33 +166,33 @@ export function UsageSettings() {
           </div>
         </>
       )}
-      <h4>会话</h4>
+      <h4>{t('会话')}</h4>
       {sessions == null ? (
-        error ? null : <div className="muted small">正在统计…</div>
+        error ? null : <div className="muted small">{t('正在统计…')}</div>
       ) : sessions.length === 0 ? (
-        <div className="muted small">还没有历史会话</div>
+        <div className="muted small">{t('还没有历史会话')}</div>
       ) : (
         <>
           <div className="usage-table-wrap">
             <table className="usage-table">
               <thead>
                 <tr>
-                  <th>会话</th>
-                  <th className="usage-model">模型</th>
-                  <th>时间</th>
-                  <th>回合</th>
-                  <th>输入</th>
-                  <th>输出</th>
-                  <th>缓存读</th>
-                  <th>缓存写</th>
-                  <th>费用</th>
+                  <th>{t('会话')}</th>
+                  <th className="usage-model">{t('模型')}</th>
+                  <th>{t('时间')}</th>
+                  <th>{t('回合')}</th>
+                  <th>{t('输入')}</th>
+                  <th>{t('输出')}</th>
+                  <th>{t('缓存读')}</th>
+                  <th>{t('缓存写')}</th>
+                  <th>{t('费用')}</th>
                 </tr>
               </thead>
               <tbody>
                 {visibleSessions.map((row) => (
                   <tr key={row.threadId}>
                     <td>
-                      <div>{row.title}</div>
+                      <div>{displayThreadTitle(row, t)}</div>
                       <div className="muted small">{cliTitle(row.cli)}</div>
                       {row.project && <div className="muted small">{row.project}</div>}
                     </td>
@@ -219,17 +224,17 @@ export function UsageSettings() {
             </table>
           </div>
           <div className="usage-pager">
-            <span className="muted">共 {sessions.length} 条</span>
+            <span className="muted">{t('共 {count} 条', { count: sessions.length })}</span>
             {pageCount > 1 && (
               <>
                 <button type="button" className="usage-period" disabled={currentPage <= 1} onClick={() => setPage(currentPage - 1)}>
-                  上一页
+                  {t('上一页')}
                 </button>
                 <span>
                   {currentPage} / {pageCount}
                 </span>
                 <button type="button" className="usage-period" disabled={currentPage >= pageCount} onClick={() => setPage(currentPage + 1)}>
-                  下一页
+                  {t('下一页')}
                 </button>
               </>
             )}
@@ -237,7 +242,9 @@ export function UsageSettings() {
         </>
       )}
       <p className="usage-note">
-        Cursor 按 Cursor 公开标价估算，Codex 按 <a href="https://developers.openai.com/api/docs/pricing" target="_blank" rel="noreferrer">OpenAI API 公开标价</a>估算（美元 / 百万 token）。这些金额是用量估算，不代表订阅账单或套餐剩余额度；Cursor 估算不含 Teams 的 Token Rate。Auto 和价目表没有的模型只计 token。上方合计里，分叉复制的同一轮只计一次。会话列表包含全部历史对话，按各对话自己的记录累计，不受上面的天数限制；没有 token 记录的对话费用留空。
+        {t('Cursor 按 Cursor 公开标价估算，Codex 按 OpenAI API 公开标价估算（美元 / 百万 token）。')}{' '}
+        <a href="https://developers.openai.com/api/docs/pricing" target="_blank" rel="noreferrer">{t('OpenAI API 价格')}</a>{' '}
+        {t('这些金额是用量估算，不代表订阅账单或套餐剩余额度；Cursor 估算不含 Teams 的 Token Rate。Auto 和价目表没有的模型只计 token。上方合计里，分叉复制的同一轮只计一次。会话列表包含全部历史对话，按各对话自己的记录累计，不受上面的天数限制；没有 token 记录的对话费用留空。')}
       </p>
     </section>
   )

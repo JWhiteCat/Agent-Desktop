@@ -1,3 +1,4 @@
+import { t as translate } from '@shared/i18n'
 import { dialog } from 'electron'
 import fs from 'node:fs'
 import type { Project } from '@shared/types'
@@ -9,7 +10,7 @@ export function projectHandlers(deps: IpcDeps): Record<string, Handler> {
   return {
     'project:pick': async () => {
       const res = await dialog.showOpenDialog(deps.getWindow()!, {
-        title: '选择项目文件夹',
+        title: translate('选择项目文件夹'),
         properties: ['openDirectory', 'createDirectory']
       })
       if (res.canceled || !res.filePaths[0]) return null
@@ -18,7 +19,7 @@ export function projectHandlers(deps: IpcDeps): Record<string, Handler> {
       return p
     },
     'project:add': (dir: string) => {
-      if (!fs.existsSync(dir)) throw new Error(`目录不存在：${dir}`)
+      if (!fs.existsSync(dir)) throw new Error(translate('目录不存在：{path}', { path: dir }))
       const p = store.addProject(dir)
       broadcast()
       return p

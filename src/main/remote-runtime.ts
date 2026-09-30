@@ -1,8 +1,10 @@
+import { t as translate, type LocalizedMessage } from '@shared/i18n'
 import path from 'node:path'
 import type { AppState, RemoteInfo, Settings } from '@shared/types'
 import { lanAddresses, newRemoteToken, RemoteServer, type Handler } from './remote'
 import {
   newRemoteClientId,
+  LocalizedTunnelError,
   PublicTunnel,
   publicRemoteUrl,
   validClientId,
@@ -53,8 +55,8 @@ export class RemoteRuntime {
   readonly server = new RemoteServer()
   readonly tunnel = new PublicTunnel()
   private handlers: Record<string, Handler> = {}
-  private remoteError: string | undefined
-  private publicError: string | undefined
+  private remoteError: string | LocalizedMessage | undefined
+  private publicError: string | LocalizedMessage | undefined
 
   constructor(
     private readonly getStore: () => Store,
@@ -73,16 +75,22 @@ export class RemoteRuntime {
       publicOn && this.tunnel.status === 'up' && validClientId(s.remoteClientId)
         ? publicRemoteUrl(s.remotePublicHost, s.remotePublicPort, s.remoteClientId, s.remoteToken)
         : undefined
-    const tunnelError = publicOn ? this.publicError || this.tunnel.error : undefined
+    const remoteMessage = typeof this.remoteError === 'object' ? this.remoteError : undefined
+    const remoteError = typeof this.remoteError === 'object' ? translate(this.remoteError.source, this.remoteError.params) : this.remoteError
+    const publicFailure = publicOn ? this.publicError || this.tunnel.errorMessage || this.tunnel.error : undefined
+    const publicMessage = typeof publicFailure === 'object' ? publicFailure : undefined
+    const tunnelError = typeof publicFailure === 'object' ? translate(publicFailure.source, publicFailure.params) : publicFailure
     return {
       enabled: s.remoteEnabled,
       running: this.server.running,
       port,
       urls: [...(this.server.running ? lanAddresses().map((ip) => `http://${ip}:${port}/?token=${s.remoteToken}`) : []), ...(link ? [link] : [])],
-      ...(this.remoteError ? { error: this.remoteError } : {}),
+      ...(remoteError ? { error: remoteError } : {}),
+      ...(remoteMessage ? { errorMessage: remoteMessage } : {}),
       publicStatus: publicOn ? this.tunnel.status : 'off',
       ...(link ? { publicUrl: link } : {}),
-      ...(tunnelError ? { publicError: tunnelError } : {})
+      ...(tunnelError ? { publicError: tunnelError } : {}),
+      ...(publicMessage ? { publicErrorMessage: publicMessage } : {})
     }
   }
 
@@ -108,7 +116,7 @@ export class RemoteRuntime {
       })
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code
-      this.remoteError = code === 'EADDRINUSE' ? `端口 ${s.remotePort} 已被占用，请换一个端口` : err instanceof Error ? err.message : String(err)
+      this.remoteError = code === 'EADDRINUSE' ? { source: '端口 {port} 已被占用，请换一个端口', params: { port: s.remotePort } } : err instanceof Error ? err.message : String(err)
       console.error('[remote] start failed', err)
     }
     await this.applyPublicTunnel()
@@ -126,7 +134,7 @@ export class RemoteRuntime {
     const s = store.settings
     if (!s.remoteEnabled || !s.remotePublicEnabled || !this.server.running) {
       await this.tunnel.stop()
-      if (s.remoteEnabled && s.remotePublicEnabled && !this.server.running) this.publicError = '局域网服务未启动，无法建立公网隧道'
+      if (s.remoteEnabled && s.remotePublicEnabled && !this.server.running) this.publicError = { source: '局域网服务未启动，无法建立公网隧道' }
       return
     }
     try {
@@ -141,7 +149,7 @@ export class RemoteRuntime {
       })
     } catch (err) {
       await this.tunnel.stop()
-      this.publicError = err instanceof Error ? err.message : String(err)
+      this.publicError = err instanceof LocalizedTunnelError ? err.localizedMessage : err instanceof Error ? err.message : String(err)
       console.error('[remote] public tunnel failed', err)
     }
   }

@@ -1,3 +1,4 @@
+import { t as translate } from '@shared/i18n'
 import type { ChildProcess } from 'node:child_process'
 import { QUESTION_BLOCK_LANG } from '@shared/questions'
 
@@ -45,14 +46,14 @@ export class AcpConnection {
     })
     this.child.on('close', () => {
       this.closed = true
-      const err = new Error('CLI 进程已退出')
+      const err = new Error(translate('CLI 进程已退出'))
       for (const waiter of this.pending.values()) waiter.reject(err)
       this.pending.clear()
     })
   }
 
   request(method: string, params: unknown): Promise<any> {
-    if (this.closed) return Promise.reject(new Error('CLI 进程已退出'))
+    if (this.closed) return Promise.reject(new Error(translate('CLI 进程已退出')))
     const id = this.nextId++
     return new Promise((resolve, reject) => {
       this.pending.set(id, { resolve, reject })
@@ -175,7 +176,7 @@ export function acpErrorText(error: { message?: unknown; data?: unknown } | null
   const detail = acpErrorDetail(error?.data)
   if (detail && (!message || message === 'Internal error')) return detail
   if (detail && message && !message.includes(detail)) return `${message}: ${detail}`
-  return message || 'ACP 请求失败'
+  return message || translate('ACP 请求失败')
 }
 
 function acpErrorDetail(data: unknown): string {

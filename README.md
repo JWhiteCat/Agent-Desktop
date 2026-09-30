@@ -2,7 +2,7 @@
 
 [中文](README.zh-CN.md)
 
-A desktop client for [Cursor CLI](https://cursor.com/cli) (`agent`), [Codex CLI](https://github.com/openai/codex) (`codex`), and [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (`claude`). Conversations are grouped by project. The window streams thinking, tool calls, and replies, and keeps a local history. The interface is in Chinese.
+A desktop client for [Cursor CLI](https://cursor.com/cli) (`agent`), [Codex CLI](https://github.com/openai/codex) (`codex`), and [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (`claude`). Conversations are grouped by project. The window streams thinking, tool calls, and replies, and keeps a local history. The interface supports Simplified Chinese and English.
 
 The app does not call a model itself. The main process starts the Cursor CLI, Codex CLI, or Claude Code adapter on this machine and talks to it over the [Agent Client Protocol](https://agentclientprotocol.com) (ACP). The composer picks Cursor, Codex, or Claude. A new conversation uses that choice and remembers it. In an existing conversation, switching CLI keeps the messages already on screen and starts the next message as a new session on the CLI you picked. The sidebar marks each one Cursor, Codex, or Claude.
 
@@ -21,6 +21,7 @@ The app does not call a model itself. The main process starts the Cursor CLI, Co
 - Continue a saved session with ACP `session/load`, or rebuild the transcript from CLI storage. Copying the session id lets you resume a Cursor chat in a terminal with `agent --resume`
 - System notification when a task finishes; clicking it returns to that conversation. A finished run that is not on screen leaves an unread dot
 - Theme: follow the system, dark, or light
+- Language: follow the system, Simplified Chinese, or English; changes take effect immediately and persist across restarts
 - Settings are a left-hand list: CLI, MCP, Skill, Models, Usage, Defaults, Notifications, Remote control, and Appearance and history. The CLI page detects Cursor, Codex, and Claude separately, and holds paths, API keys, sign-in, and an Update button next to sign-in. Updates show progress and the command result, then refresh the version and model list. The Models page uses Cursor / Codex / Claude tabs for favorites and the default model. History import lives on the Appearance and history page
 - Usage: account quota for Cursor and Codex (5-hour, weekly, or monthly windows and the next reset, when the account returns them). Claude account quota is not shown yet. Cursor models and other models also show that pool’s tokens and the account’s price. Other models uses the included API usage percent only. On-demand spend shows used and limit on the same line, and tokens when the account returns them, without repeating the price. Below that, token totals for the last 1, 7, and 30 days and a paginated list of every past session with its models and cumulative usage. Local costs use [Cursor’s public prices](https://cursor.com/docs/models-and-pricing) for Cursor and [OpenAI API prices](https://developers.openai.com/api/docs/pricing) for Codex. These are usage estimates, not subscription bills. Auto and models missing from the price list are shown as unpriced
 - Remote control: scan a QR code on the LAN, or open the same page from the public internet through an SSH reverse tunnel
@@ -113,6 +114,16 @@ Package targets: Windows NSIS, macOS DMG, and Linux AppImage.
 Press `F12` to open DevTools. Links that leave the app open in the system browser.
 
 ## Usage
+
+### Interface language
+
+Open **Settings → Appearance and history → Language** (中文：**设置 → 外观与历史 → 语言**) and choose **System**, **简体中文**, or **English**. The default is System: Chinese desktop OS locales use Simplified Chinese, and other locales use English. The preference is saved in `state.json`; desktop and remote pages share it, including the desktop OS language when System is selected. Changing the language updates the interface without restarting the app or an agent session.
+
+Navigation, settings, dialogs, tool summaries, usage explanations, dates, relative times, and application notifications use the selected language. New application notices and automatic conversation titles keep their source identifiers so they can also change language later. User names and messages, model replies, CLI output, and older saved text without these identifiers retain their original wording.
+
+Translations live in `src/shared/locales/`. Chinese source text is the fallback, with English translations split into core, shell, settings, and message catalogs. Use `useT()` from the renderer's `lib/i18n.ts` inside components and `t()` from `@shared/i18n` elsewhere; translate static menu sources when rendering them. Use named placeholders such as `{count}` for dynamic values. Tests cover catalog placeholders, language fallback and persistence, and localized rendering while preserving conversation content.
+
+### Working with projects
 
 1. Add a project folder. The agent works in that directory, or, for a new Cursor conversation, in that conversation’s own worktree. Removing a project deletes it from this app only. Files on disk stay.
 2. On the home screen, pick the project, type a task or use one of the example prompts, choose a model and mode, and send. The three most recent conversations in that project are listed under the composer.

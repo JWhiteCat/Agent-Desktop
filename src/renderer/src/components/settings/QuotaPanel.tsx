@@ -1,10 +1,13 @@
 import { useEffect, useState } from 'react'
-import type { ProviderQuota, QuotaReport, QuotaWindow, WindowUsage } from '@shared/quota'
+import { getLocale } from '@shared/i18n'
+import { displayQuotaText, type ProviderQuota, type QuotaReport, type QuotaWindow, type WindowUsage } from '@shared/quota'
+import { useT } from '../../lib/i18n'
 import { compactNumber, formatUsd, resetStamp, resetsIn } from '../../lib/format'
 import { errorText } from '../../store'
 import { HoverTip } from '../HoverTip'
 
 export function QuotaPanel() {
+  const t = useT()
   const [report, setReport] = useState<QuotaReport | null>(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
@@ -29,19 +32,19 @@ export function QuotaPanel() {
     return () => {
       cancel = true
     }
-  }, [reload])
+  }, [reload, t])
 
   return (
     <>
       <div className="quota-head">
-        <h4>额度</h4>
+        <h4>{t('额度')}</h4>
         <button type="button" className="usage-period" disabled={loading} onClick={() => setReload((n) => n + 1)}>
-          刷新
+          {t('刷新')}
         </button>
       </div>
       {error ? <div className="notice error">{error}</div> : null}
       {!report && loading ? (
-        <div className="muted small">正在读取额度…</div>
+        <div className="muted small">{t('正在读取额度…')}</div>
       ) : report ? (
         <div className="quota-grid">
           <QuotaCard title="Cursor" quota={report.cursor} />
@@ -53,6 +56,7 @@ export function QuotaPanel() {
 }
 
 function QuotaCard({ title, quota }: { title: string; quota: ProviderQuota }) {
+  const t = useT()
   const plan = planCaption(quota.plan)
   return (
     <div className="quota-card">
@@ -61,7 +65,7 @@ function QuotaCard({ title, quota }: { title: string; quota: ProviderQuota }) {
         {plan ? <span className="muted">{plan}</span> : null}
       </div>
       {quota.windows.length === 0 ? (
-        <div className="muted small">{quota.note || '没有额度数据'}</div>
+        <div className="muted small">{quota.note ? displayQuotaText(quota.note) : t('没有额度数据')}</div>
       ) : (
         quota.windows.map((row) => <QuotaRow key={row.id} row={row} />)
       )}
@@ -70,17 +74,18 @@ function QuotaCard({ title, quota }: { title: string; quota: ProviderQuota }) {
 }
 
 function QuotaRow({ row }: { row: QuotaWindow }) {
-  const name = row.detail ? `${row.label} · ${row.detail}` : row.label
+  const t = useT()
+  const name = row.detail ? `${displayQuotaText(row.label)} · ${displayQuotaText(row.detail)}` : displayQuotaText(row.label)
   const used = row.usedPercent
-  const reset = row.resetsAt != null ? `下次重置 ${resetStamp(row.resetsAt)}（${resetsIn(row.resetsAt)}）` : ''
+  const reset = row.resetsAt != null ? t('下次重置 {date}（{relative}）', { date: resetStamp(row.resetsAt), relative: resetsIn(row.resetsAt) }) : ''
   return (
     <div className="quota-row">
       <div className="quota-row-top">
         <span>{name}</span>
         <span className="muted">
-          {used != null ? `已用 ${formatPercent(used)} · 剩余 ${formatPercent(Math.max(0, 100 - used))}` : ''}
+          {used != null ? t('已用 {used} · 剩余 {remaining}', { used: formatPercent(used), remaining: formatPercent(Math.max(0, 100 - used)) }) : ''}
           {used != null && row.amount ? ' · ' : ''}
-          {row.amount ?? ''}
+          {row.amount ? displayQuotaText(row.amount) : ''}
         </span>
       </div>
       {used != null ? (
@@ -95,11 +100,12 @@ function QuotaRow({ row }: { row: QuotaWindow }) {
 }
 
 function WindowUsageLine({ usage, hidePrice }: { usage: WindowUsage; hidePrice?: boolean }) {
-  const price = hidePrice ? '' : usage.costUsd == null ? '未定价' : `总价 ${formatUsd(usage.costUsd)}`
+  const t = useT()
+  const price = hidePrice ? '' : usage.costUsd == null ? t('未定价') : t('总价 {price}', { price: formatUsd(usage.costUsd) })
   if (!usage.tokensKnown) return price ? <div className="muted small">{price}</div> : null
   return (
     <div className="muted small">
-      输入 <TokenCount n={usage.inputTokens} /> · 输出 <TokenCount n={usage.outputTokens} /> · 缓存读 <TokenCount n={usage.cacheReadTokens} /> · 缓存写{' '}
+      {t('输入')} <TokenCount n={usage.inputTokens} /> · {t('输出')} <TokenCount n={usage.outputTokens} /> · {t('缓存读')} <TokenCount n={usage.cacheReadTokens} /> · {t('缓存写')}{' '}
       <TokenCount n={usage.cacheWriteTokens} />
       {price ? ` · ${price}` : ''}
     </div>
@@ -107,7 +113,8 @@ function WindowUsageLine({ usage, hidePrice }: { usage: WindowUsage; hidePrice?:
 }
 
 function TokenCount({ n }: { n: number }) {
-  return <HoverTip text={n.toLocaleString('zh-CN')}>{compactNumber(n)}</HoverTip>
+  useT()
+  return <HoverTip text={n.toLocaleString(getLocale())}>{compactNumber(n)}</HoverTip>
 }
 
 function planCaption(plan?: string): string {

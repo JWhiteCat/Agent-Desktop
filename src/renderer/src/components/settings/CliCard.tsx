@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { CliInfo, CliProvider } from '@shared/types'
+import { useT } from '../../lib/i18n'
 import { errorText, loadModels, toast } from '../../store'
 import { IconRefresh, Spinner } from '../icons'
 import { Field } from './Field'
@@ -29,6 +30,7 @@ export function CliCard({
   onPath: (value: string) => void | Promise<void>
   onKey: (value: string) => void | Promise<void>
 }) {
+  const t = useT()
   const [info, setInfo] = useState<CliInfo | null>(null)
   const [checking, setChecking] = useState(false)
   const [loggingIn, setLoggingIn] = useState(false)
@@ -64,19 +66,19 @@ export function CliCard({
 
   useEffect(() => {
     void check()
-  }, [provider])
+  }, [provider, t])
 
   return (
     <>
       <div className="cli-card">
         {checking && !info ? (
           <div className="row-gap">
-            <Spinner /> <span className="muted">正在检测…</span>
+            <Spinner /> <span className="muted">{t('正在检测…')}</span>
           </div>
         ) : info?.found ? (
           <>
             <div className="row-gap">
-              <span className="ok-dot" /> <strong>{info.bundled ? (provider === 'claude' ? '使用内置 Claude' : '使用内置 Codex') : '已找到'}</strong>{' '}
+              <span className="ok-dot" /> <strong>{info.bundled ? (provider === 'claude' ? t('使用内置 Claude') : t('使用内置 Codex')) : t('已找到')}</strong>{' '}
               <span className="muted small">{info.version}</span>
             </div>
             <div className="muted small mono break">{info.path}</div>
@@ -92,7 +94,7 @@ export function CliCard({
         )}
         <div className="row-gap wrap">
           <button className="btn" onClick={() => void check()} disabled={checking || updating || saving}>
-            <IconRefresh size={13} className={checking ? 'spin' : ''} /> 重新检测
+            <IconRefresh size={13} className={checking ? 'spin' : ''} /> {t('重新检测')}
           </button>
           <button
             className="btn"
@@ -101,7 +103,7 @@ export function CliCard({
               setLoggingIn(true)
               try {
                 const out = await window.api.login(provider)
-                toast(out.split('\n').pop() || '登录流程已结束')
+                toast(out.split('\n').pop() || t('登录流程已结束'))
                 void check()
               } catch (err) {
                 toast(errorText(err), 'error')
@@ -110,19 +112,19 @@ export function CliCard({
               }
             }}
           >
-            {loggingIn ? <Spinner size={12} /> : null} 登录 / 重新登录
+            {loggingIn ? <Spinner size={12} /> : null} {t('登录 / 重新登录')}
           </button>
           <button
             className="btn"
             disabled={!info?.found || info.bundled || checking || loggingIn || updating || saving || pathDraft !== pathValue}
-            title={info?.bundled ? '内置 CLI 随应用更新；安装独立 CLI 后可在这里更新' : '更新此 CLI'}
+            title={info?.bundled ? t('内置 CLI 随应用更新；安装独立 CLI 后可在这里更新') : t('更新此 CLI')}
             onClick={async () => {
               setUpdating(true)
               setUpdateResult(null)
               try {
                 const out = await window.api.updateCli(provider)
-                setUpdateResult({ text: out || 'CLI 更新完成', error: false })
-                toast('CLI 更新完成')
+                setUpdateResult({ text: out || t('CLI 更新完成'), error: false })
+                toast(t('CLI 更新完成'))
                 void loadModels(true, provider)
               } catch (err) {
                 const text = errorText(err)
@@ -134,10 +136,10 @@ export function CliCard({
               }
             }}
           >
-            {updating ? <Spinner size={12} /> : null} {updating ? '更新中…' : '更新'}
+            {updating ? <Spinner size={12} /> : null} {updating ? t('更新中…') : t('更新')}
           </button>
         </div>
-        {info?.bundled && <div className="muted small">内置 CLI 随应用更新；安装独立 CLI 后可在这里更新。</div>}
+        {info?.bundled && <div className="muted small">{t('内置 CLI 随应用更新；安装独立 CLI 后可在这里更新。')}</div>}
         {updateResult && <pre className="cli-status" role={updateResult.error ? 'alert' : 'status'}>{updateResult.text}</pre>}
       </div>
       <Field label="API Key" desc={keyDesc}>
@@ -157,7 +159,7 @@ export function CliCard({
           }}
         />
       </Field>
-      <Field label="CLI 路径" desc={pathDesc}>
+      <Field label={t('CLI 路径')} desc={pathDesc}>
         <input
           className="input"
           disabled={updating || saving}

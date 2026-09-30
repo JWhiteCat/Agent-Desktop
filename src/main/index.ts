@@ -1,4 +1,5 @@
 import { app, BrowserWindow, ipcMain, Menu, nativeTheme } from 'electron'
+import { setLanguage } from '@shared/i18n'
 import type { AgentEvent, AppState, CliProvider, ModelInfo, Settings } from '@shared/types'
 import { createIpcHandlers } from './ipc'
 import { notifyRunFinished } from './notify'
@@ -23,6 +24,7 @@ const isMac = process.platform === 'darwin'
 
 function snapshot(): AppState {
   return {
+    systemLocale: app.getLocale(),
     projects: store.projects,
     threads: store.threads,
     settings: store.settings,
@@ -49,6 +51,7 @@ if (isWin) app.setAppUserModelId(app.isPackaged ? 'dev.agentdesktop.app' : proce
 
 app.whenReady().then(() => {
   store = new Store()
+  setLanguage(store.settings.language, app.getLocale())
   try {
     syncAllManagedSkills(store.settings.skills)
   } catch (err) {

@@ -18,12 +18,13 @@ export function scanCodexSessions(importedChatIds: Set<string>): CliSession[] {
     const head = readHead(file, 256_000)
     const meta = sessionMeta(head)
     if (!meta?.id || !meta.cwd) continue
-    const title = firstUserText(head) || UNTITLED
+    const title = firstUserText(head)
     const stat = fs.statSync(file)
     sessions.push({
       chatId: meta.id,
       cli: 'codex',
-      title: clipTitle(title),
+      title: clipTitle(title || UNTITLED),
+      ...(!title ? { titleKind: 'untitled' as const } : {}),
       cwd: meta.cwd,
       createdAt: meta.createdAt || Math.floor(stat.birthtimeMs || stat.mtimeMs),
       updatedAt: Math.floor(stat.mtimeMs),

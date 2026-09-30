@@ -1,4 +1,5 @@
 import type { ToolItem } from '@shared/types'
+import { t } from '@shared/i18n'
 import { unifiedDiff } from '@shared/unified-diff'
 import { basename } from './format'
 
@@ -45,7 +46,7 @@ export function summarizeTool(item: ToolItem): ToolSummary {
 
   if (name === 'read' || name === 'readfile') {
     const range = s.readRange ? `L${s.readRange.startLine}-${s.readRange.endLine}` : undefined
-    return { kind: 'read', verb: running ? '正在读取' : '已读取', target: path && basename(path), meta: range }
+    return { kind: 'read', verb: running ? t('正在读取') : t('已读取'), target: path && basename(path), meta: range }
   }
   if (['edit', 'write', 'searchreplace', 'strreplace', 'multiedit', 'applypatch'].includes(name)) {
     const diff = typeof s.diffString === 'string' ? s.diffString : ''
@@ -54,7 +55,7 @@ export function summarizeTool(item: ToolItem): ToolSummary {
       (!diff && typeof a.contents === 'string' && typeof a.old_string !== 'string' && typeof a.oldString !== 'string')
     return {
       kind: 'edit',
-      verb: running ? '正在编辑' : created ? '已创建' : '已编辑',
+      verb: running ? t('正在编辑') : created ? t('已创建') : t('已编辑'),
       target: path && basename(path),
       added: s.linesAdded,
       removed: s.linesRemoved
@@ -64,45 +65,45 @@ export function summarizeTool(item: ToolItem): ToolSummary {
     const exit = s.exitCode
     return {
       kind: 'shell',
-      verb: running ? '正在运行' : '已运行',
+      verb: running ? t('正在运行') : t('已运行'),
       target: pick(a, 'command', 'cmd'),
-      meta: exit !== undefined && exit !== 0 ? `退出码 ${exit}` : undefined
+      meta: exit !== undefined && exit !== 0 ? t('退出码 {code}', { code: exit }) : undefined
     }
   }
   if (name === 'glob') {
-    return { kind: 'search', verb: running ? '正在查找文件' : '已查找文件', target: pick(a, 'globPattern', 'glob_pattern', 'pattern'), meta: s.totalFiles !== undefined ? `${s.totalFiles} 个结果` : undefined }
+    return { kind: 'search', verb: running ? t('正在查找文件') : t('已查找文件'), target: pick(a, 'globPattern', 'glob_pattern', 'pattern'), meta: s.totalFiles !== undefined ? t('{count} 个结果', { count: s.totalFiles }) : undefined }
   }
   if (['grep', 'rg', 'search', 'codebasesearch', 'semanticsearch'].includes(name)) {
-    return { kind: 'search', verb: running ? '正在搜索' : '已搜索', target: pick(a, 'pattern', 'query', 'regex') }
+    return { kind: 'search', verb: running ? t('正在搜索') : t('已搜索'), target: pick(a, 'pattern', 'query', 'regex') }
   }
   if (name === 'ls' || name === 'listdir') {
-    return { kind: 'list', verb: running ? '正在列出' : '已列出', target: path && basename(path) }
+    return { kind: 'list', verb: running ? t('正在列出') : t('已列出'), target: path && basename(path) }
   }
   if (name === 'delete') {
-    return { kind: 'delete', verb: running ? '正在删除' : '已删除', target: path && basename(path) }
+    return { kind: 'delete', verb: running ? t('正在删除') : t('已删除'), target: path && basename(path) }
   }
   if (name.includes('todo')) {
     const todos = pick(a, 'todos', 'items')
-    return { kind: 'todo', verb: '更新待办', meta: Array.isArray(todos) ? `${todos.length} 项` : undefined }
+    return { kind: 'todo', verb: t('更新待办'), meta: Array.isArray(todos) ? t('{count} 项', { count: todos.length }) : undefined }
   }
   if (name.includes('web') || name.includes('fetch')) {
-    return { kind: 'web', verb: name.includes('fetch') ? '获取网页' : '搜索网页', target: pick(a, 'url', 'query', 'searchTerm', 'search_term') }
+    return { kind: 'web', verb: name.includes('fetch') ? t('获取网页') : t('搜索网页'), target: pick(a, 'url', 'query', 'searchTerm', 'search_term') }
   }
   if (name.includes('mcp') || name === 'calldynamictool' || name === 'getdynamictools' || name.startsWith('plugin')) {
     const target = [pick(a, 'providerIdentifier', 'server', 'serverName', 'namespace'), pick(a, 'toolName', 'name')].filter(Boolean).join(' · ')
-    return { kind: 'mcp', verb: name === 'getdynamictools' ? '查询工具' : '调用工具', target: target || item.tool }
+    return { kind: 'mcp', verb: name === 'getdynamictools' ? t('查询工具') : t('调用工具'), target: target || item.tool }
   }
   if (name === 'await' || name === 'awaitshell') {
-    return { kind: 'shell', verb: running ? '等待命令' : '已等待命令', target: pick(a, 'shell_id', 'shellId', 'task_id') }
+    return { kind: 'shell', verb: running ? t('等待命令') : t('已等待命令'), target: pick(a, 'shell_id', 'shellId', 'task_id') }
   }
   if (name === 'askquestion') {
-    return { kind: 'other', verb: '提问', target: pick(a, 'title') ?? (Array.isArray(a.questions) ? a.questions[0]?.prompt : undefined) }
+    return { kind: 'other', verb: t('提问'), target: pick(a, 'title') ?? (Array.isArray(a.questions) ? a.questions[0]?.prompt : undefined) }
   }
   if (name === 'createplan') {
-    return { kind: 'todo', verb: '制定计划', target: pick(a, 'name', 'overview') }
+    return { kind: 'todo', verb: t('制定计划'), target: pick(a, 'name', 'overview') }
   }
   if (name.includes('task') || name.includes('agent')) {
-    return { kind: 'task', verb: running ? '子代理运行中' : '子代理完成', target: pick(a, 'description', 'prompt') }
+    return { kind: 'task', verb: running ? t('子代理运行中') : t('子代理完成'), target: pick(a, 'description', 'prompt') }
   }
   return { kind: 'other', verb: item.tool, target: path ? basename(path) : undefined }
 }

@@ -10,6 +10,7 @@ export function usageHandlers(deps: IpcDeps): Record<string, Handler> {
         id: t.id,
         cli: t.cli,
         title: t.title,
+        titleKind: t.titleKind,
         project: deps.store.project(t.projectId)?.name,
         model: t.model,
         updatedAt: t.updatedAt,

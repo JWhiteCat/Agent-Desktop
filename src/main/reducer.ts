@@ -1,3 +1,4 @@
+import { t as translate } from '@shared/i18n'
 import type { AssistantItem, Item, ResultItem, ThinkingItem, ToolItem } from '@shared/types'
 import { normalizeTurnUsage } from '@shared/turn-usage'
 import { unifiedDiff } from '@shared/unified-diff'
@@ -16,7 +17,7 @@ const DROP_KEYS = new Set(['afterFullFileContent', 'beforeFullFileContent', 'par
 /** Tool results can embed whole files; keep persisted history small. */
 export function compact(value: unknown, depth = 0): unknown {
   if (typeof value === 'string') {
-    return value.length > MAX_STRING ? `${value.slice(0, MAX_STRING)}\n… (已截断 ${value.length - MAX_STRING} 字符)` : value
+    return value.length > MAX_STRING ? `${value.slice(0, MAX_STRING)}\n… (${translate('已截断 {count} 字符', { count: value.length - MAX_STRING })})` : value
   }
   if (Array.isArray(value)) {
     const arr = value.slice(0, 500).map((v) => compact(v, depth + 1))

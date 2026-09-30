@@ -1,3 +1,4 @@
+import { t as translate } from '@shared/i18n'
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
@@ -62,7 +63,7 @@ export function resolveClaude(customPath: string): ResolvedClaude | undefined {
   }
   const user = findClaudeOnPath()
   if (user) return { claudePath: user, bundled: false, display: user, acpEntry }
-  return { claudePath: undefined, bundled: true, display: '内置 Claude', acpEntry }
+  return { claudePath: undefined, bundled: true, display: translate('内置 Claude'), acpEntry }
 }
 
 export function spawnClaudeAcp(claude: ResolvedClaude, cwd: string, apiKey: string): ChildProcess {
@@ -108,7 +109,7 @@ export function claudeLogin(claude: ResolvedClaude): Promise<string> {
     })
     child.on('close', () => {
       clearTimeout(timer)
-      resolve(out.trim() || '登录流程已结束')
+      resolve(out.trim() || translate('登录流程已结束'))
     })
   })
 }
@@ -121,7 +122,7 @@ export interface ClaudeModelList {
 /** Reads the model and effort selects from a short-lived ACP session, then deletes that session file. */
 export async function listClaudeModels(customPath: string, claudeApiKey: string): Promise<ClaudeModelList> {
   const claude = resolveClaude(customPath)
-  if (!claude) throw new Error('未找到 Claude Code')
+  if (!claude) throw new Error(translate('未找到 Claude Code'))
   const apiKey = resolveClaudeApiKey(claudeApiKey)
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-desktop-claude-'))
   const child = spawnClaudeAcp(claude, cwd, apiKey)
@@ -132,7 +133,7 @@ export async function listClaudeModels(customPath: string, claudeApiKey: string)
     return await new Promise<ClaudeModelList>((resolve, reject) => {
       const timer = setTimeout(() => {
         killTree(child)
-        reject(new Error('Claude 模型列表超时'))
+        reject(new Error(translate('Claude 模型列表超时')))
       }, 60_000)
       acp.start({
         onNotification: () => undefined,
@@ -155,7 +156,7 @@ export async function listClaudeModels(customPath: string, claudeApiKey: string)
           sessionId = String(created?.sessionId ?? '')
           clearTimeout(timer)
           const listed = modelsFromClaudeSession(created)
-          if (!listed.models.length) throw new Error('Claude 没有返回模型')
+          if (!listed.models.length) throw new Error(translate('Claude 没有返回模型'))
           resolve(listed)
         } catch (err) {
           clearTimeout(timer)

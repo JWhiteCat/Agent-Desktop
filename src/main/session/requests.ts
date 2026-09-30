@@ -1,3 +1,4 @@
+import { t as translate } from '@shared/i18n'
 import type { AgentMode, CliProvider, Item, QuestionAnswer, QuestionItem } from '@shared/types'
 import { normalizeQuestions } from '@shared/questions'
 import { MethodNotFound, permissionResult } from '../acp'
@@ -24,7 +25,7 @@ export interface InteractionRun {
 
 export function answerPendingQuestion(run: InteractionRun | undefined, questionId: string, answers: QuestionAnswer[] | null): void {
   const pending = run?.pendingQuestion
-  if (!run || !pending || pending.itemId !== questionId) throw new Error('这个问题已经不能回答了')
+  if (!run || !pending || pending.itemId !== questionId) throw new Error(translate('这个问题已经不能回答了'))
   run.pendingQuestion = undefined
   pending.resolve(answers ?? 'skip')
 }
@@ -70,7 +71,7 @@ async function answerPermission(run: InteractionRun, params: any, queue: QueueIt
     questions: [
       {
         id: 'q',
-        prompt: String(params?.toolCall?.title || params?.toolCall?.content?.[0]?.content?.text || '请选择'),
+        prompt: String(params?.toolCall?.title || params?.toolCall?.content?.[0]?.content?.text || translate('请选择')),
         allowMultiple: false,
         options: options
           .filter((o) => o.optionId && o.optionId !== '__ask_question_skip__')

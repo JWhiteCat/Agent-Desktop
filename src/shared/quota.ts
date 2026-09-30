@@ -1,3 +1,12 @@
+import { t } from './i18n'
+
+/** Translate presentation text without changing the stable quota labels used in snapshots. */
+export function displayQuotaText(text: string): string {
+  const duration = /^(\d+)(小时|天)$/.exec(text)
+  if (duration) return t(duration[2] === '小时' ? '{count}小时' : '{count}天', { count: duration[1] })
+  return t(text)
+}
+
 export interface QuotaWindow {
   id: string
   /** Period or row name, such as 5小时, 每周, 每月, or 积分. */

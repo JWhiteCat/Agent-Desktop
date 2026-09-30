@@ -1,3 +1,4 @@
+import { t as translate } from '@shared/i18n'
 import type { DesktopApi } from '@shared/api'
 
 const TOKEN_KEY = 'agent-desktop:remoteToken'
@@ -72,7 +73,7 @@ export function createWebApi(): DesktopApi {
     isRemote: true,
     getState: () => call('state:get'),
     pickProject: async () => {
-      const dir = window.prompt('输入电脑上的项目文件夹路径')?.trim()
+      const dir = window.prompt(translate('输入电脑上的项目文件夹路径'))?.trim()
       return dir ? call('project:add', dir) : null
     },
     addProject: (p) => call('project:add', p),
@@ -105,8 +106,8 @@ export function createWebApi(): DesktopApi {
     openExternal: async (url) => {
       window.open(url, '_blank', 'noopener')
     },
-    remoteInfo: () => Promise.reject(new Error('仅桌面端可用')),
-    resetRemoteToken: () => Promise.reject(new Error('仅桌面端可用')),
+    remoteInfo: () => Promise.reject(new Error(translate('仅桌面端可用'))),
+    resetRemoteToken: () => Promise.reject(new Error(translate('仅桌面端可用'))),
     onEvent: (cb) => subscribe('agent:event', cb),
     onState: (cb) => subscribe('state:changed', cb),
     onFocusThread: (cb) => subscribe('thread:focus', cb)

@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process'
 import fs from 'node:fs'
+import { t as translate } from '@shared/i18n'
 import path from 'node:path'
 import type { GitDiff } from '@shared/types'
 
@@ -22,7 +23,7 @@ function untrackedDiff(root: string, rel: string): string {
     const file = path.join(root, rel)
     const stat = fs.statSync(file)
     if (!stat.isFile()) return ''
-    if (stat.size > MAX_UNTRACKED_BYTES) return `${header}@@ 文件过大（${Math.round(stat.size / 1024)} KB），未显示 @@\n`
+    if (stat.size > MAX_UNTRACKED_BYTES) return `${header}@@ ${translate('文件过大（{size} KB），未显示', { size: Math.round(stat.size / 1024) })} @@\n`
     const buf = fs.readFileSync(file)
     if (buf.includes(0)) return `diff --git a/${rel} b/${rel}\nBinary files /dev/null and b/${rel} differ\n`
     const lines = buf.toString('utf8').replace(/\r\n/g, '\n').replace(/\n$/, '').split('\n')
@@ -60,7 +61,7 @@ export async function gitDiff(cwd: string): Promise<GitDiff> {
     .map((l) => l.slice(3).trim().replace(/^"|"$/g, ''))
   const extra = untracked.slice(0, MAX_UNTRACKED_FILES).map((rel) => untrackedDiff(root, rel)).join('')
   let text = diff.out + extra
-  if (text.length > 2_000_000) text = `${text.slice(0, 2_000_000)}\n… (diff 过大，已截断)`
+  if (text.length > 2_000_000) text = `${text.slice(0, 2_000_000)}\n… (${translate('diff 过大，已截断')})`
   return {
     isRepo: true,
     branch: branch.ok ? branch.out.trim() : undefined,

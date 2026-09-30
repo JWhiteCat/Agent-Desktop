@@ -6,6 +6,7 @@
  */
 
 import { findCodexPrice } from './codex-model-prices'
+import { t } from './i18n'
 import type { CliProvider } from './types'
 
 export interface TokenCounts {
@@ -215,7 +216,7 @@ function roundUsd(n: number): number {
 /** Published list price for one turn. `auto` and unknown models have no price. */
 export function quoteModel(modelId: string | undefined, usage: TokenUsage, cli: CliProvider = 'cursor'): QuotedUsage {
   const parsed = parseModelId(modelId ?? '')
-  const fallback = !parsed.name ? '未知模型' : parsed.name === 'auto' ? 'Auto' : (modelId ?? '').trim() || '未知模型'
+  const fallback = !parsed.name ? t('未知模型') : parsed.name === 'auto' ? 'Auto' : (modelId ?? '').trim() || t('未知模型')
   if (!parsed.name || parsed.name === 'auto') {
     return { label: fallback, costUsd: null, fast: parsed.fast, longContext: false }
   }
@@ -242,6 +243,6 @@ export function quoteModel(modelId: string | undefined, usage: TokenUsage, cli: 
   }
   const bits = [entry.label]
   if (parsed.fast) bits.push('Fast')
-  if (long) bits.push('长上下文')
+  if (long) bits.push(t('长上下文'))
   return { label: bits.join(' '), costUsd: priced ? roundUsd(cost) : null, fast: parsed.fast, longContext: long }
 }

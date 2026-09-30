@@ -1,8 +1,10 @@
 import { useMemo } from 'react'
+import { t } from '@shared/i18n'
 import { quoteModel } from '@shared/model-prices'
 import type { CliProvider, ModelInfo, ResultItem } from '@shared/types'
 import { compactNumber, duration, formatUsd } from '../../lib/format'
 import { groupModels, modelCaption } from '../../lib/models'
+import { useT } from '../../lib/i18n'
 import { HoverTip } from '../HoverTip'
 import { CopyButton } from './primitives'
 
@@ -15,6 +17,7 @@ export interface ResultFooterProps {
 
 /** The model catalog is supplied by the caller so rendering is independent of the store. */
 export function ResultFooter({ item, text, fallbackModel, cli = 'cursor', models }: ResultFooterProps & { models: ModelInfo[] }) {
+  const t = useT()
   const provider = item.cli ?? cli
   const groups = useMemo(() => groupModels(models), [models])
   const u = item.usage
@@ -22,7 +25,7 @@ export function ResultFooter({ item, text, fallbackModel, cli = 'cursor', models
   const modelId = item.model || fallbackModel || ''
   const caption = modelId ? modelCaption(groups, modelId) : ''
   const quote = modelId && u ? quoteModel(modelId, u, provider) : undefined
-  const priceSource = provider === 'codex' ? 'OpenAI API 公开标价' : 'Cursor 公开标价'
+  const priceSource = provider === 'codex' ? t('OpenAI API 公开标价') : t('Cursor 公开标价')
   const sessionUsage = provider === 'codex' ? sessionConsumption(item) : undefined
   const turnEstimate = provider === 'codex' && item.weeklyQuotaEstimate !== undefined ? weeklyEstimate(item) : undefined
   return (
@@ -30,13 +33,13 @@ export function ResultFooter({ item, text, fallbackModel, cli = 'cursor', models
       {text && <CopyButton text={text} />}
       {item.durationMs !== undefined && <span>{duration(item.durationMs)}</span>}
       {tokens > 0 && (
-        <HoverTip text={`输入 ${u?.inputTokens ?? 0} · 输出 ${u?.outputTokens ?? 0} · 缓存读 ${u?.cacheReadTokens ?? 0} · 缓存写 ${u?.cacheWriteTokens ?? 0}`}>
+        <HoverTip text={t('输入 {input} · 输出 {output} · 缓存读 {read} · 缓存写 {write}', { input: u?.inputTokens ?? 0, output: u?.outputTokens ?? 0, read: u?.cacheReadTokens ?? 0, write: u?.cacheWriteTokens ?? 0 })}>
           {compactNumber(tokens)} tokens
         </HoverTip>
       )}
       {caption && <HoverTip text={caption === modelId ? undefined : modelId}>{caption}</HoverTip>}
       {quote && (
-        <HoverTip text={quote.costUsd == null ? 'Auto 和价目表没有的模型未计入费用' : `估算 $${quote.costUsd}（${priceSource}）`}>
+        <HoverTip text={quote.costUsd == null ? t('Auto 和价目表没有的模型未计入费用') : t('估算 ${cost}（{source}）', { cost: quote.costUsd, source: priceSource })}>
           {formatUsd(quote.costUsd)}
         </HoverTip>
       )}
@@ -51,27 +54,32 @@ function weeklyEstimate(item: ResultItem): { text: string; title: string } {
   const amount = estimate?.usedPercent
   const start = estimate?.start?.weekly?.usedPercent
   const end = estimate?.end?.weekly?.usedPercent
-  const reading = (value: number | undefined) => validQuotaAmount(value) ? `${quotaAmount(value)}%` : '暂无数据'
+  const reading = (value: number | undefined) => validQuotaAmount(value) ? `${quotaAmount(value)}%` : t('暂无数据')
   return {
-    text: `本轮预估消耗 ${validQuotaAmount(amount) ? `周额度 ${quotaAmount(amount)}%` : '暂无数据'}`,
-    title: `周额度已用：开始 ${reading(start)}，结束 ${reading(end)}。计算：结束 − 开始。${validQuotaAmount(amount) ? '' : '缺少有效读数或无法确认同一周额度周期，暂不能估算。'}账号其他会话、其他客户端的使用和统计延迟可能影响估算。0% 表示读数未变化，不代表本轮没有消耗。`
+    text: t('本轮预估消耗 {amount}', { amount: validQuotaAmount(amount) ? t('周额度 {amount}%', { amount: quotaAmount(amount) }) : t('暂无数据') }),
+    title: t('周额度已用：开始 {start}，结束 {end}。计算：结束 − 开始。{unavailable}账号其他会话、其他客户端的使用和统计延迟可能影响估算。0% 表示读数未变化，不代表本轮没有消耗。', {
+      start: reading(start), end: reading(end),
+      unavailable: validQuotaAmount(amount) ? '' : t('缺少有效读数或无法确认同一周额度周期，暂不能估算。')
+    })
   }
 }
 
 function sessionConsumption(item: ResultItem): { text: string; title: string } {
   const usage = item.codexSessionUsage
-  const sampled = usage?.dataAsOf ? ` 服务统计时间：${usage.dataAsOf}` : ''
+  const sampled = usage?.dataAsOf ? t(' 服务统计时间：{time}', { time: usage.dataAsOf }) : ''
   if (usage?.status === 'available' || usage?.status === 'partial') {
     const amounts: string[] = []
-    if (validQuotaAmount(usage.weekly)) amounts.push(`周额度 ${quotaAmount(usage.weekly)}%`)
-    if (validQuotaAmount(usage.fiveHour)) amounts.push(`5小时额度 ${quotaAmount(usage.fiveHour)}%`)
+    if (validQuotaAmount(usage.weekly)) amounts.push(t('周额度 {amount}%', { amount: quotaAmount(usage.weekly) }))
+    if (validQuotaAmount(usage.fiveHour)) amounts.push(t('5小时额度 {amount}%', { amount: quotaAmount(usage.fiveHour) }))
     const credits = balanceCreditsText(usage.balanceCredits)
     if (credits !== undefined && (credits !== '0' || !amounts.length)) amounts.push(`${credits} credits`)
     if (amounts.length) {
       const partial = usage.status === 'partial'
       return {
-        text: `本次会话消耗 ${amounts.join(' · ')}${partial ? '（统计中）' : ''}`,
-        title: `Codex 按当前会话单独统计在当前额度周期内的累计消耗，不受其他会话影响。${partial ? '统计仍在更新，当前数值尚未完整。' : '服务端统计可能延迟。'}${sampled}`
+        text: t('本次会话消耗 {amount}{partial}', { amount: amounts.join(' · '), partial: partial ? t('（统计中）') : '' }),
+        title: t('Codex 按当前会话单独统计在当前额度周期内的累计消耗，不受其他会话影响。{status}{sampled}', {
+          status: partial ? t('统计仍在更新，当前数值尚未完整。') : t('服务端统计可能延迟。'), sampled
+        })
       }
     }
   }
@@ -79,13 +87,15 @@ function sessionConsumption(item: ResultItem): { text: string; title: string } {
   if (validQuotaAmount(legacy?.credits)) {
     const cost = validQuotaAmount(legacy.costUsd) ? ` / ${formatUsd(legacy.costUsd)}` : ''
     return {
-      text: `本次会话消耗 ${quotaAmount(legacy.credits)} credits${cost}`,
-      title: `Codex 返回的当前会话累计额度消耗估算，单位为 credits，不受其他会话影响。金额仅在 Codex 返回时显示。${sampled}`
+      text: t('本次会话消耗 {amount}{partial}', { amount: `${quotaAmount(legacy.credits)} credits${cost}`, partial: '' }),
+      title: t('Codex 返回的当前会话累计额度消耗估算，单位为 credits，不受其他会话影响。金额仅在 Codex 返回时显示。{sampled}', { sampled })
     }
   }
   return {
-    text: `本次会话消耗 ${usage ? '服务未返回' : '暂无数据'}`,
-    title: `${usage ? 'Codex 尚未返回此会话的可用额度数据，无法确认是统计延迟还是当前会话不受支持。' : '尚未获得当前会话的额度消耗数据。'}已记录的 token 和公开价格估算仍可参考。${sampled}`
+    text: t('本次会话消耗 {amount}{partial}', { amount: usage ? t('服务未返回') : t('暂无数据'), partial: '' }),
+    title: t('{status}已记录的 token 和公开价格估算仍可参考。{sampled}', {
+      status: usage ? t('Codex 尚未返回此会话的可用额度数据，无法确认是统计延迟还是当前会话不受支持。') : t('尚未获得当前会话的额度消耗数据。'), sampled
+    })
   }
 }
 

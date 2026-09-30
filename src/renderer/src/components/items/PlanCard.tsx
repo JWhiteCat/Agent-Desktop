@@ -1,11 +1,13 @@
 import { useContext, useState } from 'react'
 import type { ToolItem } from '@shared/types'
+import { useT } from '../../lib/i18n'
 import { errorOf, planPath, planUriOf } from '../../lib/tools'
 import { IconChevronDown, IconChevronRight, IconFile, IconList, Spinner } from '../icons'
 import { Markdown } from './Markdown'
 import { TurnActionsContext } from './TurnActions'
 
 export function PlanCard({ item }: { item: ToolItem }) {
+  const t = useT()
   const { buildPlan, planId } = useContext(TurnActionsContext)
   const [open, setOpen] = useState(false)
   const [starting, setStarting] = useState(false)
@@ -30,9 +32,9 @@ export function PlanCard({ item }: { item: ToolItem }) {
     <div className={`plan-card ${item.status === 'error' ? 'failed' : ''}`}>
       <div className="plan-head">
         <span className="step-icon">{running ? <Spinner size={12} /> : <IconList size={14} />}</span>
-        <span className="plan-title">{a.name || (running ? '正在制定计划' : '计划')}</span>
+        <span className="plan-title">{a.name || (running ? t('正在制定计划') : t('计划'))}</span>
         {uri && !window.api.isRemote && (
-          <button className="icon-btn tiny" title="打开计划文件" onClick={() => window.api.openPath(planPath(uri))}>
+          <button className="icon-btn tiny" title={t('打开计划文件')} onClick={() => window.api.openPath(planPath(uri))}>
             <IconFile size={13} />
           </button>
         )}
@@ -52,7 +54,7 @@ export function PlanCard({ item }: { item: ToolItem }) {
         <>
           <button className="plan-toggle" onClick={() => setOpen((o) => !o)}>
             {open ? <IconChevronDown size={12} /> : <IconChevronRight size={12} />}
-            <span>{open ? '收起计划' : '查看完整计划'}</span>
+            <span>{open ? t('收起计划') : t('查看完整计划')}</span>
           </button>
           {open && (
             <div className="plan-body">
@@ -61,13 +63,13 @@ export function PlanCard({ item }: { item: ToolItem }) {
           )}
         </>
       )}
-      {item.status === 'error' && <div className="plan-error">{errorOf(item) ?? '计划创建失败'}</div>}
+      {item.status === 'error' && <div className="plan-error">{errorOf(item) ?? t('计划创建失败')}</div>}
       {canBuild && (
         <div className="question-actions">
           <button type="button" className="question-submit" disabled={starting} onClick={build}>
-            {starting ? '正在启动' : '执行计划'}
+            {starting ? t('正在启动') : t('执行计划')}
           </button>
-          <span className="muted small">切换到 Agent 模式按计划实施</span>
+          <span className="muted small">{t('切换到 Agent 模式按计划实施')}</span>
         </div>
       )}
     </div>

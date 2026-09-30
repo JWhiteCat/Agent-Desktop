@@ -1,3 +1,4 @@
+import { t as translate } from '@shared/i18n'
 import { spawn, type ChildProcess } from 'node:child_process'
 import fs from 'node:fs'
 import { createRequire } from 'node:module'
@@ -57,7 +58,7 @@ export function resolveCodex(customPath: string): ResolvedCodex | undefined {
   }
   const user = findCodexOnPath(acpEntry)
   if (user) return { codexPath: user, bundled: false, display: user, acpEntry }
-  return { codexPath: undefined, bundled: true, display: '内置 Codex', acpEntry }
+  return { codexPath: undefined, bundled: true, display: translate('内置 Codex'), acpEntry }
 }
 
 export function spawnCodexAcp(codex: ResolvedCodex, cwd: string, apiKey: string): ChildProcess {
@@ -72,7 +73,7 @@ export function spawnCodexAcp(codex: ResolvedCodex, cwd: string, apiKey: string)
 /** A separate read-only RPC connection using the same executable as normal sessions. */
 export function spawnCodexAppServer(codex: ResolvedCodex): ChildProcess {
   const script = codexBinary(codex)
-  if (!script) throw new Error('未找到 Codex CLI')
+  if (!script) throw new Error(translate('未找到 Codex CLI'))
   return spawn(codexCommand(script.command), [...script.args, 'app-server'], {
     env: nodeEnv(),
     stdio: ['pipe', 'pipe', 'pipe'],
@@ -98,7 +99,7 @@ export async function codexStatus(codex: ResolvedCodex): Promise<string> {
 /** Opens ChatGPT login. Uses the user binary when present, otherwise the bundled CLI. */
 export function codexLogin(codex: ResolvedCodex): Promise<string> {
   const script = codexBinary(codex)
-  if (!script) return Promise.resolve('未找到 Codex CLI')
+  if (!script) return Promise.resolve(translate('未找到 Codex CLI'))
   return new Promise((resolve) => {
     const child = spawn(codexCommand(script.command), script.args.concat(['login']), {
       env: nodeEnv(),
@@ -116,7 +117,7 @@ export function codexLogin(codex: ResolvedCodex): Promise<string> {
     })
     child.on('close', () => {
       clearTimeout(timer)
-      resolve(out.trim() || '登录流程已结束')
+      resolve(out.trim() || translate('登录流程已结束'))
     })
   })
 }
@@ -129,7 +130,7 @@ export interface CodexModelList {
 /** Reads the model select (and reasoning efforts) from a short-lived ACP session. */
 export async function listCodexModels(customPath: string, apiKey: string): Promise<CodexModelList> {
   const codex = resolveCodex(customPath)
-  if (!codex) throw new Error('未找到 Codex CLI')
+  if (!codex) throw new Error(translate('未找到 Codex CLI'))
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-desktop-codex-'))
   const child = spawnCodexAcp(codex, cwd, apiKey)
   const acp = new AcpConnection(child)
@@ -140,7 +141,7 @@ export async function listCodexModels(customPath: string, apiKey: string): Promi
     return await new Promise<CodexModelList>((resolve, reject) => {
       const timer = setTimeout(() => {
         killTree(child)
-        reject(new Error('Codex 模型列表超时'))
+        reject(new Error(translate('Codex 模型列表超时')))
       }, 60_000)
       acp.start({
         onNotification: () => undefined,
@@ -164,7 +165,7 @@ export async function listCodexModels(customPath: string, apiKey: string): Promi
           sessionId = String(created?.sessionId ?? '')
           clearTimeout(timer)
           const listed = modelsFromSession(created)
-          if (!listed.models.length) throw new Error('Codex 没有返回模型')
+          if (!listed.models.length) throw new Error(translate('Codex 没有返回模型'))
           resolve(listed)
         } catch (err) {
           clearTimeout(timer)

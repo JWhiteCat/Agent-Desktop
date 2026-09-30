@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
 import QRCode from 'qrcode'
 import type { RemoteInfo } from '@shared/types'
+import { useT } from '../../lib/i18n'
 import { errorText, toast, useStore } from '../../store'
 import { Field } from './Field'
 
 export function RemoteSettings() {
+  const t = useT()
   const settings = useStore((s) => s.app.settings)
   const view = useStore((s) => s.view)
   const [info, setInfo] = useState<RemoteInfo | null>(null)
@@ -72,7 +74,7 @@ export function RemoteSettings() {
 
   return (
     <>
-      <Field label="启用远程控制" desc="在局域网内提供网页，手机与电脑连同一 Wi-Fi 后扫码即可操作。持有链接即可完全控制本应用，请勿外传">
+      <Field label={t('启用远程控制')} desc={t('在局域网内提供网页，手机与电脑连同一 Wi-Fi 后扫码即可操作。持有链接即可完全控制本应用，请勿外传')}>
         <input
           type="checkbox"
           className="toggle"
@@ -81,7 +83,7 @@ export function RemoteSettings() {
           onChange={(e) => run(() => window.api.updateSettings({ remoteEnabled: e.target.checked }))}
         />
       </Field>
-      <Field label="端口">
+      <Field label={t('端口')}>
         <input
           className="input"
           inputMode="numeric"
@@ -99,8 +101,8 @@ export function RemoteSettings() {
         />
       </Field>
       <Field
-        label="公网访问"
-        desc="经 SSH 把网页挂到服务器的同一个端口。多台电脑可以同时开着，每台有自己的链接。链接是明文 HTTP，持有者可完全控制本应用"
+        label={t('公网访问')}
+        desc={t('经 SSH 把网页挂到服务器的同一个端口。多台电脑可以同时开着，每台有自己的链接。链接是明文 HTTP，持有者可完全控制本应用')}
       >
         <input
           type="checkbox"
@@ -110,7 +112,7 @@ export function RemoteSettings() {
           onChange={(e) => run(() => window.api.updateSettings({ remotePublicEnabled: e.target.checked }))}
         />
       </Field>
-      <Field label="SSH 用户">
+      <Field label={t('SSH 用户')}>
         <input
           className="input"
           value={pubUser}
@@ -127,7 +129,7 @@ export function RemoteSettings() {
           }}
         />
       </Field>
-      <Field label="服务器地址">
+      <Field label={t('服务器地址')}>
         <input
           className="input"
           value={pubHost}
@@ -145,7 +147,7 @@ export function RemoteSettings() {
           }}
         />
       </Field>
-      <Field label="公网端口">
+      <Field label={t('公网端口')}>
         <input
           className="input"
           inputMode="numeric"
@@ -163,16 +165,16 @@ export function RemoteSettings() {
           }}
         />
       </Field>
-      {info?.error && <div className="remote-error small">{info.error}</div>}
-      {settings.remotePublicEnabled && info?.publicStatus === 'connecting' && <div className="muted small">正在连接公网…</div>}
-      {settings.remotePublicEnabled && info?.publicStatus === 'up' && <div className="muted small">公网已连接</div>}
-      {info?.publicError && <div className="remote-error small">{info.publicError}</div>}
+      {info?.error && <div className="remote-error small">{info.errorMessage ? t(info.errorMessage.source, info.errorMessage.params) : info.error}</div>}
+      {settings.remotePublicEnabled && info?.publicStatus === 'connecting' && <div className="muted small">{t('正在连接公网…')}</div>}
+      {settings.remotePublicEnabled && info?.publicStatus === 'up' && <div className="muted small">{t('公网已连接')}</div>}
+      {info?.publicError && <div className="remote-error small">{info.publicErrorMessage ? t(info.publicErrorMessage.source, info.publicErrorMessage.params) : info.publicError}</div>}
       {settings.remoteEnabled && info?.running && (
         <div className="remote-card">
-          {qr ? <img className="remote-qr" src={qr} alt="远程控制二维码" /> : <div className="remote-qr" />}
+          {qr ? <img className="remote-qr" src={qr} alt={t('远程控制二维码')} /> : <div className="remote-qr" />}
           <div className="remote-detail">
             {info.urls.length === 0 ? (
-              <div className="muted small">未检测到局域网地址，请确认电脑已连接 Wi-Fi 或有线网络</div>
+              <div className="muted small">{t('未检测到局域网地址，请确认电脑已连接 Wi-Fi 或有线网络')}</div>
             ) : (
               <>
                 {info.urls.length > 1 && (
@@ -188,18 +190,18 @@ export function RemoteSettings() {
                   </select>
                 )}
                 <div className="mono small break remote-link">{link}</div>
-                <div className="muted small">扫码后打开的是当前正在查看的{view.kind === 'thread' ? '对话' : '项目'}</div>
+                <div className="muted small">{view.kind === 'thread' ? t('扫码后打开当前正在查看的对话') : t('扫码后打开当前正在查看的项目')}</div>
               </>
             )}
             <div className="row-gap wrap">
-              <button className="btn" disabled={!link} onClick={() => navigator.clipboard.writeText(link).then(() => toast('已复制链接'))}>
-                复制链接
+              <button className="btn" disabled={!link} onClick={() => navigator.clipboard.writeText(link).then(() => toast(t('已复制链接')))}>
+                {t('复制链接')}
               </button>
               <button className="btn" disabled={busy} onClick={() => run(async () => setInfo(await window.api.resetRemoteToken()))}>
-                重置链接
+                {t('重置链接')}
               </button>
             </div>
-            <div className="muted small">重置后旧链接和已连接的手机会立即失效</div>
+            <div className="muted small">{t('重置后旧链接和已连接的手机会立即失效')}</div>
           </div>
         </div>
       )}

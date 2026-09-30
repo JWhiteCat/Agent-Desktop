@@ -1,3 +1,4 @@
+import { t as translate } from '@shared/i18n'
 import type { CliInfo, ModelInfo } from '@shared/types'
 import { mergeModelLists } from '@shared/model-catalog'
 import { parseModels, resolveApiKey, resolveCli, runCliOnce } from './cli'
@@ -69,19 +70,19 @@ export async function claudeCliInfo(claudePath: string, claudeApiKey: string): P
 
 export async function loginCursor(agentPath: string): Promise<string> {
   const cursor = resolveCli(agentPath)
-  if (!cursor) throw new Error('未找到 Cursor CLI')
+  if (!cursor) throw new Error(translate('未找到 Cursor CLI'))
   const res = await runCliOnce(cursor, ['login'], 5 * 60_000, false)
   return (res.stdout + res.stderr).trim()
 }
 
 export async function loginCodex(codexPath: string): Promise<string> {
   const codex = resolveCodex(codexPath)
-  if (!codex) throw new Error('未找到 Codex CLI')
+  if (!codex) throw new Error(translate('未找到 Codex CLI'))
   return codexLogin(codex)
 }
 
 export async function loginClaude(claudePath: string): Promise<string> {
   const claude = resolveClaude(claudePath)
-  if (!claude) throw new Error('未找到 Claude Code')
+  if (!claude) throw new Error(translate('未找到 Claude Code'))
   return claudeLogin(claude)
 }

@@ -25,6 +25,7 @@ export function scanClaudeSessions(importedChatIds: Set<string>, root = projects
       chatId: meta.id,
       cli: 'claude',
       title: clipTitle(meta.title || UNTITLED),
+      ...(!meta.title ? { titleKind: 'untitled' as const } : {}),
       cwd: meta.cwd,
       createdAt: meta.createdAt || Math.floor(stat.birthtimeMs || stat.mtimeMs),
       updatedAt: Math.floor(stat.mtimeMs),

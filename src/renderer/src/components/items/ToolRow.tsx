@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { ToolItem } from '@shared/types'
+import { useT } from '../../lib/i18n'
 import { DiffLines, parseUnifiedDiff } from '../../lib/diff'
 import { duration } from '../../lib/format'
 import { errorOf, successOf, summarizeTool, toolDiff, type ToolKind } from '../../lib/tools'
@@ -34,6 +35,7 @@ const KIND_ICON: Record<ToolKind, React.ReactNode> = {
 }
 
 function ToolDetail({ item }: { item: ToolItem }) {
+  const t = useT()
   const s = successOf(item)
   const err = errorOf(item)
   const sum = summarizeTool(item)
@@ -45,7 +47,7 @@ function ToolDetail({ item }: { item: ToolItem }) {
           <span className="prompt">$</span> {item.args?.command}
         </div>
         {(out || err) && <pre className="shell-out">{(out || err || '').replace(/\r\n/g, '\n').trimEnd()}</pre>}
-        {s?.exitCode !== undefined && <div className="muted small">退出码 {s.exitCode}{s.executionTime ? ` · ${duration(s.executionTime)}` : ''}</div>}
+        {s?.exitCode !== undefined && <div className="muted small">{t('退出码 {code}', { code: s.exitCode })}{s.executionTime ? ` · ${duration(s.executionTime)}` : ''}</div>}
       </div>
     )
   }
@@ -89,6 +91,7 @@ function ToolDetail({ item }: { item: ToolItem }) {
 }
 
 export function ToolRow({ item }: { item: ToolItem }) {
+  useT()
   const [open, setOpen] = useState(false)
   const sum = summarizeTool(item)
   const failed = item.status === 'error'

@@ -2,7 +2,7 @@
 
 [English](README.md)
 
-面向 [Cursor CLI](https://cursor.com/cli)（`agent`）、[Codex CLI](https://github.com/openai/codex)（`codex`）和 [Claude Code](https://docs.anthropic.com/en/docs/claude-code)（`claude`）的桌面客户端。对话按项目分组，窗口流式展示思考、工具调用和回复，并保留本地历史。界面语言是中文。
+面向 [Cursor CLI](https://cursor.com/cli)（`agent`）、[Codex CLI](https://github.com/openai/codex)（`codex`）和 [Claude Code](https://docs.anthropic.com/en/docs/claude-code)（`claude`）的桌面客户端。对话按项目分组，窗口流式展示思考、工具调用和回复，并保留本地历史。界面支持简体中文和英文。
 
 应用本身不调用模型。主进程在本机启动 Cursor CLI、Codex CLI 或 Claude Code 适配器，通过 [Agent Client Protocol](https://agentclientprotocol.com)（ACP）与之通信。输入框可以直接选择 Cursor、Codex 或 Claude。新建对话使用这个选择，并把它记住。已有对话里切换 CLI 时，屏幕上已有的消息保留，下一条消息会用所选 CLI 新开一段会话。侧边栏会标出每一段是 Cursor、Codex 还是 Claude。
 
@@ -21,9 +21,18 @@
 - 已有会话用 ACP 的 `session/load` 续聊，也可以从 CLI 存储把记录同步回来。复制会话 ID 后，可在终端用 `agent --resume` 继续一段 Cursor 对话
 - 任务结束时发送系统通知，点击通知回到该对话。不在当前画面上结束的任务会留下未读点
 - 主题：跟随系统、深色、浅色
+- 语言：跟随系统、简体中文、English，即时切换并在重启后保留选择
 - 设置按左侧分类切换：CLI、MCP、Skill、模型、用量、默认值、通知、远程控制、外观与历史。CLI 页分别检测 Cursor、Codex 与 Claude，并填写路径、API Key 和登录；登录右侧的「更新」按钮可更新对应的独立 CLI，显示进度和执行结果，完成后刷新版本与模型列表。模型页用 Cursor / Codex / Claude 页签分别配置常用模型和默认模型。导入历史在「外观与历史」页
 - 用量：显示 Cursor 与 Codex 的账号额度（有则显示 5 小时、每周、每月窗口和下次重置时间）。Claude 的账号额度尚未接入。Cursor 模型和其他模型还会显示该池的实际 token 和账号返回的价格。其他模型只显示包含的 API 用量百分比。按需支出在同一行显示已用和上限，有明细时再显示 token，不重复总价。下面按最近 1 天、7 天、30 天汇总本机 token，分页列出全部历史会话的模型和累计消耗。本机费用中，Cursor 用 [Cursor 公开标价](https://cursor.com/docs/models-and-pricing)，Codex 用 [OpenAI API 公开标价](https://developers.openai.com/api/docs/pricing) 估算。估算金额不代表订阅账单。Auto 和价目表没有的模型显示为未定价
 - 远程控制：局域网扫码，或经 SSH 反向隧道从公网打开同一页面
+
+## 界面语言
+
+打开 **设置 → 外观与历史 → 语言**（英文界面为 **Settings → Appearance and history → Language**），选择 **跟随系统**、**简体中文** 或 **English**。默认跟随系统：桌面端操作系统语言为中文时使用简体中文，其他语言使用英文。选择保存在 `state.json` 中，桌面端与远程页面共用该设置；跟随系统时也统一使用桌面端的系统语言。切换立即生效，无需重启应用或中断正在运行的会话。
+
+导航、设置、弹窗、工具摘要、用量说明、日期、相对时间和应用系统通知均支持中英文。新生成的应用提示和自动会话标题保留文案标识，之后切换语言也会更新；用户自定义名称、消息、模型回复、CLI 原始输出，以及没有文案标识的旧历史文字保留原文。
+
+翻译目录位于 `src/shared/locales/`，中文源文案作为回退，英文词条按核心、主界面、设置和消息展示拆分。组件使用 renderer `lib/i18n.ts` 的 `useT()`，其他模块使用 `@shared/i18n` 的 `t()`；静态菜单在渲染时翻译，动态值使用 `{count}` 等具名占位符。测试覆盖词条参数、语言回退、设置持久化及中英文展示，并检查会话内容不被翻译。
 
 ## 环境要求
 

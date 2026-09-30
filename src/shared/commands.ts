@@ -1,3 +1,5 @@
+import { t } from './i18n'
+
 export interface SlashCommand {
   name: string
   description: string
@@ -55,7 +57,7 @@ export function slashQuery(text: string): string | undefined {
 export function filterCommands(commands: SlashCommand[], query: string): SlashCommand[] {
   const q = query.trim().toLowerCase()
   if (!q) return commands
-  return commands.filter((c) => c.name.toLowerCase().includes(q) || c.description.toLowerCase().includes(q))
+  return commands.filter((c) => c.name.toLowerCase().includes(q) || c.description.toLowerCase().includes(q) || (c.local && t(c.description).toLowerCase().includes(q)))
 }
 
 /** Local commands win when a CLI command uses the same name. */

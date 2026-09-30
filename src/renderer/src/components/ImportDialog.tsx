@@ -1,11 +1,14 @@
+import { useT } from '../lib/i18n'
 import { useEffect, useMemo, useState } from 'react'
 import { cliTitle, type CliSession } from '@shared/types'
+import { displayThreadTitle } from '@shared/thread-title'
 import { relativeTime, shortPath } from '../lib/format'
 import { errorText, toast } from '../store'
 import { IconFolder, Spinner } from './icons'
 import { Modal } from './Modal'
 
 export function ImportDialog({ onClose }: { onClose: () => void }) {
+  const t = useT()
   const [sessions, setSessions] = useState<CliSession[] | null>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [filter, setFilter] = useState('')
@@ -19,13 +22,13 @@ export function ImportDialog({ onClose }: { onClose: () => void }) {
     const q = filter.trim().toLowerCase()
     const m = new Map<string, CliSession[]>()
     for (const s of sessions ?? []) {
-      if (q && !s.title.toLowerCase().includes(q) && !s.cwd.toLowerCase().includes(q)) continue
+      if (q && !displayThreadTitle(s, t).toLowerCase().includes(q) && !s.cwd.toLowerCase().includes(q)) continue
       const arr = m.get(s.cwd) ?? []
       arr.push(s)
       m.set(s.cwd, arr)
     }
     return [...m.entries()]
-  }, [sessions, filter])
+  }, [sessions, filter, t])
 
   const toggle = (ids: string[], on: boolean) =>
     setSelected((prev) => {
@@ -40,18 +43,18 @@ export function ImportDialog({ onClose }: { onClose: () => void }) {
 
   return (
     <Modal
-      title="导入 CLI 历史会话"
+      title={t('导入 CLI 历史会话')}
       wide
       onClose={onClose}
       footer={
         <>
-          <span className="muted small">已选 {pending.length} 个 · 同一目录的会话会归入同一项目</span>
+          <span className="muted small">{t('已选 {count} 个 · 同一目录的会话会归入同一项目', { count: pending.length })}</span>
           <div className="row-gap">
             <button className="btn" disabled={!visibleIds.length} onClick={() => toggle(visibleIds, !allVisibleOn)}>
-              {allVisibleOn ? '全不选' : filter.trim() ? '全选筛选结果' : '全选'}
+              {allVisibleOn ? t('全不选') : filter.trim() ? t('全选筛选结果') : t('全选')}
             </button>
             <button className="btn" onClick={onClose}>
-              取消
+              {t('取消')}
             </button>
             <button
               className="btn primary"
@@ -60,7 +63,7 @@ export function ImportDialog({ onClose }: { onClose: () => void }) {
                 setBusy(true)
                 try {
                   const n = await window.api.importCliSessions(pending)
-                  toast(`已导入 ${n} 个会话`)
+                  toast(t('已导入 {count} 个会话', { count: n }))
                   onClose()
                 } catch (err) {
                   toast(errorText(err), 'error')
@@ -69,20 +72,20 @@ export function ImportDialog({ onClose }: { onClose: () => void }) {
                 }
               }}
             >
-              {busy ? <Spinner size={12} /> : null} 导入
+              {busy ? <Spinner size={12} /> : null} {t('导入')}
             </button>
           </div>
         </>
       }
     >
-      <input className="input" placeholder="按标题或目录筛选" value={filter} onChange={(e) => setFilter(e.target.value)} />
+      <input className="input" placeholder={t('按标题或目录筛选')} value={filter} onChange={(e) => setFilter(e.target.value)} />
       <div className="import-list">
         {!sessions && (
           <div className="center-hint">
             <Spinner />
           </div>
         )}
-        {sessions && sessions.length === 0 && <div className="empty-hint">没有在 ~/.cursor/chats 或 ~/.codex/sessions 中找到 CLI 会话</div>}
+        {sessions && sessions.length === 0 && <div className="empty-hint">{t('没有在 ~/.cursor/chats 或 ~/.codex/sessions 中找到 CLI 会话')}</div>}
         {groups.map(([cwd, list]) => {
           const ids = list.filter((s) => !s.imported).map((s) => s.chatId)
           const allOn = ids.length > 0 && ids.every((id) => selected.has(id))
@@ -92,7 +95,7 @@ export function ImportDialog({ onClose }: { onClose: () => void }) {
                 <input type="checkbox" checked={allOn} disabled={!ids.length} onChange={(e) => toggle(ids, e.target.checked)} />
                 <IconFolder size={14} />
                 <span className="import-cwd">{shortPath(cwd)}</span>
-                <span className="muted small">{list.length} 个会话</span>
+                <span className="muted small">{t('{count} 个会话', { count: list.length })}</span>
               </label>
               {list.map((s) => (
                 <label key={s.chatId} className={`import-item ${s.imported ? 'imported' : ''}`}>
@@ -103,9 +106,9 @@ export function ImportDialog({ onClose }: { onClose: () => void }) {
                     onChange={(e) => toggle([s.chatId], e.target.checked)}
                   />
                   <span className="import-title">
-                    {s.title} <span className="badge">{cliTitle(s.cli)}</span>
+                    {displayThreadTitle(s, t)} <span className="badge">{cliTitle(s.cli)}</span>
                   </span>
-                  <span className="muted small">{s.imported ? '已导入' : relativeTime(s.updatedAt)}</span>
+                  <span className="muted small">{s.imported ? t('已导入') : relativeTime(s.updatedAt)}</span>
                 </label>
               ))}
             </div>

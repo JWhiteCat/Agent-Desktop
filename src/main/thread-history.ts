@@ -1,8 +1,9 @@
+import { localizedMessage, t as translate } from '@shared/i18n'
 import type { Item, ResultItem, ThreadMeta } from '@shared/types'
 import { threadCli } from '@shared/types'
 import { materializeCliFork, planCliFork } from './fork'
 import { readClaudeTranscript } from './claude-history'
-import { findChatDir, readCliTranscript, UNTITLED } from './history'
+import { findChatDir, readCliTranscript } from './history'
 import { readCodexTranscript } from './codex-history'
 import { newId } from './id'
 import { titleFrom } from './sessions'
@@ -64,15 +65,15 @@ function preserveQuotaEstimates(previous: Item[], imported: Item[]): void {
 
 /** Copies a conversation into a new thread. `throughItemId` keeps history only up to that message. */
 export async function forkThread(deps: HistoryDeps, id: string, throughItemId?: string): Promise<{ thread: ThreadMeta; items: Item[] }> {
-  if (deps.isRunning(id)) throw new Error('对话正在运行，请稍后再分叉')
+  if (deps.isRunning(id)) throw new Error(translate('对话正在运行，请稍后再分叉'))
   const source = deps.store.thread(id)
-  if (!source) throw new Error('对话不存在')
+  if (!source) throw new Error(translate('对话不存在'))
   const src = { ...source }
   const items = deps.store.items(id)
   const cut = throughItemId ? items.findIndex((it) => it.id === throughItemId) : items.length - 1
-  if (cut < 0) throw new Error('找不到要分叉的消息')
+  if (cut < 0) throw new Error(translate('找不到要分叉的消息'))
   const prefix = items.slice(0, cut + 1)
-  if (!prefix.some((it) => it.kind === 'user' || it.kind === 'assistant')) throw new Error('没有可以分叉的内容')
+  if (!prefix.some((it) => it.kind === 'user' || it.kind === 'assistant')) throw new Error(translate('没有可以分叉的内容'))
 
   const cloned = cloneItems(prefix)
   const snapshot = JSON.stringify(items)
@@ -106,10 +107,10 @@ export async function forkThread(deps: HistoryDeps, id: string, throughItemId?: 
     }
   }
 
-  if (!deps.store.thread(id)) throw new Error('原对话已删除')
+  if (!deps.store.thread(id)) throw new Error(translate('原对话已删除'))
   title = forkTitle(deps.store, src.title, src.projectId)
   const forkContextThroughItemId = chatId ? undefined : cloned.at(-1)?.id
-  if (!chatId) cloned.push({ id: newId(), kind: 'notice', level: 'info', text: FORK_NOTICE })
+  if (!chatId) cloned.push({ id: newId(), kind: 'notice', level: 'info', ...localizedMessage(FORK_NOTICE) })
 
   const thread = deps.store.createThread({
     projectId: src.projectId,
@@ -136,7 +137,7 @@ export async function forkThread(deps: HistoryDeps, id: string, throughItemId?: 
 export function syncFromCli(deps: Pick<HistoryDeps, 'store' | 'isRunning'>, threadId: string): Item[] | undefined {
   const t = deps.store.thread(threadId)
   if (!t?.chatId || deps.isRunning(threadId)) return undefined
-  if (t.forkContextThroughItemId) throw new Error('分叉上下文尚未写入 CLI，请成功发送一条消息后再同步')
+  if (t.forkContextThroughItemId) throw new Error(translate('分叉上下文尚未写入 CLI，请成功发送一条消息后再同步'))
   const cli = threadCli(t)
   const items = cli === 'codex' ? readCodexTranscript(t.chatId) : cli === 'claude' ? readClaudeTranscript(t.chatId) : readCliTranscript(t.chatId)
   // A CLI may have created its database before persisting any messages.
@@ -148,7 +149,7 @@ export function syncFromCli(deps: Pick<HistoryDeps, 'store' | 'isRunning'>, thre
   deps.store.updateThread(threadId, {
     syncedAt: Date.now(),
     preview: previewOf(items) ?? t.preview,
-    ...(t.title === UNTITLED && firstUser?.kind === 'user' ? { title: titleFrom(firstUser.text) } : {})
+    ...(t.titleKind && firstUser?.kind === 'user' ? { title: titleFrom(firstUser.text), titleKind: undefined } : {})
   })
   return items
 }

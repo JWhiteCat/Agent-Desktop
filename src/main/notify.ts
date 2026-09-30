@@ -1,3 +1,4 @@
+import { t as translate } from '@shared/i18n'
 import { Notification, type BrowserWindow } from 'electron'
 import type { RunFinished } from './sessions'
 
@@ -10,7 +11,7 @@ export function notifyRunFinished(
   }
 ): void {
   if (info.stopped || !opts.enabled || !Notification.isSupported()) return
-  const body = (info.failed ? (info.preview ? `未能完成：${info.preview}` : '任务未能完成') : info.preview || '任务已完成').slice(0, 180)
+  const body = (info.failed ? (info.preview ? translate('未能完成：{preview}', { preview: info.preview }) : translate('任务未能完成')) : info.preview || translate('任务已完成')).slice(0, 180)
   const notification = new Notification({ title: info.title || 'Agent Desktop', body })
   notification.on('click', () => {
     const win = opts.getWindow()

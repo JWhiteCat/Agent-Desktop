@@ -1648,8 +1648,9 @@ select {
   overflow-y: auto;
 }
 .settings-nav-btn {
-  height: 32px;
-  padding: 0 10px;
+  min-height: 32px;
+  flex-shrink: 0;
+  padding: 6px 10px;
   border-radius: 8px;
   text-align: left;
   color: var(--text-2);

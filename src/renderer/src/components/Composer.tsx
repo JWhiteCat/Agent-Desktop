@@ -1,3 +1,4 @@
+import { useT } from '../lib/i18n'
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import { argumentHint, filterCommands, slashQuery, type SlashCommand } from '@shared/commands'
 import { cliTitle, type AgentMode, type CliProvider } from '@shared/types'
@@ -49,6 +50,7 @@ interface Props {
 }
 
 export const Composer = forwardRef<ComposerHandle, Props>(function Composer(props, ref) {
+  const t = useT()
   const { running, disabled } = props
   const [text, setText] = useState('')
   const [opts, setOpts] = useState<SendOptions>(props.initial)
@@ -90,7 +92,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
       requestAnimationFrame(() => ta.current?.focus())
     },
     send: async (value, patch) => {
-      if (running || disabled || sending) throw new Error('当前不能发送')
+      if (running || disabled || sending) throw new Error(t('当前不能发送'))
       const next = patch ? { ...opts, ...patch } : opts
       if (patch) setOpts(next)
       setSending(true)
@@ -182,7 +184,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
         rows={1}
         value={text}
         disabled={disabled}
-        placeholder={props.placeholder ?? '描述任务，Enter 发送，Shift+Enter 换行'}
+        placeholder={props.placeholder ?? t('描述任务，Enter 发送，Shift+Enter 换行')}
         onChange={(e) => {
           setDismissed(false)
           setText(e.target.value)
@@ -234,7 +236,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
               onClick={() => void choose(command)}
             >
               <span className="menu-label">/{command.name}</span>
-              <span className="menu-hint">{command.description}</span>
+              <span className="menu-hint">{command.local ? t(command.description) : command.description}</span>
             </button>
           ))}
         </div>
@@ -255,7 +257,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
           />
           <button
             className={`pill ${opts.force ? 'pill-warn' : ''}`}
-            title={opts.force ? '完全访问：命令无需确认直接执行（--force）' : '默认权限：遵循 CLI 权限配置'}
+            title={opts.force ? t('完全访问：命令无需确认直接执行（--force）') : t('默认权限：遵循 CLI 权限配置')}
             onClick={() => {
               const force = !opts.force
               setOpts((o) => ({ ...o, force }))
@@ -263,26 +265,26 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
             }}
           >
             <IconShield size={13} />
-            <span>{opts.force ? '完全访问' : '默认权限'}</span>
+            <span>{opts.force ? t('完全访问') : t('默认权限')}</span>
           </button>
           {props.showWorktree && (
             <button
               className={`pill ${opts.worktree ? 'pill-on' : ''}`}
-              title="在隔离的 git worktree 中运行（--worktree）"
+              title={t('在隔离的 git worktree 中运行（--worktree）')}
               onClick={() => setOpts((o) => ({ ...o, worktree: !o.worktree }))}
             >
               {opts.worktree ? <IconBranch size={13} /> : <IconFolder size={13} />}
-              <span>{opts.worktree ? 'Worktree' : '本地'}</span>
+              <span>{opts.worktree ? 'Worktree' : t('本地')}</span>
             </button>
           )}
           {props.footerLeft}
         </div>
         {running ? (
-          <button className="send-btn stop" title="停止 (Esc)" onClick={props.onStop}>
+          <button className="send-btn stop" title={t('停止 (Esc)')} onClick={props.onStop}>
             <IconStop size={14} />
           </button>
         ) : (
-          <button className="send-btn" title="发送 (Enter)" disabled={!canSend} onClick={submit}>
+          <button className="send-btn" title={t('发送 (Enter)')} disabled={!canSend} onClick={submit}>
             <IconArrowUp size={16} />
           </button>
         )}
@@ -334,18 +336,19 @@ function CliPicker({
 function ModePicker({ value, onChange }: { value: AgentMode; onChange: (m: AgentMode) => void }) {
   const [open, setOpen] = useState(false)
   const btn = useRef<HTMLButtonElement>(null)
+  const t = useT()
   const current = MODES.find((m) => m.id === value) ?? MODES[0]
   return (
     <>
-      <button ref={btn} className={`pill ${open ? 'active' : ''}`} onClick={() => setOpen((o) => !o)} title={current.desc}>
+      <button ref={btn} className={`pill ${open ? 'active' : ''}`} onClick={() => setOpen((o) => !o)} title={t(current.desc)}>
         {value === 'agent' ? <IconSparkle size={13} /> : <IconList size={13} />}
-        <span>{current.label}</span>
+        <span>{t(current.label)}</span>
         <IconChevronDown size={12} />
       </button>
       <Popover anchor={btn.current} open={open} onClose={() => setOpen(false)} placement="top-start">
         <MenuList
           onClose={() => setOpen(false)}
-          items={MODES.map((m) => ({ label: m.label, hint: m.desc, checked: m.id === value, onSelect: () => onChange(m.id) }))}
+          items={MODES.map((m) => ({ label: t(m.label), hint: t(m.desc), checked: m.id === value, onSelect: () => onChange(m.id) }))}
         />
       </Popover>
     </>

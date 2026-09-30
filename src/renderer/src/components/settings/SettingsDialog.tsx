@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { normalizeCliProvider, type CliProvider, type Settings } from '@shared/types'
+import { useT } from '../../lib/i18n'
 import { defaultModelFor, favoritesFor, modelForChat } from '../../lib/model-prefs'
 import { loadModels, setDefaultModel, useStore } from '../../store'
 import { McpSettings, SkillSettings } from '../AgentConfigSettings'
@@ -27,12 +28,13 @@ const SETTINGS_TABS = [
 type SettingsTab = (typeof SETTINGS_TABS)[number]['id']
 
 function ModelCliSettings({ provider }: { provider: CliProvider }) {
+  const t = useT()
   const settings = useStore((s) => s.app.settings)
   const models = useStore((s) => s.modelsByCli[provider] ?? (provider === 'cursor' ? s.models : []))
   return (
     <>
       <FavoriteModels provider={provider} />
-      <Field label="默认模型" desc="每个项目会记住自己上次在这个 CLI 里选的模型。这里只给还没单独选过的项目用。勾选常用模型后，这里也只列出常用模型。">
+      <Field label={t('默认模型')} desc={t('每个项目会记住自己上次在这个 CLI 里选的模型。这里只给还没单独选过的项目用。勾选常用模型后，这里也只列出常用模型。')}>
         <ModelPicker
           cli={provider}
           value={modelForChat(models, favoritesFor(settings, provider), defaultModelFor(settings, provider))}
@@ -44,6 +46,7 @@ function ModelCliSettings({ provider }: { provider: CliProvider }) {
 }
 
 export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void; onOpenImport: () => void }) {
+  const t = useT()
   const settings = useStore((s) => s.app.settings)
   const cli = normalizeCliProvider(settings.cliProvider)
   const [modelCli, setModelCli] = useState<CliProvider>(cli)
@@ -58,10 +61,10 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
 
   return (
     <Modal
-      title="设置"
+      title={t('设置')}
       onClose={onClose}
       nav={
-        <nav className="settings-nav" aria-label="设置分类">
+        <nav className="settings-nav" aria-label={t('设置分类')}>
           {tabs.map((item) => (
             <button
               key={item.id}
@@ -70,7 +73,7 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
               aria-current={tab === item.id ? 'page' : undefined}
               onClick={() => setTab(item.id)}
             >
-              {item.label}
+              {t(item.label)}
             </button>
           ))}
         </nav>
@@ -79,7 +82,7 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
       {tab === 'cli' && (
         <section className="settings-section">
           <h4>CLI</h4>
-          <Field label="新建对话使用" desc="首页和对话里的输入框也可以切换。已有对话切换后，下一条消息会用新的 CLI 另开会话。">
+          <Field label={t('新建对话使用')} desc={t('首页和对话里的输入框也可以切换。已有对话切换后，下一条消息会用新的 CLI 另开会话。')}>
             <select
               className="input"
               value={cli}
@@ -98,13 +101,13 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
           <CliCard
             provider="cursor"
             pathValue={settings.agentPath}
-            pathPlaceholder="自动检测"
-            pathDesc="留空自动检测；可填 agent 可执行文件或安装目录"
+            pathPlaceholder={t('自动检测')}
+            pathDesc={t('留空自动检测；可填 agent 可执行文件或安装目录')}
             keyValue={settings.apiKey ?? ''}
-            keyPlaceholder="留空使用 CURSOR_API_KEY"
-            keyDesc="有 Key 时优先使用（设置优先于环境变量 CURSOR_API_KEY）。都没有时使用浏览器登录。可在 cursor.com/dashboard/api 创建。"
-            missing="未找到 Cursor CLI"
-            install="安装方式：Windows 在 PowerShell 执行 irm 'https://cursor.com/install?win32=true' | iex ；macOS / Linux 执行 curl https://cursor.com/install -fsS | bash"
+            keyPlaceholder={t('留空使用 CURSOR_API_KEY')}
+            keyDesc={t('有 Key 时优先使用（设置优先于环境变量 CURSOR_API_KEY）。都没有时使用浏览器登录。可在 cursor.com/dashboard/api 创建。')}
+            missing={t('未找到 Cursor CLI')}
+            install={t('安装方式：Windows 在 PowerShell 执行 irm \'https://cursor.com/install?win32=true\' | iex ；macOS / Linux 执行 curl https://cursor.com/install -fsS | bash')}
             onPath={(agentPath) => saveCli({ agentPath }, 'cursor')}
             onKey={(apiKey) => saveCli({ apiKey }, 'cursor')}
           />
@@ -112,13 +115,13 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
           <CliCard
             provider="codex"
             pathValue={settings.codexPath ?? ''}
-            pathPlaceholder="自动检测，否则使用内置 Codex"
-            pathDesc="留空时先找本机 codex。找不到则使用应用内置的 Codex。"
+            pathPlaceholder={t('自动检测，否则使用内置 Codex')}
+            pathDesc={t('留空时先找本机 codex。找不到则使用应用内置的 Codex。')}
             keyValue={settings.codexApiKey ?? ''}
-            keyPlaceholder="留空使用 CODEX_API_KEY 或 OPENAI_API_KEY"
-            keyDesc="有 Key 时优先使用。都没有时使用 ChatGPT 登录。"
-            missing="未找到 Codex 适配器"
-            install="需要安装本应用依赖里的 Codex 适配器。本机另有 codex 时会优先使用它。"
+            keyPlaceholder={t('留空使用 CODEX_API_KEY 或 OPENAI_API_KEY')}
+            keyDesc={t('有 Key 时优先使用。都没有时使用 ChatGPT 登录。')}
+            missing={t('未找到 Codex 适配器')}
+            install={t('需要安装本应用依赖里的 Codex 适配器。本机另有 codex 时会优先使用它。')}
             onPath={(codexPath) => saveCli({ codexPath }, 'codex')}
             onKey={(codexApiKey) => saveCli({ codexApiKey }, 'codex')}
           />
@@ -126,13 +129,13 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
           <CliCard
             provider="claude"
             pathValue={settings.claudePath ?? ''}
-            pathPlaceholder="自动检测，否则使用内置 Claude"
-            pathDesc="留空时先找本机 claude。找不到则使用适配器自带的 Claude。Windows 上会跳过 .cmd 跳转。"
+            pathPlaceholder={t('自动检测，否则使用内置 Claude')}
+            pathDesc={t('留空时先找本机 claude。找不到则使用适配器自带的 Claude。Windows 上会跳过 .cmd 跳转。')}
             keyValue={settings.claudeApiKey ?? ''}
-            keyPlaceholder="留空使用 ANTHROPIC_API_KEY，再否则使用本机登录"
-            keyDesc="只要设置或环境变量里有 API Key，就按 API 计费，不会使用 Claude 订阅。都没有时使用 ~/.claude 的登录。"
-            missing="未找到 Claude 适配器"
-            install="需要安装本应用依赖里的 Claude 适配器。本机另有 claude 时会优先使用它。安装 Claude Code：npm install -g @anthropic-ai/claude-code"
+            keyPlaceholder={t('留空使用 ANTHROPIC_API_KEY，再否则使用本机登录')}
+            keyDesc={t('只要设置或环境变量里有 API Key，就按 API 计费，不会使用 Claude 订阅。都没有时使用 ~/.claude 的登录。')}
+            missing={t('未找到 Claude 适配器')}
+            install={t('需要安装本应用依赖里的 Claude 适配器。本机另有 claude 时会优先使用它。安装 Claude Code：npm install -g @anthropic-ai/claude-code')}
             onPath={(claudePath) => saveCli({ claudePath }, 'claude')}
             onKey={(claudeApiKey) => saveCli({ claudeApiKey }, 'claude')}
           />
@@ -155,7 +158,7 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
 
       {tab === 'models' && (
         <section className="settings-section">
-          <div className="usage-periods" role="tablist" aria-label="模型来源">
+          <div className="usage-periods" role="tablist" aria-label={t('模型来源')}>
             {(['cursor', 'codex', 'claude'] as const).map((id) => (
               <button
                 key={id}
@@ -177,24 +180,24 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
 
       {tab === 'defaults' && (
         <section className="settings-section">
-          <h4>默认值</h4>
-          <Field label="默认模式">
+          <h4>{t('默认值')}</h4>
+          <Field label={t('默认模式')}>
             <select className="input" value={settings.defaultMode} onChange={(e) => update({ defaultMode: e.target.value as Settings['defaultMode'] })}>
               {MODES.map((m) => (
                 <option key={m.id} value={m.id}>
-                  {m.label} — {m.desc}
+                  {t(m.label)} — {t(m.desc)}
                 </option>
               ))}
             </select>
           </Field>
-          <Field label="默认完全访问" desc="开启后命令无需确认直接执行（--force）">
+          <Field label={t('默认完全访问')} desc={t('开启后命令无需确认直接执行（--force）')}>
             <input type="checkbox" className="toggle" checked={settings.force} onChange={(e) => update({ force: e.target.checked })} />
           </Field>
-          <Field label="沙箱" desc="对应 --sandbox 参数">
+          <Field label={t('沙箱')} desc={t('对应 --sandbox 参数')}>
             <select className="input" value={settings.sandbox} onChange={(e) => update({ sandbox: e.target.value as Settings['sandbox'] })}>
-              <option value="default">遵循 CLI 配置</option>
-              <option value="enabled">启用</option>
-              <option value="disabled">禁用</option>
+              <option value="default">{t('遵循 CLI 配置')}</option>
+              <option value="enabled">{t('启用')}</option>
+              <option value="disabled">{t('禁用')}</option>
             </select>
           </Field>
         </section>
@@ -202,8 +205,8 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
 
       {tab === 'notify' && (
         <section className="settings-section">
-          <h4>通知</h4>
-          <Field label="任务完成时通知" desc="对话结束后发送系统通知，点击通知可回到该对话">
+          <h4>{t('通知')}</h4>
+          <Field label={t('任务完成时通知')} desc={t('对话结束后发送系统通知，点击通知可回到该对话')}>
             <input
               type="checkbox"
               className="toggle"
@@ -216,25 +219,37 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
 
       {tab === 'remote' && !window.api.isRemote && (
         <section className="settings-section">
-          <h4>远程控制</h4>
+          <h4>{t('远程控制')}</h4>
           <RemoteSettings />
         </section>
       )}
 
       {tab === 'appearance' && (
         <section className="settings-section">
-          <h4>外观与历史</h4>
-          <Field label="主题">
-            <select className="input" value={settings.theme} onChange={(e) => update({ theme: e.target.value as Settings['theme'] })}>
-              <option value="system">跟随系统</option>
-              <option value="dark">深色</option>
-              <option value="light">浅色</option>
+          <h4>{t('外观与历史')}</h4>
+          <Field label={t('语言')} desc={t('界面语言立即生效，并保存到本机设置。')}>
+            <select
+              className="input"
+              aria-label={t('语言')}
+              value={settings.language ?? 'system'}
+              onChange={(e) => update({ language: e.target.value as Settings['language'] })}
+            >
+              <option value="system">{t('跟随系统')}</option>
+              <option value="zh-CN">简体中文</option>
+              <option value="en">English</option>
             </select>
           </Field>
-          <Field label="显示已归档对话">
+          <Field label={t('主题')}>
+            <select className="input" value={settings.theme} onChange={(e) => update({ theme: e.target.value as Settings['theme'] })}>
+              <option value="system">{t('跟随系统')}</option>
+              <option value="dark">{t('深色')}</option>
+              <option value="light">{t('浅色')}</option>
+            </select>
+          </Field>
+          <Field label={t('显示已归档对话')}>
             <input type="checkbox" className="toggle" checked={settings.showArchived} onChange={(e) => update({ showArchived: e.target.checked })} />
           </Field>
-          <Field label="CLI 历史会话" desc="从 ~/.cursor/chats、~/.codex/sessions 和 ~/.claude/projects 导入，按工作目录自动归入项目">
+          <Field label={t('CLI 历史会话')} desc={t('从 ~/.cursor/chats、~/.codex/sessions 和 ~/.claude/projects 导入，按工作目录自动归入项目')}>
             <button
               className="btn"
               onClick={() => {
@@ -242,7 +257,7 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
                 onOpenImport()
               }}
             >
-              导入…
+              {t('导入…')}
             </button>
           </Field>
         </section>
