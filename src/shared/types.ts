@@ -116,6 +116,8 @@ export interface ResultItem {
   createdAt?: number
   /** Model id used for this turn. */
   model?: string
+  /** API model id reported for this turn when `model` is a CLI alias such as Claude's `opus`; used for pricing. */
+  apiModel?: string
   /** CLI that ran this turn, retained when the conversation switches CLI. */
   cli?: CliProvider
   /** Stable across a fork so the same turn is not counted twice. */

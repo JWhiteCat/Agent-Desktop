@@ -90,6 +90,8 @@ interface Turn {
   cli: CliProvider
   at: number
   model: string
+  /** Model id to price; differs from `model` when the CLI recorded an alias. */
+  priceModel: string
   usage: TokenUsage
 }
 
@@ -112,7 +114,7 @@ function turnsOf(thread: UsageThread): Turn[] {
     const key = item.usageId ? `usage|${item.usageId}` : `${cli}|${at}|${model}|${input}|${output}|${cacheRead}|${cacheWrite}`
     if (seen.has(key)) continue
     seen.add(key)
-    turns.push({ key, cli, at, model, usage: item.usage })
+    turns.push({ key, cli, at, model, priceModel: item.apiModel || model, usage: item.usage })
   }
   return turns
 }
@@ -167,7 +169,7 @@ export function listSessionUsage(threads: UsageThread[]): UsageSessionRow[] {
     let priced = 0
     let unpriced = 0
     for (const turn of turns) {
-      const quote = quoteModel(turn.model, turn.usage, turn.cli)
+      const quote = quoteModel(turn.priceModel, turn.usage, turn.cli)
       const [input, output, cacheRead, cacheWrite] = tokensOf(turn.usage)
       row.turns += 1
       row.inputTokens += input
@@ -195,7 +197,7 @@ export function summarizeUsage(threads: UsageThread[], period: UsageWindow, now 
 
   for (const turn of collectTurns(threads)) {
     if (turn.at < from || turn.at > now) continue
-    const quote = quoteModel(turn.model, turn.usage, turn.cli)
+    const quote = quoteModel(turn.priceModel, turn.usage, turn.cli)
     const group = `${turn.cli}\n${turn.model}\n${quote.label}`
     let row = rows.get(group)
     if (!row) {

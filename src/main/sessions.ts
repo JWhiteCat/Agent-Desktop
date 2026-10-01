@@ -642,6 +642,7 @@ export class SessionManager {
         durationMs: Date.now() - started,
         createdAt: Date.now(),
         model: req.model,
+        ...(run.proc.provider === 'claude' && run.reducer.lastModel ? { apiModel: run.reducer.lastModel } : {}),
         cli: run.proc.provider,
         usageId: codexUsage?.usageId ?? newId(),
         usage,

@@ -25,8 +25,8 @@ export function ResultFooter({ item, text, fallbackModel, cli = 'cursor', models
   const tokens = u ? (u.inputTokens ?? 0) + (u.outputTokens ?? 0) + (u.cacheReadTokens ?? 0) + (u.cacheWriteTokens ?? 0) : 0
   const modelId = item.model || fallbackModel || ''
   const caption = modelId ? modelCaption(groups, modelId) : ''
-  const quote = modelId && u ? quoteModel(modelId, u, provider) : undefined
-  const priceSource = provider === 'codex' ? t('OpenAI API 公开标价') : t('Cursor 公开标价')
+  const quote = modelId && u ? quoteModel(item.apiModel || modelId, u, provider) : undefined
+  const priceSource = provider === 'codex' ? t('OpenAI API 公开标价') : provider === 'claude' ? t('Anthropic API 公开标价') : t('Cursor 公开标价')
   const sessionUsage = provider === 'codex' ? sessionConsumption(item) : undefined
   const turnEstimate = provider === 'codex' && item.weeklyQuotaEstimate !== undefined ? weeklyEstimate(item) : undefined
   return (

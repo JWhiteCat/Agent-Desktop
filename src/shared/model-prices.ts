@@ -1,10 +1,11 @@
 /**
  * Cursor list prices from https://cursor.com/docs/models-and-pricing (USD per million tokens).
- * Codex uses the separate OpenAI API price table in codex-model-prices.ts.
+ * Codex uses the separate OpenAI API price table in codex-model-prices.ts, Claude Code the Anthropic one in claude-model-prices.ts.
  * These are published API rates, not remaining included usage, and they omit the Teams token rate.
  * A cache-write cell of "-" is stored as 0.
  */
 
+import { findClaudePrice } from './claude-model-prices'
 import { findCodexPrice } from './codex-model-prices'
 import { t } from './i18n'
 import type { CliProvider } from './types'
@@ -220,7 +221,7 @@ export function quoteModel(modelId: string | undefined, usage: TokenUsage, cli: 
   if (!parsed.name || parsed.name === 'auto') {
     return { label: fallback, costUsd: null, fast: parsed.fast, longContext: false }
   }
-  const entry = cli === 'codex' ? findCodexPrice(parsed.name) : findPrice(parsed.name)
+  const entry = cli === 'codex' ? findCodexPrice(parsed.name) : cli === 'claude' ? findClaudePrice(parsed.name) : findPrice(parsed.name)
   if (!entry) return { label: fallback, costUsd: null, fast: parsed.fast, longContext: false }
 
   const requests = usage.requests?.length ? usage.requests : [usage]
@@ -231,8 +232,8 @@ export function quoteModel(modelId: string | undefined, usage: TokenUsage, cli: 
     const inputSide = num(request.inputTokens) + num(request.cacheReadTokens) + num(request.cacheWriteTokens)
     const requestLong = entry.longAfterTokens != null && inputSide > entry.longAfterTokens
     long ||= requestLong
-    // A tier with no published OpenAI price must not silently inherit Standard pricing.
-    if (cli === 'codex' && parsed.fast && !(requestLong ? entry.fastLong : entry.fast)) priced = false
+    // A tier with no published OpenAI or Anthropic price must not silently inherit Standard pricing.
+    if (cli !== 'cursor' && parsed.fast && !(requestLong ? entry.fastLong : entry.fast)) priced = false
     const rate = pickRates(entry, parsed.fast, requestLong)
     cost +=
       (num(request.inputTokens) * rate.input +

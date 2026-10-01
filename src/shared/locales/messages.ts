@@ -79,6 +79,7 @@ export const messagesMessages: Record<string, string> = {
   '子代理运行中': 'Subagent running',
   '子代理完成': 'Subagent finished',
   'OpenAI API 公开标价': 'OpenAI API list prices',
+  'Anthropic API 公开标价': 'Anthropic API list prices',
   'Cursor 公开标价': 'Cursor list prices',
   '输入 {input} · 输出 {output} · 缓存读 {read} · 缓存写 {write}': 'Input {input} · Output {output} · Cache read {read} · Cache write {write}',
   'Auto 和价目表没有的模型未计入费用': 'Auto and models without published prices are excluded from cost estimates',

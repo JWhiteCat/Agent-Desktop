@@ -66,6 +66,8 @@ export class StreamReducer {
   gotResult = false
   lastAssistantText = ''
   lastUsage?: ResultItem['usage']
+  /** API model id Claude attaches to `usage_update`, since the chosen model may be an alias. */
+  lastModel?: string
 
   constructor(private readonly items: Item[]) {}
 
@@ -125,6 +127,8 @@ export class StreamReducer {
       case 'usage_update': {
         const usage = normalizeTurnUsage(update.usage)
         if (usage) this.lastUsage = usage
+        const model = update._meta?.['_claude/model']
+        if (typeof model === 'string' && model) this.lastModel = model
         return []
       }
       case 'plan_update':

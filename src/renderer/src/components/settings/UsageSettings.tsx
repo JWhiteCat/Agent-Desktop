@@ -242,8 +242,9 @@ export function UsageSettings() {
         </>
       )}
       <p className="usage-note">
-        {t('Cursor 按 Cursor 公开标价估算，Codex 按 OpenAI API 公开标价估算（美元 / 百万 token）。')}{' '}
+        {t('Cursor 按 Cursor 公开标价估算，Codex 按 OpenAI API 公开标价估算，Claude Code 按 Anthropic API 公开标价估算（美元 / 百万 token）。')}{' '}
         <a href="https://developers.openai.com/api/docs/pricing" target="_blank" rel="noreferrer">{t('OpenAI API 价格')}</a>{' '}
+        <a href="https://claude.com/pricing#api" target="_blank" rel="noreferrer">{t('Anthropic API 价格')}</a>{' '}
         {t('这些金额是用量估算，不代表订阅账单或套餐剩余额度；Cursor 估算不含 Teams 的 Token Rate。Auto 和价目表没有的模型只计 token。上方合计里，分叉复制的同一轮只计一次。会话列表包含全部历史对话，按各对话自己的记录累计，不受上面的天数限制；没有 token 记录的对话费用留空。')}
       </p>
     </section>
