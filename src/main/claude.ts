@@ -154,8 +154,17 @@ export async function listClaudeModels(customPath: string, claudeApiKey: string)
           })
           const created = await acp.request('session/new', { cwd, mcpServers: [] })
           sessionId = String(created?.sessionId ?? '')
+          const effortsByModel: Record<string, string[]> = {}
+          for (const value of modelValues(created)) {
+            try {
+              const switched = await acp.request('session/set_config_option', { sessionId, configId: CLAUDE_MODEL_CONFIG_ID, value })
+              if (Array.isArray(switched?.configOptions)) effortsByModel[value] = effortLevels(switched.configOptions as ConfigOption[])
+            } catch {
+              /* a model this account cannot validate keeps the session's effort list */
+            }
+          }
           clearTimeout(timer)
-          const listed = modelsFromClaudeSession(created)
+          const listed = modelsFromClaudeSession(created, effortsByModel)
           if (!listed.models.length) throw new Error(translate('Claude 没有返回模型'))
           resolve(listed)
         } catch (err) {
@@ -182,36 +191,88 @@ interface ConfigOption {
   _meta?: { jetbrains?: { air?: { recommendedValue?: string } } }
 }
 
-/** Expands the model select with that session's effort levels, as `model[effort]`. The `default` effort is the bare model id. */
-export function modelsFromClaudeSession(created: { configOptions?: unknown } | null | undefined): ClaudeModelList {
+const CONTEXT_HINT = /\[(\d+[km])\]$/i
+
+function modelValues(created: { configOptions?: unknown } | null | undefined): string[] {
+  if (!Array.isArray(created?.configOptions)) return []
+  const model = (created.configOptions as ConfigOption[]).find((option) => option?.id === CLAUDE_MODEL_CONFIG_ID)
+  return (model?.options ?? []).map((option) => String(option?.value ?? '')).filter((value) => value && value !== 'default')
+}
+
+function effortLevels(options: ConfigOption[]): string[] {
+  const effort = options.find((option) => option?.id === CLAUDE_EFFORT_CONFIG_ID)
+  return (effort?.options ?? []).map((option) => option.value).filter((value): value is string => !!value && value !== 'default')
+}
+
+/** `opus[1m]` with effort `high` becomes `opus[context=1m,effort=high]`, the Cursor-style id the picker splits into context and effort. */
+export function claudeModelId(value: string, effort?: string): string {
+  const hint = value.match(CONTEXT_HINT)
+  const base = hint ? value.slice(0, hint.index) : value
+  const params = [hint ? `context=${hint[1].toLowerCase()}` : '', effort && effort !== 'default' ? `effort=${effort}` : ''].filter(Boolean)
+  return params.length ? `${base}[${params.join(',')}]` : base
+}
+
+/** Reverses `claudeModelId`. Also reads the `sonnet[high]` and `opus[1m][high]` ids saved by older builds. */
+export function parseClaudeModelId(id: string): { model: string; effort?: string } {
+  const named = id.match(/^([^[]+)\[([^\]]*=[^\]]*)\]$/)
+  if (named) {
+    const params = new Map<string, string>()
+    for (const part of named[2].split(',')) {
+      const eq = part.indexOf('=')
+      if (eq > 0) params.set(part.slice(0, eq).trim(), part.slice(eq + 1).trim())
+    }
+    const context = params.get('context')
+    const effort = params.get('effort')
+    return { model: context ? `${named[1]}[${context}]` : named[1], effort: effort && effort !== 'default' ? effort : undefined }
+  }
+  const legacy = id.match(/^(.+)\[([^[\]]+)\]$/)
+  if (legacy && !CONTEXT_HINT.test(id)) return { model: legacy[1], effort: legacy[2] !== 'default' ? legacy[2] : undefined }
+  return { model: id }
+}
+
+function legacyClaudeId(value: string, effort?: string): string {
+  return effort ? `${value}[${effort}]` : value
+}
+
+/**
+ * Expands the model select into one id per effort level. `effortsByModel` holds each model's own levels,
+ * since Haiku has none and Opus adds `xhigh`; a model missing from it uses the session's current levels.
+ * A bare alias whose `[1m]` sibling is listed is labeled 200K so the two land in one group with a context choice.
+ */
+export function modelsFromClaudeSession(
+  created: { configOptions?: unknown } | null | undefined,
+  effortsByModel: Record<string, string[]> = {}
+): ClaudeModelList {
   if (!Array.isArray(created?.configOptions)) return { models: [] }
   const options = created.configOptions as ConfigOption[]
   const model = options.find((option) => option?.id === CLAUDE_MODEL_CONFIG_ID)
   const effort = options.find((option) => option?.id === CLAUDE_EFFORT_CONFIG_ID)
   const modelOptions = (model?.options ?? []).filter((option) => option?.value && option.value !== 'default')
-  const efforts = (effort?.options ?? [])
-    .map((option) => option.value)
-    .filter((value): value is string => !!value && value !== 'default')
+  const sessionEfforts = effortLevels(options)
+  const effortsFor = (value: string) => effortsByModel[value] ?? sessionEfforts
+  const hinted = new Set(modelOptions.map((option) => String(option.value)).filter((value) => CONTEXT_HINT.test(value)).map((value) => value.replace(CONTEXT_HINT, '')))
   const recommendedBase = model?._meta?.jetbrains?.air?.recommendedValue || (typeof model?.currentValue === 'string' ? model.currentValue : '')
   const effortDefault = typeof effort?.currentValue === 'string' && effort.currentValue !== 'default' ? effort.currentValue : ''
   const models: ModelInfo[] = []
   for (const option of modelOptions) {
-    const id = String(option.value)
-    const name = String(option.name || id)
+    const value = String(option.value)
+    const name = String(option.name || value)
+    const label = !CONTEXT_HINT.test(value) && hinted.has(value) ? `${name} 200K` : name
+    const efforts = effortsFor(value)
     if (!efforts.length) {
-      models.push({ id, label: name })
+      models.push({ id: claudeModelId(value), label, legacySlug: legacyClaudeId(value) })
       continue
     }
-    for (const level of efforts) models.push({ id: `${id}[${level}]`, label: `${name} ${level}` })
+    for (const level of efforts) {
+      models.push({ id: claudeModelId(value, level), label: `${label} ${level}`, legacySlug: legacyClaudeId(value, level) })
+    }
   }
-  const recommended =
-    recommendedBase && recommendedBase !== 'default'
-      ? effortDefault && efforts.includes(effortDefault)
-        ? `${recommendedBase}[${effortDefault}]`
-        : efforts.length
-          ? `${recommendedBase}[${efforts[0]}]`
-          : recommendedBase
-      : undefined
+  let recommended: string | undefined
+  if (recommendedBase && recommendedBase !== 'default') {
+    const efforts = effortsFor(recommendedBase)
+    const level = [effortDefault, 'medium'].find((candidate) => candidate && efforts.includes(candidate)) ?? efforts[0]
+    recommended = claudeModelId(recommendedBase, level)
+  }
   if (recommended) models.sort((a, b) => Number(b.id === recommended) - Number(a.id === recommended))
   return recommended ? { models, recommended } : { models }
 }

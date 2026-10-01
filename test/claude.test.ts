@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { claudeModeId, isClaudeShellShim, modelsFromClaudeSession, resolveClaude } from '../src/main/claude'
+import { claudeModeId, isClaudeShellShim, modelsFromClaudeSession, parseClaudeModelId, resolveClaude } from '../src/main/claude'
 import { claudeTranscriptItems, scanClaudeSessions, visibleUserText } from '../src/main/claude-history'
 import { normalizeCliProvider } from '../src/shared/types'
 
@@ -73,8 +73,50 @@ describe('claude mode and models', () => {
         }
       ]
     })
-    expect(listed.recommended).toBe('sonnet[high]')
-    expect(listed.models.map((model) => model.id)).toEqual(['sonnet[high]', 'sonnet[low]', 'opus[low]', 'opus[high]'])
+    expect(listed.recommended).toBe('sonnet[effort=high]')
+    expect(listed.models.map((model) => model.id)).toEqual(['sonnet[effort=high]', 'sonnet[effort=low]', 'opus[effort=low]', 'opus[effort=high]'])
+    expect(listed.models[0].legacySlug).toBe('sonnet[high]')
+  })
+
+  it('splits the [1m] context hint from per-model effort levels', () => {
+    const listed = modelsFromClaudeSession(
+      {
+        configOptions: [
+          {
+            id: 'model',
+            currentValue: 'opus[1m]',
+            options: [
+              { value: 'default', name: 'Default' },
+              { value: 'opus[1m]', name: 'Opus 5.5' },
+              { value: 'opus', name: 'Opus 5.5' },
+              { value: 'haiku', name: 'Haiku 4.5' }
+            ]
+          },
+          { id: 'effort', currentValue: 'default', options: [{ value: 'default' }, { value: 'low' }, { value: 'medium' }] }
+        ]
+      },
+      { 'opus[1m]': ['medium', 'xhigh'], haiku: [] }
+    )
+    expect(listed.recommended).toBe('opus[context=1m,effort=medium]')
+    expect(listed.models.map((model) => model.id)).toEqual([
+      'opus[context=1m,effort=medium]',
+      'opus[context=1m,effort=xhigh]',
+      'opus[effort=low]',
+      'opus[effort=medium]',
+      'haiku'
+    ])
+    expect(listed.models.find((model) => model.id === 'opus[effort=low]')?.label).toBe('Opus 5.5 200K low')
+    expect(listed.models[1].legacySlug).toBe('opus[1m][xhigh]')
+  })
+
+  it('reads new and legacy Claude model ids back into model and effort', () => {
+    expect(parseClaudeModelId('opus[context=1m,effort=xhigh]')).toEqual({ model: 'opus[1m]', effort: 'xhigh' })
+    expect(parseClaudeModelId('opus[effort=low]')).toEqual({ model: 'opus', effort: 'low' })
+    expect(parseClaudeModelId('opus[context=1m]')).toEqual({ model: 'opus[1m]', effort: undefined })
+    expect(parseClaudeModelId('haiku')).toEqual({ model: 'haiku' })
+    expect(parseClaudeModelId('opus[1m][high]')).toEqual({ model: 'opus[1m]', effort: 'high' })
+    expect(parseClaudeModelId('sonnet[high]')).toEqual({ model: 'sonnet', effort: 'high' })
+    expect(parseClaudeModelId('opus[1m]')).toEqual({ model: 'opus[1m]' })
   })
 })
 

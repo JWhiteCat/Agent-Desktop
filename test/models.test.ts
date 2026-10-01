@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { catalogFromStorageJson, mergeModelLists } from '../src/shared/model-catalog'
 import { modelForChat, pruneFavoriteList } from '../src/renderer/src/lib/model-prefs'
-import { describeModel, effortChoices, findVariant, groupModels, listedModelGroups, modelCaption, pickVariant } from '../src/renderer/src/lib/models'
+import { contextChoices, describeModel, effortChoices, findVariant, groupModels, listedModelGroups, modelCaption, pickVariant } from '../src/renderer/src/lib/models'
 import type { ModelInfo } from '../src/shared/types'
 import { GROK_47_500K_HIGH_FAST } from './grok-model'
 
@@ -146,6 +146,21 @@ describe('model picker', () => {
     expect(modelForChat([{ id: 'auto', label: 'Auto' }], [], 'auto', 'gpt-5')).toBe('gpt-5')
     const other = 'other[context=500k,reasoning_effort=high,fast=true]'
     expect(modelForChat([...models, { id: other, label: 'Other 500K High Fast' }], favorites, other)).toBe(GROK_47_500K_HIGH_FAST)
+  })
+
+  it('groups Claude ids into one model with context and effort choices', () => {
+    const groups = groupModels([
+      { id: 'opus[context=1m,effort=medium]', label: 'Opus 5.5 medium', legacySlug: 'opus[1m][medium]' },
+      { id: 'opus[context=1m,effort=xhigh]', label: 'Opus 5.5 xhigh', legacySlug: 'opus[1m][xhigh]' },
+      { id: 'opus[effort=medium]', label: 'Opus 5.5 200K medium', legacySlug: 'opus[medium]' },
+      { id: 'haiku', label: 'Haiku 4.5', legacySlug: 'haiku' }
+    ])
+    expect(groups.map((group) => group.base)).toEqual(['opus', 'haiku'])
+    expect(contextChoices(groups[0])).toEqual(['1M', '200K'])
+    expect(effortChoices(groups[0]).map((choice) => choice.label)).toEqual(['Medium', 'Extra High'])
+    expect(effortChoices(groups[1])).toEqual([])
+    expect(findVariant(groups, 'opus[1m][xhigh]')?.id).toBe('opus[context=1m,effort=xhigh]')
+    expect(pickVariant(groups[0], { context: '200K', effort: 'xhigh' }).id).toBe('opus[effort=medium]')
   })
 
   it('drops favorite ids that belong to the other CLI', () => {

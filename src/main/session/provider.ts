@@ -4,7 +4,7 @@ import { claudePlanModePrompt, codexPlanModePrompt, planModePrompt, type AcpConn
 import { resolveApiKey, resolveCli, spawnCli, type ResolvedCli } from '../cli'
 import {
   claudeAsCli, claudeModeId, CLAUDE_EFFORT_CONFIG_ID, CLAUDE_MODEL_CONFIG_ID,
-  resolveClaude, resolveClaudeApiKey, spawnClaudeAcp, type ResolvedClaude
+  parseClaudeModelId, resolveClaude, resolveClaudeApiKey, spawnClaudeAcp, type ResolvedClaude
 } from '../claude'
 import { codexAsCli, codexModeId, resolveCodex, resolveCodexApiKey, spawnCodexAcp, type ResolvedCodex } from '../codex'
 
@@ -171,16 +171,15 @@ async function applyClaudeOptions(session: SessionConnection, req: SendRequest):
 
 async function applyClaudeModel(session: SessionConnection, model: string): Promise<void> {
   if (!model || model === 'auto') return
-  const bracket = model.match(/^([^[]+)\[([^\]]+)\]$/)
-  const id = bracket?.[1] ?? model
+  const { model: id, effort } = parseClaudeModelId(model)
   try {
     await session.acp.request('session/set_config_option', { sessionId: session.sessionId, configId: CLAUDE_MODEL_CONFIG_ID, value: id })
   } catch {
     /* keep the session's current model */
   }
-  if (!bracket?.[2] || bracket[2] === 'default') return
+  if (!effort) return
   try {
-    await session.acp.request('session/set_config_option', { sessionId: session.sessionId, configId: CLAUDE_EFFORT_CONFIG_ID, value: bracket[2] })
+    await session.acp.request('session/set_config_option', { sessionId: session.sessionId, configId: CLAUDE_EFFORT_CONFIG_ID, value: effort })
   } catch {
     /* the model keeps its default effort */
   }
