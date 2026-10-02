@@ -1,5 +1,5 @@
 import { listSessionUsage, summarizeUsage, type UsageWindow } from '@shared/usage'
-import { loadQuotas } from '../quota'
+import { consumeCodexReset, loadQuotas } from '../quota'
 import { newRemoteToken, type Handler } from '../remote'
 import type { IpcDeps } from './deps'
 
@@ -18,7 +18,8 @@ export function usageHandlers(deps: IpcDeps): Record<string, Handler> {
       }))
       return { summary: summarizeUsage(threads, period), sessions: listSessionUsage(threads) }
     },
-    'usage:quotas': () => loadQuotas(deps.store.settings.apiKey, deps.store.settings.codexApiKey)
+    'usage:quotas': () => loadQuotas(deps.store.settings.apiKey, deps.store.settings.codexApiKey),
+    'usage:consumeCodexReset': (creditId: string) => consumeCodexReset(deps.store.settings.codexApiKey, creditId)
   }
 }
 

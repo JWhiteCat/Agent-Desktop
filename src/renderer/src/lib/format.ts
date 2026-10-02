@@ -32,6 +32,17 @@ export function resetStamp(ts: number): string {
   return `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()} ${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
+/** Absolute local time plus the computer's short timezone name. */
+export function localExpiry(ts: number): string {
+  const date = new Date(ts)
+  const zone = new Intl.DateTimeFormat(getLocale() === 'en' ? 'en' : 'zh-CN', { timeZoneName: 'short' })
+    .formatToParts(date)
+    .find((part) => part.type === 'timeZoneName')?.value ?? ''
+  const stamp = resetStamp(ts)
+  if (!zone) return stamp
+  return getLocale() === 'en' ? `${stamp} (${zone})` : `${stamp}（${zone}）`
+}
+
 export function relativeTime(ts: number, now = Date.now()): string {
   const diff = Math.max(0, now - ts)
   const min = Math.floor(diff / 60_000)

@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { loadCodexQuota, loadQuotas } from '../src/main/quota'
+import { consumeCodexReset, loadCodexQuota, loadQuotas } from '../src/main/quota'
 
 const { fetchMock } = vi.hoisted(() => ({ fetchMock: vi.fn() }))
 vi.mock('electron', () => ({ net: { fetch: fetchMock } }))
@@ -24,7 +24,12 @@ beforeEach(() => {
   vi.stubEnv('CURSOR_API_KEY', '')
   vi.stubEnv('CODEX_HOME', '')
   vi.spyOn(fs, 'readFileSync').mockReturnValue(storedAuth())
-  fetchMock.mockReset().mockResolvedValue({ ok: true, status: 200, json: async () => usage })
+  fetchMock.mockReset().mockImplementation(async (url: string) => {
+    if (String(url).includes('/rate-limit-reset-credits')) {
+      return { ok: true, status: 200, json: async () => ({ credits: [] }) }
+    }
+    return { ok: true, status: 200, json: async () => usage }
+  })
 })
 
 afterEach(() => {
@@ -38,13 +43,13 @@ describe('Codex settings quota', () => {
     const timeout = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(signal)
     const report = await loadQuotas(undefined, undefined)
     expect(report.codex.windows).toHaveLength(2)
+    expect(report.codex.resetCredits).toEqual([])
     expect(JSON.stringify(report)).not.toContain('test-access-token')
     expect(JSON.stringify(report)).not.toContain('account-test')
     expect(timeout).toHaveBeenCalledWith(15_000)
-    expect(fetchMock).toHaveBeenCalledWith('https://chatgpt.com/backend-api/wham/usage', {
-      headers: { Authorization: 'Bearer test-access-token', 'ChatGPT-Account-Id': 'account-test' },
-      signal
-    })
+    const headers = { Authorization: 'Bearer test-access-token', 'ChatGPT-Account-Id': 'account-test' }
+    expect(fetchMock).toHaveBeenCalledWith('https://chatgpt.com/backend-api/wham/usage', { headers, signal })
+    expect(fetchMock).toHaveBeenCalledWith('https://chatgpt.com/backend-api/wham/rate-limit-reset-credits', { headers, signal })
   })
 
   it('authenticates with the access token when no account ID is available', async () => {
@@ -85,15 +90,55 @@ describe('Codex settings quota', () => {
 
   it.each([401, 403])('reports expired authentication for HTTP %i', async (status) => {
     fetchMock.mockResolvedValueOnce({ ok: false, status })
-    expect((await loadQuotas(undefined, undefined)).codex).toMatchObject({ windows: [], note: 'Codex 登录已过期，请重新登录' })
+    const codex = (await loadQuotas(undefined, undefined)).codex
+    expect(codex).toMatchObject({ windows: [], note: 'Codex 登录已过期，请重新登录' })
+    expect(codex.resetCredits).toBeUndefined()
+    expect(fetchMock).not.toHaveBeenCalledWith(expect.stringContaining('/rate-limit-reset-credits'), expect.anything())
+  })
+
+  it('keeps quota windows when reset-card details fail', async () => {
+    fetchMock.mockImplementation(async (url: string) => {
+      if (String(url).includes('/rate-limit-reset-credits')) return { ok: false, status: 503, json: async () => ({ message: 'down' }) }
+      return { ok: true, status: 200, json: async () => usage }
+    })
+    const codex = (await loadQuotas(undefined, undefined)).codex
+    expect(codex.windows).toHaveLength(2)
+    expect(codex.resetCredits).toBeNull()
+  })
+
+  it('attaches reset cards returned beside the quota windows', async () => {
+    fetchMock.mockImplementation(async (url: string) => {
+      if (String(url).includes('/rate-limit-reset-credits')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            credits: [{ id: 'credit-1', status: 'available', title: 'Full reset', expires_at: '2026-10-17T00:00:00Z' }]
+          })
+        }
+      }
+      return { ok: true, status: 200, json: async () => usage }
+    })
+    const codex = (await loadQuotas(undefined, undefined)).codex
+    expect(codex.windows).toHaveLength(2)
+    expect(codex.resetCredits).toEqual([
+      { id: 'credit-1', status: 'available', title: 'Full reset', expiresAt: Date.parse('2026-10-17T00:00:00Z') }
+    ])
   })
 
   it('reports other HTTP failures and malformed quota responses', async () => {
-    fetchMock.mockResolvedValueOnce({ ok: false, status: 503 })
+    const credits = { ok: true, status: 200, json: async () => ({ credits: [] }) }
+    fetchMock.mockImplementation(async (url: string) => (
+      String(url).includes('/rate-limit-reset-credits') ? credits : { ok: false, status: 503, json: async () => null }
+    ))
     expect((await loadQuotas(undefined, undefined)).codex).toMatchObject({ windows: [], note: '暂时无法获取 Codex 额度（HTTP 503）' })
-    fetchMock.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({}) })
+    fetchMock.mockImplementation(async (url: string) => (
+      String(url).includes('/rate-limit-reset-credits') ? credits : { ok: true, status: 200, json: async () => ({}) }
+    ))
     expect((await loadQuotas(undefined, undefined)).codex).toMatchObject({ windows: [], note: '没有可用的额度窗口' })
-    fetchMock.mockResolvedValueOnce({ ok: true, status: 200, json: async () => { throw new Error('invalid JSON') } })
+    fetchMock.mockImplementation(async (url: string) => (
+      String(url).includes('/rate-limit-reset-credits') ? credits : { ok: true, status: 200, json: async () => { throw new Error('invalid JSON') } }
+    ))
     expect((await loadQuotas(undefined, undefined)).codex).toMatchObject({ windows: [], note: '没有可用的额度窗口' })
   })
 })
@@ -115,6 +160,36 @@ describe('Codex turn quota snapshot', () => {
     const timeout = vi.spyOn(AbortSignal, 'timeout')
     await loadCodexQuota(undefined)
     expect(timeout).toHaveBeenCalledExactlyOnceWith(15_000)
+  })
+
+  it('posts one consume request and does not retry', async () => {
+    fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => ({ code: 'reset' }) })
+    await consumeCodexReset(undefined, ' credit-1 ')
+    expect(fetchMock).toHaveBeenCalledOnce()
+    const [url, init] = fetchMock.mock.calls[0] as [string, { method: string; headers: Record<string, string>; body: string }]
+    expect(url).toBe('https://chatgpt.com/backend-api/wham/rate-limit-reset-credits/consume')
+    expect(init.method).toBe('POST')
+    expect(init.headers.Authorization).toBe('Bearer test-access-token')
+    expect(init.headers['ChatGPT-Account-Id']).toBe('account-test')
+    expect(JSON.parse(init.body)).toEqual({
+      credit_id: 'credit-1',
+      redeem_request_id: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
+    })
+  })
+
+  it('reports consume failure without the access token', async () => {
+    fetchMock.mockResolvedValue({ ok: false, status: 409, json: async () => ({ message: 'already used test-access-token' }) })
+    await expect(consumeCodexReset(undefined, 'credit-1')).rejects.toThrow('暂时无法使用重置卡（HTTP 409）')
+    fetchMock.mockResolvedValue({ ok: false, status: 409, json: async () => ({ message: 'already redeemed' }) })
+    await expect(consumeCodexReset(undefined, 'credit-1')).rejects.toThrow('暂时无法使用重置卡（HTTP 409）：already redeemed')
+  })
+
+  it('does not redeem when the id is blank, the login is an API key, or the network fails', async () => {
+    await expect(consumeCodexReset(undefined, '  ')).rejects.toThrow('找不到这张重置卡')
+    await expect(consumeCodexReset('configured-api-key', 'credit-1')).rejects.toThrow('API Key')
+    expect(fetchMock).not.toHaveBeenCalled()
+    fetchMock.mockRejectedValue(new Error('network failed'))
+    await expect(consumeCodexReset(undefined, 'credit-1')).rejects.toThrow(/^暂时无法使用重置卡$/)
   })
 
   it('reports timed out snapshots without rejecting the caller', async () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applyCursorMonthUsage, parseCodexQuota, parseCursorQuota, windowLabel } from '../src/shared/quota'
+import { applyCursorMonthUsage, parseCodexQuota, parseCodexResetCredits, parseCursorQuota, windowLabel } from '../src/shared/quota'
 
 describe('window labels', () => {
   it('names common periods and leaves other lengths numeric', () => {
@@ -269,5 +269,37 @@ describe('codex quota', () => {
     const quota = parseCodexQuota({ plan_type: 'plus', rate_limit: { secondary_window: null } })
     expect(quota.windows).toEqual([])
     expect(quota.note).toBe('没有可用的额度窗口')
+  })
+})
+
+describe('codex reset credits', () => {
+  it('reads the title, status, and expiration', () => {
+    expect(parseCodexResetCredits({
+      credits: [
+        { id: 'credit-1', status: 'available', title: 'Full reset', expires_at: '2026-10-17T00:00:00Z' }
+      ]
+    })).toEqual([
+      { id: 'credit-1', status: 'available', title: 'Full reset', expiresAt: Date.parse('2026-10-17T00:00:00Z') }
+    ])
+  })
+
+  it('returns an empty list when the account has no cards', () => {
+    expect(parseCodexResetCredits({ credits: [], available_count: 0 })).toEqual([])
+  })
+
+  it('omits a bad expiration and drops a row without an id', () => {
+    expect(parseCodexResetCredits({
+      credits: [
+        { id: 'credit-2', status: 'Expired', title: 'Old', expires_at: 'not-a-date' },
+        { title: 'missing' },
+        null
+      ]
+    })).toEqual([{ id: 'credit-2', status: 'expired', title: 'Old' }])
+  })
+
+  it('rejects a payload that is not a credit list', () => {
+    expect(parseCodexResetCredits(null)).toBeNull()
+    expect(parseCodexResetCredits({ credits: { balance: '0' } })).toBeNull()
+    expect(parseCodexResetCredits({ available_count: 2 })).toBeNull()
   })
 })

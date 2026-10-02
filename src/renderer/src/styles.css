@@ -1739,6 +1739,25 @@ select {
   gap: 8px;
   font-weight: 500;
 }
+.quota-resets {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+.quota-reset {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.quota-reset-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+}
 .quota-row {
   display: flex;
   flex-direction: column;

@@ -35,12 +35,26 @@ export interface WindowUsage {
   costUsd: number | null
 }
 
+/** One ChatGPT rate-limit reset credit. `expiresAt` is Unix milliseconds in absolute time. */
+export interface CodexResetCredit {
+  id: string
+  title: string
+  /** Service status, such as available, redeemed, or expired. */
+  status: string
+  expiresAt?: number
+}
+
 export interface ProviderQuota {
   provider: 'cursor' | 'codex'
   plan?: string
   windows: QuotaWindow[]
   /** Why the card is empty, or a warning beside the windows. */
   note?: string
+  /**
+   * Codex reset cards from the settings quota read.
+   * Undefined when this account was not queried. Null when the detail request failed.
+   */
+  resetCredits?: CodexResetCredit[] | null
 }
 
 export interface QuotaReport {
@@ -135,6 +149,26 @@ export function parseCodexQuota(body: unknown): ProviderQuota {
     return { provider: 'codex', plan, windows, note: '没有可用的额度窗口' }
   }
   return { provider: 'codex', plan, windows }
+}
+
+/** Reads `GET /wham/rate-limit-reset-credits`. Null means the payload is not that list. */
+export function parseCodexResetCredits(body: unknown): CodexResetCredit[] | null {
+  const root = asRecord(body)
+  if (!root || !Array.isArray(root.credits)) return null
+  const credits: CodexResetCredit[] = []
+  for (const item of root.credits) {
+    const row = asRecord(item)
+    const id = text(pick(row, 'id', 'credit_id', 'creditId'))
+    if (!row || !id) continue
+    const expiresAt = expiryMillis(pick(row, 'expires_at', 'expiresAt'))
+    credits.push({
+      id,
+      title: text(pick(row, 'title', 'name')) ?? '',
+      status: (text(pick(row, 'status')) ?? '').toLowerCase(),
+      ...(expiresAt != null ? { expiresAt } : {})
+    })
+  }
+  return credits
 }
 
 function otherModelsWindow(
@@ -266,6 +300,14 @@ function millis(value: unknown): number | undefined {
   const n = num(value)
   if (n == null || n <= 0) return undefined
   return n < 1e12 ? n * 1000 : n
+}
+
+function expiryMillis(value: unknown): number | undefined {
+  if (typeof value === 'string') {
+    const parsed = Date.parse(value)
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined
+  }
+  return millis(value)
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {

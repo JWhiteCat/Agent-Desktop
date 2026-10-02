@@ -52,6 +52,8 @@ export interface DesktopApi {
   updateSettings(patch: Partial<Settings>): Promise<Settings>
   usageSummary(period: UsageWindow): Promise<UsageReport>
   usageQuotas(): Promise<QuotaReport>
+  /** Redeems one Codex reset card. The caller must already have confirmed. */
+  consumeCodexReset(creditId: string): Promise<void>
   listModels(refresh?: boolean, provider?: CliProvider): Promise<ModelInfo[]>
   cliInfo(provider?: CliProvider): Promise<CliInfo>
   login(provider?: CliProvider): Promise<string>

@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { getLocale } from '@shared/i18n'
-import { displayQuotaText, type ProviderQuota, type QuotaReport, type QuotaWindow, type WindowUsage } from '@shared/quota'
+import { displayQuotaText, type CodexResetCredit, type ProviderQuota, type QuotaReport, type QuotaWindow, type WindowUsage } from '@shared/quota'
 import { useT } from '../../lib/i18n'
-import { compactNumber, formatUsd, resetStamp, resetsIn } from '../../lib/format'
+import { compactNumber, formatUsd, localExpiry, resetStamp, resetsIn } from '../../lib/format'
 import { errorText } from '../../store'
 import { HoverTip } from '../HoverTip'
 
@@ -48,14 +48,14 @@ export function QuotaPanel() {
       ) : report ? (
         <div className="quota-grid">
           <QuotaCard title="Cursor" quota={report.cursor} />
-          <QuotaCard title="Codex" quota={report.codex} />
+          <QuotaCard title="Codex" quota={report.codex} onRedeemed={() => setReload((n) => n + 1)} />
         </div>
       ) : null}
     </>
   )
 }
 
-function QuotaCard({ title, quota }: { title: string; quota: ProviderQuota }) {
+function QuotaCard({ title, quota, onRedeemed }: { title: string; quota: ProviderQuota; onRedeemed?: () => void }) {
   const t = useT()
   const plan = planCaption(quota.plan)
   return (
@@ -69,8 +69,70 @@ function QuotaCard({ title, quota }: { title: string; quota: ProviderQuota }) {
       ) : (
         quota.windows.map((row) => <QuotaRow key={row.id} row={row} />)
       )}
+      {quota.resetCredits !== undefined ? <ResetCredits credits={quota.resetCredits} onRedeemed={onRedeemed} /> : null}
     </div>
   )
+}
+
+function ResetCredits({ credits, onRedeemed }: { credits: CodexResetCredit[] | null; onRedeemed?: () => void }) {
+  const t = useT()
+  const [pendingId, setPendingId] = useState('')
+  const [error, setError] = useState('')
+
+  async function redeem(credit: CodexResetCredit): Promise<void> {
+    if (pendingId) return
+    const title = credit.title || t('重置卡')
+    if (!window.confirm(t('使用重置卡「{title}」？此操作会用掉这张卡，且不能撤销。', { title }))) return
+    setPendingId(credit.id)
+    setError('')
+    try {
+      await window.api.consumeCodexReset(credit.id)
+      onRedeemed?.()
+    } catch (err) {
+      setError(errorText(err))
+    } finally {
+      setPendingId('')
+    }
+  }
+
+  return (
+    <div className="quota-resets">
+      <div className="quota-row-top">
+        <span>{t('重置卡')}</span>
+      </div>
+      {credits == null ? (
+        <div className="muted small">{t('暂时无法读取重置卡')}</div>
+      ) : credits.length === 0 ? (
+        <div className="muted small">{t('没有重置卡')}</div>
+      ) : (
+        credits.map((credit) => {
+          const title = credit.title || t('重置卡')
+          const expiry = credit.expiresAt != null ? t('到期 {date}', { date: localExpiry(credit.expiresAt) }) : t('没有到期时间')
+          return (
+            <div className="quota-reset" key={credit.id}>
+              <div className="quota-reset-top">
+                <span>{title}{credit.status ? ` · ${resetStatus(credit.status)}` : ''}</span>
+                {credit.status === 'available' ? (
+                  <button type="button" className="usage-period" disabled={pendingId !== ''} onClick={() => void redeem(credit)}>
+                    {t('重置')}
+                  </button>
+                ) : null}
+              </div>
+              <div className="muted small">{expiry}</div>
+            </div>
+          )
+        })
+      )}
+      {error ? <div className="notice error">{error}</div> : null}
+    </div>
+  )
+}
+
+function resetStatus(status: string): string {
+  if (status === 'available') return displayQuotaText('可用')
+  if (status === 'redeemed') return displayQuotaText('已使用')
+  if (status === 'expired') return displayQuotaText('已过期')
+  return status
 }
 
 function QuotaRow({ row }: { row: QuotaWindow }) {
