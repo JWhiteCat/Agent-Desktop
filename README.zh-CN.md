@@ -12,8 +12,8 @@
 - 分叉对话：可从标题栏、侧边栏、某条消息，或发送 `/fork` 开始，复制的历史会作为后续续聊的上下文
 - 对话里的斜杠命令：输入 `/` 会列出 `/fork` 和 CLI 宣告的命令。`/fork` 在本应用内执行，其他命令作为下一条消息发出
 - 三种模式：Agent（可改文件、执行命令）、Plan（只读方案，可点选回答提问、一键执行计划）、Ask（只读问答）
-- 模型选择：Cursor、Codex 与 Claude 各自记住常用模型、默认模型，以及每个模型的上下文长度、思考强度和 Fast。Codex 按每个模型自己的档位列出思考强度，例如 Astra 的 Ultra。Claude 列出适配器为当前模型宣告的思考档位。每个项目会记住自己在该 CLI 里上次选的模型
-- 新建的对话可以在隔离的 git worktree 中运行。Cursor 使用 CLI 自带的 `--worktree`；Codex 和 Claude 由本应用在项目 HEAD 上创建 worktree 和新分支 `agent-desktop/<名称>`，未提交的改动不会带过去
+- 模型选择：Cursor、Codex 与 Claude 各自记住常用模型、默认模型，以及每个模型的上下文长度、思考强度和 Fast。Codex 按每个模型自己的档位列出思考强度，例如 Astra 的 Ultra。Claude 把上下文和思考强度写成模型 id 上的独立参数，例如 `opus[context=1m,effort=high]`，每个模型保留适配器为该模型宣告的思考档位。旧 id（如 `sonnet[high]`）仍能解析。每个项目会记住自己在该 CLI 里上次选的模型
+- 新建的对话可以在隔离的 git worktree 中运行。Cursor 使用 CLI 自带的 `--worktree`，随后在 CLI 报告的目录里继续会话；Codex 和 Claude 由本应用在项目 HEAD 上创建 worktree 和新分支 `agent-desktop/<名称>`，未提交的改动不会带过去
 - 变更面板有两个页签：本对话编辑过的文件，以及当前工作目录的 git 分支、状态和 diff
 - 一轮任务结束后，在回复下方列出本轮修改的文件，点开可看 diff
 - 任务结束时，回复下方显示本轮耗时、token、使用的模型，以及按公开标价估算的费用。Codex 的“本轮周额度”使用服务端归属于当前会话的累计额度统计，悬浮说明展示周额度、5 小时额度等读数及统计口径。通过 ChatGPT 登录的新回合还会显示“本轮预估周额度”，取本轮前后账号周额度已用百分比之差；数据缺失或统计未完成时会明确标注
@@ -23,7 +23,7 @@
 - 主题：跟随系统、深色、浅色
 - 语言：跟随系统、简体中文、English，即时切换并在重启后保留选择
 - 设置按左侧分类切换：CLI、MCP、Skill、模型、用量、默认值、通知、远程控制、外观与历史。CLI 页分别检测 Cursor、Codex 与 Claude，并填写路径、API Key 和登录；登录右侧的「更新」按钮可更新对应的独立 CLI，显示进度和执行结果，完成后刷新版本与模型列表。模型页用 Cursor / Codex / Claude 页签分别配置常用模型和默认模型。MCP 和 Skill 页可在「本应用」与「本地所有」之间切换，后者直接管理各 CLI 在本机的原生配置。导入历史在「外观与历史」页
-- 用量：显示 Cursor 与 Codex 的账号额度（有则显示 5 小时、每周、每月窗口和下次重置时间）。Claude 的账号额度尚未接入。Cursor 模型和其他模型还会显示该池的实际 token 和账号返回的价格。其他模型只显示包含的 API 用量百分比。按需支出在同一行显示已用和上限，有明细时再显示 token，不重复总价。下面按最近 1 天、7 天、30 天汇总本机 token，分页列出全部历史会话的模型和累计消耗。本机费用中，Cursor 用 [Cursor 公开标价](https://cursor.com/docs/models-and-pricing)，Codex 用 [OpenAI API 公开标价](https://developers.openai.com/api/docs/pricing) 估算。估算金额不代表订阅账单。Auto 和价目表没有的模型显示为未定价
+- 用量：显示 Cursor 与 Codex 的账号额度（有则显示 5 小时、每周、每月窗口和下次重置时间）。Claude 的账号额度尚未接入。Cursor 模型和其他模型还会显示该池的实际 token 和账号返回的价格。其他模型只显示包含的 API 用量百分比。按需支出在同一行显示已用和上限，有明细时再显示 token，不重复总价。下面按最近 1 天、7 天、30 天汇总本机 token，分页列出全部历史会话的模型和累计消耗。本机费用中，Cursor 用 [Cursor 公开标价](https://cursor.com/docs/models-and-pricing)，Codex 用 [OpenAI API 公开标价](https://developers.openai.com/api/docs/pricing)，Claude Code 用 [Anthropic API 公开标价](https://platform.claude.com/docs/en/about-claude/pricing) 估算。Claude 按本轮记录的 API 模型 id 计价，不用选择器里的别名。估算金额不代表订阅账单。Auto、没有记录 API 模型的 Claude 别名，以及价目表没有的模型显示为未定价
 - 远程控制：局域网扫码，或经 SSH 反向隧道从公网打开同一页面
 
 ## 界面语言
@@ -141,13 +141,13 @@ Windows 一键启动（需先安装 Node.js 22.12 或更高版本，包含 npm�
 | Shift+Enter | 换行 |
 | Esc | 停止当前运行 |
 
-输入框用来选 CLI、模式和模型，也可以打开完全访问（`--force`）。首页上的 CLI 用于新建对话。对话里切换 CLI 时，已经显示的记录保留，下一条消息会用所选 CLI 新开一段会话。这个选择会记成设置里 CLI 页的默认值。完全访问会让 CLI 在不逐条确认的情况下执行命令。对 Claude 来说，完全访问是 `bypassPermissions`；不开完全访问的 Agent 是 `acceptEdits`，改文件会自动通过，命令仍会询问。Ask 保持 Claude 的默认权限模式，应用会拒绝改文件和执行命令的请求。沙箱（`--sandbox`）在设置的「默认值」里：遵循 CLI、启用或禁用，只作用于 Cursor，不是输入框上的开关，Claude 不使用它。首页上，新建的对话还可以在项目目录和隔离的 git worktree 之间切换。Cursor 用 `--worktree`；Codex 和 Claude 的 worktree 由本应用创建，项目必须是有提交的 git 仓库。
+输入框用来选 CLI、模式和模型，也可以打开完全访问（`--force`）。首页上的 CLI 用于新建对话。对话里切换 CLI 时，已经显示的记录保留，下一条消息会用所选 CLI 新开一段会话。这个选择会记成设置里 CLI 页的默认值。完全访问会让 CLI 在不逐条确认的情况下执行命令。对 Claude 来说，完全访问是 `bypassPermissions`；不开完全访问的 Agent 是 `acceptEdits`，改文件会自动通过，命令仍会询问。Ask 保持 Claude 的默认权限模式，应用会拒绝改文件和执行命令的请求。沙箱（`--sandbox`）在设置的「默认值」里：遵循 CLI、启用或禁用，只作用于 Cursor，不是输入框上的开关，Claude 不使用它。首页上，新建的对话还可以在项目目录和隔离的 git worktree 之间切换。Cursor 用 `--worktree`，随后在 CLI 报告的目录里继续；Codex 和 Claude 的 worktree 由本应用创建，项目必须是有提交的 git 仓库。
 
 在一段对话里输入 `/` 会打开命令菜单。方向键移动，Enter 或 Tab 选中，Esc 只关闭菜单，不会停止正在运行的回合。`/fork` 在本地分叉。需要参数的命令会填成 `/名称 `，并在输入框下方显示提示，再按 Enter 发送。没有参数的命令会立刻执行。列表里还有 CLI 通过 ACP `available_commands_update` 宣告的命令。已有 CLI 会话的对话，第一次输入 `/` 会加载该会话，以便列出这些命令。新对话和首页不启动 CLI，而是复用这个 CLI 上一次宣告的命令列表，并记在本机；还没有任何列表时不显示菜单。下一次真实会话会刷新这份列表。以 `/` 开头但没有匹配项的文本仍按普通消息发送。
 
 项目分别记住 Cursor、Codex 和 Claude 的模型。修改其中一个 CLI 的模型或常用模型列表，会保留另外两个 CLI 的选择。
 
-模型选择器还会按 CLI 和模型分别记住上下文长度、思考强度（含 Thinking）及 Fast 开关。选择后立即保存，无需发送消息；切换回该模型或重启应用后再次选择时，会恢复它上次的配置。切换到常用模型、新建对话、切换项目或 CLI，以及设置页的默认模型，都会以该模型最新保存的配置为准，而不是项目或默认模型上次记录的旧档位。这些偏好保存在 `state.json` 中，桌面端与远程页面共享。已有对话保留自己的模型配置，打开旧对话不会覆盖这些偏好。如果 CLI 不再提供某个配置组合，选择器会使用当前可用的变体。
+模型选择器还会按 CLI 和模型分别记住上下文长度、思考强度（含 Thinking）及 Fast 开关。Claude 把上下文和思考强度写成独立参数，例如 `opus[context=1m,effort=high]`。同一别名如果另外列出了 `[1m]`，不带上下文的那一项会标成 200K。旧版本保存的 `sonnet[high]`、`opus[1m][high]` 仍会选中对应的模型和思考强度。选择后立即保存，无需发送消息；切换回该模型或重启应用后再次选择时，会恢复它上次的配置。切换到常用模型、新建对话、切换项目或 CLI，以及设置页的默认模型，都会以该模型最新保存的配置为准，而不是项目或默认模型上次记录的旧档位。这些偏好保存在 `state.json` 中，桌面端与远程页面共享。已有对话保留自己的模型配置，打开旧对话不会覆盖这些偏好。如果 CLI 不再提供某个配置组合，选择器会使用当前可用的变体。
 
 打开或刷新对话时，历史加载期间收到的流式消息会合并保留。CLI 返回空历史时不会覆盖本地对话。删除对话、修改 CLI 配置或退出应用，也会停止尚在预加载会话的 CLI 进程。
 
@@ -193,7 +193,9 @@ MCP、Skill、CLI 路径、API Key 或沙箱设置变更后，空闲的 CLI 进�
 
 用量页顶部显示 Cursor 与 Codex 的账号额度。Claude 的账号额度尚未接入。Cursor 显示当前账单周期里的 Cursor 模型和其他模型占用，以及下次重置时间；有按需上限时一并显示。Cursor 模型和其他模型还会带上该池的实际 token（输入、输出、缓存读、缓存写）和账号返回的价格，并按账号的池标记拆开。其他模型只显示包含的 API 用量百分比。套餐的包含金额会停在已购上限，不是这一池的消耗，所以不标在这行上。按需支出在进度旁显示已用和上限；账号若返回了按需明细，也会带上 token，但不再重复总价。Codex 显示接口返回的窗口，常见是 5 小时和每周，并写出下次重置时间。没有的窗口不显示。只用 API Key 登录的 Codex 没有订阅额度，卡片会说明原因。这些数字来自账号接口，不是下面的本机估算。
 
-设置里的用量汇总本机对话最近 1 天、7 天、30 天的 token，并按模型列出估算费用。模型名是短名，例如「Grok 4.7 500K High Fast」，不带完整参数串。下面的会话列表包含全部历史对话。每一行显示用过的模型、累计 token 和费用，不受上面的天数限制。超过 20 行会分页。没有 token 记录的对话仍会列出，费用留空。一轮结束时，回复下方也会显示该轮的耗时、token、模型和估算费用。Codex token 根据本机日志的累计用量差统计，包含一轮内的所有模型请求，重复快照只计一次。输入排除缓存，推理 token 已包含在输出中。Codex 逐请求计价，避免多次短请求的累计输入误触发长上下文价格。其他 CLI 使用其报告的回合用量，缓存读取和写入分开计数。Cursor 使用 [Cursor 公开标价](https://cursor.com/docs/models-and-pricing)，Codex 使用 [OpenAI API 公开标价](https://developers.openai.com/api/docs/pricing)，单位为美元 / 百万 token。同一模型在不同 CLI 中按各自的价格分别统计。估算金额不代表订阅账单或剩余额度；Cursor 估算不含 Teams Token Rate。不足一美分的金额显示到四位小数。Auto 和价目表里没有的模型只显示 token，费用标为未定价。上面的汇总里，分叉复制过去的一轮只计一次。会话列表按每段对话自己的记录相加，所以同一轮会同时出现在原对话和分叉里。
+设置里的用量汇总本机对话最近 1 天、7 天、30 天的 token，并按模型列出估算费用。模型名是短名，例如「Grok 4.7 500K High Fast」，不带完整参数串。下面的会话列表包含全部历史对话。每一行显示用过的模型、累计 token 和费用，不受上面的天数限制。超过 20 行会分页。没有 token 记录的对话仍会列出，费用留空。一轮结束时，回复下方也会显示该轮的耗时、token、模型和估算费用。Codex token 根据本机日志的累计用量差统计，包含一轮内的所有模型请求，重复快照只计一次。输入排除缓存，推理 token 已包含在输出中。Codex 逐请求计价，避免多次短请求的累计输入误触发长上下文价格。其他 CLI 使用其报告的回合用量，缓存读取和写入分开计数。Cursor 使用 [Cursor 公开标价](https://cursor.com/docs/models-and-pricing)，Codex 使用 [OpenAI API 公开标价](https://developers.openai.com/api/docs/pricing)，Claude Code 使用 [Anthropic API 公开标价](https://platform.claude.com/docs/en/about-claude/pricing)，单位均为美元 / 百万 token。同一模型在不同 CLI 中按各自的价格分别统计。估算金额不代表订阅账单或剩余额度；Cursor 估算不含 Teams Token Rate。不足一美分的金额显示到四位小数。Auto、没有记录 API 模型的 Claude 别名，以及价目表里没有的模型只显示 token，费用标为未定价。上面的汇总里，分叉复制过去的一轮只计一次。会话列表按每段对话自己的记录相加，所以同一轮会同时出现在原对话和分叉里。
+
+Claude Code 按用量更新附带的 API 模型 id 计价，并把它记在回复的 `apiModel` 上。`opus` 这类别名本身不计价，所以别名以后指向新模型时，旧回合不会被重新计价。没有记录 API 模型的回合保持未定价。带日期的快照（如 `claude-haiku-4-5-20251001`）使用去掉日期后的价格。缓存写入按 5 分钟费率计算，因为 CLI 把 5 分钟和 1 小时写入合成一个计数。Claude 4.6 及更新版本按标准费率计算完整的 1M 上下文，上下文标记不会改用长上下文价格。Fast、Batch 和仅美国推理没有单独记录，保持未定价。
 
 通过 ChatGPT 登录 Codex 时，回复在价格右侧显示“本轮周额度”。服务端按当前 Codex 会话 ID 归属周额度、5 小时额度和余额 credits，读数表示该会话在当前额度周期内的累计消耗，不受其他独立会话影响，不能把各轮页脚相加；悬浮说明会注明这一累计统计口径。已返回的有效零值显示为 0，极小正数保留精度，超过 100% 的有效读数也会保留。缺少的额度窗口不显示；部分结果标为“统计中”，服务未返回有效结果时显示“服务未返回”，尚无读数时显示“暂无数据”。任务结束和打开历史时会刷新该会话最新的结果；缺失或不完整时，最多在 30 秒、2 分钟和 5 分钟后重试。这些会话统计读取不发送模型请求，不延迟发送或完成，每次最多等待 8 秒。部分会话即使已有本机 token 记录，服务仍可能不返回额度归属数据；不能据此认定没有消耗或保证稍后一定可用。旧接口返回的会话 credits 和金额可作为后备显示，但不会换算成额度百分比。API Key 会话不查询订阅用量。
 
@@ -262,10 +264,12 @@ npm run setup:public-server -- --user root --host 你的服务器 --port 8765
 src/main              Electron 主进程
   index.ts            窗口、IPC、通知和退出
   sessions.ts         对话调度、ACP 进程生命周期和流式轮次
+  reducer.ts          流式 ACP 更新，并记下 Claude 用量更新上的 API 模型 id
   session/provider.ts CLI 启动、认证、会话选项和 Plan 提示词
   session/requests.ts 通过轮次接口处理 ACP 问答和权限请求
   session/usage.ts    延迟用量写回及可取消的账号用量重试
   cli.ts              查找并启动 Cursor CLI
+  git.ts              为 Codex 和 Claude 对话创建和移除 worktree
   codex.ts            Codex 适配器：模型、登录、模式 id
   claude.ts           Claude 适配器：模型、登录、模式 id
   claude-history.ts   从 ~/.claude/projects 导入记录
@@ -287,7 +291,7 @@ src/renderer/src      React 界面
   components/items/   Markdown、消息、工具、计划、问答和结果展示
   components/settings 设置各页
   lib/model-prefs.ts  决定选中哪个模型，不放在界面状态里
-src/shared            主进程和界面共用的类型、价格、用量、额度、斜杠命令，以及 Plan 提问块
+src/shared            主进程和界面共用的类型、Cursor / OpenAI / Anthropic 价目、用量、额度、斜杠命令，以及 Plan 提问块
 scripts               公网入口（public-gateway.py）、服务器安装脚本（setup-public-server.sh）、本机一键配置（setup-public-server.mjs）
 test                  离线单元测试，以及在线冒烟测试
 ```
