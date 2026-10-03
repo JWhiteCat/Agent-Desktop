@@ -121,6 +121,8 @@ Windows 一键启动（需先安装 Node.js 22.12 或更高版本，包含 npm�
 
 `npm test` 不访问 Cursor CLI、Codex 或 Claude。`npm run test:live` 才会在临时空目录里用 Ask 模式调用 `composer-2.5[fast=true]`，提示只有一句 `Reply with exactly ok`。认证优先使用环境变量 `CURSOR_API_KEY`，未设置时使用 CLI 保存的登录。
 
+可用 `npm test -- test/claude.test.ts test/turn-usage.test.ts` 定向检查。这些测试将 Claude 检测与用户主目录隔离，覆盖含空格路径下的用量 preload 加载，并清理临时夹具。仅适用于 Windows 的检查在其他平台会明确标为跳过。
+
 打包目标：Windows NSIS、macOS DMG、Linux AppImage。
 
 按 `F12` 打开开发者工具。离开本应用的链接会用系统浏览器打开。

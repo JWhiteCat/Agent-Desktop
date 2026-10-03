@@ -51,16 +51,26 @@ const TURN_USAGE = {
 }
 
 function loadPatchedChunk(chunkName: string, moduleSource: string, runSource: string) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ad-usage-'))
-  const preload = path.join(dir, 'preload.cjs')
-  fs.writeFileSync(preload, acpUsagePreloadSource())
-  fs.writeFileSync(path.join(dir, chunkName), moduleSource)
-  fs.writeFileSync(path.join(dir, 'run.cjs'), runSource)
-  return spawnSync(process.execPath, [path.join(dir, 'run.cjs')], {
-    cwd: dir,
-    encoding: 'utf8',
-    env: { ...process.env, NODE_OPTIONS: `--require ${preload.replace(/\\/g, '/')}` }
-  })
+  // Keep a space in the fixture path so preload argument handling stays covered.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ad usage-'))
+  try {
+    const preload = path.join(dir, 'preload.cjs')
+    fs.writeFileSync(preload, acpUsagePreloadSource())
+    fs.writeFileSync(path.join(dir, chunkName), moduleSource)
+    fs.writeFileSync(path.join(dir, 'run.cjs'), runSource)
+    return spawnSync(process.execPath, ['--require', preload, path.join(dir, 'run.cjs')], {
+      cwd: dir,
+      encoding: 'utf8',
+      windowsHide: true,
+      env: { ...process.env, NODE_OPTIONS: '' }
+    })
+  } finally {
+    const resolved = path.resolve(dir)
+    if (path.dirname(resolved) !== path.resolve(os.tmpdir()) || !path.basename(resolved).startsWith('ad usage-')) {
+      throw new Error(`Unexpected test directory: ${resolved}`)
+    }
+    fs.rmSync(resolved, { recursive: true, force: true })
+  }
 }
 
 describe('ACP usage preload', () => {

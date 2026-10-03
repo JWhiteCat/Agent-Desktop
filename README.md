@@ -113,6 +113,8 @@ The first run needs internet access to download dependencies and Electron. Later
 
 `npm test` does not talk to Cursor CLI, Codex, or Claude. `npm run test:live` is the one that does: in a temporary empty directory, Ask mode calls `composer-2.5[fast=true]` with the prompt `Reply with exactly ok`. Authentication uses `CURSOR_API_KEY` when set, otherwise the saved CLI login.
 
+Run a focused check with `npm test -- test/claude.test.ts test/turn-usage.test.ts`. These tests isolate Claude discovery from the user's home directory, load the usage preload from paths containing spaces, and clean up their temporary fixtures. Windows-only checks are reported as skipped on other platforms.
+
 Package targets: Windows NSIS, macOS DMG, and Linux AppImage.
 
 Press `F12` to open DevTools. Links that leave the app open in the system browser.

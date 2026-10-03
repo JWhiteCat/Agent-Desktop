@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { claudeModeId, isClaudeShellShim, modelsFromClaudeSession, parseClaudeModelId, resolveClaude } from '../src/main/claude'
 import { claudeTranscriptItems, scanClaudeSessions, visibleUserText } from '../src/main/claude-history'
 import { normalizeCliProvider } from '../src/shared/types'
@@ -9,7 +9,15 @@ import { normalizeCliProvider } from '../src/shared/types'
 const roots: string[] = []
 
 afterEach(() => {
-  for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true })
+  vi.restoreAllMocks()
+  vi.unstubAllEnvs()
+  for (const root of roots.splice(0)) {
+    const resolved = path.resolve(root)
+    if (path.dirname(resolved) !== path.resolve(os.tmpdir()) || !path.basename(resolved).startsWith('agent-desktop-claude-')) {
+      throw new Error(`Unexpected test directory: ${resolved}`)
+    }
+    fs.rmSync(resolved, { recursive: true, force: true })
+  }
 })
 
 describe('claude mode and models', () => {
@@ -21,19 +29,14 @@ describe('claude mode and models', () => {
     expect(isClaudeShellShim('/usr/local/bin/claude', 'linux')).toBe(false)
   })
 
-  it('ignores an npm claude shim on PATH and keeps the bundled binary', () => {
-    if (process.platform !== 'win32') return
+  it.skipIf(process.platform !== 'win32')('ignores an npm claude shim on PATH and keeps the bundled binary', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-desktop-claude-shim-'))
     roots.push(dir)
     fs.writeFileSync(path.join(dir, 'claude'), '#!/bin/sh\nexit 0\n')
     fs.writeFileSync(path.join(dir, 'claude.cmd'), '@echo off\r\n')
-    const previous = process.env.PATH
-    process.env.PATH = dir
-    try {
-      expect(resolveClaude('')).toMatchObject({ bundled: true, claudePath: undefined })
-    } finally {
-      process.env.PATH = previous
-    }
+    vi.stubEnv('PATH', dir)
+    vi.spyOn(os, 'homedir').mockReturnValue(dir)
+    expect(resolveClaude('')).toMatchObject({ bundled: true, claudePath: undefined })
   })
 
   it('maps the three app modes onto Claude permission modes', () => {
