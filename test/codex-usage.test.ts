@@ -157,6 +157,160 @@ describe('Codex rollout token usage', () => {
     expect(turns[0].usage.requests).toHaveLength(2)
   })
 
+  describe('approved plan implementation inside one ACP prompt', () => {
+    const planPair = (patch: {
+      originator?: string
+      planMode?: string
+      implementationMode?: string
+      planText?: string
+      prompt?: string
+      gap?: number
+      model?: string
+      abortedPlan?: boolean
+      incompletePlan?: boolean
+      interveningTurn?: boolean
+      earlierPrompt?: boolean
+    } = {}): string[] => [
+      row('session_meta', { id: 'desktop', originator: patch.originator ?? 'agent-desktop' }),
+      event('task_started', { turn_id: 'plan', collaboration_mode_kind: patch.planMode ?? 'plan' }),
+      row('turn_context', { turn_id: 'plan', model: 'gpt-5.4' }),
+      row('response_item', { type: 'message', role: 'user', content: 'Prepare the changes.' }),
+      tokens(counts(100, 40, 20, 10)),
+      row('response_item', {
+        type: 'message', role: 'assistant',
+        content: [{ type: 'output_text', text: patch.planText ?? '<proposed_plan>\nDo the changes.\n</proposed_plan>' }]
+      }, 1),
+      ...(patch.incompletePlan ? [] : [event(patch.abortedPlan ? 'turn_aborted' : 'task_complete', { turn_id: 'plan' }, 2)]),
+      ...(patch.interveningTurn ? [
+        event('task_started', { turn_id: 'unrelated' }, 2),
+        event('task_complete', { turn_id: 'unrelated' }, 2)
+      ] : []),
+      event('task_started', { turn_id: 'implementation', collaboration_mode_kind: patch.implementationMode ?? 'default' }, 2 + (patch.gap ?? 0)),
+      row('turn_context', { turn_id: 'implementation', model: patch.model ?? 'gpt-5.4' }, 2 + (patch.gap ?? 0)),
+      ...(patch.earlierPrompt ? [event('user_message', { message: 'A different task.' }, 2)] : []),
+      row('response_item', {
+        type: 'message', role: 'user',
+        content: [{ type: 'input_text', text: patch.prompt ?? 'Implement the approved plan.' }]
+      }, 2 + (patch.gap ?? 0))
+    ]
+
+    it('combines plan and implementation requests with the original stable ID and final quota', () => {
+      const text = [
+        ...planPair(),
+        tokens(counts(300, 160, 50, 20), counts(200, 120, 30, 10), 3),
+        event('token_count', {
+          info: null,
+          rate_limits: { limit_id: 'codex', primary: { used_percent: 37, window_minutes: 10_080 } }
+        }, 3),
+        event('task_complete', { turn_id: 'implementation' }, 4),
+        event('task_started', { turn_id: 'next' }, 5),
+        tokens(counts(400, 210, 70, 20), counts(100, 50, 20), 6),
+        event('task_complete', { turn_id: 'next' }, 7)
+      ].join('\n')
+      const turns = parseCodexUsage(text)
+      expect(turns).toHaveLength(2)
+      expect(turns[0]).toMatchObject({
+        usageId: 'codex:plan', turnId: 'plan', model: 'gpt-5.4',
+        startedAt: Date.parse(at(0)), createdAt: Date.parse(at(4)), completed: true, isError: false,
+        quotaSnapshot: { sampledAt: Date.parse(at(3)), weekly: { usedPercent: 37 } },
+        usage: { inputTokens: 120, cacheReadTokens: 160, cacheWriteTokens: 20, outputTokens: 50 }
+      })
+      expect(turns[0].usage.requests).toHaveLength(2)
+      expect(turns[0].componentTurns).toMatchObject([
+        {
+          usageId: 'codex:plan', turnId: 'plan', completed: true,
+          startedAt: Date.parse(at(0)), createdAt: Date.parse(at(2)),
+          usage: { inputTokens: 50, cacheReadTokens: 40, cacheWriteTokens: 10, outputTokens: 20 }
+        },
+        {
+          usageId: 'codex:implementation', turnId: 'implementation', completed: true,
+          startedAt: Date.parse(at(2)), createdAt: Date.parse(at(4)),
+          usage: { inputTokens: 70, cacheReadTokens: 120, cacheWriteTokens: 10, outputTokens: 30 }
+        }
+      ])
+      for (const component of turns[0].componentTurns!) {
+        expect(component.usage.requests).toHaveLength(1)
+        expect(component).not.toHaveProperty('componentTurns')
+      }
+      expect(turns[0].endLine).toBe(text.split('\n').findIndex((line) => line.includes('"turn_id":"next"')) - 1)
+      expect(turns[1].usageId).toBe('codex:next')
+      expect(turns[1]).not.toHaveProperty('componentTurns')
+      expect(turns[1].usage).toMatchObject({ inputTokens: 50, cacheReadTokens: 50, outputTokens: 20 })
+      for (const field of ['userSources', 'explicitStart', 'collaborationMode', 'firstUserPrompt', 'proposedPlan']) {
+        expect(turns[0]).not.toHaveProperty(field)
+      }
+      expect(parseCodexUsage(text)).toEqual(turns)
+    })
+
+    it('keeps a just-started implementation incomplete before its first token event', () => {
+      const [turn] = parseCodexUsage(planPair().join('\n'))
+      expect(turn).toMatchObject({ usageId: 'codex:plan', completed: false, isError: false })
+      expect(turn.usage).toMatchObject({ inputTokens: 50, cacheReadTokens: 40, cacheWriteTokens: 10, outputTokens: 20 })
+      expect(turn.usage.requests).toHaveLength(1)
+    })
+
+    it.each([1, 2])('waits when the rollout ends %i records before the synthetic prompt', (missing) => {
+      const [turn] = parseCodexUsage(planPair().slice(0, -missing).join('\n'))
+      expect(turn).toMatchObject({ usageId: 'codex:plan', completed: false, isError: false })
+      expect(turn.usage).toMatchObject({ inputTokens: 50, cacheReadTokens: 40, cacheWriteTokens: 10, outputTokens: 20 })
+      expect(turn.usage.requests).toHaveLength(1)
+    })
+
+    it('waits for a torn prompt record and stops waiting when its text rules out implementation', () => {
+      const prefix = planPair().slice(0, -1)
+      const partial = parseCodexUsage([...prefix, '{"type":"response_item","payload":'].join('\n'))
+      expect(partial[0]).toMatchObject({ usageId: 'codex:plan', completed: false })
+      const differentPrompt = row('response_item', { type: 'message', role: 'user', content: 'A different task.' }, 2)
+      const complete = parseCodexUsage([...prefix, differentPrompt].join('\n'))
+      expect(complete[0]).toMatchObject({ usageId: 'codex:plan', completed: true })
+      expect(complete[0].usage).toEqual(partial[0].usage)
+    })
+
+    it('does not attribute continuation tokens before its prompt has been confirmed', () => {
+      const turns = parseCodexUsage([
+        ...planPair().slice(0, -1),
+        tokens(counts(300, 160, 50, 20), counts(200, 120, 30, 10), 3)
+      ].join('\n'))
+      expect(turns.map((turn) => turn.usageId)).toEqual(['codex:plan', 'codex:implementation'])
+      expect(turns.map((turn) => turn.usage.requests!.length)).toEqual([1, 1])
+      expect(turns[0].completed).toBe(false)
+    })
+
+    it('preserves usage and cancellation when implementation is aborted', () => {
+      const [turn] = parseCodexUsage([
+        ...planPair(),
+        tokens(counts(300, 160, 50, 20), counts(200, 120, 30, 10), 3),
+        event('turn_aborted', { turn_id: 'implementation' }, 4)
+      ].join('\n'))
+      expect(turn).toMatchObject({ usageId: 'codex:plan', completed: true, isError: true, createdAt: Date.parse(at(4)) })
+      expect(turn.usage.requests).toHaveLength(2)
+    })
+
+    it.each([
+      { originator: 'codex_cli_rs' },
+      { planMode: 'default' },
+      { implementationMode: 'plan' },
+      { planText: 'A normal final answer.' },
+      { planText: '<proposed_plan>\nUnfinished plan.' },
+      { prompt: 'Please implement something else.' },
+      { gap: 2 },
+      { gap: -1 },
+      { model: 'gpt-5.5' },
+      { abortedPlan: true },
+      { incompletePlan: true },
+      { interveningTurn: true },
+      { earlierPrompt: true }
+    ])('keeps independent or ambiguous turns separate: %j', (patch) => {
+      const turns = parseCodexUsage([
+        ...planPair(patch),
+        tokens(counts(300, 160, 50, 20), counts(200, 120, 30, 10), 5),
+        event('task_complete', { turn_id: 'implementation' }, 6)
+      ].join('\n'))
+      expect(turns.map((turn) => turn.usageId)).toEqual(['codex:plan', 'codex:implementation'])
+      expect(turns.map((turn) => turn.usage.requests!.length)).toEqual([1, 1])
+    })
+  })
+
   it('keeps aborted usage and original line positions despite blank and partial lines', () => {
     const text = [
       row('session_meta', { id: 'aborted' }),

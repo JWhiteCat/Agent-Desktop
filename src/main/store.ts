@@ -8,6 +8,7 @@ import { newId } from './id'
 import { newRemoteClientId, validClientId } from './public-tunnel'
 import { readCodexUsage } from './codex-history'
 import { repairCodexUsage } from './codex-usage-repair'
+import type { CodexUsageTurn } from './codex-usage'
 
 interface PersistedState {
   version: 1
@@ -206,26 +207,35 @@ export class Store {
             const oldId = previous.get(item.id)
             if (oldId && item.cli === 'codex' && item.usageComplete) repaired.set(oldId, item)
           }
-          this.repairUsageCopies(repaired)
+          this.repairUsageCopies(repaired, turns)
         }
       }
     }
     return items
   }
 
-  private repairUsageCopies(repaired: Map<string, ResultItem>): void {
+  private repairUsageCopies(repaired: Map<string, ResultItem>, turns: CodexUsageTurn[]): void {
     if (!repaired.size) return
     for (const thread of this.threads) {
       const items = this.itemsCache.get(thread.id) ?? readJson<Item[]>(this.threadFile(thread.id)) ?? []
       let changed = false
+      const groups = new Set<CodexUsageTurn>()
       for (const item of items) {
         if (item.kind !== 'result' || !item.usageId) continue
         const source = repaired.get(item.usageId)
         if (!source) continue
+        const group = turns.find((turn) => turn.componentTurns?.some((part) => part.usageId === item.usageId))
+        if (group) {
+          // A copied native plan may still have a separate implementation result.
+          // Match that transcript's layout before replacing either token count.
+          groups.add(group)
+          continue
+        }
         Object.assign(item, { usageId: source.usageId, usage: source.usage, cli: source.cli, usageComplete: source.usageComplete })
         if (source.quotaSnapshot && !item.quotaSnapshot) item.quotaSnapshot = source.quotaSnapshot
         changed = true
       }
+      if (groups.size && repairCodexUsage(items, [...groups])) changed = true
       if (changed) this.setItems(thread.id, items)
     }
   }

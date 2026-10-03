@@ -12,6 +12,8 @@ export interface CodexUsageTurn {
   quotaSnapshot?: TurnQuotaSnapshot
   isError: boolean
   completed: boolean
+  /** Native records retained for repairing older histories that saved each turn separately. */
+  componentTurns?: CodexUsageTurn[]
   /** Original zero-based JSONL line, including blank or malformed lines. */
   endLine: number
 }
@@ -26,14 +28,18 @@ interface Counters {
 interface WorkingTurn extends CodexUsageTurn {
   userSources: Set<string>
   explicitStart: boolean
+  collaborationMode?: string
+  firstUserPrompt?: string
+  proposedPlan: boolean
 }
 
 const zeroCounters = (): Counters => ({ input: 0, output: 0, cached: 0, written: 0 })
 
 /** Codex totals accumulate across model requests and user turns, including cached input. */
 export function parseCodexUsage(text: string): CodexUsageTurn[] {
-  const turns: CodexUsageTurn[] = []
+  const turns: WorkingTurn[] = []
   let sessionId = 'unknown'
+  let agentDesktop = false
   let inheritedUsage = false
   let previous: Counters | undefined
   let previousLast: Counters | undefined
@@ -44,10 +50,9 @@ export function parseCodexUsage(text: string): CodexUsageTurn[] {
   function finish(endLine: number): void {
     if (!active) return
     active.endLine = Math.max(active.endLine, endLine)
-    if (active.usage.requests?.length) {
-      const { userSources: _, explicitStart: __, ...turn } = active
-      turns.push(turn)
-    }
+    // Keep empty native turns until grouping: implementation can have started
+    // before its first token event, and intervening turns break adjacency.
+    turns.push(active)
     active = undefined
   }
 
@@ -63,7 +68,8 @@ export function parseCodexUsage(text: string): CodexUsageTurn[] {
       completed: false,
       endLine: line,
       userSources: new Set(),
-      explicitStart: false
+      explicitStart: false,
+      proposedPlan: false
     }
     return active
   }
@@ -90,6 +96,7 @@ export function parseCodexUsage(text: string): CodexUsageTurn[] {
 
     if (row?.type === 'session_meta') {
       sessionId = nonempty(payload?.id) ?? nonempty(payload?.session_id) ?? sessionId
+      agentDesktop = payload?.originator === 'agent-desktop'
       inheritedUsage = Boolean(payload?.forked_from_id)
       continue
     }
@@ -102,6 +109,7 @@ export function parseCodexUsage(text: string): CodexUsageTurn[] {
       identify(turnId)
       if (!active!.explicitStart) active!.startedAt = timeOf(payload.started_at) ?? timestamp ?? active!.startedAt
       active!.explicitStart = true
+      active!.collaborationMode = nonempty(payload.collaboration_mode_kind) ?? active!.collaborationMode
       continue
     }
 
@@ -110,7 +118,13 @@ export function parseCodexUsage(text: string): CodexUsageTurn[] {
       if (!active || (turnId && active.turnId && turnId !== active.turnId)) begin(line, timestamp, turnId)
       identify(turnId)
       active!.model = model
+      active!.collaborationMode = nonempty(payload.collaboration_mode?.mode) ?? active!.collaborationMode
       continue
+    }
+
+    if (active && row?.type === 'response_item' && type === 'message' && payload.role === 'assistant') {
+      const text = messageText(payload.content ?? payload.message)
+      if (text.includes('<proposed_plan>') && text.includes('</proposed_plan>')) active.proposedPlan = true
     }
 
     const userSource = row?.type === 'event_msg' && type === 'user_message'
@@ -123,6 +137,7 @@ export function parseCodexUsage(text: string): CodexUsageTurn[] {
         if (active && !active.explicitStart) active.completed = true
         begin(line, timestamp, turnId)
       }
+      active!.firstUserPrompt ??= messageText(payload.message ?? payload.content)
       active!.userSources.add(userSource)
       active!.startedAt ??= timestamp
       identify(turnId)
@@ -176,7 +191,60 @@ export function parseCodexUsage(text: string): CodexUsageTurn[] {
     active!.endLine = line
   }
   finish(lastLine)
-  return turns
+  return groupPlanImplementation(turns, agentDesktop)
+}
+
+/** The ACP adapter runs an approved plan and its implementation in one prompt. */
+function groupPlanImplementation(turns: WorkingTurn[], agentDesktop: boolean): CodexUsageTurn[] {
+  const result: CodexUsageTurn[] = []
+  for (let index = 0; index < turns.length; index++) {
+    const plan = turns[index]
+    if (!plan.usage.requests?.length) continue
+    const turn = publicTurn(plan)
+    const implementation = turns[index + 1]
+    if (agentDesktop && isAdjacentPlanContinuation(plan, implementation)) {
+      if (implementation.firstUserPrompt === undefined && !implementation.completed) {
+        // The writer can stop between task_started and the synthetic prompt.
+        // Keep readers waiting, but do not attribute its tokens until confirmed.
+        turn.completed = false
+      } else if (implementation.firstUserPrompt === 'Implement the approved plan.') {
+        turn.componentTurns = [publicTurn(plan), publicTurn(implementation)]
+        for (const key of ['inputTokens', 'outputTokens', 'cacheReadTokens', 'cacheWriteTokens'] as const) {
+          turn.usage[key] = (plan.usage[key] ?? 0) + (implementation.usage[key] ?? 0)
+        }
+        turn.usage.requests = [...plan.usage.requests, ...(implementation.usage.requests ?? [])]
+        turn.completed = implementation.completed
+        turn.isError = implementation.isError
+        turn.createdAt = implementation.createdAt ?? plan.createdAt
+        turn.endLine = implementation.endLine
+        turn.quotaSnapshot = implementation.quotaSnapshot ?? plan.quotaSnapshot
+        index++
+      }
+    }
+    result.push(turn)
+  }
+  return result
+}
+
+function isAdjacentPlanContinuation(plan: WorkingTurn, implementation: WorkingTurn | undefined): implementation is WorkingTurn {
+  if (!implementation || !plan.completed || plan.isError || !plan.proposedPlan) return false
+  if (!plan.explicitStart || !implementation.explicitStart) return false
+  if (plan.collaborationMode !== 'plan' || implementation.collaborationMode !== 'default') return false
+  if (!plan.model || plan.model !== implementation.model) return false
+  if (plan.createdAt === undefined || implementation.startedAt === undefined) return false
+  const gap = implementation.startedAt - plan.createdAt
+  return gap >= 0 && gap <= 1_000
+}
+
+function publicTurn(turn: WorkingTurn): CodexUsageTurn {
+  const { userSources: _, explicitStart: __, collaborationMode: ___, firstUserPrompt: ____, proposedPlan: _____, ...result } = turn
+  return { ...result, usage: { ...result.usage } }
+}
+
+function messageText(value: unknown): string {
+  if (typeof value === 'string') return value.trim()
+  if (!Array.isArray(value)) return ''
+  return value.map((part) => typeof part?.text === 'string' ? part.text : '').join('\n').trim()
 }
 
 function counters(value: any): Counters | undefined {

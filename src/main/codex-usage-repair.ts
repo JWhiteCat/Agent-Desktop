@@ -12,30 +12,8 @@ interface SavedTurn {
 /** Repair existing result records only when their Codex turn can be identified. */
 export function repairCodexUsage(items: Item[], turns: CodexUsageTurn[]): boolean {
   const saved = savedTurns(items)
-  const completed = turns.filter((turn) => turn.completed)
-  const matches = new Map<SavedTurn, CodexUsageTurn>()
-  const reservedIds = new Set<string>()
-
-  // Stable IDs also identify copied results whose surrounding messages changed.
-  for (const entry of saved) {
-    if (!entry.result.usageId) continue
-    const exact = completed.filter((turn) => turn.usageId === entry.result.usageId)
-    if (exact.length !== 1) continue
-    matches.set(entry, exact[0])
-    reservedIds.add(exact[0].usageId)
-  }
-
-  const candidates = new Map<SavedTurn, CodexUsageTurn[]>()
-  const claims = new Map<CodexUsageTurn, number>()
-  for (const entry of saved) {
-    if (matches.has(entry)) continue
-    const possible = completed.filter((turn) => !reservedIds.has(turn.usageId) && matchesTime(entry, turn))
-    candidates.set(entry, possible)
-    for (const turn of possible) claims.set(turn, (claims.get(turn) ?? 0) + 1)
-  }
-  for (const [entry, possible] of candidates) {
-    if (possible.length === 1 && claims.get(possible[0]) === 1) matches.set(entry, possible[0])
-  }
+  const completed = repairTurns(saved, turns.filter((turn) => turn.completed))
+  const matches = matchSavedTurns(saved, completed, true)
 
   let changed = false
   for (const [entry, turn] of matches) {
@@ -66,6 +44,57 @@ export function repairCodexUsage(items: Item[], turns: CodexUsageTurn[]): boolea
     }
   }
   return changed
+}
+
+/** Earlier imports stored one result per native turn, rather than per ACP prompt. */
+function repairTurns(saved: SavedTurn[], turns: CodexUsageTurn[]): CodexUsageTurn[] {
+  const native = turns.flatMap((turn) => turn.componentTurns ?? [turn]).filter((turn) => turn.completed)
+  const nativeMatches = matchSavedTurns(saved, native, false)
+  return turns.flatMap((turn) => {
+    const components = turn.componentTurns
+    if (!components?.length) return [turn]
+    const matches = [...nativeMatches].filter(([, nativeTurn]) => components.includes(nativeTurn))
+    const identified = new Set(matches.map(([, nativeTurn]) => nativeTurn.usageId))
+    const firstEndsBeforeGroup = matches.some(([entry, nativeTurn]) => nativeTurn === components[0] && (
+      (validTime(entry.result.createdAt) && validTime(nativeTurn.createdAt) && validTime(turn.createdAt)
+        && Math.abs(entry.result.createdAt - nativeTurn.createdAt) <= COMPLETION_TOLERANCE_MS
+        && entry.result.createdAt < turn.createdAt - COMPLETION_TOLERANCE_MS)
+      || (validTime(entry.nextUserAt) && validTime(turn.createdAt) && entry.nextUserAt < turn.createdAt)
+    ))
+    const laterStartsAfterGroup = matches.some(([entry, nativeTurn]) => nativeTurn !== components[0]
+      && validTime(entry.userAt) && validTime(turn.startedAt) && entry.userAt > turn.startedAt
+      && matchesTime(entry, nativeTurn))
+    return identified.size > 1 || firstEndsBeforeGroup || laterStartsAfterGroup ? components : [turn]
+  })
+}
+
+function matchSavedTurns(saved: SavedTurn[], completed: CodexUsageTurn[], componentAliases: boolean): Map<SavedTurn, CodexUsageTurn> {
+  const matches = new Map<SavedTurn, CodexUsageTurn>()
+  const reservedIds = new Set<string>()
+
+  // Stable IDs also identify copied results whose surrounding messages changed.
+  for (const entry of saved) {
+    if (!entry.result.usageId) continue
+    const exact = completed.filter((turn) => turn.usageId === entry.result.usageId
+      || (componentAliases && turn.componentTurns?.some((component) => component.usageId === entry.result.usageId)))
+    if (exact.length !== 1) continue
+    matches.set(entry, exact[0])
+    reservedIds.add(exact[0].usageId)
+  }
+
+  const candidates = new Map<SavedTurn, CodexUsageTurn[]>()
+  const claims = new Map<CodexUsageTurn, number>()
+  for (const entry of saved) {
+    if (matches.has(entry)) continue
+    const possible = completed.filter((turn) => !reservedIds.has(turn.usageId) && matchesTime(entry, turn))
+    candidates.set(entry, possible)
+    for (const turn of possible) claims.set(turn, (claims.get(turn) ?? 0) + 1)
+  }
+  for (const [entry, possible] of candidates) {
+    if (possible.length === 1 && claims.get(possible[0]) === 1) matches.set(entry, possible[0])
+  }
+
+  return matches
 }
 
 function savedTurns(items: Item[]): SavedTurn[] {

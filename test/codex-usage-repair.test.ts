@@ -116,6 +116,108 @@ describe('repairCodexUsage', () => {
     expect(repairCodexUsage([user(0), saved], [parsed])).toBe(false)
   })
 
+  describe('grouped plan and implementation turns', () => {
+    function pair(implementationEnd = 90_000): { plan: CodexUsageTurn; implementation: CodexUsageTurn; grouped: CodexUsageTurn } {
+      const plan = turn('plan', 1_000, 30_000)
+      const implementation = turn('implementation', 30_100, implementationEnd)
+      const grouped = {
+        ...plan,
+        createdAt: implementation.createdAt,
+        usage: {
+          inputTokens: 2_000, cacheReadTokens: 18_000, outputTokens: 200,
+          requests: [...plan.usage.requests!, ...implementation.usage.requests!]
+        },
+        componentTurns: [plan, implementation]
+      }
+      return { plan, implementation, grouped }
+    }
+
+    it('preserves split imported results and their stable copies without counting implementation twice', () => {
+      const { plan, implementation, grouped } = pair()
+      const first = result(undefined, { usageId: plan.usageId, usage: grouped.usage })
+      const second = result(undefined, { id: 'second', usageId: implementation.usageId })
+      const copy = result(undefined, { id: 'copy', usageId: plan.usageId })
+      const items = [first, second, copy]
+
+      expect(repairCodexUsage(items, [grouped])).toBe(true)
+      expect(first.usage).toEqual(plan.usage)
+      expect(copy.usage).toEqual(plan.usage)
+      expect(second.usage).toEqual(implementation.usage)
+      expect(first.usageId).toBe(plan.usageId)
+      expect(second.usageId).toBe(implementation.usageId)
+      expect(first.usage!.inputTokens! + second.usage!.inputTokens!).toBe(grouped.usage.inputTokens)
+      expect(repairCodexUsage(items, [grouped])).toBe(false)
+    })
+
+    it('recognizes split imports from unique timestamps when old result IDs are random', () => {
+      const { plan, implementation, grouped } = pair()
+      const first = result(30_000, { usageId: 'old-plan' })
+      const second = result(90_000, { id: 'second', usageId: 'old-implementation' })
+      const items = [user(0), first, user(30_100, 'implementation-user'), second]
+
+      expect(repairCodexUsage(items, [grouped])).toBe(true)
+      expect(first).toMatchObject({ usageId: plan.usageId, usage: plan.usage })
+      expect(second).toMatchObject({ usageId: implementation.usageId, usage: implementation.usage })
+      expect(repairCodexUsage(items, [grouped])).toBe(false)
+    })
+
+    it.each([false, true])('keeps a partial import ending at the first native result (next user: %s)', (hasNextUser) => {
+      const { plan, grouped } = pair(hasNextUser ? 33_000 : 90_000)
+      const first = result(30_000, { usageId: plan.usageId })
+      const items = [user(0), first, ...(hasNextUser ? [user(30_100, 'implementation-user')] : [])]
+
+      expect(repairCodexUsage(items, [grouped])).toBe(true)
+      expect(first.usage).toEqual(plan.usage)
+      expect(repairCodexUsage(items, [grouped])).toBe(false)
+    })
+
+    it.each(['old-random-id', 'codex:chat:plan', 'codex:chat:implementation'])('repairs one app result identified by %s to the complete grouped usage', (usageId) => {
+      const { grouped } = pair()
+      const saved = result(91_000, { usageId, usageComplete: false })
+      const items = [user(0), saved]
+
+      expect(repairCodexUsage(items, [grouped])).toBe(true)
+      expect(saved).toMatchObject({ usageId: grouped.usageId, usage: grouped.usage, usageComplete: true })
+      expect(repairCodexUsage(items, [grouped])).toBe(false)
+    })
+
+    it('uses a component stable ID to repair a copied app result without timestamps', () => {
+      const { implementation, grouped } = pair()
+      const saved = result(undefined, { usageId: implementation.usageId })
+      expect(repairCodexUsage([saved], [grouped])).toBe(true)
+      expect(saved).toMatchObject({ usageId: grouped.usageId, usage: grouped.usage })
+    })
+
+    it('preserves an implementation-only import whose user prompt starts after the plan', () => {
+      const { implementation, grouped } = pair()
+      const saved = result(90_000, { usageId: implementation.usageId })
+      const items = [user(30_100), saved]
+      expect(repairCodexUsage(items, [grouped])).toBe(true)
+      expect(saved).toMatchObject({ usageId: implementation.usageId, usage: implementation.usage })
+      expect(repairCodexUsage(items, [grouped])).toBe(false)
+    })
+
+    it('does not infer a split from ambiguous earlier results or reuse an exact match', () => {
+      const { implementation, grouped } = pair()
+      const first = result(30_000, { usageId: 'old-first' })
+      const ambiguous = result(30_000, { id: 'ambiguous', usageId: 'old-ambiguous' })
+      const saved = result(90_000, { id: 'app', usageId: implementation.usageId })
+      const items = [user(0), first, ambiguous, saved]
+
+      expect(repairCodexUsage(items, [grouped])).toBe(true)
+      expect(first.usage).toBeUndefined()
+      expect(ambiguous.usage).toBeUndefined()
+      expect(saved).toMatchObject({ usageId: grouped.usageId, usage: grouped.usage })
+    })
+
+    it('waits for the entire grouped turn before repairing a single app result', () => {
+      const { plan, grouped } = pair()
+      const saved = result(91_000, { usageId: plan.usageId })
+      expect(repairCodexUsage([user(0), saved], [{ ...grouped, completed: false }])).toBe(false)
+      expect(saved.usage).toBeUndefined()
+    })
+  })
+
   it('does not guess from order, absent timestamps, or a nearby result alone', () => {
     const cases = [
       [user(0), result(undefined)],

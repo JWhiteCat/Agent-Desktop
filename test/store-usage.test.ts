@@ -136,6 +136,49 @@ describe('stored Codex usage repair', () => {
     expect(store.items('fork')[2]).toMatchObject({ usage: turn.usage, usageComplete: true })
   })
 
+  it.each([false, true])('preserves split plan history when copying repaired usage (split source: %s)', (splitSource) => {
+    const plan = rollout()
+    const implementation: CodexUsageTurn = {
+      ...rollout(), usageId: 'codex:implementation', turnId: 'implementation',
+      startedAt: now + 30_170, createdAt: now + 90_000
+    }
+    const combined: CodexUsageTurn = {
+      ...plan, createdAt: implementation.createdAt,
+      usage: {
+        inputTokens: 2_000, outputTokens: 200,
+        requests: [...plan.usage.requests!, ...implementation.usage.requests!]
+      },
+      componentTurns: [plan, implementation]
+    }
+    const joinedItems = transcript({
+      createdAt: now + 91_000, cli: 'codex', usageId: plan.usageId,
+      usage: plan.usage, usageComplete: false
+    })
+    const splitItems: Item[] = [
+      ...transcript({ createdAt: plan.createdAt, cli: 'codex', usageId: plan.usageId, usage: plan.usage }),
+      { id: 'implementation-user', kind: 'user', text: 'Implement the approved plan.', createdAt: now + 30_250 },
+      {
+        id: 'implementation-result', kind: 'result', cli: 'codex', isError: false,
+        createdAt: implementation.createdAt, usageId: implementation.usageId, usage: implementation.usage
+      }
+    ]
+    addThread('joined', joinedItems)
+    addThread('split', splitItems)
+    reload()
+    codex.readUsage.mockReturnValue([combined])
+
+    store.items(splitSource ? 'split' : 'joined')
+    const joined = store.items('joined').filter((item) => item.kind === 'result')
+    const split = store.items('split').filter((item) => item.kind === 'result')
+    expect(joined).toHaveLength(1)
+    expect(joined[0].usage).toEqual(combined.usage)
+    expect(split).toHaveLength(2)
+    expect(split.map((item) => item.usage)).toEqual([plan.usage, implementation.usage])
+    expect(split.reduce((sum, item) => sum + item.usage!.inputTokens!, 0)).toBe(2_000)
+    reload()
+    expect(store.items('split').filter((item) => item.kind === 'result').map((item) => item.usage)).toEqual([plan.usage, implementation.usage])
+  })
+
   it('preserves fixed weekly estimates across restarts and usage repair', () => {
     const weeklyQuotaEstimate = {
       start: { sampledAt: now, weekly: { usedPercent: 37, resetsAt: now + 604_800_000 } },
