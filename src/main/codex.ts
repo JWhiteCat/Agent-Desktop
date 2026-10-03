@@ -1,5 +1,5 @@
 import { t as translate } from '@shared/i18n'
-import { spawn, type ChildProcess } from 'node:child_process'
+import type { ChildProcess } from 'node:child_process'
 import fs from 'node:fs'
 import { createRequire } from 'node:module'
 import os from 'node:os'
@@ -7,6 +7,7 @@ import path from 'node:path'
 import type { AgentMode, ModelInfo } from '@shared/types'
 import { AcpConnection, MethodNotFound, permissionResult } from './acp'
 import { killTree, type ResolvedCli } from './cli'
+import { cliEnvironment, cliSearchDirectories, findCliExecutable, normalizeCliPath, spawnCliProcess } from './cli-runtime'
 
 const isWin = process.platform === 'win32'
 
@@ -52,7 +53,7 @@ export function resolveCodexAcpEntry(): string | undefined {
 export function resolveCodex(customPath: string): ResolvedCodex | undefined {
   const acpEntry = resolveCodexAcpEntry()
   if (!acpEntry) return undefined
-  const custom = unquotePath(customPath)
+  const custom = normalizeCliPath(customPath)
   if (custom) {
     const user = findCodexFile(custom)
     if (!user) return undefined
@@ -64,7 +65,7 @@ export function resolveCodex(customPath: string): ResolvedCodex | undefined {
 }
 
 export function spawnCodexAcp(codex: ResolvedCodex, cwd: string, apiKey: string): ChildProcess {
-  return spawn(process.execPath, [codex.acpEntry], {
+  return spawnCliProcess(process.execPath, [codex.acpEntry], {
     cwd,
     env: codexEnv(codex, apiKey),
     stdio: ['pipe', 'pipe', 'pipe'],
@@ -76,8 +77,8 @@ export function spawnCodexAcp(codex: ResolvedCodex, cwd: string, apiKey: string)
 export function spawnCodexAppServer(codex: ResolvedCodex): ChildProcess {
   const script = codexBinary(codex)
   if (!script) throw new Error(translate('未找到 Codex CLI'))
-  return spawn(codexCommand(script.command), [...script.args, 'app-server'], {
-    env: nodeEnv(),
+  return spawnCliProcess(codexCommand(script.command), [...script.args, 'app-server'], {
+    env: nodeEnv(script.command),
     stdio: ['pipe', 'pipe', 'pipe'],
     windowsHide: true,
     shell: needsShell(script.command)
@@ -103,8 +104,8 @@ export function codexLogin(codex: ResolvedCodex): Promise<string> {
   const script = codexBinary(codex)
   if (!script) return Promise.resolve(translate('未找到 Codex CLI'))
   return new Promise((resolve) => {
-    const child = spawn(codexCommand(script.command), script.args.concat(['login']), {
-      env: nodeEnv(),
+    const child = spawnCliProcess(codexCommand(script.command), script.args.concat(['login']), {
+      env: nodeEnv(script.command),
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
       shell: needsShell(script.command)
@@ -237,7 +238,7 @@ export function modelsFromConfig(raw: unknown): CodexModelList {
 }
 
 function codexEnv(codex: ResolvedCodex, apiKey: string): NodeJS.ProcessEnv {
-  const env = nodeEnv()
+  const env = nodeEnv(codex.codexPath)
   if (codex.codexPath) env.CODEX_PATH = codex.codexPath
   else delete env.CODEX_PATH
   if (apiKey) {
@@ -246,13 +247,8 @@ function codexEnv(codex: ResolvedCodex, apiKey: string): NodeJS.ProcessEnv {
   return env
 }
 
-function nodeEnv(): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = { ...process.env, ELECTRON_RUN_AS_NODE: '1', NO_COLOR: '1', FORCE_COLOR: '0' }
-  if (!isWin) {
-    const extra = [path.join(os.homedir(), '.local', 'bin'), '/usr/local/bin', '/opt/homebrew/bin']
-    env.PATH = [...extra, env.PATH ?? ''].join(path.delimiter)
-  }
-  return env
+function nodeEnv(executable?: string): NodeJS.ProcessEnv {
+  return cliEnvironment({ ELECTRON_RUN_AS_NODE: '1', NO_COLOR: '1', FORCE_COLOR: '0' }, executable ? path.dirname(executable) : undefined)
 }
 
 function codexBinary(codex: ResolvedCodex): { command: string; args: string[] } | undefined {
@@ -269,9 +265,9 @@ function bundledCodexScript(acpEntry: string): string | undefined {
 
 function runCodex(command: string, args: string[], timeoutMs: number): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve) => {
-    const child = spawn(codexCommand(command), args, {
+    const child = spawnCliProcess(codexCommand(command), args, {
       windowsHide: true,
-      env: nodeEnv(),
+      env: nodeEnv(command),
       shell: needsShell(command)
     })
     let stdout = ''
@@ -299,8 +295,8 @@ function findCodexOnPath(acpEntry: string): string | undefined {
         path.join(process.env.APPDATA || path.join(home, 'AppData', 'Roaming'), 'npm'),
         path.join(process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local'), 'Microsoft', 'WinGet', 'Links')
       ]
-    : [path.join(home, '.local', 'bin'), '/usr/local/bin', '/opt/homebrew/bin']
-  const dirs = [...(process.env.PATH ?? '').split(path.delimiter).map(unquotePath).filter(Boolean), ...extra]
+    : []
+  const dirs = [...cliSearchDirectories(), ...extra]
   // npm prepends the app's node_modules/.bin to PATH in dev/preview mode.
   // Those shims belong to the bundled fallback, not a user installation.
   const bundledModules = realPath(path.resolve(acpEntry, '..', '..', '..', '..'))
@@ -316,6 +312,7 @@ function findCodexOnPath(acpEntry: string): string | undefined {
 }
 
 function findCodexFile(custom: string): string | undefined {
+  if (!isWin) return findCliExecutable(custom, codexFileNames())
   try {
     const stat = fs.statSync(custom)
     if (stat.isDirectory()) {
@@ -327,10 +324,6 @@ function findCodexFile(custom: string): string | undefined {
     }
     if (!stat.isFile()) return undefined
     const file = path.resolve(custom)
-    if (!isWin) {
-      fs.accessSync(file, fs.constants.X_OK)
-      return file
-    }
     if (file.toLowerCase().endsWith('.exe')) return file
     // npm's .cmd/.ps1 entrypoints need Node on PATH. Resolve their native CLI so
     // detection, login and the ACP adapter also work when launched from Explorer.
@@ -372,10 +365,6 @@ function windowsNpmCodex(file: string): string | undefined {
     }
   }
   return undefined
-}
-
-function unquotePath(value: string): string {
-  return value.trim().replace(/^"(.*)"$/, '$1')
 }
 
 function realPath(file: string): string {

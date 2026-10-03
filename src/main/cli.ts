@@ -1,9 +1,10 @@
-import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
+import { spawnSync, type ChildProcess } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import type { ModelInfo } from '@shared/types'
 import { installAcpUsagePreload } from './acp-usage'
+import { cliEnvironment, cliSearchDirectories, findCliExecutable, killCliProcessTree, normalizeCliPath, spawnCliProcess } from './cli-runtime'
 
 export interface ResolvedCli {
   command: string
@@ -47,7 +48,7 @@ function whichSync(name: string): string | undefined {
 }
 
 export function resolveCli(customPath: string): ResolvedCli | undefined {
-  const custom = customPath.trim()
+  const custom = normalizeCliPath(customPath)
   if (custom) {
     if (isWin) {
       const stat = fs.existsSync(custom) ? fs.statSync(custom) : undefined
@@ -56,7 +57,8 @@ export function resolveCli(customPath: string): ResolvedCli | undefined {
       if (win) return win
       if (/\.(cmd|bat|ps1)$/i.test(custom)) return undefined
     }
-    return { command: custom, prefixArgs: [], display: custom }
+    const executable = findCliExecutable(custom, ['agent', 'cursor-agent'])
+    return executable ? { command: executable, prefixArgs: [], display: executable } : undefined
   }
 
   if (isWin) {
@@ -68,14 +70,13 @@ export function resolveCli(customPath: string): ResolvedCli | undefined {
     return undefined
   }
 
-  const candidates = [
-    path.join(os.homedir(), '.local', 'bin', 'agent'),
-    path.join(os.homedir(), '.local', 'bin', 'cursor-agent'),
-    '/usr/local/bin/agent',
-    '/opt/homebrew/bin/agent'
-  ]
-  const hit = candidates.find((c) => fs.existsSync(c)) ?? whichSync('agent') ?? whichSync('cursor-agent')
-  return hit ? { command: hit, prefixArgs: [], display: hit } : undefined
+  for (const directory of cliSearchDirectories()) {
+    for (const name of ['agent', 'cursor-agent']) {
+      const hit = findCliExecutable(path.join(directory, name), [name])
+      if (hit) return { command: hit, prefixArgs: [], display: hit }
+    }
+  }
+  return undefined
 }
 
 /** Settings value wins. Otherwise the process environment. */
@@ -85,8 +86,8 @@ export function resolveApiKey(configured: string | undefined): string {
   return process.env.CURSOR_API_KEY?.trim() ?? ''
 }
 
-function cliEnv(apiKey?: string | false): { env: NodeJS.ProcessEnv; key?: string } {
-  const env: NodeJS.ProcessEnv = { ...process.env, CURSOR_INVOKED_AS: 'agent', NO_COLOR: '1', FORCE_COLOR: '0' }
+function cliEnv(apiKey: string | false | undefined, executable: string): { env: NodeJS.ProcessEnv; key?: string } {
+  const env = cliEnvironment({ CURSOR_INVOKED_AS: 'agent', NO_COLOR: '1', FORCE_COLOR: '0' }, path.dirname(executable))
   let key: string | undefined
   if (apiKey === false) {
     delete env.CURSOR_API_KEY
@@ -98,10 +99,6 @@ function cliEnv(apiKey?: string | false): { env: NodeJS.ProcessEnv; key?: string
   if (!env.NODE_COMPILE_CACHE && isWin && env.LOCALAPPDATA) {
     env.NODE_COMPILE_CACHE = path.join(env.LOCALAPPDATA, 'cursor-compile-cache')
   }
-  if (!isWin) {
-    const extra = [path.join(os.homedir(), '.local', 'bin'), '/usr/local/bin', '/opt/homebrew/bin']
-    env.PATH = [...extra, env.PATH ?? ''].join(path.delimiter)
-  }
   return { env, key }
 }
 
@@ -112,9 +109,9 @@ export function spawnCli(
   stdin: 'ignore' | 'pipe' = 'ignore',
   apiKey?: string | false
 ): ChildProcess {
-  const auth = cliEnv(apiKey)
+  const auth = cliEnv(apiKey, cli.command)
   installAcpUsagePreload(auth.env)
-  return spawn(cli.command, [...cli.prefixArgs, ...(auth.key ? ['--api-key', auth.key] : []), ...args], {
+  return spawnCliProcess(cli.command, [...cli.prefixArgs, ...(auth.key ? ['--api-key', auth.key] : []), ...args], {
     cwd,
     env: auth.env,
     stdio: [stdin, 'pipe', 'pipe'],
@@ -153,13 +150,7 @@ export function runCliOnce(
 }
 
 export function killTree(child: ChildProcess): void {
-  if (child.exitCode !== null || child.pid === undefined) return
-  if (isWin) {
-    spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true })
-  } else {
-    child.kill('SIGTERM')
-    setTimeout(() => child.exitCode === null && child.kill('SIGKILL'), 3000)
-  }
+  killCliProcessTree(child)
 }
 
 export function parseModels(output: string): ModelInfo[] {

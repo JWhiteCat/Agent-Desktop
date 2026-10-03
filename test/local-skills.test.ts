@@ -3,7 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { deleteLocalSkill, readLocalSkill, saveLocalSkill, scanLocalSkills, toggleLocalSkill } from '../src/main/local-skills'
-import type { LocalEnv } from '../src/main/local-files'
+import { hashText, type LocalEnv } from '../src/main/local-files'
 import { parseSkillMarkdown, updateSkillMarkdown } from '../src/shared/local-config'
 
 let root: string
@@ -40,6 +40,36 @@ describe('skill frontmatter', () => {
 })
 
 describe('local skills', () => {
+  it.skipIf(process.platform !== 'linux')('disables and restores same-name skills in case-distinct projects independently', () => {
+    const projects = [path.join(root, 'App'), path.join(root, 'app')]
+    const dirs = projects.map((dir) => path.join(dir, '.cursor', 'skills', 'same'))
+    for (const [index, dir] of dirs.entries()) skill(dir, `---\nname: same\ndescription: Fixture ${index}\n---\nBody ${index}\n`)
+    const entries = scanLocalSkills(env, projects).entries
+    expect(entries).toHaveLength(2)
+    for (const entry of entries) toggleLocalSkill(env, projects, entry.id, false)
+    const held = scanLocalSkills(env, projects).entries
+    expect(held).toHaveLength(2)
+    expect(new Set(held.map((entry) => entry.dir)).size).toBe(2)
+    expect(held.every((entry) => !entry.enabled)).toBe(true)
+    for (const entry of held) toggleLocalSkill(env, projects, entry.id, true)
+    for (const [index, dir] of dirs.entries()) expect(fs.readFileSync(path.join(dir, 'SKILL.md'), 'utf8')).toContain(`Body ${index}`)
+  })
+
+  it('restores old disabled skills using the recorded stash path after path-key changes', () => {
+    const projectRoot = path.join(root, 'MixedCase', '.cursor', 'skills')
+    const legacy = path.join(env.stateDir, 'disabled-skills', hashText(projectRoot.toLowerCase()), 'same')
+    skill(legacy, '---\nname: same\ndescription: Legacy fixture\n---\nOriginal body\n')
+    fs.writeFileSync(path.join(env.stateDir, 'disabled-skills.json'), JSON.stringify({ entries: [
+      { root: projectRoot, rel: 'same', stash: legacy }
+    ] }))
+    const projects = [path.join(root, 'MixedCase')]
+    const entry = scanLocalSkills(env, projects).entries[0]
+    expect(entry).toMatchObject({ enabled: false, dir: legacy })
+    toggleLocalSkill(env, projects, entry.id, true)
+    expect(fs.readFileSync(path.join(projectRoot, 'same', 'SKILL.md'), 'utf8')).toContain('Original body')
+    expect(fs.existsSync(legacy)).toBe(false)
+  })
+
   it('lists user, project, built-in, plugin, and app skills with the right origin', () => {
     skill(path.join(env.home, '.cursor', 'skills', 'mine'), '---\nname: mine\ndescription: Mine\n---\n')
     skill(path.join(env.home, '.cursor', 'skills-cursor', 'shipped'), '---\nname: shipped\ndescription: S\n---\n')

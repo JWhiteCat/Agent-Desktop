@@ -3,7 +3,7 @@ import { t as translate } from '@shared/i18n'
 import { normalizeMcpServers } from '@shared/agent-config'
 import type { LocalConfigError as ReportError, LocalMcpEntry, LocalMcpReport, LocalMcpSaveRequest, LocalMcpScope, LocalTarget } from '@shared/local-config'
 import { isCliProvider, type CliProvider, type McpServerConfig, type McpTransport, type NamedValue } from '@shared/types'
-import { assertUnchanged, hashText, LocalConfigError, readJson, readText, samePath, writeTextSafely, type LocalEnv } from './local-files'
+import { assertUnchanged, hashText, LocalConfigError, pathKey, readJson, readText, samePath, writeTextSafely, type LocalEnv } from './local-files'
 import { parseTomlSections, renderTomlTable, replaceTomlTables, type TomlTable, type TomlValue } from './toml-lite'
 
 type Raw = Record<string, unknown>
@@ -61,7 +61,7 @@ function projectRef(cli: CliProvider, projectPath: string): Ref {
 }
 
 function refKey(ref: Ref): string {
-  return JSON.stringify([path.resolve(ref.file), ref.kind === 'json' ? ref.container : []])
+  return JSON.stringify([pathKey(ref.file), ref.kind === 'json' ? ref.container : []])
 }
 
 function entryId(ref: Ref, name: string): string {
@@ -99,7 +99,7 @@ function writeStash(env: LocalEnv, entries: StashEntry[]): void {
 }
 
 function stashMatches(entry: StashEntry, ref: Ref, name?: string): boolean {
-  return refKey(ref) === JSON.stringify([path.resolve(entry.file), entry.container]) && (name === undefined || entry.name === name)
+  return refKey(ref) === JSON.stringify([pathKey(entry.file), entry.container]) && (name === undefined || entry.name === name)
 }
 
 function allRefs(env: LocalEnv, projects: string[]): Ref[] {
@@ -122,7 +122,7 @@ function allRefs(env: LocalEnv, projects: string[]): Ref[] {
   for (const key of keys) refs.push({ kind: 'json', cli: 'claude', scope: 'local', projectPath: key, file: claudeFile, container: ['projects', key, 'mcpServers'] })
   const seen = new Set<string>()
   return refs.filter((ref) => {
-    const key = refKey(ref).toLowerCase()
+    const key = refKey(ref)
     if (seen.has(key)) return false
     seen.add(key)
     return true

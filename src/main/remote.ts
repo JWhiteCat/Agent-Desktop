@@ -81,7 +81,15 @@ const VIRTUAL_NIC = /vethernet|vmware|virtualbox|docker|wsl|hyper-v|loopback|tai
 /** LAN IPv4 addresses, likely Wi-Fi/Ethernet first. */
 export function lanAddresses(): string[] {
   const found: { ip: string; rank: number }[] = []
-  for (const [name, list] of Object.entries(os.networkInterfaces())) {
+  let interfaces: ReturnType<typeof os.networkInterfaces>
+  try {
+    interfaces = os.networkInterfaces()
+  } catch {
+    // Restricted Linux desktops/containers may deny interface enumeration. LAN
+    // discovery is optional and must not prevent settings or the desktop loading.
+    return []
+  }
+  for (const [name, list] of Object.entries(interfaces)) {
     for (const nic of list ?? []) {
       if (nic.internal || (nic.family !== 'IPv4' && (nic.family as unknown) !== 4)) continue
       if (nic.address.startsWith('169.254.')) continue

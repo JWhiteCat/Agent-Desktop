@@ -15,11 +15,15 @@ export function hostHandlers(): Record<string, Handler> {
     'shell:openSkills': async () => {
       const dir = userSkillsDir()
       fs.mkdirSync(dir, { recursive: true })
-      await shell.openPath(dir)
+      const error = await shell.openPath(dir)
+      if (error) throw new Error(error)
     },
     'shell:openInEditor': async (p: string) => {
       const ok = await openInEditor(p)
-      if (!ok) await shell.openPath(p)
+      if (!ok) {
+        const error = await shell.openPath(p)
+        if (error) throw new Error(error)
+      }
       return ok
     },
     'shell:openExternal': (url: string) => {

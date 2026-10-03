@@ -1,9 +1,9 @@
 import { app, BrowserWindow, nativeTheme, shell } from 'electron'
 import { spawn } from 'node:child_process'
 import fs from 'node:fs'
-import os from 'node:os'
 import path from 'node:path'
 import type { Settings } from '@shared/types'
+import { cliEnvironment } from './cli-runtime'
 
 const isWin = process.platform === 'win32'
 const isMac = process.platform === 'darwin'
@@ -31,7 +31,10 @@ export function createMainWindow(): BrowserWindow {
     minHeight: 560,
     show: false,
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#181818' : '#ffffff',
-    titleBarStyle: 'hidden',
+    ...(process.platform === 'linux' ? { icon: path.join(app.getAppPath(), 'resources/icons/512x512.png') } : {}),
+    // Linux uses the window manager's native frame and controls (including Wayland).
+    // `hidden` without an overlay removes close/minimize/maximize on Linux.
+    ...((isWin || isMac) ? { titleBarStyle: 'hidden' as const } : {}),
     ...(isWin ? { titleBarOverlay: { ...overlayColors(), height: 44 } } : {}),
     ...(isMac ? { trafficLightPosition: { x: 16, y: 15 } } : {}),
     webPreferences: {
@@ -66,6 +69,7 @@ export function openInEditor(target: string): Promise<boolean> {
   return new Promise((resolve) => {
     const child = spawn('cursor', [isWin ? `"${target}"` : target], {
       shell: isWin,
+      env: cliEnvironment(),
       detached: true,
       stdio: 'ignore',
       windowsHide: true
@@ -80,8 +84,10 @@ export function openInEditor(target: string): Promise<boolean> {
 
 /** Gives this process its own Chromium profile (GPU cache, HTTP cache, localStorage). */
 export function installSessionData(): string {
-  const root = path.join(os.tmpdir(), 'agent-desktop-sessions')
-  fs.mkdirSync(root, { recursive: true })
+  // A shared /tmp root is owned by whichever desktop user launches first, and can
+  // prevent other users from starting. Keep Chromium caches private to this profile.
+  const root = path.join(app.getPath('userData'), 'session-cache')
+  fs.mkdirSync(root, { recursive: true, mode: 0o700 })
   for (const name of fs.readdirSync(root)) {
     if (!/^\d+$/.test(name)) continue
     const pid = Number(name)
@@ -90,7 +96,7 @@ export function installSessionData(): string {
   }
   const dir = path.join(root, String(process.pid))
   removeDir(dir)
-  fs.mkdirSync(dir, { recursive: true })
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 })
   app.setPath('sessionData', dir)
   return dir
 }
@@ -107,7 +113,7 @@ function isProcessAlive(pid: number): boolean {
   try {
     process.kill(pid, 0)
     return true
-  } catch {
-    return false
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === 'EPERM'
   }
 }

@@ -79,6 +79,42 @@ describe('toml-lite', () => {
 })
 
 describe('local MCP configuration', () => {
+  it.skipIf(process.platform !== 'linux')('keeps case-distinct project configurations and disabled entries separate', () => {
+    const projects = [path.join(root, 'App'), path.join(root, 'app')]
+    for (const [index, dir] of projects.entries()) {
+      write(path.join(dir, '.cursor', 'mcp.json'), JSON.stringify({ mcpServers: { same: { command: `fixture-${index}` } } }))
+    }
+    const entries = scanLocalMcp(env, projects).entries
+    expect(entries).toHaveLength(2)
+    expect(entries.map((entry) => entry.command)).toEqual(['fixture-0', 'fixture-1'])
+    toggleLocalMcp(env, projects, entries[0].id, false)
+    expect(scanLocalMcp(env, projects).entries.map((entry) => [entry.command, entry.enabled])).toEqual([
+      ['fixture-0', false], ['fixture-1', true]
+    ])
+    toggleLocalMcp(env, projects, entries[0].id, true)
+    expect(scanLocalMcp(env, projects).entries.map((entry) => [entry.command, entry.enabled])).toEqual([
+      ['fixture-0', true], ['fixture-1', true]
+    ])
+  })
+
+  it('preserves case-sensitive JSON project keys inside the same Claude file', () => {
+    write(path.join(env.home, '.claude.json'), JSON.stringify({
+      projects: {
+        '/workspace/App': { mcpServers: { same: { command: 'upper' } } },
+        '/workspace/app': { mcpServers: { same: { command: 'lower' } } }
+      }
+    }))
+    const entries = scanLocalMcp(env, []).entries
+    expect(entries).toHaveLength(2)
+    expect(entries.map((entry) => entry.command)).toEqual(['upper', 'lower'])
+    toggleLocalMcp(env, [], entries[0].id, false)
+    expect(scanLocalMcp(env, []).entries.map((entry) => [entry.command, entry.enabled]).sort()).toEqual([
+      ['lower', true], ['upper', false]
+    ])
+    toggleLocalMcp(env, [], entries[0].id, true)
+    expect(scanLocalMcp(env, []).entries.every((entry) => entry.enabled)).toBe(true)
+  })
+
   it('reads Cursor, Codex, and Claude user, local, and project entries', () => {
     write(path.join(env.home, '.cursor', 'mcp.json'), JSON.stringify({ mcpServers: { fs: { command: 'npx', args: ['fs'], env: { A: '1' } } } }))
     write(path.join(env.home, '.codex', 'config.toml'), CODEX)

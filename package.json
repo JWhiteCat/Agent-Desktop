@@ -1,18 +1,24 @@
 {
   "name": "agent-desktop",
   "productName": "Agent Desktop",
+  "desktopName": "dev.agentdesktop.app.desktop",
   "version": "0.1.0",
   "description": "A desktop client for Cursor CLI, Codex CLI, and Claude Code with multi-project history",
+  "homepage": "https://github.com/JWhiteCat/Agent-Desktop",
   "main": "out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
+    "dev:linux": "bash scripts/start-linux.sh dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
+    "preview:linux": "bash scripts/start-linux.sh preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "test": "vitest run",
     "setup:public-server": "node scripts/setup-public-server.mjs",
     "test:live": "vitest run --config vitest.live.config.ts",
-    "dist": "electron-vite build && electron-builder"
+    "dist": "electron-vite build && electron-builder",
+    "dist:linux": "electron-vite build && electron-builder --linux --x64 --publish never",
+    "dist:linux:dir": "electron-vite build && electron-builder --linux --x64 --dir --publish never"
   },
   "build": {
     "appId": "dev.agentdesktop.app",
@@ -22,6 +28,7 @@
     },
     "files": [
       "out/**/*",
+      "resources/icons/**/*",
       "node_modules/@agentclientprotocol/codex-acp/**/*",
       "node_modules/@openai/codex/**/*",
       "node_modules/@openai/codex-*/**/*",
@@ -48,7 +55,29 @@
       "target": "dmg"
     },
     "linux": {
-      "target": "AppImage"
+      "target": [
+        { "target": "AppImage", "arch": ["x64"] },
+        { "target": "deb", "arch": ["x64"] }
+      ],
+      "executableName": "agent-desktop",
+      "icon": "resources/icons",
+      "extraFiles": [
+        { "from": "scripts/linux-appimage-apprun.sh", "to": "AppRun" }
+      ],
+      "category": "Development",
+      "synopsis": "Desktop client for AI coding agents",
+      "maintainer": "JWhiteCat <wanjian@njust.edu.cn>",
+      "artifactName": "${name}-${version}-linux-${arch}.${ext}",
+      "syncDesktopName": true,
+      "desktop": {
+        "entry": {
+          "Keywords": "AI;Coding;Cursor;Codex;Claude;",
+          "StartupNotify": "true"
+        }
+      }
+    },
+    "appImage": {
+      "executableArgs": []
     }
   },
   "dependencies": {

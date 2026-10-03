@@ -1,11 +1,11 @@
 import { t as translate } from '@shared/i18n'
-import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { killTree, resolveCli, stripAnsi } from './cli'
 import { resolveCodex } from './codex'
 import { resolveClaude } from './claude'
+import { cliEnvironment, cliSearchDirectories, spawnCliProcess } from './cli-runtime'
 
 const isWin = process.platform === 'win32'
 const UPDATE_TIMEOUT = 10 * 60_000
@@ -99,11 +99,12 @@ function findNpmPrefix(executable: string, packageName: string, launcher: string
   return undefined
 }
 
-function findNpmScript(): string | undefined {
+function findNpmScript(prefix: string): string | undefined {
   const directories = [
-    ...(process.env.PATH ?? '').split(path.delimiter).map((dir) => dir.replace(/^"(.*)"$/, '$1')).filter(Boolean),
-    path.dirname(process.execPath),
-    ...(isWin ? [] : ['/usr/local/bin', '/opt/homebrew/bin', '/usr/bin'])
+    // The selected CLI may belong to a Node installation absent from a desktop's PATH.
+    isWin ? prefix : path.join(prefix, 'bin'),
+    ...cliSearchDirectories(),
+    path.dirname(process.execPath)
   ]
   for (const dir of new Set(directories)) {
     const candidates = [
@@ -118,10 +119,10 @@ function findNpmScript(): string | undefined {
 }
 
 function updateNpm(label: string, packageName: string, prefix: string): Promise<string> {
-  const script = findNpmScript()
+  const script = findNpmScript(prefix)
   if (!script) throw new Error(translate('未找到 npm，请安装 Node.js / npm 后重试。'))
   // Calling npm's JS entry avoids cmd.exe interpolation and also works in packaged Electron.
-  return runUpdate(label, process.execPath, [script, 'install', '--global', '--prefix', prefix, `${packageName}@latest`])
+  return runUpdate(label, process.execPath, [script, 'install', '--global', '--prefix', prefix, `${packageName}@latest`], {}, isWin ? prefix : path.join(prefix, 'bin'))
 }
 
 function findHomebrew(executable: string, packages: string[]): { command: string; args: string[] } | undefined {
@@ -137,11 +138,10 @@ function findHomebrew(executable: string, packages: string[]): { command: string
   return undefined
 }
 
-function runUpdate(label: string, command: string, args: string[], extraEnv: NodeJS.ProcessEnv = {}): Promise<string> {
+function runUpdate(label: string, command: string, args: string[], extraEnv: NodeJS.ProcessEnv = {}, executableDirectory = path.dirname(command)): Promise<string> {
   return new Promise((resolve, reject) => {
-    const env: NodeJS.ProcessEnv = { ...process.env, ELECTRON_RUN_AS_NODE: '1', NO_COLOR: '1', FORCE_COLOR: '0', ...extraEnv }
-    if (!isWin) env.PATH = [path.join(os.homedir(), '.local', 'bin'), '/usr/local/bin', '/opt/homebrew/bin', env.PATH ?? ''].join(path.delimiter)
-    const child = spawn(command, args, { cwd: os.homedir(), env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, shell: false })
+    const env = cliEnvironment({ ELECTRON_RUN_AS_NODE: '1', NO_COLOR: '1', FORCE_COLOR: '0', ...extraEnv }, executableDirectory)
+    const child = spawnCliProcess(command, args, { cwd: os.homedir(), env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, shell: false })
     let output = ''
     let finished = false
     let timedOut = false

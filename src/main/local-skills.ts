@@ -13,7 +13,7 @@ import {
   type LocalTarget
 } from '@shared/local-config'
 import { isCliProvider, type CliProvider } from '@shared/types'
-import { assertUnchanged, hashText, LocalConfigError, moveDir, readJson, readText, samePath, writeTextSafely, type LocalEnv } from './local-files'
+import { assertUnchanged, hashText, LocalConfigError, moveDir, pathKey, readJson, readText, samePath, writeTextSafely, type LocalEnv } from './local-files'
 
 const MARKER = 'agent-desktop.json'
 const SKILL_FILE = 'SKILL.md'
@@ -122,7 +122,7 @@ function walkSkillDirs(root: string): string[] {
 }
 
 function stashRoot(env: LocalEnv, root: string): string {
-  return path.join(env.stateDir, STASH_DIR, hashText(path.resolve(root).toLowerCase()))
+  return path.join(env.stateDir, STASH_DIR, hashText(pathKey(root)))
 }
 
 function readStash(env: LocalEnv): StashEntry[] {

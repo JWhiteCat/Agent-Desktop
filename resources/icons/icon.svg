@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <!-- Original Agent Desktop terminal icon. No external artwork or fonts. -->
+  <rect x="24" y="24" width="464" height="464" rx="104" fill="#172b3a"/>
+  <rect x="88" y="116" width="336" height="280" rx="32" fill="#233e50"/>
+  <path d="M148 208 204 256 148 304" fill="none" stroke="#80edc2" stroke-width="28" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M256 304H340" fill="none" stroke="#f5f7fa" stroke-width="28" stroke-linecap="round"/>
+</svg>

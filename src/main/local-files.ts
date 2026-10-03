@@ -37,12 +37,43 @@ export function assertUnchanged(file: string, expected: string | undefined): voi
 
 /** Keeps a copy of the file as it was before this app first changed it, then replaces it atomically. */
 export function writeTextSafely(file: string, text: string, backup = true): void {
-  fs.mkdirSync(path.dirname(file), { recursive: true })
+  // New configuration may contain API keys or MCP credentials. Existing directories
+  // belong to the user, so mkdir's mode applies only to directories we create.
+  fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 })
+  let original: fs.Stats | undefined
+  try {
+    original = fs.statSync(file)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+  }
+  const mode = process.platform === 'win32' ? undefined : original ? original.mode & 0o777 : 0o600
   const copy = `${file}${BACKUP_SUFFIX}`
-  if (backup && fs.existsSync(file) && !fs.existsSync(copy)) fs.copyFileSync(file, copy)
-  const tmp = `${file}.agent-desktop.tmp`
-  fs.writeFileSync(tmp, text, 'utf8')
-  fs.renameSync(tmp, file)
+  if (backup && original && !fs.existsSync(copy)) {
+    try {
+      fs.copyFileSync(file, copy, fs.constants.COPYFILE_EXCL)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+    }
+  }
+  // A unique, exclusively created temporary file avoids following an old or
+  // attacker-created symlink and keeps concurrent writers' temporary files apart.
+  const tmp = `${file}.${crypto.randomUUID()}.agent-desktop.tmp`
+  const fd = fs.openSync(tmp, 'wx', mode)
+  try {
+    fs.writeFileSync(fd, text, 'utf8')
+    // open() applies umask; restore the original mode on this new inode only.
+    if (mode !== undefined) fs.fchmodSync(fd, mode)
+  } catch (error) {
+    fs.closeSync(fd)
+    fs.rmSync(tmp, { force: true })
+    throw error
+  }
+  fs.closeSync(fd)
+  try {
+    fs.renameSync(tmp, file)
+  } finally {
+    fs.rmSync(tmp, { force: true })
+  }
 }
 
 export function readJson<T>(file: string, fallback: T): T {
@@ -53,7 +84,7 @@ export function readJson<T>(file: string, fallback: T): T {
 
 /** Moves a directory, copying when the rename crosses devices. */
 export function moveDir(from: string, to: string): void {
-  fs.mkdirSync(path.dirname(to), { recursive: true })
+  fs.mkdirSync(path.dirname(to), { recursive: true, mode: 0o700 })
   try {
     fs.renameSync(from, to)
   } catch (err) {
@@ -63,10 +94,11 @@ export function moveDir(from: string, to: string): void {
   }
 }
 
+export function pathKey(p: string): string {
+  const resolved = path.resolve(p)
+  return process.platform === 'win32' ? resolved.toLowerCase() : resolved
+}
+
 export function samePath(a: string, b: string): boolean {
-  const norm = (p: string) => {
-    const resolved = path.resolve(p)
-    return process.platform === 'win32' ? resolved.toLowerCase() : resolved
-  }
-  return norm(a) === norm(b)
+  return pathKey(a) === pathKey(b)
 }

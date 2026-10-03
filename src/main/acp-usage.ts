@@ -59,17 +59,36 @@ Module.prototype._compile = function (content, filename) {
 }
 
 const PRELOAD_NAME = 'agent-desktop-acp-usage.cjs'
+let preloadDirectory: string | undefined
+let preloadFile: string | undefined
+
+/** Remove only the private directory created by this application process. */
+export function cleanupAcpUsagePreload(): void {
+  const directory = preloadDirectory
+  preloadDirectory = undefined
+  preloadFile = undefined
+  if (directory) {
+    try { fs.rmSync(directory, { recursive: true, force: true }) } catch { /* best-effort shutdown cleanup */ }
+  }
+}
 
 /** Point the CLI's node at a preload that rewrites the ACP presenter as it loads. */
 export function installAcpUsagePreload(env: NodeJS.ProcessEnv): void {
-  const file = path.join(os.tmpdir(), PRELOAD_NAME)
-  const source = acpUsagePreloadSource()
   try {
-    if (!fs.existsSync(file) || fs.readFileSync(file, 'utf8') !== source) fs.writeFileSync(file, source)
+    if (!preloadFile) {
+      // A predictable file directly under /tmp can be pre-created or symlinked
+      // by another user. Never inspect or reuse the old shared preload path.
+      preloadDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-desktop-acp-usage-'))
+      fs.chmodSync(preloadDirectory, 0o700)
+      const file = path.join(preloadDirectory, PRELOAD_NAME)
+      fs.writeFileSync(file, acpUsagePreloadSource(), { mode: 0o600, flag: 'wx' })
+      preloadFile = file
+    }
   } catch {
+    cleanupAcpUsagePreload()
     return
   }
-  const requireArg = quoteNodeOption(file.replace(/\\/g, '/'))
+  const requireArg = quoteNodeOption(preloadFile.replace(/\\/g, '/'))
   if (env.NODE_OPTIONS?.includes(requireArg)) return
   const flag = `--require ${requireArg}`
   const prev = env.NODE_OPTIONS?.trim() ?? ''

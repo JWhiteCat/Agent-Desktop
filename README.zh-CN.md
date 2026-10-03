@@ -43,7 +43,7 @@
 
 ## 环境要求
 
-- Node.js 22.12 或更高版本
+- 推荐 [Node.js 24 LTS](https://nodejs.org/en/download)；Node 22.12+（22.x）或 Node 26+ 也满足当前 Electron 和测试工具链要求
 - 至少一种 CLI：已配置 API Key 或已登录的 Cursor CLI，Codex CLI（找不到本机 `codex` 时使用应用内置的 Codex），或 Claude Code（找不到本机 `claude` 时使用适配器自带的 Claude）
 - 变更面板的 Git 页签需要本机可执行 `git`
 
@@ -101,7 +101,7 @@ Cursor 和原生安装的 Claude Code 使用各自的 `update` 命令。通过 n
 窗口是 Electron，界面是 React，两侧都是 TypeScript，用 electron-vite 构建。
 
 ```bash
-npm install
+npm ci --include=dev --include=optional
 npm run dev
 ```
 
@@ -112,21 +112,79 @@ Windows 一键启动（需先安装 Node.js 22.12 或更高版本，包含 npm�
 
 首次运行需要联网下载依赖和 Electron；之后会复用已安装的依赖与运行时。脚本可从任意工作目录启动，失败时会保留窗口显示错误。Electron 下载失败时，检查网络、代理或 `ELECTRON_MIRROR` 环境变量后重试。
 
+### Linux 启动与打包
+
+Linux 安装包面向 **x86-64 / amd64**、基于 glibc 的桌面发行版，需要已登录的 X11 或 Wayland 图形会话。请使用普通桌面用户运行应用。无头服务器、普通 SSH 会话和 Alpine/musl 不属于支持的桌面环境。应用使用 Linux 原生标题栏；桌面通知、文件及链接打开功能依赖相应桌面服务。
+
+先按上文安装 Node.js。精简的 **Ubuntu 24.04** 桌面可安装以下主要运行库和集成工具：
+
+```bash
+sudo apt update
+sudo apt install git openssh-client xdg-utils libgtk-3-0t64 libnss3 libgbm1 \
+  libasound2t64 libsecret-1-0 libnotify4 libxss1 libxtst6
+```
+
+Ubuntu 22.04 或 Debian 12 请把两个 `t64` 包名替换为 `libgtk-3-0`、`libasound2`；其他发行版的包名可能不同。`openssh-client` 提供公网远程控制所需的 `ssh` 和 `ssh-keygen`；项目操作需要 `git`。
+
+在项目目录执行：
+
+```bash
+npm run dev:linux       # 检查依赖、补齐 Electron，启动热更新开发模式
+npm run preview:linux   # 检查依赖、构建并打开生产预览
+```
+
+也可以从任意工作目录执行脚本，支持路径中的空格：
+
+```bash
+bash "/path/to/Agent-Desktop/scripts/start-linux.sh" dev
+```
+
+首次运行会按锁文件下载缺少的依赖，并下载 Electron 运行时。后续启动会复用完整的本地依赖与运行时，无需再次安装或联网。拉取依赖或锁文件变更后，执行 `npm run dev:linux -- --install`（或 `npm ci --include=dev --include=optional`）刷新依赖。不要省略 optional 依赖，内置代理的原生二进制按平台分发。下载失败会在终端保留错误；检查网络、代理或 `ELECTRON_MIRROR` 后重试。
+
+在 **Linux x64** 上安装本机依赖后打包：
+
+```bash
+npm ci --include=dev --include=optional
+npm run dist:linux       # 在 release/ 生成 AppImage 和 .deb，不会发布
+npm run dist:linux:dir   # 在 release/linux-unpacked/ 生成未封装应用
+```
+
+首次打包可能下载 Electron 和 electron-builder 工具。安装包包含应用图标、Development 分类的桌面入口，以及相互匹配的桌面/窗口标识。在 Debian 系桌面上安装 `.deb` 后可从应用菜单启动，也可以直接运行 AppImage（存在多个版本时，请把通配符替换为具体文件名）：
+
+```bash
+sudo apt install ./release/agent-desktop-*-linux-*.deb
+# 或运行便携版 AppImage：
+chmod +x release/agent-desktop-*-linux-x86_64.AppImage
+./release/agent-desktop-*-linux-x86_64.AppImage
+```
+
+**AppImage 与沙箱排障：**
+
+- 当前锁定的 electron-builder 使用 FUSE 2 AppImage 运行时。若提示缺少 `libfuse.so.2`，Ubuntu 24.04 安装 `libfuse2t64`，Ubuntu 22.04 / Debian 12 安装 `libfuse2`。安装兼容库即可，不要替换系统的 FUSE 3。无法使用 FUSE 时，可执行 `./release/agent-desktop-*-linux-x86_64.AppImage --appimage-extract-and-run`，通过解压启动而不挂载镜像。详见 [AppImage FUSE 指南](https://docs.appimage.org/user-guide/troubleshooting/fuse.html)。
+- FUSE 与 Chromium 沙箱是两个独立条件。随包提供的 AppImage 启动器保留 Chromium 沙箱，不会在用户命名空间不可用时悄悄关闭它。解压也不能解决沙箱错误。若系统限制用户命名空间或有 AppArmor 策略，优先通过系统包管理器安装 `.deb`，或请管理员按发行版支持的方式配置针对该应用的策略。不要用 `sudo` 运行应用、全局关闭 AppArmor 或添加关闭沙箱的启动参数。详见 [Electron 沙箱说明](https://www.electronjs.org/docs/latest/tutorial/sandbox)。
+- 若提示缺少共享库，用发行版的包管理器安装对应运行库。没有 `DISPLAY` 和 `WAYLAND_DISPLAY` 的终端无法打开桌面窗口，请在图形会话内启动。
+- **ARM64 暂未作为发行目标。** 仅修改 electron-builder 架构参数不够，Electron、Codex/Claude 的 optional 原生二进制及适配器都必须匹配目标架构。ARM64 原生启动及打包仍需单独验证，提供的发行命令有意限定为 x64。
+
 | 命令 | 作用 |
 | --- | --- |
 | `npm run dev` | 打开开发窗口 |
+| `npm run dev:linux` / `npm run preview:linux` | 带依赖和运行时检查的 Linux 启动 |
 | `npm test` | 离线单元测试，不调用模型 |
 | `npm run test:live` | 用 Composer 2.5 Fast 检查极短文字及附件输入 |
 | `npm run typecheck` | 类型检查 |
 | `npm run build` | 编译到 `out/` |
 | `npm run preview` | 预览编译结果 |
 | `npm run dist` | 打包安装包到 `release/` |
+| `npm run dist:linux` | 构建 Linux x64 AppImage 和 Debian 安装包，不会发布 |
+| `npm run dist:linux:dir` | 构建 Linux x64 未封装应用 |
 
 `npm test` 不访问 Cursor CLI、Codex 或 Claude。`npm run test:live` 在临时目录中用 Ask 模式调用 `composer-2.5[fast=true]`：文字检查只要求 `Reply with exactly ok`，附件检查验证原生图片识别及工作目录之外的受管理原文件读取。文字检查优先使用 `CURSOR_API_KEY`，未设置时使用 CLI 保存的登录；附件检查要求 `CURSOR_API_KEY`。只运行附件检查可用 `npm run test:live -- test/live/attachment-smoke.test.ts`。
 
 可用 `npm test -- test/claude.test.ts test/turn-usage.test.ts` 定向检查。这些测试将 Claude 检测与用户主目录隔离，覆盖含空格路径下的用量 preload 加载，并清理临时夹具。仅适用于 Windows 的检查在其他平台会明确标为跳过。
 
-打包目标：Windows NSIS、macOS DMG、Linux AppImage。
+打包目标：Windows NSIS、macOS DMG、Linux x64 AppImage / Debian（`.deb`）。
+
+`npm test -- test/linux-launcher.test.ts test/linux-packaging.test.ts` 检查 Linux 启动、重复/离线启动、错误处理、打包元数据及图标、桌面标识和 AppImage 启动器，不下载安装包或启动代理。每个目标发行版仍需在真实图形会话内进行冒烟测试。
 
 按 `F12` 打开开发者工具。离开本应用的链接会用系统浏览器打开。
 
@@ -287,7 +345,7 @@ npm run setup:public-server -- --user root --host 你的服务器 --port 8765
 
 开发时，`AGENT_DESKTOP_USER_DATA` 把 userData 指到另一个目录。
 
-可以同时开多个窗口。每个进程把自己的 Chromium 缓存（GPU 缓存、HTTP 缓存、localStorage）写到系统临时目录的 `agent-desktop-sessions/<pid>`，这样进程之间不会锁同一批文件。项目和对话仍然共用上面的 `data/`。两个窗口写同一份数据时，后写入的为准。退出时进程会删掉自己的缓存目录。崩溃留下的目录在下次启动时清掉。
+可以同时开多个窗口。每个进程把自己的 Chromium 缓存（GPU 缓存、HTTP 缓存、localStorage）写到各自用户配置下的私有 `userData/session-cache/<pid>` 目录，这样进程之间不会锁同一批文件。项目和对话仍然共用上面的 `data/`。两个窗口写同一份数据时，后写入的为准。退出时进程会删掉自己的缓存目录。崩溃留下的目录在下次启动时清掉。
 
 ## 目录
 

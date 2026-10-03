@@ -5,6 +5,7 @@ import { normalizeMcpServers, normalizeSkills } from '@shared/agent-config'
 import { normalizeLanguage } from '@shared/i18n'
 import { DEFAULT_SETTINGS, normalizeCliProvider, threadCli, type Item, type Project, type ResultItem, type Settings, type ThreadMeta } from '@shared/types'
 import { newId } from './id'
+import { pathKey, writeTextSafely } from './local-files'
 import { attachmentsFor } from './attachments'
 import { newRemoteClientId, validClientId } from './public-tunnel'
 import { readCodexUsage, repairCodexAssistantMessages, repairCodexMcpTools } from './codex-history'
@@ -19,9 +20,7 @@ interface PersistedState {
 }
 
 function writeAtomic(file: string, data: string): void {
-  const tmp = `${file}.${process.pid}.tmp`
-  fs.writeFileSync(tmp, data, 'utf8')
-  fs.renameSync(tmp, file)
+  writeTextSafely(file, data, false)
 }
 
 function readJson<T>(file: string): T | undefined {
@@ -45,7 +44,7 @@ export class Store {
     this.dir = path.join(app.getPath('userData'), 'data')
     this.threadsDir = path.join(this.dir, 'threads')
     this.stateFile = path.join(this.dir, 'state.json')
-    fs.mkdirSync(this.threadsDir, { recursive: true })
+    fs.mkdirSync(this.threadsDir, { recursive: true, mode: 0o700 })
     const loaded = readJson<PersistedState>(this.stateFile)
     const rawClientId = loaded?.settings?.remoteClientId
     const remoteClientId = typeof rawClientId === 'string' && validClientId(rawClientId) ? rawClientId : newRemoteClientId()
@@ -294,6 +293,5 @@ export class Store {
 }
 
 export function normalizePath(p: string): string {
-  const resolved = path.resolve(p).replace(/[\\/]+$/, '')
-  return process.platform === 'win32' ? resolved.toLowerCase() : resolved
+  return pathKey(p)
 }

@@ -8,6 +8,7 @@ import { notifyRunFinished } from './notify'
 import { publish } from './publish'
 import { RemoteRuntime } from './remote-runtime'
 import { SessionManager } from './sessions'
+import { cleanupAcpUsagePreload } from './acp-usage'
 import { syncAllManagedSkills } from './skills'
 import { Store } from './store'
 import { UnreadTaskbarBadge } from './taskbar-badge'
@@ -116,5 +117,6 @@ app.on('window-all-closed', () => {
 })
 
 app.on('will-quit', () => {
+  cleanupAcpUsagePreload()
   removeDir(sessionDataDir)
 })

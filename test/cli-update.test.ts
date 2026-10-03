@@ -90,6 +90,18 @@ describe('CLI updates', () => {
     expect(mocks.spawn).not.toHaveBeenCalled()
   })
 
+  it.skipIf(process.platform === 'win32')('uses npm from the selected Linux prefix even when it is absent from PATH', async () => {
+    const prefix = path.join(root, 'custom node installation')
+    const executable = installedCodex(prefix)
+    const selectedNpm = write(path.join(prefix, 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js'))
+    mocks.codex.mockReturnValue({ codexPath: executable, bundled: false, acpEntry })
+    await updateCodex(executable)
+    expect(mocks.spawn).toHaveBeenCalledWith(process.execPath,
+      [selectedNpm, 'install', '--global', '--prefix', prefix, '@openai/codex@latest'],
+      expect.objectContaining({ detached: true, shell: false }))
+    expect(mocks.spawn.mock.calls[0][2].env.PATH.split(path.delimiter)[0]).toBe(path.join(prefix, 'bin'))
+  })
+
   it('does not update an unrelated npm installation next to a custom Codex wrapper', async () => {
     const prefix = path.join(root, 'npm')
     installedCodex(prefix)
@@ -137,6 +149,16 @@ describe('CLI updates', () => {
     mocks.codex.mockReturnValue({ codexPath: executable, bundled: false, acpEntry })
     await updateCodex(executable)
     expect(mocks.spawn).toHaveBeenCalledWith(brew, ['upgrade', '--cask', 'codex'], expect.objectContaining({ shell: false }))
+  })
+
+  it.skipIf(process.platform === 'win32')('updates a Linuxbrew formula through its owning prefix', async () => {
+    const executable = write(path.join(root, '.linuxbrew', 'Cellar', 'codex', '1.0', 'bin', 'codex'))
+    const brew = write(path.join(root, '.linuxbrew', 'bin', 'brew'))
+    const link = path.join(root, '.linuxbrew', 'bin', 'codex')
+    fs.symlinkSync(executable, link)
+    mocks.codex.mockReturnValue({ codexPath: link, bundled: false, acpEntry })
+    await updateCodex(link)
+    expect(mocks.spawn).toHaveBeenCalledWith(brew, ['upgrade', 'codex'], expect.objectContaining({ detached: true, shell: false }))
   })
 
   it('rejects nonzero exits with CLI output', async () => {

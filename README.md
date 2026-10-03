@@ -35,7 +35,7 @@ The app does not call a model itself. The main process starts the Cursor CLI, Co
 
 ## Requirements
 
-- Node.js 22.12 or newer
+- [Node.js 24 LTS](https://nodejs.org/en/download) is recommended. Node 22.12+ (22.x) and Node 26+ also satisfy the current Electron and test toolchain requirements
 - At least one CLI: a Cursor CLI that is signed in or has an API key, Codex CLI (the bundled Codex is used when `codex` is not on this machine), or Claude Code (the adapter's bundled Claude is used when `claude` is not on this machine)
 - The git tab of the changes panel needs `git` on `PATH`
 
@@ -93,7 +93,7 @@ Cursor and native Claude Code use their `update` command. Codex installed throug
 The window is Electron, the UI is React, and both sides are TypeScript, built with electron-vite.
 
 ```bash
-npm install
+npm ci --include=dev --include=optional
 npm run dev
 ```
 
@@ -104,21 +104,79 @@ Windows one-click startup requires Node.js 22.12 or newer, including npm:
 
 The first run needs internet access to download dependencies and Electron. Later runs reuse installed dependencies and the runtime. Both scripts work from any working directory and keep the window open on failure. If the Electron download fails, check your network, proxy, or `ELECTRON_MIRROR` environment variable and retry.
 
+### Linux startup and packages
+
+The Linux packages target **x86-64 / amd64**, with a glibc-based desktop and an active X11 or Wayland session. Run the application as your normal desktop user. A headless server, a plain SSH session, and Alpine/musl are not supported desktop environments. The app uses native Linux window decorations; desktop notifications and opening links/files depend on your desktop services.
+
+Install Node.js as described above. For a minimal **Ubuntu 24.04** desktop, the main runtime and integration dependencies are:
+
+```bash
+sudo apt update
+sudo apt install git openssh-client xdg-utils libgtk-3-0t64 libnss3 libgbm1 \
+  libasound2t64 libsecret-1-0 libnotify4 libxss1 libxtst6
+```
+
+On Ubuntu 22.04 or Debian 12, use `libgtk-3-0` and `libasound2` instead of the two `t64` names. Other distributions use different package names. `openssh-client` supplies `ssh` and `ssh-keygen` for public remote control; `git` is needed for project operations.
+
+From the project directory:
+
+```bash
+npm run dev:linux       # Check dependencies, ensure Electron, and start hot reload
+npm run preview:linux   # Check dependencies, build, and open production preview
+```
+
+The launcher also works from another directory, including paths containing spaces:
+
+```bash
+bash "/path/to/Agent-Desktop/scripts/start-linux.sh" dev
+```
+
+The first run downloads missing dependencies using the lockfile and downloads the Electron runtime. Later runs reuse a complete local dependency tree and runtime without an install/network request. After pulling dependency or lockfile changes, run `npm run dev:linux -- --install` (or `npm ci --include=dev --include=optional`) to refresh dependencies. Do not omit optional dependencies: bundled agent binaries are platform-specific. Download failures leave an error in the terminal; check the network/proxy or `ELECTRON_MIRROR`, then retry.
+
+Build on **Linux x64**, with dependencies installed on that machine:
+
+```bash
+npm ci --include=dev --include=optional
+npm run dist:linux       # AppImage and .deb in release/, never publishes
+npm run dist:linux:dir   # Unpacked app in release/linux-unpacked/
+```
+
+The first package build may download Electron and electron-builder tools. Packages include the application icon, a Development-category desktop entry, and a matching desktop/window identity. Install the `.deb` on a Debian-based desktop to add it to the application menu, or run the AppImage directly (replace the glob with the exact filename if several versions are present):
+
+```bash
+sudo apt install ./release/agent-desktop-*-linux-*.deb
+# Or use the portable AppImage:
+chmod +x release/agent-desktop-*-linux-x86_64.AppImage
+./release/agent-desktop-*-linux-x86_64.AppImage
+```
+
+**AppImage and sandbox troubleshooting:**
+
+- The pinned electron-builder uses the FUSE 2 AppImage runtime. If it reports a missing `libfuse.so.2`, install `libfuse2t64` on Ubuntu 24.04, or `libfuse2` on Ubuntu 22.04 / Debian 12. Install the compatibility library, not a replacement for FUSE 3. If FUSE is unavailable, `./release/agent-desktop-*-linux-x86_64.AppImage --appimage-extract-and-run` avoids mounting the image. See the [AppImage FUSE guide](https://docs.appimage.org/user-guide/troubleshooting/fuse.html).
+- FUSE and Chromium sandboxing are separate requirements. The included AppImage launcher retains Chromium's sandbox and does not silently disable it when user namespaces are unavailable. Extraction does not fix a sandbox error. On systems that restrict user namespaces or apply AppArmor policies, prefer the `.deb` installed through the system package manager, or ask the administrator for a distribution-supported application-specific configuration. Do not run the app with `sudo`, disable AppArmor globally, or add sandbox-disabling flags. See [Electron's sandbox guidance](https://www.electronjs.org/docs/latest/tutorial/sandbox).
+- For a missing shared-library error, install that library with your distribution's package manager. A terminal without `DISPLAY` or `WAYLAND_DISPLAY` cannot open the desktop app; use a terminal inside the graphical session.
+- **ARM64 is not a release target yet.** Changing only electron-builder's architecture flag is insufficient: Electron, optional Codex/Claude binaries, and their adapters must all match the target architecture. Native ARM64 startup and packaging still need separate validation; the supplied distribution commands intentionally build x64 only.
+
 | Command | What it does |
 | --- | --- |
 | `npm run dev` | Open the development window |
+| `npm run dev:linux` / `npm run preview:linux` | Linux startup with dependency/runtime checks |
 | `npm test` | Offline unit tests. Does not call a model |
 | `npm run test:live` | Short text and attachment checks with Composer 2.5 Fast |
 | `npm run typecheck` | Typecheck |
 | `npm run build` | Compile into `out/` |
 | `npm run preview` | Preview the compiled app |
 | `npm run dist` | Package installers into `release/` |
+| `npm run dist:linux` | Build Linux x64 AppImage and Debian packages without publishing |
+| `npm run dist:linux:dir` | Build the unpacked Linux x64 application |
 
 `npm test` does not talk to Cursor CLI, Codex, or Claude. `npm run test:live` calls `composer-2.5[fast=true]` in Ask mode in temporary directories: one check asks `Reply with exactly ok`, and another verifies native image recognition plus reading an original managed file outside the workspace. The text check uses `CURSOR_API_KEY` when set, otherwise the saved CLI login; the attachment check requires `CURSOR_API_KEY`. Run only the attachment check with `npm run test:live -- test/live/attachment-smoke.test.ts`.
 
 Run a focused check with `npm test -- test/claude.test.ts test/turn-usage.test.ts`. These tests isolate Claude discovery from the user's home directory, load the usage preload from paths containing spaces, and clean up their temporary fixtures. Windows-only checks are reported as skipped on other platforms.
 
-Package targets: Windows NSIS, macOS DMG, and Linux AppImage.
+Package targets: Windows NSIS, macOS DMG, and Linux x64 AppImage / Debian (`.deb`).
+
+`npm test -- test/linux-launcher.test.ts test/linux-packaging.test.ts` checks Linux startup, repeated/offline starts, failure handling, package metadata/icons, desktop identity, and the AppImage launcher without downloading packages or launching an agent. A real graphical-session smoke test is still needed for each target distribution.
 
 Press `F12` to open DevTools. Links that leave the app open in the system browser.
 
@@ -291,7 +349,7 @@ A full fork copies the CLI session into an independent conversation: Cursor copi
 
 During development, `AGENT_DESKTOP_USER_DATA` points userData at another directory.
 
-Several windows can be open at once. Each process writes its Chromium cache (GPU cache, HTTP cache, localStorage) under `agent-desktop-sessions/<pid>` in the system temp directory, so the processes do not lock each other’s files. Projects and conversations still share the `data/` directory above. If two windows write the same data, the later write wins. On exit, the process deletes its own cache directory. Directories left by a crash are removed on the next launch.
+Several windows can be open at once. Each process writes its Chromium cache (GPU cache, HTTP cache, localStorage) under the profile’s private `userData/session-cache/<pid>` directory, so the processes do not lock each other’s files. Projects and conversations still share the `data/` directory above. If two windows write the same data, the later write wins. On exit, the process deletes its own cache directory. Directories left by a crash are removed on the next launch.
 
 ## Layout
 

@@ -1,5 +1,6 @@
 import { createElement, type ComponentProps } from 'react'
 import * as jsxRuntime from 'react/jsx-runtime'
+import * as jsxDevRuntime from 'react/jsx-dev-runtime'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setLanguage } from '../src/shared/i18n'
@@ -9,6 +10,7 @@ import { QuestionBlock, QuestionForm } from '../src/renderer/src/components/item
 import { TurnActionsContext } from '../src/renderer/src/components/items/TurnActions'
 
 vi.mock('react/jsx-runtime', { spy: true })
+vi.mock('react/jsx-dev-runtime', { spy: true })
 
 const single: QuestionPrompt = {
   id: 'language', prompt: '用什么语言？',
@@ -245,6 +247,14 @@ describe('Codex plan review questions', () => {
       if (type === 'button' && button.className === 'question-submit') click = button.onClick
       return originalJsx(type, props, key)
     })
+    // Vite's development transform can emit jsxDEV instead of jsx. Capture both
+    // without depending on the host platform's transform/cache configuration.
+    const originalJsxDev = (await vi.importActual<typeof jsxDevRuntime>('react/jsx-dev-runtime')).jsxDEV
+    const devSpy = vi.mocked(jsxDevRuntime.jsxDEV).mockImplementation((type, props, key, ...args) => {
+      const button = props as { className?: string; onClick?: () => void }
+      if (type === 'button' && button.className === 'question-submit') click = button.onClick
+      return originalJsxDev(type, props, key, ...args)
+    })
     try {
       renderForm({
         questions: [planQuestion], onSubmit,
@@ -258,6 +268,7 @@ describe('Codex plan review questions', () => {
       }])
     } finally {
       spy.mockRestore()
+      devSpy.mockRestore()
     }
   })
 

@@ -1,11 +1,12 @@
 import { t as translate } from '@shared/i18n'
-import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
+import type { ChildProcess } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import type { AgentMode, ModelInfo } from '@shared/types'
 import { AcpConnection, MethodNotFound, permissionResult } from './acp'
 import { killTree, type ResolvedCli } from './cli'
+import { cliEnvironment, cliSearchDirectories, findCliExecutable, normalizeCliPath, spawnCliProcess } from './cli-runtime'
 
 const isWin = process.platform === 'win32'
 
@@ -55,7 +56,7 @@ export function resolveClaudeAcpEntry(): string | undefined {
 export function resolveClaude(customPath: string): ResolvedClaude | undefined {
   const acpEntry = resolveClaudeAcpEntry()
   if (!acpEntry) return undefined
-  const custom = customPath.trim()
+  const custom = normalizeCliPath(customPath)
   if (custom) {
     const user = findClaudeFile(custom)
     if (!user) return undefined
@@ -67,7 +68,7 @@ export function resolveClaude(customPath: string): ResolvedClaude | undefined {
 }
 
 export function spawnClaudeAcp(claude: ResolvedClaude, cwd: string, apiKey: string): ChildProcess {
-  return spawn(process.execPath, [claude.acpEntry], {
+  return spawnCliProcess(process.execPath, [claude.acpEntry], {
     cwd,
     env: claudeEnv(claude, apiKey),
     stdio: ['pipe', 'pipe', 'pipe'],
@@ -94,8 +95,8 @@ export async function claudeStatus(claude: ResolvedClaude): Promise<string> {
 /** Opens Claude subscription login through the adapter, which uses the same binary as a conversation. */
 export function claudeLogin(claude: ResolvedClaude): Promise<string> {
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, [claude.acpEntry, '--cli', 'auth', 'login', '--claudeai'], {
-      env: nodeEnv(),
+    const child = spawnCliProcess(process.execPath, [claude.acpEntry, '--cli', 'auth', 'login', '--claudeai'], {
+      env: claudeEnv(claude, ''),
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true
     })
@@ -278,7 +279,7 @@ export function modelsFromClaudeSession(
 }
 
 function claudeEnv(claude: ResolvedClaude, apiKey: string): NodeJS.ProcessEnv {
-  const env = nodeEnv()
+  const env = nodeEnv(claude.claudePath)
   const executable = claude.claudePath && !isClaudeShellShim(claude.claudePath) ? claude.claudePath : ''
   if (executable) env.CLAUDE_CODE_EXECUTABLE = executable
   else delete env.CLAUDE_CODE_EXECUTABLE
@@ -287,13 +288,8 @@ function claudeEnv(claude: ResolvedClaude, apiKey: string): NodeJS.ProcessEnv {
   return env
 }
 
-function nodeEnv(): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = { ...process.env, ELECTRON_RUN_AS_NODE: '1', NO_COLOR: '1', FORCE_COLOR: '0' }
-  if (!isWin) {
-    const extra = [path.join(os.homedir(), '.local', 'bin'), '/usr/local/bin', '/opt/homebrew/bin']
-    env.PATH = [...extra, env.PATH ?? ''].join(path.delimiter)
-  }
-  return env
+function nodeEnv(executable?: string): NodeJS.ProcessEnv {
+  return cliEnvironment({ ELECTRON_RUN_AS_NODE: '1', NO_COLOR: '1', FORCE_COLOR: '0' }, executable ? path.dirname(executable) : undefined)
 }
 
 function claudeBinary(claude: ResolvedClaude): string | undefined {
@@ -322,9 +318,9 @@ function bundledClaudeBinary(): string | undefined {
 
 function runClaude(command: string, args: string[], timeoutMs: number): Promise<{ code: number | null; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
-    const child = spawn(command, args, {
+    const child = spawnCliProcess(command, args, {
       windowsHide: true,
-      env: nodeEnv(),
+      env: nodeEnv(command),
       shell: isWin && isClaudeShellShim(command)
     })
     let stdout = ''
@@ -344,23 +340,22 @@ function runClaude(command: string, args: string[], timeoutMs: number): Promise<
 function findClaudeOnPath(): string | undefined {
   // Windows `where claude` hits npm's extensionless shell script before any native binary.
   const names = isWin ? ['claude.exe'] : ['claude']
-  for (const name of names) {
-    const found = whichSync(name)
-    if (found && !isClaudeShellShim(found)) return found
+  for (const directory of cliSearchDirectories()) {
+    for (const name of names) {
+      const found = findClaudeFile(path.join(directory, name))
+      if (found && !isClaudeShellShim(found)) return found
+    }
   }
   const home = os.homedir()
   const candidates = isWin
     ? [path.join(home, '.local', 'bin', 'claude.exe'), path.join(home, '.claude', 'local', 'claude.exe')]
-    : [path.join(home, '.local', 'bin', 'claude'), '/usr/local/bin/claude', '/opt/homebrew/bin/claude']
-  return candidates.find((file) => fs.existsSync(file) && !isClaudeShellShim(file))
+    : []
+  return candidates.map(findClaudeFile).find((file) => !!file && !isClaudeShellShim(file))
 }
 
 function findClaudeFile(custom: string): string | undefined {
-  if (!fs.existsSync(custom)) return undefined
-  const stat = fs.statSync(custom)
-  if (!stat.isDirectory()) return custom
   const names = isWin ? ['claude.exe', 'claude.cmd', 'claude'] : ['claude']
-  return names.map((name) => path.join(custom, name)).find((file) => fs.existsSync(file))
+  return findCliExecutable(custom, names)
 }
 
 /**
@@ -371,15 +366,6 @@ function findClaudeFile(custom: string): string | undefined {
 export function isClaudeShellShim(file: string, platform: NodeJS.Platform = process.platform): boolean {
   if (/\.(cmd|bat|ps1)$/i.test(file)) return true
   return platform === 'win32' && !/\.exe$/i.test(file)
-}
-
-function whichSync(name: string): string | undefined {
-  const r = spawnSync(isWin ? 'where' : 'which', [name], { encoding: 'utf8', windowsHide: true })
-  if (r.status !== 0) return undefined
-  return r.stdout
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .find((line) => !!line && !isClaudeShellShim(line))
 }
 
 function preferUnpacked(file: string): string {

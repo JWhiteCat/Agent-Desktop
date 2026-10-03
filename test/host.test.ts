@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { hostHandlers } from '../src/main/ipc/host'
+import { openInEditor } from '../src/main/window'
 
 const shell = vi.hoisted(() => ({ openPath: vi.fn(), openExternal: vi.fn() }))
 
@@ -11,9 +12,33 @@ vi.mock('../src/main/window', () => ({ openInEditor: vi.fn() }))
 beforeEach(() => {
   shell.openPath.mockReset().mockResolvedValue('')
   shell.openExternal.mockReset().mockResolvedValue(undefined)
+  vi.mocked(openInEditor).mockReset().mockResolvedValue(false)
 })
 
 describe('host link handlers', () => {
+  it('opens a Linux file path containing spaces without shell parsing', async () => {
+    const file = '/home/test/my project/preview image.png'
+    await hostHandlers()['shell:openPath'](file)
+    expect(shell.openPath).toHaveBeenCalledExactlyOnceWith(file)
+  })
+
+  it('falls back to the file manager when Cursor is not available', async () => {
+    const dir = '/home/test/my project'
+    await expect(hostHandlers()['shell:openInEditor'](dir)).resolves.toBe(false)
+    expect(shell.openPath).toHaveBeenCalledExactlyOnceWith(dir)
+  })
+
+  it('reports file-manager fallback errors instead of silently succeeding', async () => {
+    shell.openPath.mockResolvedValueOnce('No application is registered')
+    await expect(hostHandlers()['shell:openInEditor']('/home/test/project')).rejects.toThrow('No application is registered')
+  })
+
+  it('does not open the file manager when Cursor starts successfully', async () => {
+    vi.mocked(openInEditor).mockResolvedValueOnce(true)
+    await expect(hostHandlers()['shell:openInEditor']('/home/test/project')).resolves.toBe(true)
+    expect(shell.openPath).not.toHaveBeenCalled()
+  })
+
   it('opens a local file and resolves only after the shell accepts it', async () => {
     const file = 'D:/project/artifacts/preview.png'
 
