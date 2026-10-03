@@ -84,6 +84,8 @@ export interface AssistantItem {
   id: string
   kind: 'assistant'
   text: string
+  /** ACP message identity; chunks with different IDs belong to separate replies. */
+  messageId?: string
 }
 
 export interface ThinkingItem {

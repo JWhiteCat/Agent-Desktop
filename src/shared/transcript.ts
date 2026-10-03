@@ -23,7 +23,8 @@ export function mergeInterruptedAssistantMessages(items: readonly Item[]): Item[
   for (const item of items) {
     if (item.kind === 'assistant') {
       const previous = assistantIndex === undefined ? undefined : merged[assistantIndex]
-      if (previous?.kind === 'assistant' && assistantIndex !== undefined && assistantIndex < merged.length - 1) {
+      if (previous?.kind === 'assistant' && assistantIndex !== undefined && assistantIndex < merged.length - 1
+        && previous.messageId === item.messageId) {
         merged.splice(assistantIndex, 1)
         merged.push({ ...item, text: previous.text + item.text })
       } else {

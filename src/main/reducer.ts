@@ -120,7 +120,8 @@ export class StreamReducer {
       case 'agent_message_chunk': {
         const text = textOfContent(update.content)
         if (!text) return []
-        return this.onAssistant({ message: { content: text }, timestamp_ms: Date.now() })
+        const messageId = typeof update.messageId === 'string' && update.messageId.trim() ? update.messageId : undefined
+        return this.onAssistant({ message: { content: text }, timestamp_ms: Date.now() }, messageId)
       }
       case 'tool_call':
       case 'tool_call_update':
@@ -241,7 +242,7 @@ export class StreamReducer {
     return []
   }
 
-  private onAssistant(ev: any): Item[] {
+  private onAssistant(ev: any, messageId?: string): Item[] {
     const text = textOf(ev.message)
     if (!text) return []
     const isDelta = ev.timestamp_ms !== undefined
@@ -249,10 +250,14 @@ export class StreamReducer {
     const changed = this.thinking ? this.closeSegments() : []
     if (isDelta) this.sawDelta = true
     let item = this.assistant
+    // ACP streams independent commentary/final messages without a tool or
+    // thought between them. Their Markdown must not be joined as one delta.
+    if (messageId && item?.messageId && messageId !== item.messageId) item = undefined
     if (!item) {
       item = { id: newId(), kind: 'assistant', text: '' }
       this.items.push(item)
     }
+    if (messageId) item.messageId = messageId
     item.text += text
     this.lastAssistantText = item.text
     this.assistant = isDelta ? item : undefined

@@ -2,6 +2,7 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setLanguage } from '../src/shared/i18n'
+import { StreamReducer } from '../src/main/reducer'
 import { mergeInterruptedAssistantMessages } from '../src/shared/transcript'
 import { DEFAULT_SETTINGS, type AssistantItem, type Item, type ThreadMeta, type ToolItem } from '../src/shared/types'
 import { ThreadView } from '../src/renderer/src/components/ThreadView'
@@ -146,6 +147,55 @@ describe('assistant messages interrupted by background completions', () => {
     ]) {
       expect(mergeInterruptedAssistantMessages(items)).toEqual(items)
     }
+  })
+
+  it.each([
+    ['commentary', 'final'], ['known', undefined], [undefined, 'known']
+  ])('does not rejoin independent ACP messages across background activity (%s, %s)', (first, second) => {
+    const items = [
+      { ...assistant('first', 'Progress.'), messageId: first }, background(),
+      { ...assistant('second', questions), messageId: second }
+    ]
+    expect(mergeInterruptedAssistantMessages(items)).toEqual(items)
+  })
+
+  it('rejoins fragments of the same identified ACP message', () => {
+    const tool = background()
+    const merged = mergeInterruptedAssistantMessages([
+      { ...assistant('first', prefix), messageId: 'same' }, tool,
+      { ...assistant('second', suffix), messageId: 'same' }
+    ])
+    expect(merged).toEqual([tool, { ...assistant('second', questions), messageId: 'same' }])
+  })
+})
+
+describe('Markdown at ACP message boundaries', () => {
+  it.each([false, true])('renders and copies the final questions card after commentary (background=%s)', (withBackground) => {
+    const items: Item[] = [user]
+    const reducer = new StreamReducer(items)
+    reducer.handleAcp({ sessionUpdate: 'agent_message_chunk', messageId: 'commentary', content: { text: '已找到存档。' } })
+    if (withBackground) {
+      reducer.handleAcp({
+        sessionUpdate: 'tool_call', toolCallId: 'child-done', status: 'completed',
+        rawInput: { agentThreadId: 'child', activityKind: 'completed' }
+      })
+    }
+    const final = questions.slice(questions.indexOf('```questions'))
+    const split = final.indexOf('Which') + 2
+    reducer.handleAcp({ sessionUpdate: 'agent_message_chunk', messageId: 'final', content: { text: final.slice(0, split) } })
+    reducer.handleAcp({ sessionUpdate: 'agent_message_chunk', messageId: 'final', content: { text: final.slice(split) } })
+    const finalId = items.at(-1)!.id
+    items.push(result)
+    const html = renderThread(items)
+
+    expect(html).toContain('Choose a color')
+    expect(html).toContain('Which color?')
+    expect(html).toContain('class="question-actions"')
+    expect(html).not.toContain('class="code-block"')
+    expect(actions.copyTexts).toContain(final)
+    expect(actions.copyTexts).not.toContain('已找到存档。' + final)
+    actions.forks.at(-1)!()
+    expect(actions.forkThread).toHaveBeenCalledWith(thread.id, finalId)
   })
 })
 

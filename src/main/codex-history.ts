@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import type { CliSession, Item, ToolItem } from '@shared/types'
+import type { AssistantItem, CliSession, Item, ToolItem } from '@shared/types'
 import { newId } from './id'
 import { compact } from './reducer'
 import { UNTITLED } from './history'
@@ -139,6 +139,104 @@ export function readCodexUsage(chatId: string): CodexUsageTurn[] | undefined {
   } catch {
     return undefined
   }
+}
+
+/** Restore separators only when complete native messages prove a legacy concatenation. */
+export function repairCodexAssistantMessages(chatId: string, items: Item[]): boolean {
+  const candidates = new Map<string, AssistantItem[]>()
+  for (const item of items) {
+    if (item.kind !== 'assistant' || item.messageId !== undefined || !item.text) continue
+    const matches = candidates.get(item.text) ?? []
+    matches.push(item)
+    candidates.set(item.text, matches)
+  }
+  if (!candidates.size) return false
+
+  let text: string
+  try {
+    const file = findRollout(chatId)
+    if (!file) return false
+    text = fs.readFileSync(file, 'utf8')
+  } catch {
+    return false
+  }
+
+  const groups = nativeAssistantGroups(parseLines(text))
+  let changed = false
+  for (const [savedText, matches] of candidates) {
+    const repaired = nativeAssistantReplacement(groups, savedText)
+    if (repaired === undefined || repaired === savedText) continue
+    for (const item of matches) {
+      item.text = repaired
+      changed = true
+    }
+  }
+  return changed
+}
+
+/** Event records duplicate response items; only the complete response text is authoritative. */
+function nativeAssistantGroups(rows: TranscriptRow[]): string[][] {
+  const groups: string[][] = []
+  let current: string[] = []
+  const boundary = (): void => {
+    if (current.length) groups.push(current)
+    current = []
+  }
+  let previousLine = -1
+  for (const { row, line } of rows) {
+    // Missing/invalid records cannot prove that two messages were adjacent.
+    if (previousLine >= 0 && line > previousLine + 1) boundary()
+    previousLine = line
+    const payload = row?.payload
+    if (row?.type === 'response_item') {
+      if (payload?.type === 'message' && payload.role === 'assistant') {
+        const content = payload.content
+        const text = typeof content === 'string' ? content
+          : Array.isArray(content) && content.every((block) => block && typeof block.text === 'string')
+            ? content.map((block) => block.text).join('') : undefined
+        if (text) current.push(text)
+        else boundary()
+      } else if (payload?.type !== 'reasoning') {
+        boundary()
+      }
+    } else if (row?.type === 'event_msg') {
+      const type = String(payload?.type ?? '')
+      if (type === 'item_started' || type === 'item_completed') {
+        const itemType = String(payload.item?.type ?? '').toLowerCase()
+        if (itemType !== 'agentmessage' && itemType !== 'reasoning') boundary()
+      } else if (type !== 'agent_message' && type !== 'token_count') {
+        boundary()
+      }
+    }
+  }
+  boundary()
+  return groups
+}
+
+function nativeAssistantReplacement(groups: string[][], savedText: string): string | undefined {
+  if (groups.some((group) => group.includes(savedText))) return undefined
+  let replacement: string | undefined
+  for (const group of groups) {
+    for (let start = 0; start < group.length - 1; start++) {
+      let concatenated = ''
+      let separated = ''
+      for (let end = start; end < group.length; end++) {
+        concatenated += group[end]
+        separated += `${end === start ? '' : '\n\n'}${group[end]}`
+        if (end > start) {
+          // A repaired text is recognizable on every reload, even if a different
+          // native sequence could also interpret it as an unseparated reply.
+          if (separated === savedText) return undefined
+          if (concatenated === savedText) {
+            if (replacement !== undefined && replacement !== separated) return undefined
+            replacement = separated
+          }
+        }
+        if (!savedText.startsWith(concatenated) && !savedText.startsWith(separated)) break
+      }
+    }
+  }
+  return replacement
 }
 
 /** Repair legacy MCP cards only when the native completion record proves their status. */

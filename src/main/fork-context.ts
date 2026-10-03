@@ -97,8 +97,10 @@ function restoreItem(value: unknown): Item | undefined {
   if (value.kind === 'user' && typeof value.text === 'string' && time(value.createdAt)) {
     return { id, kind: 'user', text: value.text, createdAt: value.createdAt }
   }
-  if (value.kind === 'assistant' && typeof value.text === 'string') {
-    return { id, kind: 'assistant', text: value.text }
+  if (value.kind === 'assistant' && typeof value.text === 'string'
+    && (value.messageId === undefined || (typeof value.messageId === 'string' && value.messageId.trim().length > 0))) {
+    return { id, kind: 'assistant', text: value.text,
+      ...(value.messageId === undefined ? {} : { messageId: value.messageId as string }) }
   }
   if (value.kind === 'thinking' && typeof value.text === 'string' && typeof value.done === 'boolean'
     && time(value.startedAt) && optionalTime(value.endedAt)) {

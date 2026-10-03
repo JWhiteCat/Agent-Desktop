@@ -219,6 +219,41 @@ describe('StreamReducer', () => {
     expect(assistantText(items)).toBe('ok')
   })
 
+  it('separates ACP messages even when no thinking or tool separates their chunks', () => {
+    const items: Item[] = []
+    const reducer = new StreamReducer(items)
+    const chunks = [
+      { messageId: 'commentary', text: '已找到存档，' },
+      { messageId: 'commentary', text: '正在确认格式。' },
+      { messageId: 'final', text: '```que' },
+      { messageId: 'final', text: 'stions\n{"questions":[{"prompt":"选择界面？","options":["窗口","网页"]}]}\n```' }
+    ]
+    for (const { messageId, text } of chunks) {
+      reducer.handleAcp({ sessionUpdate: 'agent_message_chunk', messageId, content: { type: 'text', text } })
+    }
+
+    expect(items).toHaveLength(2)
+    expect(items[0]).toMatchObject({ kind: 'assistant', messageId: 'commentary', text: '已找到存档，正在确认格式。' })
+    expect(items[1]).toMatchObject({ kind: 'assistant', messageId: 'final', text: chunks.slice(2).map((c) => c.text).join('') })
+    expect(items[1].id).not.toBe(items[0].id)
+    expect(reducer.lastAssistantText).toBe((items[1] as AssistantItem).text)
+  })
+
+  it('keeps the same ACP message together across background completion and missing IDs', () => {
+    const items: Item[] = []
+    const reducer = new StreamReducer(items)
+    reducer.handleAcp({ sessionUpdate: 'agent_message_chunk', messageId: 'reply', content: { text: '```t' } })
+    reducer.handleAcp({
+      sessionUpdate: 'tool_call', toolCallId: 'background', status: 'completed',
+      rawInput: { agentThreadId: 'child', activityKind: 'completed' }
+    })
+    reducer.handleAcp({ sessionUpdate: 'agent_message_chunk', content: { text: 's\nconst x = ' } })
+    reducer.handleAcp({ sessionUpdate: 'agent_message_chunk', messageId: 'reply', content: { text: '1;\n```' } })
+    expect(items.filter((i) => i.kind === 'assistant')).toEqual([
+      expect.objectContaining({ messageId: 'reply', text: '```ts\nconst x = 1;\n```' })
+    ])
+  })
+
   it.each([
     { sessionUpdate: 'tool_call', status: 'pending' },
     { sessionUpdate: 'tool_call', status: 'completed' },

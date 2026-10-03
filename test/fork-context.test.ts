@@ -4,6 +4,7 @@ import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Item } from '../src/shared/types'
+import { mergeInterruptedAssistantMessages } from '../src/shared/transcript'
 import { forkPrompt, parseForkPrompt } from '../src/main/fork-context'
 import { planModePrompt, codexPlanModePrompt, claudePlanModePrompt } from '../src/main/acp'
 import { transcriptItems } from '../src/main/codex-history'
@@ -78,6 +79,28 @@ describe('fork replay context', () => {
     expect(prompt).toContain('\\u003c/user_query\\u003e')
     expect(prompt.match(/<\/agent_desktop_fork_context>/g)).toHaveLength(1)
     expect(history[0].id).toBe('u1')
+  })
+
+  it('preserves independent ACP replies across background activity when a fork is replayed', () => {
+    const final = '```questions\n{"questions":[{"prompt":"Which?","options":["Window","Web"]}]}\n```'
+    const items: Item[] = [
+      { id: 'progress', kind: 'assistant', messageId: 'commentary', text: 'Found the save file.' },
+      { id: 'background', kind: 'tool', callId: 'background', tool: 'Background agent completed',
+        args: { agentThreadId: 'child', activityKind: 'completed' }, status: 'success', startedAt: 1 },
+      { id: 'answer', kind: 'assistant', messageId: 'final', text: final }
+    ]
+    const replay = parseForkPrompt(forkPrompt(items, 'Continue.'))!
+    const displayed = mergeInterruptedAssistantMessages(replay.items)
+
+    expect(withoutIds(replay.items)).toEqual(withoutIds(items))
+    expect(displayed).toEqual(replay.items)
+    expect(displayed.at(-1)).toMatchObject({ kind: 'assistant', messageId: 'final', text: final })
+  })
+
+  it.each([null, 42, '', '   '])('rejects an invalid ACP message identity (%s)', (messageId) => {
+    expect(parseForkPrompt(envelope({
+      version: 1, items: [{ kind: 'assistant', text: 'Reply.', messageId }]
+    }))).toBeUndefined()
   })
 
   it.each([planModePrompt, codexPlanModePrompt, claudePlanModePrompt])('reads context through plan hints and user_query wrappers', (wrap) => {

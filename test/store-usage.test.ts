@@ -16,7 +16,11 @@ vi.mock('electron', () => ({
     }
   }
 }))
-vi.mock('../src/main/codex-history', () => ({ readCodexUsage: codex.readUsage, repairCodexMcpTools: vi.fn(() => false) }))
+vi.mock('../src/main/codex-history', () => ({
+  readCodexUsage: codex.readUsage,
+  repairCodexMcpTools: vi.fn(() => false),
+  repairCodexAssistantMessages: vi.fn(() => false)
+}))
 
 const now = 1_700_000_000_000
 
