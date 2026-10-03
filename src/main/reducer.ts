@@ -1,5 +1,6 @@
 import { t as translate } from '@shared/i18n'
 import type { AssistantItem, Item, ResultItem, ThinkingItem, ToolItem } from '@shared/types'
+import { isBackgroundAgentActivity } from '@shared/transcript'
 import { normalizeTurnUsage } from '@shared/turn-usage'
 import { unifiedDiff } from '@shared/unified-diff'
 import { newId } from './id'
@@ -310,7 +311,9 @@ export class StreamReducer {
     const status = acpToolStatus(update.status, result)
 
     if (update.sessionUpdate === 'tool_call' || !this.tools.has(callId)) {
-      const changed = this.closeSegments()
+      // Subagent completion can arrive while the parent is still streaming one
+      // message. Keep its Markdown together across these background notices.
+      const changed = isBackgroundAgentActivity(args) ? [] : this.closeSegments()
       const item: ToolItem = {
         id: newId(),
         kind: 'tool',

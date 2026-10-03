@@ -2,6 +2,7 @@ import { useT } from '../lib/i18n'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { FORK_COMMAND, mergeCommands } from '@shared/commands'
 import { displayThreadTitle } from '@shared/thread-title'
+import { isBackgroundAgentItem, mergeInterruptedAssistantMessages } from '@shared/transcript'
 import { cliTitle, threadCli, type AssistantItem, type CliProvider, type Item, type ResultItem, type ThreadMeta, type ToolItem, type UserItem } from '@shared/types'
 import { DiffFileView, collectEditedFiles } from '../lib/diff'
 import { duration, shortPath } from '../lib/format'
@@ -22,7 +23,7 @@ interface Turn {
 function groupTurns(items: Item[]): Turn[] {
   const turns: Turn[] = []
   let cur: Turn | undefined
-  for (const it of items) {
+  for (const it of mergeInterruptedAssistantMessages(items)) {
     if (it.kind === 'user') {
       cur = { key: it.id, user: it, steps: [] }
       turns.push(cur)
@@ -85,7 +86,11 @@ function TurnView({
   const finalText = lastAssistantIdx >= 0 ? (turn.steps[lastAssistantIdx] as AssistantItem).text : undefined
 
   if (live) {
-    const last = turn.steps[turn.steps.length - 1]
+    // A background completion can arrive while the earlier assistant item is
+    // still streaming. It does not end that message or its question loading UI.
+    let activeIndex = turn.steps.length - 1
+    while (activeIndex >= 0 && isBackgroundAgentItem(turn.steps[activeIndex])) activeIndex--
+    const last = turn.steps[activeIndex]
     const streamingText = last?.kind === 'assistant'
     const waitingForUser = turn.steps.some((s) => s.kind === 'question' && s.status === 'pending')
     const busy = waitingForUser || (last && (last.kind === 'tool' ? last.status === 'running' : last.kind === 'thinking' && !last.done))
@@ -93,7 +98,7 @@ function TurnView({
       <div className="turn">
         {turn.user && <UserMessage item={turn.user} />}
         {turn.steps.map((s, i) => (
-          <StepItem key={s.id} item={s} threadId={threadId} streaming={streamingText && i === turn.steps.length - 1} />
+          <StepItem key={s.id} item={s} threadId={threadId} streaming={streamingText && i === activeIndex} />
         ))}
         {!streamingText && !busy && (
           <div className="working">

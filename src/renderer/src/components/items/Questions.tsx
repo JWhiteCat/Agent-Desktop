@@ -82,7 +82,7 @@ export function QuestionForm({ title, questions, answers, status, onSubmit, onSk
                   onClick={() => choose(q, o.id)}
                 >
                   <span className="question-mark">{on ? '✓' : ''}</span>
-                  <span>{o.label}</span>
+                  <span className="question-label">{o.label}</span>
                 </button>
               )
             })}

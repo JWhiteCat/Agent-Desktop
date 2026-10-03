@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { compact, StreamReducer } from '../src/main/reducer'
+import { parseQuestionBlock } from '../src/shared/questions'
 import type { AssistantItem, Item, ResultItem, ThinkingItem, ToolItem } from '../src/shared/types'
 
 function assistantText(items: Item[]): string {
@@ -141,6 +142,63 @@ describe('StreamReducer', () => {
     reducer.handleAcp({ sessionUpdate: 'agent_message_chunk', content: { text: 'o' } })
     reducer.handleAcp({ sessionUpdate: 'agent_message_chunk', content: { text: 'k' } })
     expect(assistantText(items)).toBe('ok')
+  })
+
+  it.each([
+    { sessionUpdate: 'tool_call', status: 'pending' },
+    { sessionUpdate: 'tool_call', status: 'completed' },
+    { sessionUpdate: 'tool_call_update', status: 'completed' }
+  ])('keeps a questions fence intact across background completion ($sessionUpdate, $status)', (event) => {
+    const items: Item[] = []
+    const reducer = new StreamReducer(items)
+    const before = '选择方案。\n\n```questions\n{"questions":[{"id":"q1","prompt":"采用哪个方案？","options":[{"id":"a","label":"细致战斗策略需另外'
+    const after = '配置；自动备餐增加开发量。"}]}]}\n```'
+    const [assistant] = reducer.handleAcp({ sessionUpdate: 'agent_message_chunk', content: { text: before } })
+
+    const [tool] = reducer.handleAcp({
+      ...event,
+      toolCallId: 'subagent-completed-audit',
+      title: 'Complete subagent audit',
+      rawInput: { agentThreadId: 'agent-thread', agentPath: '/root/audit', activityKind: 'completed' }
+    })
+    const changed = reducer.handleAcp({ sessionUpdate: 'agent_message_chunk', content: { text: after } })
+    const updated = reducer.handleAcp({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'subagent-completed-audit',
+      status: 'completed',
+      content: { text: 'Audit complete' }
+    })
+
+    expect(changed).toEqual([assistant])
+    expect(items.filter((item) => item.kind === 'assistant')).toEqual([assistant])
+    expect(assistant).toMatchObject({ text: before + after })
+    const body = assistantText(items).split('```questions\n')[1].replace(/\n```$/, '')
+    expect(parseQuestionBlock(body)?.questions[0].options[0].label).toBe('细致战斗策略需另外配置；自动备餐增加开发量。')
+    expect(updated).toEqual([tool])
+    expect(items.filter((item) => item.kind === 'tool')).toEqual([tool])
+    expect(tool).toMatchObject({
+      callId: 'subagent-completed-audit',
+      status: 'success',
+      result: { success: { stdout: 'Audit complete' } }
+    })
+  })
+
+  it.each([
+    { title: 'Read file', rawInput: { path: 'README.md' }, status: 'pending' },
+    { title: 'Read file', rawInput: { path: 'README.md' }, status: 'completed' },
+    { title: 'Start subagent audit', rawInput: { agentThreadId: 'agent-thread', activityKind: 'started' }, status: 'completed' },
+    { title: 'Interact with subagent audit', rawInput: { agentThreadId: 'agent-thread', activityKind: 'interacted' }, status: 'completed' }
+  ])('starts a new message after an ordinary ACP tool call ($title, $status)', (event) => {
+    const items: Item[] = []
+    const reducer = new StreamReducer(items)
+    const [before] = reducer.handleAcp({ sessionUpdate: 'agent_message_chunk', content: { text: '先检查。' } })
+    reducer.handleAcp({ sessionUpdate: 'tool_call', toolCallId: 'ordinary-call', ...event })
+    const [after] = reducer.handleAcp({ sessionUpdate: 'agent_message_chunk', content: { text: '检查完毕。' } })
+
+    expect(after.id).not.toBe(before.id)
+    expect(items.map((item) => item.kind)).toEqual(['assistant', 'tool', 'assistant'])
+    expect(before).toMatchObject({ text: '先检查。' })
+    expect(after).toMatchObject({ text: '检查完毕。' })
   })
 
   it('turns Codex plan updates into one plan card', () => {

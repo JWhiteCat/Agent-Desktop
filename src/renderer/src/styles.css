@@ -1119,6 +1119,8 @@ select {
   margin: 8px 0 6px;
   font-size: 13.5px;
   line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 .question-hint {
   margin-left: 8px;
@@ -1156,6 +1158,11 @@ select {
 .question-opt.selected {
   border-color: var(--blue);
   background: var(--hunk-bg);
+}
+.question-label {
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 .question-mark {
   flex: none;
