@@ -23,6 +23,8 @@ export interface InteractionRun {
   questionsClosed?: boolean
   /** A declined Codex plan is revised by sending this as the next Plan prompt. */
   planFeedback?: string
+  /** Persist the switch to Agent before Codex continues an approved plan. */
+  onPlanApproved?: () => void
   force: boolean
   mode: AgentMode
 }
@@ -112,8 +114,14 @@ async function answerPermission(run: InteractionRun, params: any, queue: QueueIt
   if (decision === 'cancel' || decision === 'skip') {
     return askFallback ? { outcome: { outcome: 'selected', optionId: '__ask_question_skip__' } } : cancelledPermission()
   }
-  if (planReview && !run.questionsClosed && decision[0].selectedOptionIds[0] === 'revise_plan') {
-    run.planFeedback = decision[0].otherText
+  if (run.questionsClosed) return cancelledPermission()
+  if (planReview) {
+    if (decision[0].selectedOptionIds[0] === 'implement_plan') {
+      run.mode = 'agent'
+      run.onPlanApproved?.()
+    } else {
+      run.planFeedback = decision[0].otherText
+    }
   }
   return { outcome: { outcome: 'selected', optionId: decision[0].selectedOptionIds[0] } }
 }

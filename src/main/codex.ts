@@ -19,7 +19,9 @@ export interface ResolvedCodex {
 }
 
 export function codexModeId(mode: AgentMode, force: boolean, sandbox: 'default' | 'enabled' | 'disabled'): string {
-  if (mode === 'ask' || mode === 'plan') return 'read-only'
+  // Plan uses collaboration_mode. The adapter reuses this permission preset
+  // when the user approves implementation within the same prompt.
+  if (mode === 'ask') return 'read-only'
   if (force && sandbox !== 'enabled') return 'agent-full-access'
   return 'agent'
 }

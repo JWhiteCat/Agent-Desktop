@@ -266,6 +266,10 @@ export class SessionManager {
       acceptUpdates: false,
       force: req.force,
       mode: req.mode,
+      onPlanApproved: () => {
+        this.store.updateThread(thread.id, { mode: 'agent' })
+        this.onStateChange()
+      },
       switchCalls: new Set(),
       settled: false
     }

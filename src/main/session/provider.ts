@@ -144,19 +144,18 @@ async function applyCodexOptions(session: SessionConnection, req: SendRequest, s
   const { acp, sessionId } = session
   const modeId = codexModeId(req.mode, req.force, sandbox)
   try {
-    await acp.request('session/set_mode', { sessionId, modeId })
-  } catch {
-    /* the next prompt still runs in whatever mode the process started with */
-  }
-  try {
     await acp.request('session/set_config_option', {
       sessionId,
       configId: 'collaboration_mode',
       value: req.mode === 'plan' ? 'plan' : 'default'
     })
-  } catch {
-    /* older adapters ignore the collaboration mode option */
+  } catch (error) {
+    // Do not start a planning prompt with Agent permissions unless the adapter
+    // has enabled Plan. Older adapters may still run ordinary Agent/Ask turns.
+    if (req.mode === 'plan') throw error
   }
+  // A failed permission change must not silently run with the previous preset.
+  await acp.request('session/set_mode', { sessionId, modeId })
   await applyCodexModel(session, req.model)
 }
 

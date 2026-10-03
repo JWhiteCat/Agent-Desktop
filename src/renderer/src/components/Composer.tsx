@@ -72,6 +72,10 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
   }, [props.initial.model])
 
   useEffect(() => {
+    setOpts((o) => (o.mode === props.initial.mode ? o : { ...o, mode: props.initial.mode }))
+  }, [props.initial.mode])
+
+  useEffect(() => {
     const cli = props.initial.cli
     if (!cli) return
     setOpts((o) => (o.cli === cli ? o : { ...o, cli }))

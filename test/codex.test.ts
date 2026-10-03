@@ -4,12 +4,21 @@ import { transcriptItems } from '../src/main/codex-history'
 import { codexModeId, modelsFromConfig, modelsFromSession, resolveCodexAcpEntry } from '../src/main/codex'
 
 describe('codex mode and models', () => {
-  it('maps Ask and Plan to read-only, and keeps full access behind the sandbox switch', () => {
-    expect(codexModeId('ask', true, 'disabled')).toBe('read-only')
-    expect(codexModeId('plan', false, 'default')).toBe('read-only')
-    expect(codexModeId('agent', false, 'disabled')).toBe('agent')
-    expect(codexModeId('agent', true, 'disabled')).toBe('agent-full-access')
-    expect(codexModeId('agent', true, 'enabled')).toBe('agent')
+  it('keeps Ask read-only regardless of full access or sandbox settings', () => {
+    for (const force of [false, true]) {
+      for (const sandbox of ['default', 'enabled', 'disabled'] as const) {
+        expect(codexModeId('ask', force, sandbox)).toBe('read-only')
+      }
+    }
+  })
+
+  it.each(['agent', 'plan'] as const)('maps %s permissions independently of collaboration mode', (mode) => {
+    for (const sandbox of ['default', 'enabled', 'disabled'] as const) {
+      expect(codexModeId(mode, false, sandbox)).toBe('agent')
+    }
+    expect(codexModeId(mode, true, 'default')).toBe('agent-full-access')
+    expect(codexModeId(mode, true, 'disabled')).toBe('agent-full-access')
+    expect(codexModeId(mode, true, 'enabled')).toBe('agent')
   })
 
   it('expands model and effort selects, and puts the recommendation first', () => {

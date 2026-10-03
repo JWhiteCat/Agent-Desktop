@@ -569,7 +569,7 @@ describe('Codex plan review feedback', () => {
       questionId: 'q', selectedOptionIds: ['revise_plan'], otherText: 'Do not start after cancellation'
     }])
     settleQuestion(ctx.run, 'cancel')
-    await expect(response).resolves.toEqual({ outcome: { outcome: 'selected', optionId: 'revise_plan' } })
+    await expect(response).resolves.toEqual({ outcome: { outcome: 'cancelled' } })
     expect(ctx.run.planFeedback).toBeUndefined()
     expect(ctx.run.questionsClosed).toBe(true)
   })
