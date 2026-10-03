@@ -49,14 +49,25 @@ export function createWebApi(): DesktopApi {
   }
 
   let connectedOnce = false
+  let connection = 0
+  let stateRevision = 0
   const events = new EventSource(remoteUrl(location.href, `api/events?token=${encodeURIComponent(token)}`))
   events.onopen = () => {
-    // Events sent while disconnected are lost; refetch the state after a reconnect.
-    if (connectedOnce) void call('state:get').then((s) => emit('state:changed', s), () => {})
+    const currentConnection = ++connection
+    // Events sent while disconnected are lost. Refresh history as well as metadata.
+    if (connectedOnce) {
+      const revision = stateRevision
+      void call('state:get').then((s) => {
+        // A newer event or reconnect has already supplied a more recent snapshot.
+        if (connection === currentConnection && stateRevision === revision) emit('state:changed', s)
+      }, () => {})
+      emit('transport:reconnect', undefined)
+    }
     connectedOnce = true
   }
   events.onmessage = (e) => {
     const { channel, payload } = JSON.parse(e.data) as { channel: string; payload: unknown }
+    if (channel === 'state:changed') stateRevision++
     emit(channel, payload)
   }
 
@@ -120,6 +131,7 @@ export function createWebApi(): DesktopApi {
     resetRemoteToken: () => Promise.reject(new Error(translate('仅桌面端可用'))),
     onEvent: (cb) => subscribe('agent:event', cb),
     onState: (cb) => subscribe('state:changed', cb),
+    onReconnect: (cb) => subscribe('transport:reconnect', cb),
     onFocusThread: (cb) => subscribe('thread:focus', cb)
   }
 }

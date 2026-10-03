@@ -48,6 +48,8 @@ export class Store {
     const loaded = readJson<PersistedState>(this.stateFile)
     const rawClientId = loaded?.settings?.remoteClientId
     const remoteClientId = typeof rawClientId === 'string' && validClientId(rawClientId) ? rawClientId : newRemoteClientId()
+    const rawSshPort = loaded?.settings?.remotePublicSshPort
+    const remotePublicSshPort = typeof rawSshPort === 'number' && Number.isInteger(rawSshPort) && rawSshPort >= 1 && rawSshPort <= 65535 ? rawSshPort : 22
     this.state = {
       version: 1,
       projects: loaded?.projects ?? [],
@@ -72,10 +74,11 @@ export class Store {
         claudeFavoriteModels: Array.isArray(loaded?.settings?.claudeFavoriteModels) ? loaded.settings.claudeFavoriteModels : [],
         mcpServers: normalizeMcpServers(loaded?.settings?.mcpServers),
         skills: normalizeSkills(loaded?.settings?.skills),
-        remoteClientId
+        remoteClientId,
+        remotePublicSshPort
       }
     }
-    if (remoteClientId !== rawClientId) this.flush()
+    if (remoteClientId !== rawClientId || remotePublicSshPort !== rawSshPort) this.flush()
   }
 
   get dataDir(): string {

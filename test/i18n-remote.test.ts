@@ -9,7 +9,7 @@ import { RemoteRuntime } from '../src/main/remote-runtime'
 import type { Store } from '../src/main/store'
 
 const target: TunnelTarget = {
-  user: 'user', host: 'example.com', port: 8765, localPort: 8765, clientId: 'aaaaaaaaaaaaaaaa'
+  user: 'user', host: 'example.com', sshPort: 22, port: 8765, localPort: 8765, clientId: 'aaaaaaaaaaaaaaaa'
 }
 
 class FakeSshChild extends EventEmitter {

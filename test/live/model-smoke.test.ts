@@ -3,9 +3,9 @@ import os from 'node:os'
 import path from 'node:path'
 import { expect, it } from 'vitest'
 import { killTree, resolveCli, spawnCli, stripAnsi, type ResolvedCli } from '../../src/main/cli'
-import { GROK_47_500K_HIGH_FAST } from '../grok-model'
 
 const PROMPT = 'Reply with exactly ok'
+const MODEL = 'composer-2.5[fast=true]'
 
 function safeErr(stderr: string): string {
   return stripAnsi(stderr)
@@ -20,7 +20,7 @@ function runPrint(cli: ResolvedCli, cwd: string, timeoutMs: number): Promise<{ c
   return new Promise((resolve) => {
     const child = spawnCli(cli, [
       '--trust',
-      '--model', GROK_47_500K_HIGH_FAST,
+      '--model', MODEL,
       '--mode', 'ask',
       '--print',
       '--output-format', 'text',
@@ -48,7 +48,7 @@ function runPrint(cli: ResolvedCli, cwd: string, timeoutMs: number): Promise<{ c
 }
 
 it.skipIf(!process.env.AGENT_DESKTOP_LIVE_MODEL)(
-  'asks Grok 4.7 500K High Fast for a one-word reply',
+  'asks Composer 2.5 Fast for a one-word reply',
   async () => {
     const cli = resolveCli('')
     if (!cli) throw new Error('未找到 Cursor CLI（agent）。请先安装，或在设置中指定路径。')
@@ -60,7 +60,12 @@ it.skipIf(!process.env.AGENT_DESKTOP_LIVE_MODEL)(
       expect(text.toLowerCase()).toContain('ok')
       expect(text.length).toBeLessThanOrEqual(80)
     } finally {
-      await rm(cwd, { recursive: true, force: true })
+      const resolved = path.resolve(cwd)
+      if (path.dirname(resolved) !== path.resolve(os.tmpdir()) || !path.basename(resolved).startsWith('agent-desktop-live-')) {
+        throw new Error(`Unexpected test directory: ${resolved}`)
+      }
+      // Windows may retain the CLI working-directory handle briefly after close.
+      await rm(resolved, { recursive: true, force: true, maxRetries: 10, retryDelay: 250 })
     }
   },
   90_000

@@ -122,9 +122,9 @@ function readBody(req: http.IncomingMessage): Promise<string> {
 
 export class RemoteServer {
   private server: http.Server | undefined
-  private opts: RemoteServerOptions | undefined
   private clients = new Set<http.ServerResponse>()
   private heartbeat: NodeJS.Timeout | undefined
+  private lifecycle: Promise<void> = Promise.resolve()
 
   get running(): boolean {
     return !!this.server?.listening
@@ -135,29 +135,48 @@ export class RemoteServer {
     return addr && typeof addr === 'object' ? addr.port : undefined
   }
 
-  async start(opts: RemoteServerOptions): Promise<void> {
-    await this.stop()
-    this.opts = opts
+  start(opts: RemoteServerOptions): Promise<void> {
+    return this.enqueue(() => this.startServer(opts))
+  }
+
+  stop(): Promise<void> {
+    return this.enqueue(() => this.stopServer())
+  }
+
+  private enqueue(operation: () => Promise<void>): Promise<void> {
+    const pending = this.lifecycle.then(operation)
+    // A failed bind must not prevent a later stop or restart.
+    this.lifecycle = pending.catch(() => {})
+    return pending
+  }
+
+  private async startServer(opts: RemoteServerOptions): Promise<void> {
+    await this.stopServer()
     const server = http.createServer((req, res) => {
-      this.handle(req, res).catch((err) => {
+      this.handle(req, res, opts, server).catch((err) => {
         if (!res.headersSent) sendJson(res, 500, { ok: false, error: String(err instanceof Error ? err.message : err) })
         else res.end()
       })
     })
-    await new Promise<void>((resolve, reject) => {
-      server.once('error', reject)
-      server.listen(opts.port, '0.0.0.0', () => {
-        server.off('error', reject)
-        resolve()
-      })
-    })
     this.server = server
+    try {
+      await new Promise<void>((resolve, reject) => {
+        server.once('error', reject)
+        server.listen(opts.port, '0.0.0.0', () => {
+          server.off('error', reject)
+          resolve()
+        })
+      })
+    } catch (err) {
+      await this.stopServer()
+      throw err
+    }
     this.heartbeat = setInterval(() => {
       for (const c of this.clients) c.write(': ping\n\n')
     }, HEARTBEAT_MS)
   }
 
-  async stop(): Promise<void> {
+  private async stopServer(): Promise<void> {
     if (this.heartbeat) clearInterval(this.heartbeat)
     this.heartbeat = undefined
     for (const c of this.clients) c.end()
@@ -165,8 +184,10 @@ export class RemoteServer {
     const server = this.server
     this.server = undefined
     if (!server) return
-    server.closeAllConnections()
-    await new Promise<void>((resolve) => server.close(() => resolve()))
+    await new Promise<void>((resolve) => {
+      server.close(() => resolve())
+      server.closeAllConnections()
+    })
   }
 
   broadcast(channel: string, payload: unknown): void {
@@ -175,13 +196,12 @@ export class RemoteServer {
     for (const c of this.clients) c.write(frame)
   }
 
-  private async handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
-    const opts = this.opts!
+  private async handle(req: http.IncomingMessage, res: http.ServerResponse, opts: RemoteServerOptions, server: http.Server): Promise<void> {
     const url = new URL(req.url ?? '/', 'http://localhost')
     if (url.pathname === '/api/public-health' && req.method === 'GET') {
       return sendJson(res, 200, { ok: true, clientId: opts.clientId })
     }
-    if (!url.pathname.startsWith('/api/')) return this.serveStatic(req, res, url)
+    if (!url.pathname.startsWith('/api/')) return this.serveStatic(req, res, url, opts)
 
     const token = (req.headers['x-token'] as string | undefined) ?? url.searchParams.get('token')
     if (!sameToken(token, opts.token)) return sendJson(res, 401, { ok: false, error: translate('远程访问令牌无效，请重新扫描二维码') })
@@ -212,6 +232,8 @@ export class RemoteServer {
       } catch (err) {
         return sendJson(res, 400, { ok: false, error: err instanceof Error ? err.message : String(err) })
       }
+      // A request whose body finished during shutdown cannot start another task.
+      if (this.server !== server || res.destroyed) return
       try {
         const result = await fn(...args)
         return sendJson(res, 200, { ok: true, result: result ?? null })
@@ -223,8 +245,7 @@ export class RemoteServer {
     sendJson(res, 404, { ok: false, error: 'Not found' })
   }
 
-  private serveStatic(req: http.IncomingMessage, res: http.ServerResponse, url: URL): void {
-    const opts = this.opts!
+  private serveStatic(req: http.IncomingMessage, res: http.ServerResponse, url: URL, opts: RemoteServerOptions): void {
     if (req.method !== 'GET' && req.method !== 'HEAD') {
       res.writeHead(405).end()
       return

@@ -111,13 +111,13 @@ Windows 一键启动（需先安装 Node.js 22.12 或更高版本，包含 npm�
 | --- | --- |
 | `npm run dev` | 打开开发窗口 |
 | `npm test` | 离线单元测试，不调用模型 |
-| `npm run test:live` | 用 Grok 4.7 500K High Fast 发一次极短提问 |
+| `npm run test:live` | 用 Composer 2.5 Fast 发一次极短提问 |
 | `npm run typecheck` | 类型检查 |
 | `npm run build` | 编译到 `out/` |
 | `npm run preview` | 预览编译结果 |
 | `npm run dist` | 打包安装包到 `release/` |
 
-`npm test` 不访问 Cursor CLI、Codex 或 Claude。`npm run test:live` 才会在临时空目录里用 Ask 模式调用 `grok-4.7[context=500k,reasoning_effort=high,fast=true]`，提示只有一句 `Reply with exactly ok`。需要本机已登录或已设置 `CURSOR_API_KEY`。High 仍会消耗少量思考 token。
+`npm test` 不访问 Cursor CLI、Codex 或 Claude。`npm run test:live` 才会在临时空目录里用 Ask 模式调用 `composer-2.5[fast=true]`，提示只有一句 `Reply with exactly ok`。认证优先使用环境变量 `CURSOR_API_KEY`，未设置时使用 CLI 保存的登录。
 
 打包目标：Windows NSIS、macOS DMG、Linux AppImage。
 
@@ -153,7 +153,9 @@ Windows 一键启动（需先安装 Node.js 22.12 或更高版本，包含 npm�
 
 打开或刷新对话时，历史加载期间收到的流式消息会合并保留。CLI 返回空历史时不会覆盖本地对话。删除对话、修改 CLI 配置或退出应用，也会停止尚在预加载会话的 CLI 进程。
 
-Git 页签显示工作区的实际内容；仓库尚无提交时，也会包含暂存后继续修改的内容。
+Git 页签显示工作区的实际内容；仓库尚无提交时，也会包含暂存后继续修改的内容。diff 视图会保留形似补丁头的正文（例如 SQL 的 `--` 注释），正确显示所属文件和增删行数。
+
+关闭完全访问时，工具权限请求会显示选择卡，等待明确允许或拒绝；跳过或停止任务不会授予权限。Claude 对部分不受完全访问覆盖的操作仍会要求确认，这些请求也会显示选择卡。
 
 ## Plan 模式
 
@@ -211,6 +213,8 @@ Codex 历史导入和同步也会从日志恢复用量。旧结果能与日志�
 
 ## 远程控制
 
+远程连接恢复后，已缓存的对话会重新加载消息，补齐断线期间的回复和提问，并保留重新加载期间收到的流式更新。通过默认 HTTP 局域网链接也可以新增 MCP 和 Skill。远程服务配置按顺序应用，切换端口后关闭远程控制会关闭之前的监听服务。
+
 在设置的远程控制里打开开关。应用在局域网上监听（默认端口 `8765`），提供和桌面端相同的界面。同一网络上的手机或其他电脑可以扫二维码打开。二维码带上电脑当前打开的项目或对话。电脑有多块网卡时，可从下拉列表换一个地址。
 
 打开公网访问后，应用用本机 OpenSSH 客户端建立反向隧道。服务器上的入口程序占用公网端口（默认 `8765`），把每个请求转到链接里写明的那台电脑。多台电脑可以同时共用这一个端口。每条链接不同，例如 `http://43.167.166.239:8765/c/<电脑标识>/?token=...`。标识在第一次需要时生成，并存在本机。重置链接不会改变它。默认服务器是 `root@43.167.166.239`。SSH 用户、服务器地址和公网端口都可以改。使用自己的服务器前，先按下面的步骤配好。隧道建立后，公网链接会出现在地址下拉列表和二维码里。改地址或端口会重新连接。断开后按 1、2、5、10 秒重试。
@@ -240,7 +244,7 @@ npm run setup:public-server -- --user root --host 你的服务器 --port 8765
 
 脚本会先备份 `sshd_config`。如果 `sshd -t` 失败，就恢复备份，然后 `reload` sshd，不断开当前登录。有 systemd 时，入口程序作为服务监听你选的公网端口；没有时在后台运行。firewalld 或 ufw 正在运行时会放行该端口。较旧的版本会自己绑定公网端口。升级前先在那些客户端上关掉公网访问，再运行这个脚本。
 
-命令成功后，在远程控制里填入同一个 SSH 用户、服务器地址和公网端口，然后打开远程控制和公网访问。在云安全组里放行这个公网端口。
+命令成功后，在远程控制里填入同一个 SSH 用户、服务器地址、SSH 端口（默认 `22`）和公网端口，然后打开远程控制和公网访问。SSH 端口应与安装命令的 `--ssh-port` 一致，它与手机访问页面的公网端口分别设置。在云安全组里放行这个公网端口。
 
 不带参数时，脚本会在默认服务器 `root@43.167.166.239` 上配置 `8765` 端口。如果已经登录到服务器，并且 `public-gateway.py` 和脚本在同一目录，也可以执行 `sudo bash scripts/setup-public-server.sh 8765`。
 
@@ -254,7 +258,7 @@ npm run setup:public-server -- --user root --host 你的服务器 --port 8765
 | macOS | `~/Library/Application Support/Agent Desktop/data` |
 | Linux | `~/.config/Agent Desktop/data` |
 
-`state.json` 保存项目、对话列表和设置，包括 MCP 服务器、Skill 正文和默认 CLI。每段对话记住自己用的是 Cursor、Codex 还是 Claude。每段对话的消息在 `threads/` 里。Cursor 的会话记录仍在 `~/.cursor/chats`，Codex 的在 `~/.codex/sessions`，Claude 的在 `~/.claude/projects`。本应用读取和续接这些记录，并在分叉时创建独立副本。启用的 Skill 写到 `~/.cursor/skills`、`~/.agents/skills`、`~/.codex/skills` 和 `~/.claude/skills`。「本地所有」分区停用的 MCP 服务器和 Skill 暂存在数据目录的 `local-config/` 下。Codex 和 Claude 对话的 worktree 放在数据目录的 `worktrees/<仓库名>/<分支>-<随机后缀>` 下，分支名为 `agent-desktop/<分支>-<随机后缀>`。删除对话或项目时，如果没有其他对话还在用这个 worktree，会执行 `git worktree remove`；worktree 里有未提交或未跟踪的文件时会保留。分支用 `git branch -d` 删除，含未合并提交的分支会留下。
+`state.json` 保存项目、对话列表和设置，包括 MCP 服务器、Skill 正文和默认 CLI。每段对话记住自己用的是 Cursor、Codex 还是 Claude。每段对话的消息在 `threads/` 里。Cursor 的会话记录仍在 `~/.cursor/chats`，Codex 的在 `~/.codex/sessions`，Claude 的在 `~/.claude/projects`。本应用读取和续接这些记录，并在分叉时创建独立副本。启用的 Skill 写到 `~/.cursor/skills`、`~/.agents/skills`、`~/.codex/skills` 和 `~/.claude/skills`。「本地所有」分区停用的 MCP 服务器和 Skill 暂存在数据目录的 `local-config/` 下。Codex 和 Claude 对话的 worktree 放在数据目录的 `worktrees/<仓库名>/<分支>-<随机后缀>` 下，分支名为 `agent-desktop/<分支>-<随机后缀>`。删除对话或项目时，如果没有其他对话或项目还在使用这个 worktree 或其子目录，会执行 `git worktree remove`；worktree 里有未提交或未跟踪的文件时会保留。分支用 `git branch -d` 删除，含未合并提交的分支会留下。已保存的 worktree 目录缺失时，会话会报错，不会悄悄回到主项目继续执行。
 
 完整分叉会复制出独立的 CLI 会话：Cursor 复制一致的数据库快照，Codex 和 Claude 使用适配器的原生分叉接口。从某条消息分叉时，只保留到该消息为止的历史。如果 CLI 无法精确复制到这个位置，或原生复制失败，应用会保存所选历史，并在下次发送时连同新消息一起传给模型，包括之前的回复和工具结果。这份待发送上下文会保留到首次回复成功，重启或发送失败不会丢失。从 CLI 同步时也能还原这些历史消息；尚未传入上下文的分叉需要先成功发送一条消息再同步。原对话保留。
 

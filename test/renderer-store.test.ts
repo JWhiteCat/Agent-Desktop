@@ -11,10 +11,12 @@ function deferred<T>() {
 describe('renderer store', () => {
   let store: typeof import('../src/renderer/src/store')
   let onEvent: (event: AgentEvent) => void
+  let onReconnect: () => void
   const api = {
     getState: vi.fn(),
     getItems: vi.fn(),
     onState: vi.fn(),
+    onReconnect: vi.fn(),
     onEvent: vi.fn(),
     onFocusThread: vi.fn(),
     listModels: vi.fn(),
@@ -57,6 +59,7 @@ describe('renderer store', () => {
       settings: { ...DEFAULT_SETTINGS }, running: []
     } satisfies AppState)
     api.onEvent.mockImplementation((listener) => { onEvent = listener; return () => {} })
+    api.onReconnect.mockImplementation((listener) => { onReconnect = listener; return () => {} })
     api.listModels.mockResolvedValue([])
     store = await import('../src/renderer/src/store')
     await store.initStore()
@@ -177,5 +180,68 @@ describe('renderer store', () => {
 
     expect(api.getItems).toHaveBeenCalledTimes(2)
     expect(store.getState().items[thread.id]).toEqual(history)
+  })
+
+  it('refreshes cached background threads and the uncached active thread on reconnect', async () => {
+    const background = { ...thread, id: 'background' }
+    const unopened = { ...thread, id: 'unopened' }
+    store.setState((s) => ({
+      app: { ...s.app, threads: [thread, background, unopened] },
+      view: { kind: 'thread', id: thread.id },
+      items: { [background.id]: history }
+    }))
+    api.getItems.mockResolvedValue([history[0], ...latest])
+
+    onReconnect()
+
+    await vi.waitFor(() => expect(store.getState().items[thread.id]).toEqual([history[0], ...latest]))
+    expect(store.getState().items[background.id]).toEqual([history[0], ...latest])
+    expect(api.getItems.mock.calls.map(([id]) => id)).toEqual([thread.id, background.id])
+  })
+
+  it.each(['before', 'after'])('keeps new history and live events when an old request resolves %s the reconnect request', async (order) => {
+    const oldRequest = deferred<Item[]>()
+    const refreshed = deferred<Item[]>()
+    api.getItems.mockReturnValueOnce(oldRequest.promise).mockReturnValueOnce(refreshed.promise)
+    const opening = store.openThread(thread.id)
+    onReconnect()
+    expect(api.getItems).toHaveBeenCalledTimes(2)
+
+    if (order === 'before') {
+      oldRequest.resolve([{ id: 'obsolete', kind: 'assistant', text: 'Old snapshot' }])
+      await opening
+      expect(store.getState().items[thread.id]).toBeUndefined()
+    }
+    onEvent({ type: 'items', threadId: thread.id, items: latest })
+    refreshed.resolve(history)
+    await vi.waitFor(() => expect(store.getState().items[thread.id]).toEqual([history[0], ...latest]))
+    if (order === 'after') {
+      oldRequest.resolve([{ id: 'obsolete', kind: 'assistant', text: 'Old snapshot' }])
+      await opening
+    }
+    expect(store.getState().items[thread.id]).toEqual([history[0], ...latest])
+  })
+
+  it('keeps streamed changes received while a cached app conversation is refreshing', async () => {
+    store.setState({ items: { [thread.id]: history } })
+    const refreshed = deferred<Item[]>()
+    api.getItems.mockReturnValueOnce(refreshed.promise)
+    onReconnect()
+    onEvent({ type: 'items', threadId: thread.id, items: latest })
+    refreshed.resolve(history)
+
+    await vi.waitFor(() => expect(store.getState().items[thread.id]).toEqual([history[0], ...latest]))
+  })
+
+  it('retries stale cached history when reopening after a failed reconnect refresh', async () => {
+    store.setState({ items: { [thread.id]: history } })
+    api.getItems.mockRejectedValueOnce(new Error('Disconnected')).mockResolvedValueOnce([history[0], ...latest])
+    onReconnect()
+    await vi.waitFor(() => expect(store.getState().toast?.text).toBe('Disconnected'))
+
+    await store.openThread(thread.id)
+
+    expect(api.getItems).toHaveBeenCalledTimes(2)
+    expect(store.getState().items[thread.id]).toEqual([history[0], ...latest])
   })
 })

@@ -17,6 +17,8 @@ const IPV4 = /^(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?:\.(?:25[0-5]|2[0-4]\d|1\d\d
 export interface TunnelTarget {
   user: string
   host: string
+  /** SSH daemon port, independent of the HTTP gateway port. */
+  sshPort: number
   /** Port the public gateway listens on. */
   port: number
   /** Local remote-control port the tunnel forwards to. */
@@ -66,6 +68,11 @@ export function validatePublicPort(port: number): number {
   return value
 }
 
+export function validateSshPort(port: number): number {
+  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new LocalizedTunnelError('SSH 端口需在 1–65535 之间')
+  return port
+}
+
 export function validClientId(id: string): boolean {
   return CLIENT_ID.test(id)
 }
@@ -98,6 +105,8 @@ export function buildSshArgs(target: TunnelTarget): string[] {
     'ServerAliveCountMax=3',
     '-o',
     'StrictHostKeyChecking=accept-new',
+    '-p',
+    String(validateSshPort(target.sshPort)),
     '-R',
     `${publicSocketPath(target.clientId)}:127.0.0.1:${target.localPort}`,
     `${target.user}@${target.host}`

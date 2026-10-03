@@ -202,7 +202,7 @@ export function permissionResult(
   force: boolean,
   deny = false
 ): { outcome: { outcome: string; optionId?: string } } {
-  const usable = options.filter((o) => o.optionId)
+  const usable = options.filter((o) => o && typeof o.optionId === 'string' && o.optionId.trim())
   if (deny) {
     const reject = usable.find((o) => o.kind === 'reject_once') || usable.find((o) => o.kind === 'reject_always')
     if (!reject?.optionId) return { outcome: { outcome: 'cancelled' } }
@@ -210,7 +210,7 @@ export function permissionResult(
   }
   const allowAlways = usable.find((o) => o.kind === 'allow_always')
   const allowOnce = usable.find((o) => o.kind === 'allow_once')
-  const picked = (force && allowAlways) || allowOnce || allowAlways || usable[0]
+  const picked = (force && allowAlways) || allowOnce || allowAlways
   if (!picked?.optionId) return { outcome: { outcome: 'cancelled' } }
   return { outcome: { outcome: 'selected', optionId: picked.optionId } }
 }

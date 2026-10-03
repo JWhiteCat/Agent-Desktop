@@ -18,8 +18,11 @@ export function parseUnifiedDiff(text: string): DiffFile[] {
   const files: DiffFile[] = []
   if (!text.trim()) return files
   let cur: DiffFile | undefined
+  let oldRemaining = 0
+  let newRemaining = 0
   const start = (path: string) => {
     cur = { path, lines: [], added: 0, removed: 0 }
+    oldRemaining = newRemaining = 0
     files.push(cur)
   }
   for (const line of text.split(/\r?\n/)) {
@@ -28,15 +31,37 @@ export function parseUnifiedDiff(text: string): DiffFile[] {
       start(m ? m[1] : line.slice(11))
       continue
     }
+    const hunk = /^@@ -\d+(?:,(\d+))? \+\d+(?:,(\d+))? @@/.exec(line)
+    if (hunk) {
+      if (!cur) start('')
+      oldRemaining = Number(hunk[1] ?? 1)
+      newRemaining = Number(hunk[2] ?? 1)
+      cur!.lines.push(line)
+      continue
+    }
+    // Header-like content inside a hunk is still a changed line (e.g. SQL comments).
+    if (cur && (oldRemaining > 0 || newRemaining > 0)) {
+      if (line.startsWith('-')) {
+        oldRemaining--
+        cur.removed++
+      } else if (line.startsWith('+')) {
+        newRemaining--
+        cur.added++
+      } else if (line.startsWith(' ')) {
+        oldRemaining--
+        newRemaining--
+      }
+      cur.lines.push(line)
+      continue
+    }
     if (line.startsWith('--- ') && (!cur || cur.lines.some((l) => l.startsWith('@@')))) {
       start('')
-      continue
     }
     if (!cur) start('')
     const c = cur!
     if (line.startsWith('+++ ')) {
       const p = line.slice(4).replace(/^b\//, '')
-      if (!c.path && p !== '/dev/null') c.path = p
+      if (p !== '/dev/null') c.path = p
       continue
     }
     if (line.startsWith('--- ')) {

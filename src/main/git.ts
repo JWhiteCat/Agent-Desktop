@@ -89,15 +89,29 @@ export async function removeWorktree(dir: string): Promise<void> {
 
 /** Removes app-created worktrees under `parent` that no remaining thread still uses. */
 export async function releaseWorktrees(deleted: Array<{ cwd?: string }>, remaining: Array<{ cwd?: string }>, parent: string): Promise<void> {
-  const inParent = (dir: string) => {
-    const rel = path.relative(parent, dir)
-    return !!rel && !rel.startsWith('..') && !path.isAbsolute(rel)
+  const canonical = (dir: string) => {
+    try {
+      return fs.realpathSync.native(dir)
+    } catch {
+      return path.resolve(dir)
+    }
   }
-  const key = (dir: string) => path.resolve(dir).toLowerCase()
-  const used = new Set(remaining.flatMap((t) => (t.cwd ? [key(t.cwd)] : [])))
+  const inside = (root: string, dir: string) => {
+    const rel = path.relative(root, dir)
+    return rel !== '..' && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel)
+  }
+  const key = (dir: string) => process.platform === 'win32' ? dir.toLowerCase() : dir
+  const parentRoot = canonical(parent)
+  const used = remaining.flatMap((t) => t.cwd ? [canonical(t.cwd)] : [])
   const dirs = new Map<string, string>()
   for (const t of deleted) {
-    if (t.cwd && inParent(t.cwd) && !used.has(key(t.cwd))) dirs.set(key(t.cwd), t.cwd)
+    if (!t.cwd || !inside(parentRoot, canonical(t.cwd))) continue
+    const top = await git(t.cwd, ['rev-parse', '--show-toplevel'])
+    if (!top.ok) continue
+    const root = canonical(top.out.trim())
+    // Validate the directory Git will actually remove, including symlink targets.
+    if (key(root) === key(parentRoot) || !inside(parentRoot, root)) continue
+    if (!used.some((dir) => inside(root, dir))) dirs.set(key(root), root)
   }
   await Promise.all([...dirs.values()].map(async (dir) => {
     try {

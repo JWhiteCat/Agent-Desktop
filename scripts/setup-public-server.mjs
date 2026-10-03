@@ -373,6 +373,7 @@ async function main() {
   console.log('服务器已配置。请在应用的「远程控制」中填写：')
   console.log(`SSH 用户：${options.user}`)
   console.log(`服务器地址：${options.host}`)
+  console.log(`SSH 端口：${options.sshPort}`)
   console.log(`公网端口：${options.port}`)
   console.log('然后打开远程控制和公网访问。云安全组放行该 TCP 端口。')
 }

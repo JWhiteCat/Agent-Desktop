@@ -1,12 +1,12 @@
 import { t as translate } from '@shared/i18n'
-import type { AgentMode, CliProvider, Item, QuestionAnswer, QuestionItem } from '@shared/types'
+import type { AgentMode, CliProvider, Item, QuestionAnswer, QuestionItem, QuestionPrompt } from '@shared/types'
 import { normalizeQuestions } from '@shared/questions'
 import { MethodNotFound, permissionResult } from '../acp'
 import { newId } from '../id'
 import type { StreamReducer } from '../reducer'
 
 interface PendingQuestion {
-  itemId: string
+  questions: QuestionPrompt[]
   resolve: (decision: QuestionAnswer[] | 'skip' | 'cancel') => void
 }
 
@@ -18,36 +18,37 @@ export interface InteractionRun {
   reducer: Pick<StreamReducer, 'push'>
   /** Ignore session/update events while session/load replays history. */
   acceptUpdates: boolean
-  pendingQuestion?: PendingQuestion
+  pendingQuestions?: Map<string, PendingQuestion>
+  /** Turn cancellation also prevents a late CLI request from reopening a card. */
+  questionsClosed?: boolean
   force: boolean
   mode: AgentMode
 }
 
 export function answerPendingQuestion(run: InteractionRun | undefined, questionId: string, answers: QuestionAnswer[] | null): void {
-  const pending = run?.pendingQuestion
-  if (!run || !pending || pending.itemId !== questionId) throw new Error(translate('这个问题已经不能回答了'))
-  run.pendingQuestion = undefined
+  const pending = run?.pendingQuestions?.get(questionId)
+  if (!run || !pending) throw new Error(translate('这个问题已经不能回答了'))
+  if (answers !== null && !validAnswers(pending.questions, answers)) throw new Error(translate('请选择'))
+  run.pendingQuestions!.delete(questionId)
   pending.resolve(answers ?? 'skip')
 }
 
-export function onIdleAcpRequest(proc: { force: boolean }, method: string, params: any): Promise<unknown> {
+export function onIdleAcpRequest(_proc: { force: boolean }, method: string, params: any): Promise<unknown> {
+  if (method === 'session/request_permission') return Promise.resolve(cancelledPermission())
   if (method === 'cursor/ask_question' || isQuestionParams(params)) return Promise.resolve({ outcome: { outcome: 'skipped', reason: 'idle' } })
   if (method === 'cursor/create_plan') return Promise.resolve({ outcome: { outcome: 'accepted' } })
-  if (method === 'session/request_permission') {
-    const options: { optionId?: string; kind?: string }[] = Array.isArray(params?.options) ? params.options : []
-    return Promise.resolve(permissionResult(options, proc.force))
-  }
   return Promise.reject(new MethodNotFound(method))
 }
 
 export function onAcpRequest(run: InteractionRun, method: string, params: any, queue: QueueItems): Promise<unknown> {
+  if (method === 'session/request_permission') return answerPermission(run, params, queue)
   if (method === 'cursor/ask_question' || isQuestionParams(params)) return answerAskQuestion(run, params, queue)
   if (method === 'cursor/create_plan') return Promise.resolve({ outcome: { outcome: 'accepted' } })
-  if (method === 'session/request_permission') return answerPermission(run, params, queue)
   return Promise.reject(new MethodNotFound(method))
 }
 
 async function answerAskQuestion(run: InteractionRun, params: any, queue: QueueItems): Promise<unknown> {
+  if (run.questionsClosed) return { outcome: { outcome: 'cancelled' } }
   if (!run.acceptUpdates) return { outcome: { outcome: 'skipped', reason: 'replay' } }
   const questions = normalizeQuestions(params?.questions)
   const decision = await waitForAnswers(run, {
@@ -61,10 +62,30 @@ async function answerAskQuestion(run: InteractionRun, params: any, queue: QueueI
 }
 
 async function answerPermission(run: InteractionRun, params: any, queue: QueueItems): Promise<unknown> {
-  const options: { optionId?: string; kind?: string; name?: string }[] = Array.isArray(params?.options) ? params.options : []
+  if (!run.acceptUpdates || run.questionsClosed) return cancelledPermission()
+  const seen = new Set<string>()
+  const options: { optionId: string; kind: string; name?: string }[] = (Array.isArray(params?.options) ? params.options : [])
+    .filter((option: any) => {
+      if (!option || typeof option.optionId !== 'string' || !option.optionId.trim() || seen.has(option.optionId)) return false
+      if (!['allow_once', 'allow_always', 'reject_once', 'reject_always'].includes(option.kind)) return false
+      seen.add(option.optionId)
+      return true
+    })
   const askFallback = options.some((o) => o.optionId === '__ask_question_skip__')
   if (run.proc.provider === 'claude' && run.mode === 'ask' && !askFallback) return permissionResult(options, false, true)
-  if (!askFallback || !run.acceptUpdates) return permissionResult(options, run.force)
+  const kind = params?.toolCall?.kind
+  const readOnlyViolation = (run.mode !== 'agent' && ['edit', 'delete', 'move'].includes(kind))
+    || (run.mode === 'ask' && kind === 'switch_mode')
+  if (!askFallback && readOnlyViolation) {
+    return permissionResult(options, false, true)
+  }
+  // A Plan switch can complete the plan tool (Claude's ExitPlanMode). Ask the
+  // user; session notifications restore Plan mode after an approved switch.
+  // Claude applies bypassPermissions before sending requests. Those that still
+  // reach the client explicitly require user input, even with full access on.
+  if (!askFallback && run.force && run.mode === 'agent' && run.proc.provider !== 'claude') return permissionResult(options, true)
+  const choices = options.filter((o) => o.optionId !== '__ask_question_skip__')
+  if (!choices.length) return cancelledPermission()
   const decision = await waitForAnswers(run, {
     toolCallId: String(params?.toolCall?.toolCallId ?? ''),
     title: typeof params?.toolCall?.title === 'string' ? params.toolCall.title : undefined,
@@ -73,17 +94,33 @@ async function answerPermission(run: InteractionRun, params: any, queue: QueueIt
         id: 'q',
         prompt: String(params?.toolCall?.title || params?.toolCall?.content?.[0]?.content?.text || translate('请选择')),
         allowMultiple: false,
-        options: options
-          .filter((o) => o.optionId && o.optionId !== '__ask_question_skip__')
+        options: choices
           .map((o) => ({ id: String(o.optionId), label: String(o.name || o.optionId) }))
       }
     ]
   }, queue)
   if (decision === 'cancel' || decision === 'skip') {
-    return { outcome: { outcome: 'selected', optionId: '__ask_question_skip__' } }
+    return askFallback ? { outcome: { outcome: 'selected', optionId: '__ask_question_skip__' } } : cancelledPermission()
   }
-  const optionId = decision[0]?.selectedOptionIds[0]
-  return { outcome: { outcome: 'selected', optionId: optionId || '__ask_question_skip__' } }
+  return { outcome: { outcome: 'selected', optionId: decision[0].selectedOptionIds[0] } }
+}
+
+function cancelledPermission(): { outcome: { outcome: 'cancelled' } } {
+  return { outcome: { outcome: 'cancelled' } }
+}
+
+/** Native ACP cards contain fixed choices; reject malformed or forged answers without consuming the request. */
+function validAnswers(questions: QuestionPrompt[], answers: unknown): answers is QuestionAnswer[] {
+  if (!Array.isArray(answers) || answers.length !== questions.length) return false
+  const seen = new Set<string>()
+  return answers.every((answer) => {
+    const question = questions.find((q) => q.id === answer?.questionId)
+    if (!question || seen.has(question.id) || answer.otherText !== undefined) return false
+    seen.add(question.id)
+    const ids: unknown = answer.selectedOptionIds
+    return Array.isArray(ids) && ids.length > 0 && (question.allowMultiple || ids.length === 1)
+      && new Set(ids).size === ids.length && ids.every((id) => question.options.some((option) => option.id === id))
+  })
 }
 
 function waitForAnswers(
@@ -91,13 +128,14 @@ function waitForAnswers(
   spec: Pick<QuestionItem, 'toolCallId' | 'title' | 'questions'>,
   queue: QueueItems
 ): Promise<QuestionAnswer[] | 'skip' | 'cancel'> {
+  if (run.questionsClosed) return Promise.resolve('cancel')
   if (spec.questions.length === 0) return Promise.resolve('skip')
   const item: QuestionItem = { id: newId(), kind: 'question', status: 'pending', ...spec }
   run.reducer.push(item)
-  queue([item])
   return new Promise((resolve) => {
-    run.pendingQuestion = {
-      itemId: item.id,
+    run.pendingQuestions ??= new Map()
+    run.pendingQuestions.set(item.id, {
+      questions: item.questions,
       resolve: (decision) => {
         if (decision === 'cancel' || decision === 'skip') item.status = 'skipped'
         else {
@@ -107,15 +145,16 @@ function waitForAnswers(
         queue([item])
         resolve(decision)
       }
-    }
+    })
+    queue([item])
   })
 }
 
 export function settleQuestion(run: InteractionRun, decision: 'skip' | 'cancel'): void {
-  const pending = run.pendingQuestion
-  if (!pending) return
-  run.pendingQuestion = undefined
-  pending.resolve(decision)
+  run.questionsClosed = true
+  const pending = [...(run.pendingQuestions?.values() ?? [])]
+  run.pendingQuestions?.clear()
+  for (const question of pending) question.resolve(decision)
 }
 
 function isQuestionParams(params: any): boolean {

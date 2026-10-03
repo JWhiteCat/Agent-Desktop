@@ -82,5 +82,7 @@ export interface DesktopApi {
   resetRemoteToken(): Promise<RemoteInfo>
   onEvent(cb: (ev: AgentEvent) => void): () => void
   onState(cb: (state: AppState) => void): () => void
+  /** Remote transports announce reconnects so cached conversation history can be refreshed. */
+  onReconnect?(cb: () => void): () => void
   onFocusThread(cb: (threadId: string) => void): () => void
 }

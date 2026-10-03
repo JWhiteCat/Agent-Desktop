@@ -103,13 +103,13 @@ The first run needs internet access to download dependencies and Electron. Later
 | --- | --- |
 | `npm run dev` | Open the development window |
 | `npm test` | Offline unit tests. Does not call a model |
-| `npm run test:live` | One very short prompt with Grok 4.7 500K High Fast |
+| `npm run test:live` | One very short prompt with Composer 2.5 Fast |
 | `npm run typecheck` | Typecheck |
 | `npm run build` | Compile into `out/` |
 | `npm run preview` | Preview the compiled app |
 | `npm run dist` | Package installers into `release/` |
 
-`npm test` does not talk to Cursor CLI, Codex, or Claude. `npm run test:live` is the one that does: in a temporary empty directory, Ask mode calls `grok-4.7[context=500k,reasoning_effort=high,fast=true]` with the prompt `Reply with exactly ok`. The machine must be signed in or have `CURSOR_API_KEY` set. High still spends a small number of thinking tokens.
+`npm test` does not talk to Cursor CLI, Codex, or Claude. `npm run test:live` is the one that does: in a temporary empty directory, Ask mode calls `composer-2.5[fast=true]` with the prompt `Reply with exactly ok`. Authentication uses `CURSOR_API_KEY` when set, otherwise the saved CLI login.
 
 Package targets: Windows NSIS, macOS DMG, and Linux AppImage.
 
@@ -138,7 +138,7 @@ The model picker also remembers each model's context length, reasoning effort (i
 
 Opening or refreshing a conversation keeps streamed messages that arrive while history is loading. Syncing an empty CLI transcript preserves the local conversation. Deleting a conversation, changing CLI configuration, or quitting also stops a CLI process that is still preparing the saved session.
 
-The Git tab compares against the working files, including edits made after staging in a repository with no commits yet.
+The Git tab compares against the working files, including edits made after staging in a repository with no commits yet. Diff views preserve content that resembles patch headers, such as SQL `--` comments, and keep file grouping and added/deleted line counts correct.
 
 Shortcuts (on macOS, Ctrl is ⌘):
 
@@ -156,6 +156,8 @@ Shortcuts (on macOS, Ctrl is ⌘):
 The composer picks the CLI, the mode, and the model, and can turn on full access (`--force`). On the home screen the CLI applies to the new conversation. Inside a conversation, switching CLI keeps the transcript already shown and starts the next message as a new session on that CLI. The same choice is saved as the default under Settings → CLI. Full access lets the CLI run commands without confirming each one. For Claude, full access is `bypassPermissions`; Agent without it is `acceptEdits`, so file edits are accepted and commands still ask. Ask mode stays on Claude's default permission mode and the app rejects edit and command prompts. Sandbox (`--sandbox`) is a default under Settings → Defaults: follow the CLI, enabled, or disabled. It applies to Cursor. It is not a composer toggle, and Claude does not use it. On the home screen, a new conversation can also switch between the project directory and an isolated git worktree. Cursor uses `--worktree`, then continues in the directory the CLI reports. For Codex and Claude the app creates the worktree itself, so the project must be a git repository with at least one commit.
 
 In a conversation, typing `/` opens a command menu. Arrow keys move through it, Enter or Tab selects, and Esc closes the menu without stopping a run. `/fork` forks locally. A command that takes input is inserted as `/name ` with its hint under the box; Enter then sends it. Commands with no input run immediately. The list also includes whatever the CLI sends in ACP `available_commands_update`. The first `/` in a conversation that already has a CLI session loads that session so those commands can appear. A new conversation and the home screen do not start the CLI. They reuse the last command list that CLI announced, kept on this machine, and the menu stays hidden until a list exists. The next real session refreshes that list. Text that starts with `/` and matches nothing is still sent as a normal message.
+
+With full access off, tool permission requests show a choice card and wait for an explicit allow or reject decision. Skipping or stopping does not grant permission. Claude can also require explicit confirmation for operations that its adapter excludes from full access; these requests still show a card.
 
 ## Plan mode
 
@@ -219,6 +221,8 @@ Codex history import and sync also restore usage and quota snapshots from rollou
 
 ## Remote control
 
+After a remote connection recovers, cached conversations reload their messages, including replies and questions received while offline. Streamed updates arriving during the reload are preserved. MCP and Skill creation also works over the default HTTP LAN link. Remote service changes are applied in order, so changing ports and then disabling remote control closes the previous listeners.
+
 Turn the switch on under Remote control in Settings. The app listens on the LAN (port `8765` by default) and serves the same UI as the desktop app. A phone or another computer on the same network can open it by scanning the QR code. The QR code includes the project or conversation currently open on the computer. If the computer has more than one network interface, pick another address from the dropdown.
 
 Turn on public access and the app opens a reverse tunnel with the local OpenSSH client. A gateway on the server owns the public port (default `8765`) and forwards each request to the computer named in the link. Several computers can share that one port at the same time. Each link is different, for example `http://43.167.166.239:8765/c/<computer-id>/?token=...`. The id is created the first time it is needed and stored on this machine. Resetting the link does not change it. The default server is `root@43.167.166.239`. The SSH user, server address, and public port can all be changed. Set up your own server with the steps below before using it. Once the tunnel is up, the public link appears in the address dropdown and in the QR code. Changing the address or port reconnects. After a drop, it retries at 1, 2, 5, and 10 seconds.
@@ -246,7 +250,7 @@ The script uses a passphrase-less default key: `~/.ssh/id_rsa`, `id_ecdsa`, or `
 
 The script backs up `sshd_config` first. If `sshd -t` fails, it restores the backup, then `reload`s sshd without dropping the current login. With systemd, the gateway runs as a service on the public port you chose. Without systemd, it runs in the background. If firewalld or ufw is running, that port is opened. Older builds bound the public port themselves. Before upgrading, turn public access off on those clients, then run this script.
 
-When the command succeeds, enter the same SSH user, server address, and public port under Remote control, then turn on remote control and public access. Open the public port in the cloud security group.
+When the command succeeds, enter the same SSH user, server address, SSH port (default `22`), and public port under Remote control, then turn on remote control and public access. The SSH port must match `--ssh-port`; it is separate from the public web port. Open the public port in the cloud security group.
 
 With no arguments, the script configures port `8765` on the default server `root@43.167.166.239`. If you are already logged into the server and `public-gateway.py` is next to the script, you can also run `sudo bash scripts/setup-public-server.sh 8765`.
 
@@ -260,7 +264,7 @@ Projects, conversation metadata, and settings are stored in `data/` under Electr
 | macOS | `~/Library/Application Support/Agent Desktop/data` |
 | Linux | `~/.config/Agent Desktop/data` |
 
-`state.json` stores projects, the conversation list, and settings, including MCP servers, skill bodies, and the default CLI. Each conversation remembers whether it uses Cursor, Codex, or Claude. Messages for each conversation live in `threads/`. Cursor session records stay in `~/.cursor/chats`, Codex records stay in `~/.codex/sessions`, and Claude records stay in `~/.claude/projects`. The app reads and resumes those records and creates separate copies when forking. Enabled skills are written to `~/.cursor/skills`, `~/.agents/skills`, `~/.codex/skills`, and `~/.claude/skills`. MCP servers and skills disabled in the All local section are held under `local-config/` in the data folder. Worktrees for Codex and Claude conversations live under `worktrees/<repo>/<branch>-<suffix>` in the data folder, on a branch named `agent-desktop/<branch>-<suffix>`. Deleting a conversation or project runs `git worktree remove` when no other conversation still uses that worktree. A worktree with uncommitted or untracked files is kept. The branch is deleted with `git branch -d`, so a branch with unmerged commits stays.
+`state.json` stores projects, the conversation list, and settings, including MCP servers, skill bodies, and the default CLI. Each conversation remembers whether it uses Cursor, Codex, or Claude. Messages for each conversation live in `threads/`. Cursor session records stay in `~/.cursor/chats`, Codex records stay in `~/.codex/sessions`, and Claude records stay in `~/.claude/projects`. The app reads and resumes those records and creates separate copies when forking. Enabled skills are written to `~/.cursor/skills`, `~/.agents/skills`, `~/.codex/skills`, and `~/.claude/skills`. MCP servers and skills disabled in the All local section are held under `local-config/` in the data folder. Worktrees for Codex and Claude conversations live under `worktrees/<repo>/<branch>-<suffix>` in the data folder, on a branch named `agent-desktop/<branch>-<suffix>`. Deleting a conversation or project runs `git worktree remove` when no other conversation or project uses that worktree or one of its subdirectories. A worktree with uncommitted or untracked files is kept. The branch is deleted with `git branch -d`, so a branch with unmerged commits stays. A saved worktree conversation reports a missing directory instead of silently resuming in the main project.
 
 A full fork copies the CLI session into an independent conversation: Cursor copies a consistent database snapshot, while Codex and Claude use their adapters' native fork support. Forking at a message keeps history through that message. When a CLI cannot copy that exact point, or native copying fails, the app saves the selected history and sends it as context with the fork's next message. This includes prior replies and tool results. The pending context survives restarts and failed sends and is cleared after a successful reply. CLI history sync also restores these copied messages. A fork whose context has not yet been delivered must complete a message before syncing. The source conversation is preserved.
 

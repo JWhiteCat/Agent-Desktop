@@ -3,7 +3,7 @@ import { normalizeMcpServers, normalizeSkills } from '@shared/agent-config'
 import { normalizeLanguage, setLanguage } from '@shared/i18n'
 import { isCliProvider, type Settings } from '@shared/types'
 import { syncAllManagedSkills } from '../skills'
-import { validClientId, validatePublicHost, validatePublicPort, validatePublicUser } from '../public-tunnel'
+import { validClientId, validatePublicHost, validatePublicPort, validatePublicUser, validateSshPort } from '../public-tunnel'
 import type { Handler } from '../remote'
 import type { IpcDeps } from './deps'
 
@@ -20,6 +20,7 @@ export function settingsHandlers(deps: IpcDeps): Record<string, Handler> {
       }
       if (patch.remotePublicUser !== undefined) next.remotePublicUser = validatePublicUser(patch.remotePublicUser)
       if (patch.remotePublicHost !== undefined) next.remotePublicHost = validatePublicHost(patch.remotePublicHost)
+      if (patch.remotePublicSshPort !== undefined) next.remotePublicSshPort = validateSshPort(patch.remotePublicSshPort)
       if (patch.remotePublicPort !== undefined) next.remotePublicPort = validatePublicPort(Number(patch.remotePublicPort))
       if (patch.remoteClientId !== undefined) {
         if (!validClientId(String(patch.remoteClientId))) throw new Error(translate('电脑标识无效'))
@@ -59,6 +60,7 @@ export function settingsHandlers(deps: IpcDeps): Record<string, Handler> {
         patch.remotePublicEnabled !== undefined ||
         patch.remotePublicUser !== undefined ||
         patch.remotePublicHost !== undefined ||
+        patch.remotePublicSshPort !== undefined ||
         patch.remotePublicPort !== undefined
       ) {
         await deps.applyRemote()

@@ -152,7 +152,7 @@ export class SessionManager {
       const settings = this.store.settings
       const launch = resolveLaunch(provider, settings.agentPath, settings.codexPath, settings.claudePath)
       if (!launch) throw new Error(translate('未找到 {label}。请先安装，或在设置中指定路径。', { label: cliLabel(provider) }))
-      const cwd = thread.cwd && fs.existsSync(thread.cwd) ? thread.cwd : project.path
+      const cwd = thread.cwd && (thread.worktree || fs.existsSync(thread.cwd)) ? thread.cwd : project.path
       if (!fs.existsSync(cwd)) throw new Error(translate('项目目录不存在：{path}', { path: cwd }))
       const apiKey = providerApiKey(provider, settings)
       const mcpServers = toAcpMcpServers(settings.mcpServers)
@@ -218,7 +218,7 @@ export class SessionManager {
     if (!launch) throw new Error(translate('未找到 {label}。请先安装，或在设置中指定路径。', { label: cliLabel(provider) }))
     const apiKey = providerApiKey(provider, settings)
 
-    let cwd = thread.cwd && fs.existsSync(thread.cwd) ? thread.cwd : project.path
+    let cwd = thread.cwd && (thread.worktree || fs.existsSync(thread.cwd)) ? thread.cwd : project.path
     if (!fs.existsSync(cwd)) throw new Error(translate('项目目录不存在：{path}', { path: cwd }))
     // Cursor creates its own worktree from `--worktree`; the Codex and Claude adapters have no such flag.
     if (provider !== 'cursor' && req.worktree && !thread.chatId && !thread.cwd) {
@@ -459,7 +459,7 @@ export class SessionManager {
     const launch = resolveLaunch(provider, settings.agentPath, settings.codexPath, settings.claudePath)
     if (!launch) throw new Error(translate('未找到 {label}。请先安装，或在设置中指定路径。', { label: cliLabel(provider) }))
     const apiKey = providerApiKey(provider, settings)
-    const cwd = thread.cwd && fs.existsSync(thread.cwd) ? thread.cwd : project.path
+    const cwd = thread.cwd && (thread.worktree || fs.existsSync(thread.cwd)) ? thread.cwd : project.path
     if (!fs.existsSync(cwd)) throw new Error(translate('项目目录不存在：{path}', { path: cwd }))
 
     const mcpServers = toAcpMcpServers(settings.mcpServers)

@@ -108,6 +108,8 @@ export const settingsMessages: Record<string, string> = {
   '公网访问': 'Public access',
   '经 SSH 把网页挂到服务器的同一个端口。多台电脑可以同时开着，每台有自己的链接。链接是明文 HTTP，持有者可完全控制本应用': 'Use SSH to serve the web interface through a shared server port. Multiple computers can connect with their own links. Links use unencrypted HTTP and grant full control of this app.',
   'SSH 用户': 'SSH user',
+  'SSH 端口': 'SSH port',
+  'SSH 端口需在 1–65535 之间': 'SSH port must be between 1 and 65535',
   '服务器地址': 'Server address',
   '公网端口': 'Public port',
   '正在连接公网…': 'Connecting to the public server…',

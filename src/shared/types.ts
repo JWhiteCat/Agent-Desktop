@@ -266,6 +266,8 @@ export interface Settings {
   remotePublicUser: string
   /** Public server hostname or IPv4 address, without a scheme or port. */
   remotePublicHost: string
+  /** SSH daemon port used to establish the reverse tunnel. */
+  remotePublicSshPort: number
   /** TCP port the shared public gateway listens on. */
   remotePublicPort: number
 }
@@ -387,5 +389,6 @@ export const DEFAULT_SETTINGS: Settings = {
   remotePublicEnabled: false,
   remotePublicUser: 'root',
   remotePublicHost: '43.167.166.239',
+  remotePublicSshPort: 22,
   remotePublicPort: 8765
 }

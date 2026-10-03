@@ -1,8 +1,9 @@
 import { receiveCommands } from './commands'
+import { errorText, toast } from './feedback'
 import { loadModels } from './models'
 import { LAST_PROJECT_KEY, LEGACY_MODEL_KEY } from './persistence'
 import { getState, setState } from './state'
-import { openThread, receiveItems } from './threads'
+import { openThread, receiveItems, refreshThreadItems } from './threads'
 
 /** Bootstrap state and route bridge events to the module that owns each update. */
 export async function initStore(): Promise<void> {
@@ -20,6 +21,9 @@ export async function initStore(): Promise<void> {
   setState({ app, lastProjectId, view: { kind: 'home', projectId: lastProjectId } })
 
   window.api.onState((app) => setState({ app }))
+  window.api.onReconnect?.(() => {
+    void refreshThreadItems().catch((err) => toast(errorText(err), 'error'))
+  })
   window.api.onFocusThread((id) => {
     void openThread(id)
   })

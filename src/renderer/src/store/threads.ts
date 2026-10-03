@@ -23,6 +23,7 @@ function mergeItems(current: Item[], updates: Iterable<Item>): Item[] {
 }
 
 const itemLoads = new Map<string, { promise: Promise<void>; updates: Map<string, Item> }>()
+const staleItemIds = new Set<string>()
 
 /** The history request and its live updates share one owner so a late snapshot cannot erase events. */
 export function receiveItems(threadId: string, items: Item[]): void {
@@ -36,15 +37,30 @@ export function receiveItems(threadId: string, items: Item[]): void {
 }
 
 /** Apply events received during a history request after its snapshot, including the first load. */
-function loadThreadItems(id: string): Promise<void> {
+function loadThreadItems(id: string, refresh = false): Promise<void> {
   const pending = itemLoads.get(id)
-  if (pending) return pending.promise
+  if (pending && !refresh) return pending.promise
   const updates = new Map<string, Item>()
   const promise = window.api.getItems(id).then((items) => {
+    if (itemLoads.get(id)?.promise !== promise) return
     setState((s) => ({ items: { ...s.items, [id]: mergeItems(items, updates.values()) } }))
-  }).finally(() => itemLoads.delete(id))
+    staleItemIds.delete(id)
+  }).finally(() => {
+    if (itemLoads.get(id)?.promise === promise) itemLoads.delete(id)
+  })
   itemLoads.set(id, { promise, updates })
   return promise
+}
+
+/** Reconnects must replace in-flight snapshots from the old connection too. */
+export async function refreshThreadItems(): Promise<void> {
+  const state = getState()
+  const ids = state.app.threads
+    .filter((thread) => state.items[thread.id] || itemLoads.has(thread.id) ||
+      (state.view.kind === 'thread' && state.view.id === thread.id))
+    .map((thread) => thread.id)
+  for (const id of ids) staleItemIds.add(id)
+  await Promise.all(ids.map((id) => loadThreadItems(id, true)))
 }
 
 export async function openThread(id: string): Promise<void> {
@@ -53,7 +69,7 @@ export async function openThread(id: string): Promise<void> {
   if (thread) rememberProject(thread.projectId)
   const state = getState()
   const idle = !state.app.running.includes(id)
-  if (!state.items[id] || (thread?.source === 'cli' && idle)) {
+  if (!state.items[id] || staleItemIds.has(id) || (thread?.source === 'cli' && idle)) {
     await loadThreadItems(id)
   }
   if (thread?.unread) window.api.updateThread(id, { unread: false })

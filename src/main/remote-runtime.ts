@@ -10,6 +10,7 @@ import {
   validClientId,
   validatePublicHost,
   validatePublicPort,
+  validateSshPort,
   validatePublicUser
 } from './public-tunnel'
 import type { Store } from './store'
@@ -31,6 +32,7 @@ const REMOTE_ONLY_DESKTOP_SETTINGS: (keyof Settings)[] = [
   'remotePublicEnabled',
   'remotePublicUser',
   'remotePublicHost',
+  'remotePublicSshPort',
   'remotePublicPort'
 ]
 
@@ -57,6 +59,7 @@ export class RemoteRuntime {
   private handlers: Record<string, Handler> = {}
   private remoteError: string | LocalizedMessage | undefined
   private publicError: string | LocalizedMessage | undefined
+  private lifecycle: Promise<void> = Promise.resolve()
 
   constructor(
     private readonly getStore: () => Store,
@@ -95,7 +98,24 @@ export class RemoteRuntime {
   }
 
   /** Starts, restarts or stops the LAN server to match the settings. */
-  async apply(): Promise<void> {
+  apply(): Promise<void> {
+    return this.enqueue(() => this.applySettings())
+  }
+
+  stop(): Promise<void> {
+    return this.enqueue(async () => {
+      await this.server.stop()
+      await this.tunnel.stop()
+    })
+  }
+
+  private enqueue(operation: () => Promise<void>): Promise<void> {
+    const pending = this.lifecycle.then(operation)
+    this.lifecycle = pending.catch(() => {})
+    return pending
+  }
+
+  private async applySettings(): Promise<void> {
     this.remoteError = undefined
     const store = this.getStore()
     const s = store.settings
@@ -122,11 +142,6 @@ export class RemoteRuntime {
     await this.applyPublicTunnel()
   }
 
-  async stop(): Promise<void> {
-    await this.tunnel.stop()
-    await this.server.stop()
-  }
-
   /** Starts or stops the public SSH tunnel to match the settings. The LAN server must already be up. */
   private async applyPublicTunnel(): Promise<void> {
     this.publicError = undefined
@@ -143,6 +158,7 @@ export class RemoteRuntime {
       await this.tunnel.start({
         user: validatePublicUser(current.remotePublicUser),
         host: validatePublicHost(current.remotePublicHost),
+        sshPort: validateSshPort(current.remotePublicSshPort),
         port: validatePublicPort(current.remotePublicPort),
         localPort: this.server.port ?? current.remotePort,
         clientId: current.remoteClientId

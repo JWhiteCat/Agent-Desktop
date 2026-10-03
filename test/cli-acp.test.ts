@@ -153,4 +153,13 @@ describe('acp questions', () => {
     expect(permissionResult(options, true, true)).toEqual({ outcome: { outcome: 'selected', optionId: 'no' } })
     expect(permissionResult([{ optionId: 'once', kind: 'allow_once' }], false, true)).toEqual({ outcome: { outcome: 'cancelled' } })
   })
+
+  it('never selects malformed or unknown permission options as an automatic fallback', () => {
+    expect(permissionResult([{ optionId: 'unknown', kind: 'unexpected' }], true))
+      .toEqual({ outcome: { outcome: 'cancelled' } })
+    expect(permissionResult([null, { optionId: 5, kind: 'allow_once' }, { optionId: ' ', kind: 'allow_once' }] as any, true))
+      .toEqual({ outcome: { outcome: 'cancelled' } })
+    expect(permissionResult([{ optionId: 'deny', kind: 'reject_once' }], true))
+      .toEqual({ outcome: { outcome: 'cancelled' } })
+  })
 })

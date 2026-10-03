@@ -23,7 +23,13 @@ beforeEach(() => {
   git(repo, 'add', '.')
   git(repo, 'commit', '-q', '-m', 'init')
 })
-afterEach(() => fs.rmSync(root, { recursive: true, force: true }))
+afterEach(() => {
+  const resolved = path.resolve(root)
+  if (path.dirname(resolved) !== path.resolve(os.tmpdir()) || !path.basename(resolved).startsWith('agent-desktop-git-')) {
+    throw new Error(`Unexpected test directory: ${resolved}`)
+  }
+  fs.rmSync(resolved, { recursive: true, force: true })
+})
 
 describe('app-created worktrees', () => {
   it('opens the matching subdirectory on a new agent-desktop branch', async () => {
@@ -69,5 +75,31 @@ describe('app-created worktrees', () => {
     expect(fs.existsSync(shared)).toBe(true)
     expect(fs.existsSync(alone)).toBe(false)
     expect(fs.existsSync(repo)).toBe(true)
+  })
+
+  it.each(['root', 'child', 'sibling'] as const)('keeps a worktree used from another %s directory', async (usedFrom) => {
+    const shared = await createWorktree(repo, parent)
+    const sub = path.join(shared, 'sub')
+    const deleted = usedFrom === 'child' ? shared : sub
+    const remaining = usedFrom === 'root' ? shared : usedFrom === 'child' ? sub : path.join(shared, 'other')
+    await releaseWorktrees([{ cwd: deleted }], [{ cwd: remaining }], parent)
+    expect(fs.existsSync(sub)).toBe(true)
+    expect(git(shared, 'rev-parse', '--show-toplevel').replace(/\\/g, '/')).toBe(shared.replace(/\\/g, '/'))
+  })
+
+  it('removes an unused worktree once when deleted threads used different subdirectories', async () => {
+    const dir = await createWorktree(repo, parent)
+    await releaseWorktrees([{ cwd: dir }, { cwd: path.join(dir, 'sub') }], [], parent)
+    expect(fs.existsSync(dir)).toBe(false)
+    expect(branches()).toEqual(['main'])
+  })
+
+  it('does not remove a worktree outside the managed parent through a directory link', async () => {
+    const outside = await createWorktree(repo, path.join(root, 'outside'))
+    fs.mkdirSync(parent, { recursive: true })
+    const link = path.join(parent, 'linked')
+    fs.symlinkSync(outside, link, process.platform === 'win32' ? 'junction' : 'dir')
+    await releaseWorktrees([{ cwd: link }], [], parent)
+    expect(fs.existsSync(outside)).toBe(true)
   })
 })

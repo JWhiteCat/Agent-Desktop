@@ -13,11 +13,19 @@ import {
   validClientId,
   validatePublicHost,
   validatePublicPort,
+  validateSshPort,
   validatePublicUser,
   type TunnelTarget
 } from '../src/main/public-tunnel'
 
 describe('public tunnel settings', () => {
+  it('validates default and custom SSH ports independently of the gateway port', () => {
+    expect(validateSshPort(22)).toBe(22)
+    expect(validateSshPort(2222)).toBe(2222)
+    expect(validateSshPort(65535)).toBe(65535)
+    for (const port of [0, -1, 65536, 22.5, NaN, Infinity]) expect(() => validateSshPort(port)).toThrow(/SSH/)
+  })
+
   it('accepts a user, host and port', () => {
     expect(validatePublicUser(' root ')).toBe('root')
     expect(validatePublicHost('43.167.166.239')).toBe('43.167.166.239')
@@ -44,7 +52,7 @@ describe('public tunnel settings', () => {
     expect(newRemoteClientId()).toMatch(/^[a-f0-9]{16}$/)
     expect(publicSocketPath(clientId)).toBe('/run/agent-desktop/aaaaaaaaaaaaaaaa')
     expect(
-      buildSshArgs({ user: 'root', host: '43.167.166.239', port: 8765, localPort: 8765, clientId })
+      buildSshArgs({ user: 'root', host: '43.167.166.239', sshPort: 2222, port: 8765, localPort: 8765, clientId })
     ).toEqual([
       '-N',
       '-T',
@@ -58,6 +66,8 @@ describe('public tunnel settings', () => {
       'ServerAliveCountMax=3',
       '-o',
       'StrictHostKeyChecking=accept-new',
+      '-p',
+      '2222',
       '-R',
       '/run/agent-desktop/aaaaaaaaaaaaaaaa:127.0.0.1:8765',
       'root@43.167.166.239'
@@ -97,7 +107,7 @@ class FakeSshChild extends EventEmitter {
 
 describe('public tunnel health recovery', () => {
   const target: TunnelTarget = {
-    user: 'user', host: 'example.com', port: 8765, localPort: 8765, clientId: 'aaaaaaaaaaaaaaaa'
+    user: 'user', host: 'example.com', sshPort: 22, port: 8765, localPort: 8765, clientId: 'aaaaaaaaaaaaaaaa'
   }
   let children: FakeSshChild[]
   let tunnel: PublicTunnel

@@ -1,6 +1,8 @@
-import { describe, expect, it, vi } from 'vitest'
-import { handlersForRemote, remoteSafeSettings, remoteSafeState } from '../src/main/remote-runtime'
+import http from 'node:http'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { handlersForRemote, RemoteRuntime, remoteSafeSettings, remoteSafeState } from '../src/main/remote-runtime'
 import { DEFAULT_SETTINGS, type AppState, type Settings } from '../src/shared/types'
+import type { Store } from '../src/main/store'
 
 function fixture() {
   const settings: Settings = {
@@ -29,7 +31,7 @@ describe('remote settings', () => {
 
   it('preserves configured secrets when a remote client saves redacted settings', async () => {
     const { settings, update, handlers } = fixture()
-    const patch = { apiKey: '', codexApiKey: '', claudeApiKey: '', remoteToken: '', remoteEnabled: false, theme: 'dark' } as const
+    const patch = { apiKey: '', codexApiKey: '', claudeApiKey: '', remoteToken: '', remoteEnabled: false, remotePublicSshPort: 2222, theme: 'dark' } as const
     const result = await handlers['settings:update'](patch) as Settings
     expect(update).toHaveBeenCalledExactlyOnceWith({ theme: 'dark' })
     expect(result.claudeApiKey).toBe('')
@@ -42,5 +44,60 @@ describe('remote settings', () => {
     const result = await handlers['settings:update']({ claudeApiKey: 'replacement-secret' }) as Settings
     expect(update).toHaveBeenCalledExactlyOnceWith({ claudeApiKey: 'replacement-secret' })
     expect(result.claudeApiKey).toBe('')
+  })
+})
+
+describe('remote runtime lifecycle', () => {
+  let runtime: RemoteRuntime | undefined
+  afterEach(async () => {
+    await runtime?.stop()
+    vi.restoreAllMocks()
+  })
+
+  function setup(patch: Partial<Settings> = {}) {
+    const store = {
+      settings: { ...DEFAULT_SETTINGS, remoteEnabled: true, remotePort: 0, remoteToken: 'test-token', remoteClientId: 'aaaaaaaaaaaaaaaa', ...patch },
+      updateSettings(next: Partial<Settings>) { this.settings = { ...this.settings, ...next }; return this.settings }
+    }
+    runtime = new RemoteRuntime(() => store as unknown as Store, () => ({ projects: [], threads: [], running: [], settings: store.settings }))
+    return store
+  }
+
+  it('does not keep hidden listeners after concurrent apply calls and disabling remote access', async () => {
+    const store = setup()
+    const created = vi.spyOn(http, 'createServer')
+    await Promise.all([runtime!.apply(), runtime!.apply()])
+    store.updateSettings({ remoteEnabled: false })
+    await runtime!.apply()
+    expect(runtime!.info()).toMatchObject({ enabled: false, running: false })
+    const servers = created.mock.results.map((result) => result.value as http.Server)
+    try {
+      expect(servers.every((server) => !server.listening)).toBe(true)
+    } finally {
+      for (const server of servers) await new Promise<void>((resolve) => {
+        server.close(() => resolve())
+        server.closeAllConnections()
+      })
+    }
+  })
+
+  it('finishes an in-progress apply before shutdown and passes the configured SSH port', async () => {
+    setup({ remotePublicEnabled: true, remotePublicSshPort: 2222 })
+    let finishStart!: () => void
+    let reachedStart!: () => void
+    const reached = new Promise<void>((resolve) => { reachedStart = resolve })
+    const start = vi.spyOn(runtime!.tunnel, 'start').mockImplementation(() => {
+      reachedStart()
+      return new Promise<void>((resolve) => { finishStart = resolve })
+    })
+    const stop = vi.spyOn(runtime!.tunnel, 'stop').mockResolvedValue()
+    const applying = runtime!.apply()
+    await reached
+    const stopping = runtime!.stop()
+    finishStart()
+    await Promise.all([applying, stopping])
+    expect(start).toHaveBeenCalledWith(expect.objectContaining({ sshPort: 2222, port: 8765 }))
+    expect(stop).toHaveBeenCalledOnce()
+    expect(runtime!.server.running).toBe(false)
   })
 })

@@ -37,6 +37,32 @@ describe('format', () => {
 })
 
 describe('tools and diffs', () => {
+  it('keeps header-like SQL comments and additions inside the current hunk', () => {
+    const body = ['@@ -1,2 +1,3 @@', '--- old comment', '+-- new comment', '+++ extra', ' SELECT 1;']
+    const files = parseUnifiedDiff(['diff --git a/query.sql b/query.sql', '--- a/query.sql', '+++ b/query.sql', ...body].join('\n'))
+    expect(files).toEqual([{ path: 'query.sql', lines: body, added: 2, removed: 1 }])
+  })
+
+  it('separates plain unified patches after consuming each hunk, including zero-line ranges', () => {
+    const files = parseUnifiedDiff([
+      '--- /dev/null', '+++ b/added.txt', '@@ -0,0 +1 @@', '+++ header-like content',
+      '\\ No newline at end of file',
+      '--- a/deleted.sql', '+++ /dev/null', '@@ -1 +0,0 @@', '--- SQL comment',
+      '--- a/changed.txt', '+++ b/changed.txt', '@@ -1 +1 @@', '-before', '+after',
+      '@@ -8 +8 @@', '--- another comment', '+++ another addition'
+    ].join('\n'))
+    expect(files).toEqual([
+      { path: 'added.txt', lines: ['@@ -0,0 +1 @@', '+++ header-like content', '\\ No newline at end of file'], added: 1, removed: 0 },
+      { path: 'deleted.sql', lines: ['@@ -1 +0,0 @@', '--- SQL comment'], added: 0, removed: 1 },
+      { path: 'changed.txt', lines: ['@@ -1 +1 @@', '-before', '+after', '@@ -8 +8 @@', '--- another comment', '+++ another addition'], added: 2, removed: 2 }
+    ])
+  })
+
+  it('uses the destination path for plain patches whose old and new names differ', () => {
+    const files = parseUnifiedDiff('--- a/old.sql\n+++ b/new.sql\n@@ -1 +1 @@\n--- old comment\n+-- new comment\n')
+    expect(files).toEqual([{ path: 'new.sql', lines: ['@@ -1 +1 @@', '--- old comment', '+-- new comment'], added: 1, removed: 1 }])
+  })
+
   it('summarizes a read and parses a unified diff', () => {
     const item: ToolItem = {
       id: '1',

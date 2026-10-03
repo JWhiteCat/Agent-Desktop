@@ -2,7 +2,7 @@ import http from 'node:http'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { RemoteServer, resolveDevProxyUrl, rewriteDevAbsolutePaths } from '../src/main/remote'
 
 const TOKEN = 'secret-token'
@@ -79,6 +79,73 @@ describe('RemoteServer', () => {
     while (!text.includes('data:')) text += decoder.decode((await reader.read()).value)
     expect(text).toContain(JSON.stringify({ channel: 'state:changed', payload: { n: 1 } }))
     await reader.cancel()
+  })
+})
+
+describe('remote server lifecycle', () => {
+  let remote: RemoteServer
+  let created: ReturnType<typeof vi.spyOn<typeof http, 'createServer'>>
+  const options = { port: 0, token: TOKEN, clientId: 'aaaaaaaaaaaaaaaa', handlers: { echo: () => 'ok' } }
+
+  beforeEach(() => {
+    remote = new RemoteServer()
+    created = vi.spyOn(http, 'createServer')
+  })
+
+  afterEach(async () => {
+    await remote.stop()
+    // Clean up every listener even if a regression loses the active-server reference.
+    const servers = created.mock.results.flatMap((result) => result.type === 'return' ? [result.value as http.Server] : [])
+    created.mockRestore()
+    for (const server of servers) await new Promise<void>((resolve) => {
+      server.close(() => resolve())
+      server.closeAllConnections()
+    })
+  })
+
+  it('closes every listener when simultaneous starts are followed by stop', async () => {
+    await Promise.all([remote.start(options), remote.start(options)])
+    const servers = created.mock.results.map((result) => result.value as http.Server)
+    expect(servers.filter((server) => server.listening)).toHaveLength(1)
+    await remote.stop()
+    expect(remote.running).toBe(false)
+    expect(servers.every((server) => !server.listening)).toBe(true)
+  })
+
+  it('does not leave a pending start running after stop resolves', async () => {
+    await Promise.all([remote.start(options), remote.stop()])
+    expect(remote.running).toBe(false)
+    expect(created.mock.results.every((result) => !(result.value as http.Server).listening)).toBe(true)
+  })
+
+  it('disconnects old event streams and rejects previous tokens after overlapping restarts', async () => {
+    await remote.start(options)
+    const events = await fetch(`http://127.0.0.1:${remote.port}/api/events?token=${TOKEN}`)
+    const reader = events.body!.getReader()
+    await reader.read()
+    const disconnected = reader.read().then((chunk) => chunk.done, () => true)
+    await Promise.all([
+      remote.start({ ...options, token: 'intermediate-token' }),
+      remote.start({ ...options, token: 'new-token' })
+    ])
+    expect(await disconnected).toBe(true)
+    for (const [token, status] of [[TOKEN, 401], ['intermediate-token', 401], ['new-token', 200]] as const) {
+      const response = await fetch(`http://127.0.0.1:${remote.port}/api/rpc/echo`, { method: 'POST', headers: { 'x-token': token }, body: '[]' })
+      expect(response.status).toBe(status)
+      await response.arrayBuffer()
+    }
+  })
+
+  it('cleans up a failed restart and allows another start afterwards', async () => {
+    const occupied = http.createServer()
+    await new Promise<void>((resolve) => occupied.listen(0, '0.0.0.0', resolve))
+    await remote.start(options)
+    await expect(remote.start({ ...options, port: (occupied.address() as { port: number }).port })).rejects.toMatchObject({ code: 'EADDRINUSE' })
+    expect(remote.running).toBe(false)
+    await remote.start(options)
+    expect(remote.running).toBe(true)
+    await remote.stop()
+    expect(created.mock.results.every((result) => result.value === occupied || !(result.value as http.Server).listening)).toBe(true)
   })
 })
 

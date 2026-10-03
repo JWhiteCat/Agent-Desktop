@@ -34,7 +34,7 @@ export function projectHandlers(deps: IpcDeps): Record<string, Handler> {
       const threads = store.threads.filter((t) => t.projectId === id)
       for (const t of threads) sessions.dispose(t.id)
       store.removeProject(id)
-      void releaseWorktrees(threads, store.threads, worktreeRoot(store))
+      void releaseWorktrees(threads, [...store.threads, ...store.projects.map((p) => ({ cwd: p.path }))], worktreeRoot(store))
       broadcast()
     },
     'project:reorder': (ids: string[]) => {

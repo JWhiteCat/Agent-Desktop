@@ -3,6 +3,7 @@ import { t } from '@shared/i18n'
 import { isValidSkillName, mcpServerReady, skillReady } from '@shared/agent-config'
 import type { McpServerConfig, McpTransport, NamedValue, Settings, SkillConfig } from '@shared/types'
 import { useT } from '../lib/i18n'
+import { randomId as newId } from '../lib/id'
 import { errorText, toast, useStore } from '../store'
 
 const EMPTY_SERVERS: McpServerConfig[] = []
@@ -36,10 +37,6 @@ async function persist(patch: Partial<Settings>): Promise<boolean> {
     toast(errorText(err), 'error')
     return false
   }
-}
-
-function newId(): string {
-  return crypto.randomUUID()
 }
 
 export function McpSettings() {

@@ -40,7 +40,13 @@ beforeEach(() => {
   vi.clearAllMocks()
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-desktop-worktree-'))
 })
-afterEach(() => fs.rmSync(root, { recursive: true, force: true }))
+afterEach(() => {
+  const resolved = path.resolve(root)
+  if (path.dirname(resolved) !== path.resolve(os.tmpdir()) || !path.basename(resolved).startsWith('agent-desktop-worktree-')) {
+    throw new Error(`Unexpected test directory: ${resolved}`)
+  }
+  fs.rmSync(resolved, { recursive: true, force: true })
+})
 
 function fakeChild(calls: Array<{ method: string; params: any }>, stdout: PassThrough): ChildProcess {
   return Object.assign(new EventEmitter(), {
@@ -187,6 +193,27 @@ describe.each(['codex', 'claude'] as const)('%s worktree conversations', (provid
       await ctx.send('first', false)
       expect(spawned().mock.calls[0][1]).toBe(ctx.project)
       expect(ctx.thread).toMatchObject({ cwd: ctx.project, worktree: false })
+    } finally {
+      ctx.manager.stopAll()
+    }
+  })
+})
+
+describe.each(['cursor', 'codex', 'claude'] as const)('%s missing worktree', (provider) => {
+  it.each(['send', 'prepare', ...(provider === 'cursor' ? [] : ['fork'])])('rejects %s instead of falling back to the project', async (action) => {
+    const ctx = setup(provider)
+    const missing = path.join(root, 'missing-worktree')
+    Object.assign(ctx.thread, { chatId: 'saved-session', cwd: missing, worktree: true })
+    const opts = { model: 'composer-2.5[fast=true]', mode: 'agent' as const, force: false }
+    try {
+      const result = action === 'send'
+        ? ctx.manager.send({ threadId: 'thread', prompt: 'continue', ...opts })
+        : action === 'prepare' ? ctx.manager.prepare('thread', opts) : ctx.manager.forkSession('thread')
+      await expect(result).rejects.toThrow(missing)
+      expect(spawnCli).not.toHaveBeenCalled()
+      expect(spawnCodexAcp).not.toHaveBeenCalled()
+      expect(spawnClaudeAcp).not.toHaveBeenCalled()
+      expect(ctx.thread.cwd).toBe(missing)
     } finally {
       ctx.manager.stopAll()
     }

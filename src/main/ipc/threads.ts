@@ -49,7 +49,7 @@ export function threadHandlers(deps: IpcDeps): Record<string, Handler> {
       const thread = store.thread(id)
       sessions.dispose(id)
       store.deleteThread(id)
-      if (thread) void releaseWorktrees([thread], store.threads, worktreeRoot(store))
+      if (thread) void releaseWorktrees([thread], [...store.threads, ...store.projects.map((p) => ({ cwd: p.path }))], worktreeRoot(store))
       broadcast()
     },
     'thread:items': (id: string) => {

@@ -13,6 +13,7 @@ export function RemoteSettings() {
   const [port, setPort] = useState(String(settings.remotePort))
   const [pubUser, setPubUser] = useState(settings.remotePublicUser)
   const [pubHost, setPubHost] = useState(settings.remotePublicHost)
+  const [sshPort, setSshPort] = useState(String(settings.remotePublicSshPort))
   const [pubPort, setPubPort] = useState(String(settings.remotePublicPort))
   const [urlIndex, setUrlIndex] = useState(0)
   const [qr, setQr] = useState('')
@@ -36,6 +37,7 @@ export function RemoteSettings() {
     settings.remotePublicEnabled,
     settings.remotePublicUser,
     settings.remotePublicHost,
+    settings.remotePublicSshPort,
     settings.remotePublicPort
   ])
 
@@ -141,6 +143,24 @@ export function RemoteSettings() {
             run(() =>
               window.api.updateSettings({ remotePublicHost: pubHost }).catch((err) => {
                 setPubHost(settings.remotePublicHost)
+                throw err
+              })
+            )
+          }}
+        />
+      </Field>
+      <Field label={t('SSH 端口')}>
+        <input
+          className="input"
+          inputMode="numeric"
+          value={sshPort}
+          disabled={busy}
+          onChange={(e) => setSshPort(e.target.value.replace(/\D/g, ''))}
+          onBlur={() => {
+            if (sshPort === String(settings.remotePublicSshPort)) return
+            run(() =>
+              window.api.updateSettings({ remotePublicSshPort: Number(sshPort) }).catch((err) => {
+                setSshPort(String(settings.remotePublicSshPort))
                 throw err
               })
             )
