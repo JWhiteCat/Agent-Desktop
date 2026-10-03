@@ -12,6 +12,7 @@ import { chatModel, cliCommands, forkThread, prepareCommands, sendMessage, setCl
 import { Composer, type ComposerHandle } from './Composer'
 import { IconBranch, IconChevronDown, IconChevronRight, IconCursor, IconDiff, IconFolder, Spinner } from './icons'
 import { ResultFooter, StepItem, TurnActionsProvider, UserMessage, type TurnActions } from './Items'
+import { MarkdownDirectoryContext } from './items/Markdown'
 
 interface Turn {
   key: string
@@ -289,31 +290,33 @@ export function ThreadView({ thread, changesOpen, onToggleChanges }: Props) {
           stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
         }}
       >
-        <div className="messages-inner">
-          {!items && (
-            <div className="center-hint">
-              <Spinner />
-            </div>
-          )}
-          {turns.map((t, i) => {
-            const last = i === turns.length - 1
-            const actions = running ? noActions : last ? idleActions : olderActions
-            return (
-              <TurnActionsProvider key={t.key} value={actions}>
-                <TurnView
-                  turn={t}
-                  threadId={thread.id}
-                  cwd={cwd}
-                  fallbackModel={thread.model}
-                  cli={cli}
-                  live={running && last}
-                  onFork={running ? undefined : (itemId) => void forkThread(thread.id, itemId)}
-                />
-              </TurnActionsProvider>
-            )
-          })}
-          {items && items.length === 0 && !running && <div className="center-hint muted">{t('发送第一条消息开始对话')}</div>}
-        </div>
+        <MarkdownDirectoryContext.Provider value={cwd}>
+          <div className="messages-inner">
+            {!items && (
+              <div className="center-hint">
+                <Spinner />
+              </div>
+            )}
+            {turns.map((t, i) => {
+              const last = i === turns.length - 1
+              const actions = running ? noActions : last ? idleActions : olderActions
+              return (
+                <TurnActionsProvider key={t.key} value={actions}>
+                  <TurnView
+                    turn={t}
+                    threadId={thread.id}
+                    cwd={cwd}
+                    fallbackModel={thread.model}
+                    cli={cli}
+                    live={running && last}
+                    onFork={running ? undefined : (itemId) => void forkThread(thread.id, itemId)}
+                  />
+                </TurnActionsProvider>
+              )
+            })}
+            {items && items.length === 0 && !running && <div className="center-hint muted">{t('发送第一条消息开始对话')}</div>}
+          </div>
+        </MarkdownDirectoryContext.Provider>
       </div>
 
       <div className="composer-dock">

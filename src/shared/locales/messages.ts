@@ -1,5 +1,8 @@
 /** Message, tool, formatting, and quota presentation strings. Model and user content stays unchanged. */
 export const messagesMessages: Record<string, string> = {
+  '已在桌面端打开文件': 'Opened the file on the desktop',
+  '无法打开此链接：不支持的地址格式': 'Cannot open this link: unsupported address format',
+  '无法打开链接：{error}': 'Could not open the link: {error}',
   '即将重置': 'Resets soon',
   '1 分钟内': 'Within 1 minute',
   '刚刚': 'Just now',

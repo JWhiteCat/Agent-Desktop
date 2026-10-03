@@ -9,7 +9,8 @@ export function hostHandlers(): Record<string, Handler> {
   return {
     'git:diff': (cwd: string) => gitDiff(cwd),
     'shell:openPath': async (p: string) => {
-      await shell.openPath(p)
+      const error = await shell.openPath(p)
+      if (error) throw new Error(error)
     },
     'shell:openSkills': async () => {
       const dir = userSkillsDir()
@@ -22,7 +23,7 @@ export function hostHandlers(): Record<string, Handler> {
       return ok
     },
     'shell:openExternal': (url: string) => {
-      if (/^https?:/.test(url)) return shell.openExternal(url)
+      if (/^https?:/i.test(url)) return shell.openExternal(url)
     }
   }
 }

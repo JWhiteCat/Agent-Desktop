@@ -1,22 +1,31 @@
-import { isValidElement, memo } from 'react'
-import ReactMarkdown, { type Components } from 'react-markdown'
+import { createContext, isValidElement, memo, useContext } from 'react'
+import ReactMarkdown, { defaultUrlTransform, type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { QUESTION_BLOCK_LANG } from '@shared/questions'
+import { isLocalFileLink } from '@shared/markdown-links'
+import { openMarkdownLink } from '../../lib/markdown-links'
 import { CodeBlock } from './primitives'
 import { QuestionBlock } from './Questions'
 
-const mdComponents: Components = {
-  a: ({ href, children }) => (
+export const MarkdownDirectoryContext = createContext<string | undefined>(undefined)
+
+function MarkdownLink({ href, children }: React.ComponentProps<'a'>) {
+  const cwd = useContext(MarkdownDirectoryContext)
+  return (
     <a
       href={href}
       onClick={(e) => {
         e.preventDefault()
-        if (href) window.api.openExternal(href)
+        void openMarkdownLink(href, cwd)
       }}
     >
       {children}
     </a>
-  ),
+  )
+}
+
+const mdComponents: Components = {
+  a: MarkdownLink,
   pre: ({ children }) => {
     const code = isValidElement<{ className?: string; children?: React.ReactNode }>(children) ? children.props : undefined
     const text = String(code?.children ?? '').replace(/\n$/, '')
@@ -33,9 +42,16 @@ const mdComponents: Components = {
 }
 
 export const Markdown = memo(function Markdown({ text }: { text: string }) {
+  const cwd = useContext(MarkdownDirectoryContext)
   return (
     <div className="markdown">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={mdComponents}
+        urlTransform={(url, key, node) =>
+          key === 'href' && node.tagName === 'a' && isLocalFileLink(url, cwd) ? url : defaultUrlTransform(url)
+        }
+      >
         {text}
       </ReactMarkdown>
     </div>
