@@ -1,4 +1,6 @@
-import type { Item, QuestionAnswer, QuestionPrompt } from '@shared/types'
+import type { AttachmentRef, Item, QuestionAnswer, QuestionPrompt } from '@shared/types'
+import { isManagedMessageId } from '@shared/attachment-message'
+import { MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS, MAX_MESSAGE_ATTACHMENT_BYTES } from '@shared/attachments'
 import { newId } from './id'
 
 const OPEN = '<agent_desktop_fork_context>'
@@ -65,6 +67,16 @@ export function createForkPromptReader(): typeof parseForkPrompt {
   }
 }
 
+/** CLI text is not authority to read managed originals, even inside our replay envelope. */
+export function untrustedForkItems(items: Item[]): Item[] {
+  for (const item of items) {
+    if (item.kind !== 'user' || !item.attachments?.length) continue
+    delete item.attachments
+    item.text = `${item.text}${item.text ? '\n' : ''}[附件信息不可用]`
+  }
+  return items
+}
+
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
@@ -91,11 +103,23 @@ function answers(value: unknown): value is QuestionAnswer[] {
     && answer.selectedOptionIds.every((id) => typeof id === 'string'))
 }
 
+function attachments(value: unknown): value is AttachmentRef[] {
+  return Array.isArray(value) && value.length <= MAX_ATTACHMENTS && value.every((file) => record(file)
+    && isManagedMessageId(file.id) && typeof file.name === 'string' && file.name.trim().length > 0
+    && typeof file.mimeType === 'string' && file.mimeType.trim().length > 0
+    && typeof file.size === 'number' && Number.isInteger(file.size) && file.size >= 0 && file.size <= MAX_ATTACHMENT_BYTES)
+    && value.reduce((total, file: AttachmentRef) => total + file.size, 0) <= MAX_MESSAGE_ATTACHMENT_BYTES
+}
+
 function restoreItem(value: unknown): Item | undefined {
   if (!record(value)) return undefined
   const id = newId()
-  if (value.kind === 'user' && typeof value.text === 'string' && time(value.createdAt)) {
-    return { id, kind: 'user', text: value.text, createdAt: value.createdAt }
+  if (value.kind === 'user' && typeof value.text === 'string' && time(value.createdAt)
+    && (value.managedMessageId === undefined || isManagedMessageId(value.managedMessageId))
+    && (value.attachments === undefined || attachments(value.attachments))) {
+    return { id, kind: 'user', text: value.text, createdAt: value.createdAt,
+      ...(value.managedMessageId === undefined ? {} : { managedMessageId: value.managedMessageId as string }),
+      ...(value.attachments === undefined ? {} : { attachments: structuredClone(value.attachments as AttachmentRef[]) }) }
   }
   if (value.kind === 'assistant' && typeof value.text === 'string'
     && (value.messageId === undefined || (typeof value.messageId === 'string' && value.messageId.trim().length > 0))) {

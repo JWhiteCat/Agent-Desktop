@@ -5,13 +5,15 @@ import { IconBrain, IconChevronDown, IconChevronRight, Spinner } from '../icons'
 import { Markdown } from './Markdown'
 import { CopyButton, ForkButton } from './primitives'
 import { TurnActionsContext } from './TurnActions'
+import { AttachmentCards } from './AttachmentCards'
 
 export function UserMessage({ item, onFork }: { item: UserItem; onFork?: () => void }) {
   return (
     <div className="msg-user">
-      <div className="bubble">{item.text}</div>
+      {item.attachments?.length ? <AttachmentCards attachments={item.attachments} /> : null}
+      {item.text && <div className="bubble">{item.text}</div>}
       <div className="msg-actions">
-        <CopyButton text={item.text} />
+        {item.text && <CopyButton text={item.text} />}
         {onFork && <ForkButton onFork={onFork} />}
       </div>
     </div>

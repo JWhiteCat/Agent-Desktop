@@ -2,10 +2,11 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import type { CliSession, Item, ToolItem } from '@shared/types'
+import { parseAttachmentPrompt } from '@shared/attachment-message'
 import { newId } from './id'
 import { UNTITLED } from './history'
 import { compact } from './reducer'
-import { createForkPromptReader, parseForkPrompt } from './fork-context'
+import { createForkPromptReader, parseForkPrompt, untrustedForkItems } from './fork-context'
 
 const CLIENT_BLOCK = /<agent_desktop_client\b[^>]*>[\s\S]*?<\/agent_desktop_client>/gi
 
@@ -87,9 +88,13 @@ function pushUser(items: Item[], tools: Map<string, ToolItem>, blocks: any[], cr
   }
   const raw = textParts.join('\n')
   const replay = readForkPrompt(raw)
-  if (replay) items.push(...replay.items)
-  const text = replay ? replay.prompt : visibleUserText(raw)
-  if (text) items.push({ id: newId(), kind: 'user', text, createdAt })
+  if (replay) items.push(...untrustedForkItems(replay.items))
+  const managed = parseAttachmentPrompt(replay ? replay.prompt : raw)
+  const images = blocks.filter((block) => block?.type === 'image').length
+  const prompt = managed.managedMessageId ? managed.prompt : replay ? replay.prompt : visibleUserText(raw)
+  const text = `${prompt}${images ? `\n[${images} 张图片]` : ''}${managed.managedMessageId ? '\n[附件信息不可用]' : ''}`.trim()
+  if (text || managed.managedMessageId) items.push({ id: newId(), kind: 'user', text, createdAt,
+    ...(managed.managedMessageId ? { managedMessageId: managed.managedMessageId } : {}) })
 }
 
 function pushAssistant(items: Item[], tools: Map<string, ToolItem>, blocks: any[], createdAt: number): void {
@@ -137,6 +142,8 @@ function applyToolResult(tools: Map<string, ToolItem>, block: any): void {
 /** Drops the plan-mode client hint and keeps the text the person typed. */
 export function visibleUserText(raw: string): string {
   const replay = parseForkPrompt(raw)
+  const managed = parseAttachmentPrompt(replay ? replay.prompt : raw)
+  if (managed.managedMessageId) return managed.prompt
   if (replay) return replay.prompt
   const query = raw.match(/<user_query>\s*([\s\S]*?)\s*<\/user_query>/)
   const body = query ? query[1] : raw

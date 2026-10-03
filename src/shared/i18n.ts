@@ -2,6 +2,8 @@ import { coreMessages } from './locales/core'
 import { settingsMessages } from './locales/settings'
 import { shellMessages } from './locales/shell'
 import { messagesMessages } from './locales/messages'
+import { attachmentBackendMessages } from './locales/attachments-backend'
+import { attachmentsMessages } from './locales/attachments'
 
 export type Locale = 'zh-CN' | 'en'
 export type Language = 'system' | Locale
@@ -16,7 +18,9 @@ export const englishMessages: Readonly<Record<string, string>> = {
   ...coreMessages,
   ...settingsMessages,
   ...shellMessages,
-  ...messagesMessages
+  ...messagesMessages,
+  ...attachmentBackendMessages,
+  ...attachmentsMessages
 }
 
 let language: Language = 'system'

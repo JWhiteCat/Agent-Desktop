@@ -1,6 +1,7 @@
 import type { Handler } from '../remote'
 import type { IpcDeps } from './deps'
 import { cliHandlers } from './cli'
+import { attachmentHandlers } from './attachments'
 import { hostHandlers } from './host'
 import { localConfigHandlers } from './local-config'
 import { projectHandlers } from './projects'
@@ -13,6 +14,7 @@ export function createIpcHandlers(deps: IpcDeps): Record<string, Handler> {
     'state:get': () => deps.snapshot(),
     ...projectHandlers(deps),
     ...threadHandlers(deps),
+    ...attachmentHandlers(deps),
     ...usageHandlers(deps),
     ...settingsHandlers(deps),
     ...cliHandlers(deps),

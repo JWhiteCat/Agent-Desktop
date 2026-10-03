@@ -159,11 +159,29 @@ export async function startThread(projectId: string, prompt: string, opts: SendO
   const thread = await window.api.createThread(projectId, opts.mode, opts.model, opts.force, opts.cli)
   setState((s) => ({
     app: s.app.threads.some((t) => t.id === thread.id) ? s.app : { ...s.app, threads: [...s.app.threads, thread] },
-    items: { ...s.items, [thread.id]: [] },
-    view: { kind: 'thread', id: thread.id }
+    items: { ...s.items, [thread.id]: [] }
   }))
+  try {
+    await sendMessage(thread.id, prompt, opts)
+  } catch (err) {
+    // A rejected first send keeps Home mounted with its complete draft. Only
+    // delete a newly created thread when the server proves that it is empty.
+    try {
+      if (!(await window.api.getItems(thread.id)).length) {
+        await window.api.deleteThread(thread.id)
+        setState((s) => {
+          const items = { ...s.items }
+          delete items[thread.id]
+          return { app: { ...s.app, threads: s.app.threads.filter((item) => item.id !== thread.id) }, items }
+        })
+      }
+    } catch {
+      // A disconnected client cannot prove whether the send was accepted.
+    }
+    throw err
+  }
   rememberProject(projectId)
-  await sendMessage(thread.id, prompt, opts)
+  setState({ view: { kind: 'thread', id: thread.id } })
   return thread
 }
 

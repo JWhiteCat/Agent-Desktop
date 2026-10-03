@@ -20,6 +20,7 @@ import type { SlashCommand } from './commands'
 import type { LocalMcpReport, LocalMcpSaveRequest, LocalSkillContent, LocalSkillReport, LocalSkillSaveRequest } from './local-config'
 import type { QuotaReport } from './quota'
 import type { UsageReport, UsageWindow } from './usage'
+import type { AttachmentData, AttachmentRef, AttachmentUpload } from './attachments'
 
 export interface ForkResult {
   thread: ThreadMeta
@@ -44,6 +45,10 @@ export interface DesktopApi {
   getItems(threadId: string): Promise<Item[]>
   syncFromCli(threadId: string): Promise<Item[]>
   send(req: SendRequest): Promise<void>
+  uploadAttachment(req: AttachmentUpload): Promise<AttachmentRef>
+  readAttachment(id: string): Promise<AttachmentData>
+  /** Opens a managed attachment in its desktop application. */
+  openAttachment(id: string): Promise<void>
   /** Loads slash commands for a thread that already has a CLI session. */
   prepareCommands(threadId: string, opts: PrepareRequest): Promise<SlashCommand[]>
   stop(threadId: string): Promise<void>

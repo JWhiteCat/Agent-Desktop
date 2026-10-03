@@ -354,6 +354,7 @@ export function ThreadView({ thread, changesOpen, onToggleChanges }: Props) {
           onForceChange={(force) => void window.api.updateThread(thread.id, { force })}
           onSend={(text, opts) => {
             if (text.trim() === '/fork') {
+              if (opts.attachmentIds?.length) throw new Error(t('请先移除附件，再分叉对话'))
               void forkThread(thread.id)
               return
             }

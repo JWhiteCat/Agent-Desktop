@@ -5,6 +5,7 @@ import { normalizeMcpServers, normalizeSkills } from '@shared/agent-config'
 import { normalizeLanguage } from '@shared/i18n'
 import { DEFAULT_SETTINGS, normalizeCliProvider, threadCli, type Item, type Project, type ResultItem, type Settings, type ThreadMeta } from '@shared/types'
 import { newId } from './id'
+import { attachmentsFor } from './attachments'
 import { newRemoteClientId, validClientId } from './public-tunnel'
 import { readCodexUsage, repairCodexAssistantMessages, repairCodexMcpTools } from './codex-history'
 import { repairCodexUsage } from './codex-usage-repair'
@@ -79,6 +80,13 @@ export class Store {
       }
     }
     if (remoteClientId !== rawClientId || remotePublicSshPort !== rawSshPort) this.flush()
+    if (fs.existsSync(path.join(this.dir, 'attachments'))) {
+      try {
+        attachmentsFor(this).collectGarbage()
+      } catch (error) {
+        console.error('[attachments] cleanup failed', error)
+      }
+    }
   }
 
   get dataDir(): string {
@@ -185,10 +193,12 @@ export class Store {
   }
 
   deleteThread(id: string): void {
+    const attachmentIds = this.items(id).flatMap((item) => item.kind === 'user' ? (item.attachments ?? []).map((ref) => ref.id) : [])
     this.state.threads = this.state.threads.filter((t) => t.id !== id)
     this.itemsCache.delete(id)
     this.dirtyThreads.delete(id)
     fs.rmSync(this.threadFile(id), { force: true })
+    if (attachmentIds.length) attachmentsFor(this).removeUnreferenced(attachmentIds)
     this.scheduleSave()
   }
 

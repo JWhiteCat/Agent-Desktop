@@ -3,9 +3,10 @@ import os from 'node:os'
 import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import type { CliSession, Item, ToolItem } from '@shared/types'
+import { parseAttachmentPrompt } from '@shared/attachment-message'
 import { newId } from './id'
 import { compact } from './reducer'
-import { createForkPromptReader } from './fork-context'
+import { createForkPromptReader, untrustedForkItems } from './fork-context'
 
 interface CliMeta {
   title?: string
@@ -134,7 +135,7 @@ function userText(content: unknown): string {
   const suffix = imageSuffix(content)
   const query = raw.match(/<user_query>\s*([\s\S]*?)\s*<\/user_query>/)
   if (query) return query[1] + suffix
-  const text = raw.replace(CONTEXT_BLOCK, '').trim()
+  const text = raw.replace(CONTEXT_BLOCK, (block: string) => block.startsWith('<agent_desktop_attachments>') ? block : '').trim()
   return text ? text + suffix : suffix.trim()
 }
 
@@ -168,9 +169,13 @@ export function readCliTranscript(chatId: string): Item[] | undefined {
       }
       if (msg.role === 'user') {
         const replay = readForkPrompt(contentText(msg.content))
-        if (replay) items.push(...replay.items)
-        const text = replay ? replay.prompt + imageSuffix(msg.content) : userText(msg.content)
-        if (text) items.push({ id: newId(), kind: 'user', text, createdAt })
+        if (replay) items.push(...untrustedForkItems(replay.items))
+        const managed = parseAttachmentPrompt(replay ? replay.prompt : contentText(msg.content))
+        const text = managed.managedMessageId
+          ? `${managed.prompt}${imageSuffix(msg.content)}\n[附件信息不可用]`.trim()
+          : replay ? replay.prompt + imageSuffix(msg.content) : userText(msg.content)
+        if (text || managed.managedMessageId) items.push({ id: newId(), kind: 'user', text, createdAt,
+          ...(managed.managedMessageId ? { managedMessageId: managed.managedMessageId } : {}) })
       } else if (msg.role === 'assistant') {
         const parts = typeof msg.content === 'string' ? [{ type: 'text', text: msg.content }] : (msg.content ?? [])
         for (const part of parts) {

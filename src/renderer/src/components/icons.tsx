@@ -55,6 +55,7 @@ export const IconSettings = (p: P) =>
     </>
   ))
 export const IconArrowUp = (p: P) => base(p, <path d="M12 19V5M5 12l7-7 7 7" />)
+export const IconArrowDown = (p: P) => base(p, <path d="M12 5v14M5 12l7 7 7-7" />)
 export const IconStop = (p: P) => base(p, <rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor" stroke="none" />)
 export const IconTerminal = (p: P) =>
   base(p, (

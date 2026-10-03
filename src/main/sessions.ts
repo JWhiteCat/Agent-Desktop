@@ -5,6 +5,8 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { enabledSkillFingerprint, toAcpMcpServers } from '@shared/agent-config'
 import { parseAvailableCommands, type SlashCommand } from '@shared/commands'
+import { attachmentPrompt } from '@shared/attachment-message'
+import { isImageAttachment, MAX_ATTACHMENTS, MAX_MESSAGE_ATTACHMENT_BYTES, type AttachmentRef } from '@shared/attachments'
 import type { AgentEvent, CliProvider, Item, PrepareRequest, QuestionAnswer, SendRequest } from '@shared/types'
 import { isCliProvider, threadCli } from '@shared/types'
 import { normalizeTurnUsage } from '@shared/turn-usage'
@@ -15,6 +17,7 @@ import { createWorktree } from './git'
 import { syncAllManagedSkills } from './skills'
 import { newId } from './id'
 import { forkPrompt } from './fork-context'
+import { attachmentsFor } from './attachments'
 import { StreamReducer } from './reducer'
 import { loadCodexAccountUsage } from './codex-account'
 import { CodexTurnUsageReader } from './codex-turn-usage'
@@ -44,6 +47,8 @@ interface AgentProc {
   /** Set when this process is being torn down and must not be reused. */
   dying: boolean
   force: boolean
+  /** Retained when this ACP process is reused for later turns. */
+  promptCapabilities?: { image: boolean }
 }
 
 interface Run extends InteractionRun {
@@ -63,6 +68,9 @@ interface Run extends InteractionRun {
   resultId?: string
   codexUsage?: CodexTurnUsageReader
   weeklyQuotaEstimate?: WeeklyQuotaEstimate
+  attachments?: AttachmentRef[]
+  managedMessageId?: string
+  userItemId?: string
 }
 
 export interface RunFinished {
@@ -206,6 +214,9 @@ export class SessionManager {
     if (this.runs.has(req.threadId)) throw new Error(translate('该对话正在运行中'))
     const thread = this.store.thread(req.threadId)
     if (!thread) throw new Error(translate('对话不存在'))
+    if (req.attachmentIds !== undefined && !Array.isArray(req.attachmentIds)) throw new Error(translate('附件参数无效'))
+    const attachments = req.attachmentIds?.length ? attachmentsFor(this.store).resolveMany(req.attachmentIds) : []
+    if (typeof req.prompt !== 'string' || (!req.prompt.trim() && !attachments.length)) throw new Error(translate('请输入消息或添加附件'))
     if (isCliProvider(req.cli) && req.cli !== threadCli(thread)) {
       this.store.updateThread(thread.id, { cli: req.cli })
       this.discard(thread.id)
@@ -239,11 +250,17 @@ export class SessionManager {
     if (!proc) syncAllManagedSkills(settings.skills)
 
     const items = this.store.items(thread.id)
-    const userItem: Item = { id: newId(), kind: 'user', text: req.prompt, createdAt: Date.now() }
+    const userId = newId()
+    const managedMessageId = attachments.length ? userId : undefined
+    const userItem: Item = {
+      id: userId, kind: 'user', text: req.prompt, createdAt: Date.now(),
+      ...(attachments.length ? { attachments, managedMessageId } : {})
+    }
     items.push(userItem)
+    if (attachments.length) attachmentsFor(this.store).retain(attachments.map((attachment) => attachment.id))
 
     this.store.updateThread(thread.id, {
-      ...(thread.titleKind ? { title: titleFrom(req.prompt), titleKind: undefined } : {}),
+      ...(thread.titleKind ? { title: titleFrom(req.prompt.trim() || attachments[0]?.name || ''), titleKind: undefined } : {}),
       model: req.model,
       mode: req.mode,
       force: req.force,
@@ -271,7 +288,14 @@ export class SessionManager {
         this.onStateChange()
       },
       switchCalls: new Set(),
-      settled: false
+      settled: false,
+      attachments,
+      managedMessageId,
+      userItemId: userId,
+      isAttachmentReadAllowed: (filePath, expectedPath) => {
+        const refs = this.store.items(thread.id).flatMap((item) => item.kind === 'user' ? item.attachments ?? [] : [])
+        return refs.length > 0 && attachmentsFor(this.store).scopedRead(filePath, proc!.cwd, refs, expectedPath)
+      }
     }
     this.runs.set(thread.id, run)
     this.queue(thread.id, run, [userItem])
@@ -574,7 +598,8 @@ export class SessionManager {
     mcpServers: Record<string, unknown>[]
   ): Promise<string> {
     const acp = proc.acp
-    await initializeSession(proc.acp, provider, apiKey)
+    const initialized = await initializeSession(proc.acp, provider, apiKey)
+    proc.promptCapabilities = { image: initialized?.agentCapabilities?.promptCapabilities?.image === true }
 
     let sessionId = chatId
     if (sessionId) {
@@ -602,13 +627,48 @@ export class SessionManager {
     }
     const contextThroughId = this.store.thread(threadId)?.forkContextThroughItemId
     let prompt = req.prompt
+    let copied: Item[] = []
+    const currentAttachments = run.attachments ?? []
     if (contextThroughId) {
       const items = this.store.items(threadId)
       const cut = items.findIndex((item) => item.id === contextThroughId)
       if (cut < 0) throw new Error(translate('分叉历史缺失，无法恢复上下文'))
-      prompt = forkPrompt(items.slice(0, cut + 1), prompt)
+      copied = items.slice(0, cut + 1)
+    }
+    // Native forks already retain their image inputs. Only our fallback replay
+    // needs to restore bytes from the trusted, persisted prefix of the fork.
+    const historicalMessages = copied.filter((item) => item.kind === 'user')
+      .map((item) => item.attachments?.length
+        ? attachmentsFor(this.store).resolveMany(item.attachments.map((attachment) => attachment.id)) : [])
+    const historicalAttachments = historicalMessages.flat()
+    if (currentAttachments.length) prompt = this.withAttachmentPaths(prompt, currentAttachments)
+    if (historicalAttachments.length) prompt = this.withAttachmentPaths(prompt, historicalAttachments, true)
+    if (historicalAttachments.length && !run.managedMessageId && run.userItemId) {
+      const item = this.store.items(threadId).find((item) => item.kind === 'user' && item.id === run.userItemId)
+      if (item?.kind === 'user') {
+        item.managedMessageId = run.managedMessageId = item.id
+        this.queue(threadId, run, [item])
+      }
+    }
+    if (run.managedMessageId) prompt = attachmentPrompt(prompt, run.managedMessageId)
+    if (contextThroughId) prompt = forkPrompt(copied, prompt)
+    const imageRefs = [...new Map([...historicalAttachments, ...currentAttachments]
+      .filter(isImageAttachment).map((attachment) => [attachment.id, attachment])).values()]
+    if (imageRefs.length > MAX_ATTACHMENTS || imageRefs.reduce((size, attachment) => size + attachment.size, 0) > MAX_MESSAGE_ATTACHMENT_BYTES) {
+      throw new Error(translate('分叉历史与本条消息的图片合计超出附件限制，请减少图片或从更早的消息分叉后重试'))
+    }
+    if (imageRefs.length && !run.proc.promptCapabilities?.image) {
+      throw new Error(translate('{label} 未声明支持图片输入，请更新 CLI 或移除图片后重试', { label: cliLabel(run.proc.provider) }))
     }
     const text = planPrompt(run.proc.provider, req.mode, prompt)
+    const images = imageRefs.flatMap<{ type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string }>((attachment) => [
+      { type: 'text', text: `Attached image: ${JSON.stringify({
+        id: attachment.id, name: attachment.name,
+        copiedUserMessages: historicalMessages.flatMap((refs, index) => refs.some((ref) => ref.id === attachment.id) ? [index + 1] : []),
+        currentMessage: currentAttachments.some((ref) => ref.id === attachment.id)
+      })}. Copied user message numbers are one-based within the replayed conversation history.` },
+      { type: 'image', ...attachmentsFor(this.store).read(attachment.id) }
+    ])
     if (run.codexAccountPath !== undefined) {
       const start = await this.usage.sampleQuota()
       if (this.runs.get(threadId) !== run || run.settled) return
@@ -622,7 +682,7 @@ export class SessionManager {
     if (run.proc.provider === 'codex') run.codexUsage = new CodexTurnUsageReader(run.proc.sessionId)
     const result = await run.proc.acp.request('session/prompt', {
       sessionId: run.proc.sessionId,
-      prompt: [{ type: 'text', text }]
+      prompt: [{ type: 'text', text }, ...images]
     })
     if (!this.runs.has(threadId) || run.settled) return
     const stop = String(result?.stopReason ?? 'end_turn')
@@ -668,7 +728,7 @@ export class SessionManager {
       // The adapter consumes only the permission option id. After declining,
       // deliver the feedback in a new Plan turn on the same session.
       try {
-        await this.beginSend({ ...req, prompt: planFeedback, mode: 'plan', cli: 'codex', worktree: false })
+        await this.beginSend({ ...req, attachmentIds: undefined, prompt: planFeedback, mode: 'plan', cli: 'codex', worktree: false })
       } catch (error) {
         if (!this.store.thread(threadId)) return
         const notice: Item = {
@@ -680,6 +740,14 @@ export class SessionManager {
         this.emit({ type: 'items', threadId, items: [notice] })
       }
     }
+  }
+
+  /** Original files remain outside the project and are read through normal CLI tools. */
+  private withAttachmentPaths(prompt: string, refs: AttachmentRef[], historical = false): string {
+    const files = [...new Map(refs.map((attachment) => [attachment.id, attachment])).values()]
+      .map((attachment) => JSON.stringify({ name: attachment.name, path: attachmentsFor(this.store).pathFor(attachment.id), mimeType: attachment.mimeType, size: attachment.size }))
+    const label = historical ? 'Files attached in the copied conversation history:' : 'Files attached to this user message:'
+    return `${prompt}\n\n${label}\nRead the original files at these exact local paths when needed.\n${files.join('\n')}`
   }
 
   private endRun(threadId: string, run: Run, code: number | null, spawnError?: Error): void {

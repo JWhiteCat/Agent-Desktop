@@ -1,4 +1,6 @@
 import type { SlashCommand } from './commands'
+import type { AttachmentRef } from './attachments'
+export type { AttachmentRef, AttachmentUpload, AttachmentData } from './attachments'
 import type { Language, LocalizedMessage } from './i18n'
 import type { TokenUsage } from './model-prices'
 import type { TurnQuotaSnapshot, TurnQuotaUsage, WeeklyQuotaEstimate } from './turn-quota'
@@ -78,6 +80,9 @@ export interface UserItem {
   kind: 'user'
   text: string
   createdAt: number
+  attachments?: AttachmentRef[]
+  /** Stable across CLI synchronization and forks, unlike the display item id. */
+  managedMessageId?: string
 }
 
 export interface AssistantItem {
@@ -307,6 +312,7 @@ export interface AppState {
 export interface SendRequest {
   threadId: string
   prompt: string
+  attachmentIds?: string[]
   model: string
   mode: AgentMode
   force: boolean

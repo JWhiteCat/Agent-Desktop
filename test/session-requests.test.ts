@@ -113,6 +113,53 @@ describe('session request interactions', () => {
     await expect(response).resolves.toEqual({ outcome: { outcome: 'selected', optionId: 'deny' } })
   })
 
+  it('asks before reading an explicitly attached file in Claude Ask mode', async () => {
+    const ctx = setup({ proc: { provider: 'claude' }, mode: 'ask' })
+    ctx.run.isAttachmentReadAllowed = (filePath) => filePath === '/managed/report.pdf'
+    const params = {
+      ...permissionParams,
+      toolCall: { toolCallId: 'read', name: 'Read', kind: 'read', title: 'Read report.pdf',
+        rawInput: { file_path: '/managed/report.pdf' }, locations: [{ path: '/managed/report.pdf', line: 1 }] }
+    }
+    let resolved = false
+    const response = onAcpRequest(ctx.run, 'session/request_permission', params, ctx.queue).then((result) => {
+      resolved = true
+      return result
+    })
+    await Promise.resolve()
+    const question = onlyQuestion(ctx.items)
+    expect(resolved).toBe(false)
+    answerPendingQuestion(ctx.run, question.id, [{ questionId: 'q', selectedOptionIds: ['once'] }])
+    await expect(response).resolves.toEqual({ outcome: { outcome: 'selected', optionId: 'once' } })
+  })
+
+  it.each([
+    { name: 'Read', kind: 'read', rawInput: { file_path: '/other/private.txt' } },
+    { name: 'Read', kind: 'read', rawInput: {}, title: 'Read /managed/report.pdf' },
+    { name: 'Write', kind: 'edit', rawInput: { file_path: '/managed/report.pdf' } },
+    { name: 'Bash', kind: 'execute', rawInput: { file_path: '/managed/report.pdf' } },
+    { name: 'Read', kind: 'read', rawInput: { file_path: '/managed/report.pdf' }, locations: [{ path: '/other/private.txt' }] },
+    { name: 'Read', kind: 'read', rawInput: { file_path: '/managed/report.pdf' }, locations: 'invalid' }
+  ])('keeps uncertain and unrelated Claude Ask operations denied (%j)', async (toolCall) => {
+    const ctx = setup({ proc: { provider: 'claude' }, mode: 'ask' })
+    ctx.run.isAttachmentReadAllowed = (filePath) => filePath === '/managed/report.pdf'
+    await expect(onAcpRequest(ctx.run, 'session/request_permission', {
+      ...permissionParams, toolCall: { toolCallId: 'attempt', ...toolCall }
+    }, ctx.queue)).resolves.toEqual({ outcome: { outcome: 'selected', optionId: 'deny' } })
+    expect(ctx.items).toEqual([])
+  })
+
+  it('rejects a Claude Ask Read whose location identifies a different attached original', async () => {
+    const ctx = setup({ proc: { provider: 'claude' }, mode: 'ask' })
+    ctx.run.isAttachmentReadAllowed = (filePath, expectedPath) => ['/managed/a.pdf', '/managed/b.pdf'].includes(filePath)
+      && (expectedPath === undefined || filePath === expectedPath)
+    await expect(onAcpRequest(ctx.run, 'session/request_permission', {
+      ...permissionParams,
+      toolCall: { toolCallId: 'attempt', name: 'Read', kind: 'read', rawInput: { file_path: '/managed/a.pdf' }, locations: [{ path: '/managed/b.pdf' }] }
+    }, ctx.queue)).resolves.toEqual({ outcome: { outcome: 'selected', optionId: 'deny' } })
+    expect(ctx.items).toEqual([])
+  })
+
   it.each(['ask', 'plan'] as const)('does not auto-approve a %s request just because full access is selected', async (mode) => {
     const ctx = setup({ proc: { provider: 'codex' }, force: true, mode })
     const response = onAcpRequest(ctx.run, 'session/request_permission', permissionParams, ctx.queue)

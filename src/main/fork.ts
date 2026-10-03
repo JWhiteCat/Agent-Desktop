@@ -300,6 +300,7 @@ export function planCliFork(chatDir: string, items: Item[], throughItemId?: stri
   const cut = throughItemId ? items.findIndex((it) => it.id === throughItemId) : items.length - 1
   if (cut < 0) return { extraBlobs: [], linked: false }
   const prefix = items.slice(0, cut + 1)
+  if (prefix.some((item) => item.kind === 'user' && item.attachments?.length)) return { extraBlobs: [], linked: false }
   const uiUsers = prefix.filter((it) => it.kind === 'user')
   if (uiUsers.length === 0) return { extraBlobs: [], linked: false }
 

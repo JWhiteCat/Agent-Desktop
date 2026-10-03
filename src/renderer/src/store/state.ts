@@ -26,6 +26,7 @@ export interface SendOptions {
   force: boolean
   worktree?: boolean
   cli?: CliProvider
+  attachmentIds?: string[]
 }
 
 type Listener = () => void

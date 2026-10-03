@@ -1,5 +1,6 @@
 import { localizedMessage, t as translate } from '@shared/i18n'
-import type { Item, ResultItem, ThreadMeta } from '@shared/types'
+import type { Item, ResultItem, ThreadMeta, UserItem } from '@shared/types'
+import { isManagedMessageId } from '@shared/attachment-message'
 import { threadCli } from '@shared/types'
 import { materializeCliFork, planCliFork } from './fork'
 import { readClaudeTranscript } from './claude-history'
@@ -63,6 +64,31 @@ function preserveQuotaEstimates(previous: Item[], imported: Item[]): void {
   }
 }
 
+/** A CLI transcript may echo a marker, but only this thread's saved turn owns its files. */
+function preserveManagedAttachments(previous: Item[], imported: Item[]): void {
+  const uniqueUsers = (items: Item[]): Map<string, UserItem | undefined> => {
+    const users = new Map<string, UserItem | undefined>()
+    for (const item of items) {
+      if (item.kind !== 'user' || !isManagedMessageId(item.managedMessageId)) continue
+      users.set(item.managedMessageId, users.has(item.managedMessageId) ? undefined : item)
+    }
+    return users
+  }
+  const saved = uniqueUsers(previous)
+  const incoming = uniqueUsers(imported)
+  for (const item of imported) {
+    if (item.kind !== 'user') continue
+    // Never trust references serialized in external CLI text (including fork history).
+    delete item.attachments
+    const messageId = item.managedMessageId
+    if (!isManagedMessageId(messageId) || incoming.get(messageId) !== item) continue
+    const original = saved.get(messageId)
+    if (!original) continue
+    if (original.attachments?.length) item.attachments = structuredClone(original.attachments)
+    item.text = original.text
+  }
+}
+
 /** Copies a conversation into a new thread. `throughItemId` keeps history only up to that message. */
 export async function forkThread(deps: HistoryDeps, id: string, throughItemId?: string): Promise<{ thread: ThreadMeta; items: Item[] }> {
   if (deps.isRunning(id)) throw new Error(translate('对话正在运行，请稍后再分叉'))
@@ -84,12 +110,16 @@ export async function forkThread(deps: HistoryDeps, id: string, throughItemId?: 
   if (src.chatId && !src.forkContextThroughItemId) {
     try {
       if (cli === 'cursor') {
-        const dir = findChatDir(src.chatId)
-        const plan = dir ? planCliFork(dir, items, throughItemId) : undefined
-        if (dir && plan?.linked) {
-          const made = materializeCliFork(dir, plan, title)
-          chatId = made.chatId
-          if (made.cwd) cwd = made.cwd
+        // Native Cursor checkpoints are located by text, which cannot distinguish
+        // identical prompts sent with different images. Replay the frozen prefix.
+        if (!prefix.some((item) => item.kind === 'user' && item.attachments?.length)) {
+          const dir = findChatDir(src.chatId)
+          const plan = dir ? planCliFork(dir, items, throughItemId) : undefined
+          if (dir && plan?.linked) {
+            const made = materializeCliFork(dir, plan, title)
+            chatId = made.chatId
+            if (made.cwd) cwd = made.cwd
+          }
         }
       } else if (!throughItemId) {
         const made = await deps.forkSession(id)
@@ -143,13 +173,15 @@ export function syncFromCli(deps: Pick<HistoryDeps, 'store' | 'isRunning'>, thre
   // A CLI may have created its database before persisting any messages.
   // Keep the local transcript until there is history to replace it with.
   if (!items?.length) return undefined
-  if (cli === 'codex') preserveQuotaEstimates(deps.store.items(threadId), items)
+  const previous = deps.store.items(threadId)
+  preserveManagedAttachments(previous, items)
+  if (cli === 'codex') preserveQuotaEstimates(previous, items)
   deps.store.setItems(threadId, items)
   const firstUser = items.find((i) => i.kind === 'user')
   deps.store.updateThread(threadId, {
     syncedAt: Date.now(),
     preview: previewOf(items) ?? t.preview,
-    ...(t.titleKind && firstUser?.kind === 'user' ? { title: titleFrom(firstUser.text), titleKind: undefined } : {})
+    ...(t.titleKind && firstUser?.kind === 'user' ? { title: titleFrom(firstUser.text || firstUser.attachments?.[0]?.name || firstUser.text), titleKind: undefined } : {})
   })
   return items
 }

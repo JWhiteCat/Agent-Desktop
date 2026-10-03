@@ -2,10 +2,11 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import type { AssistantItem, CliSession, Item, ToolItem } from '@shared/types'
+import { parseAttachmentPrompt } from '@shared/attachment-message'
 import { newId } from './id'
 import { compact } from './reducer'
 import { UNTITLED } from './history'
-import { createForkPromptReader, parseForkPrompt } from './fork-context'
+import { createForkPromptReader, parseForkPrompt, untrustedForkItems } from './fork-context'
 import { parseCodexUsage, type CodexUsageTurn } from './codex-usage'
 
 const sessionsRoot = (): string => path.join(process.env.CODEX_HOME ? path.resolve(process.env.CODEX_HOME) : path.join(os.homedir(), '.codex'), 'sessions')
@@ -394,7 +395,10 @@ function pushEvent(items: Item[], payload: any, readForkPrompt: typeof parseFork
   const type = String(payload?.type ?? '')
   if (type === 'user_message') {
     const text = textOf(payload.message ?? payload.content)
-    if (text) appendUser(items, text, timeOf(payload) ?? createdAt ?? 0, readForkPrompt)
+    const images = Math.max(imageCount(payload.message ?? payload.content),
+      Array.isArray(payload.images) ? payload.images.length : 0,
+      Array.isArray(payload.local_images) ? payload.local_images.length : 0)
+    if (text || images) appendUser(items, text, timeOf(payload) ?? createdAt ?? 0, readForkPrompt, images)
   } else if (type === 'agent_message') {
     const text = textOf(payload.message ?? payload.content)
     if (text) appendAssistant(items, text)
@@ -404,16 +408,19 @@ function pushEvent(items: Item[], payload: any, readForkPrompt: typeof parseFork
 function pushMessage(items: Item[], payload: any, readForkPrompt: typeof parseForkPrompt, createdAt?: number): void {
   const role = String(payload?.role ?? '')
   const text = textOf(payload.content ?? payload.message)
-  if (!text) return
-  if (role === 'user') appendUser(items, text, createdAt ?? 0, readForkPrompt)
+  const images = imageCount(payload.content ?? payload.message)
+  if (!text && !images) return
+  if (role === 'user') appendUser(items, text, createdAt ?? 0, readForkPrompt, images)
   else if (role === 'assistant') appendAssistant(items, text)
 }
 
-function appendUser(items: Item[], raw: string, createdAt: number, readForkPrompt: typeof parseForkPrompt): void {
+function appendUser(items: Item[], raw: string, createdAt: number, readForkPrompt: typeof parseForkPrompt, images = 0): void {
   const replay = readForkPrompt(raw)
-  if (replay) items.push(...replay.items)
-  const text = replay ? replay.prompt : raw
-  if (text) items.push({ id: newId(), kind: 'user', text, createdAt })
+  if (replay) items.push(...untrustedForkItems(replay.items))
+  const managed = parseAttachmentPrompt(replay ? replay.prompt : raw)
+  const text = `${managed.prompt}${images ? `\n[${images} 张图片]` : ''}${managed.managedMessageId ? '\n[附件信息不可用]' : ''}`.trim()
+  if (text || managed.managedMessageId) items.push({ id: newId(), kind: 'user', text, createdAt,
+    ...(managed.managedMessageId ? { managedMessageId: managed.managedMessageId } : {}) })
 }
 
 function appendAssistant(items: Item[], text: string): void {
@@ -452,7 +459,7 @@ function firstUserText(text: string): string {
     const payload = row?.payload ?? row
     if (payload?.type === 'user_message' || (payload?.type === 'message' && payload?.role === 'user') || payload?.role === 'user') {
       const message = textOf(payload.message ?? payload.content)
-      if (message) return parseForkPrompt(message)?.prompt ?? message
+      if (message) return parseAttachmentPrompt(parseForkPrompt(message)?.prompt ?? message).prompt
     }
   }
   return ''
@@ -468,6 +475,11 @@ function textOf(content: unknown): string {
     if (typeof row.text === 'string' && row.text.trim()) parts.push(row.text.trim())
   }
   return parts.join('\n').trim()
+}
+
+function imageCount(content: unknown): number {
+  return Array.isArray(content) ? content.filter((part) => part?.type === 'input_image'
+    || part?.type === 'image' || part?.type === 'image_url').length : 0
 }
 
 function parseArgs(raw: unknown): unknown {

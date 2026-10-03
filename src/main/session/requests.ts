@@ -27,6 +27,8 @@ export interface InteractionRun {
   onPlanApproved?: () => void
   force: boolean
   mode: AgentMode
+  /** Checks the exact original files explicitly attached to this conversation. */
+  isAttachmentReadAllowed?: (filePath: string, expectedPath?: string) => boolean
 }
 
 export function answerPendingQuestion(run: InteractionRun | undefined, questionId: string, answers: QuestionAnswer[] | null): void {
@@ -80,7 +82,9 @@ async function answerPermission(run: InteractionRun, params: any, queue: QueueIt
     })
   const askFallback = options.some((o) => o.optionId === '__ask_question_skip__')
   const planReview = run.proc.provider === 'codex' && isCodexPlanReview(params, options)
-  if (run.proc.provider === 'claude' && run.mode === 'ask' && !askFallback) return permissionResult(options, false, true)
+  if (run.proc.provider === 'claude' && run.mode === 'ask' && !askFallback && !isManagedAttachmentRead(run, params)) {
+    return permissionResult(options, false, true)
+  }
   const kind = params?.toolCall?.kind
   const readOnlyViolation = (run.mode !== 'agent' && ['edit', 'delete', 'move'].includes(kind))
     || (run.mode === 'ask' && kind === 'switch_mode')
@@ -124,6 +128,21 @@ async function answerPermission(run: InteractionRun, params: any, queue: QueueIt
     }
   }
   return { outcome: { outcome: 'selected', optionId: decision[0].selectedOptionIds[0] } }
+}
+
+/** A known attachment Read still requires the user's ordinary permission choice. */
+function isManagedAttachmentRead(run: InteractionRun, params: any): boolean {
+  const call = params?.toolCall
+  const filePath = call?.rawInput?.file_path
+  if (call?.name !== 'Read' || call?.kind !== 'read' || typeof filePath !== 'string' || !run.isAttachmentReadAllowed) return false
+  try {
+    if (!run.isAttachmentReadAllowed(filePath)) return false
+    if (call.locations !== undefined && (!Array.isArray(call.locations)
+      || call.locations.some((location: any) => typeof location?.path !== 'string' || !run.isAttachmentReadAllowed!(location.path, filePath)))) return false
+    return true
+  } catch {
+    return false
+  }
 }
 
 /** Adapter-authored plan review, with the tool id as a fallback for older adapters. */

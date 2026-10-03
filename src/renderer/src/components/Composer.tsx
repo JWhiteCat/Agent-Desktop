@@ -3,9 +3,12 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 're
 import { argumentHint, filterCommands, slashQuery, type SlashCommand } from '@shared/commands'
 import { cliTitle, type AgentMode, type CliProvider } from '@shared/types'
 import { rememberModel, type SendOptions } from '../store'
-import { IconArrowUp, IconBranch, IconChevronDown, IconFolder, IconList, IconShield, IconSparkle, IconStop } from './icons'
+import { errorText, toast } from '../store/feedback'
+import { appendDraftAttachments, textSendOptions, uploadDraftAttachments, type DraftAttachment } from '../lib/attachments'
+import { IconArrowUp, IconBranch, IconChevronDown, IconFolder, IconList, IconPlus, IconShield, IconSparkle, IconStop } from './icons'
 import { MenuList, Popover } from './Menu'
 import { ModelPicker } from './ModelPicker'
+import { DraftAttachmentCard } from './items/AttachmentCards'
 
 export const MODES: { id: AgentMode; label: string; desc: string }[] = [
   { id: 'agent', label: 'Agent', desc: '可读写文件、执行命令' },
@@ -55,6 +58,12 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
   const [text, setText] = useState('')
   const [opts, setOpts] = useState<SendOptions>(props.initial)
   const [sending, setSending] = useState(false)
+  const [attachments, setAttachments] = useState<DraftAttachment[]>([])
+  const attachmentsRef = useRef<DraftAttachment[]>([])
+  const [sendError, setSendError] = useState('')
+  const [dragging, setDragging] = useState(false)
+  const dragDepth = useRef(0)
+  const fileInput = useRef<HTMLInputElement>(null)
   const [dismissed, setDismissed] = useState(false)
   const [active, setActive] = useState(0)
   const ta = useRef<HTMLTextAreaElement>(null)
@@ -93,7 +102,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
     },
     send: async (value, patch) => {
       if (running || disabled || sending) throw new Error(t('当前不能发送'))
-      const next = patch ? { ...opts, ...patch } : opts
+      const next = textSendOptions(opts, patch)
       if (patch) setOpts(next)
       setSending(true)
       try {
@@ -128,7 +137,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
     slashArmed.current = armed
   }, [query, opts, props.onPrepare])
 
-  const canSend = !!text.trim() && !running && !disabled && !sending
+  const canSend = (!!text.trim() || attachments.length > 0) && !running && !disabled && !sending
   const activeCli = opts.cli ?? props.cli
 
   const chooseCli = (next: CliProvider) => {
@@ -144,12 +153,21 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
   const submit = async () => {
     if (!canSend) return
     const value = text
+    const drafts = attachmentsRef.current
+    if (value.trim() === '/fork' && drafts.length) {
+      setSendError(t('请先移除附件，再分叉对话'))
+      return
+    }
     setSending(true)
-    setText('')
+    setSendError('')
     try {
-      await props.onSend(value, opts)
-    } catch {
-      setText(value)
+      const attachmentIds = await uploadDraftAttachments(drafts, window.api.uploadAttachment, () => setAttachments([...drafts]))
+      await props.onSend(value, { ...textSendOptions(opts), ...(attachmentIds.length ? { attachmentIds } : {}) })
+      setText('')
+      attachmentsRef.current = []
+      setAttachments([])
+    } catch (err) {
+      setSendError(`${t('上传或发送失败，草稿已保留')}：${errorText(err)}`)
     } finally {
       setSending(false)
     }
@@ -157,8 +175,8 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
 
   const choose = async (command: SlashCommand) => {
     setDismissed(true)
-    if (command.hint) {
-      setText(`/${command.name} `)
+    if (command.hint || attachmentsRef.current.length) {
+      setText(`/${command.name}${command.hint ? ' ' : ''}`)
       requestAnimationFrame(() => ta.current?.focus())
       return
     }
@@ -167,7 +185,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
     setSending(true)
     setText('')
     try {
-      await props.onSend(value, opts)
+      await props.onSend(value, textSendOptions(opts))
     } catch {
       setDismissed(false)
       setText(value)
@@ -176,17 +194,96 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
     }
   }
 
+  const addFiles = (files: File[]) => {
+    if (disabled || sending || !files.length) return
+    try {
+      const next = appendDraftAttachments(attachmentsRef.current, files)
+      attachmentsRef.current = next
+      setAttachments(next)
+      setSendError('')
+    } catch (err) {
+      toast(errorText(err), 'error')
+    }
+  }
+
   return (
-    <div ref={box} className={`composer ${disabled ? 'disabled' : ''}`}>
+    <div
+      ref={box}
+      className={`composer ${disabled ? 'disabled' : ''} ${dragging ? 'composer-dragging' : ''}`}
+      onDragEnter={(e) => {
+        if (!e.dataTransfer.types.includes('Files')) return
+        e.preventDefault()
+        if (disabled || sending) return
+        dragDepth.current++
+        setDragging(true)
+      }}
+      onDragOver={(e) => {
+        if (!e.dataTransfer.types.includes('Files')) return
+        e.preventDefault()
+        e.dataTransfer.dropEffect = disabled || sending ? 'none' : 'copy'
+      }}
+      onDragLeave={(e) => {
+        if (!e.dataTransfer.types.includes('Files')) return
+        dragDepth.current = Math.max(0, dragDepth.current - 1)
+        if (!dragDepth.current) setDragging(false)
+      }}
+      onDrop={(e) => {
+        if (!e.dataTransfer.types.includes('Files')) return
+        e.preventDefault()
+        dragDepth.current = 0
+        setDragging(false)
+        addFiles(Array.from(e.dataTransfer.files))
+      }}
+    >
+      <input
+        ref={fileInput}
+        className="attachment-input"
+        type="file"
+        multiple
+        disabled={disabled || sending}
+        onChange={(e) => {
+          addFiles(Array.from(e.currentTarget.files ?? []))
+          e.currentTarget.value = ''
+        }}
+      />
+      {dragging && <div className="attachment-drop-hint">{t('将图片或文件拖到这里')}</div>}
+      {attachments.length > 0 && (
+        <div className="attachment-list draft-attachments">
+          {attachments.map((draft) => (
+            <DraftAttachmentCard
+              key={draft.key}
+              draft={draft}
+              disabled={disabled || sending}
+              onRemove={() => {
+                const next = attachmentsRef.current.filter((item) => item.key !== draft.key)
+                attachmentsRef.current = next
+                setAttachments(next)
+                setSendError('')
+              }}
+            />
+          ))}
+        </div>
+      )}
       <textarea
         ref={ta}
         rows={1}
         value={text}
-        disabled={disabled}
+        disabled={disabled || sending}
         placeholder={props.placeholder ?? t('描述任务，Enter 发送，Shift+Enter 换行')}
         onChange={(e) => {
           setDismissed(false)
+          setSendError('')
           setText(e.target.value)
+        }}
+        onPaste={(e) => {
+          const files = Array.from(e.clipboardData.items)
+            .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
+            .map((item) => item.getAsFile())
+            .filter((file): file is File => file !== null)
+          if (files.length) {
+            e.preventDefault()
+            addFiles(files)
+          }
         }}
         onKeyDown={(e) => {
           const composing = e.nativeEvent.isComposing || e.keyCode === 229
@@ -219,6 +316,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
           }
         }}
       />
+      {sendError && <div className="attachment-error" role="alert">{sendError}</div>}
       {hint && <div className="composer-hint">{hint}</div>}
       <Popover anchor={box.current} open={menuOpen} onClose={() => setDismissed(true)} placement="top-start" className="command-popover">
         <div ref={listRef} className="menu command-menu" role="listbox">
@@ -242,6 +340,16 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
       </Popover>
       <div className="composer-bar">
         <div className="composer-left">
+          <button
+            type="button"
+            className="icon-btn attach-btn"
+            disabled={disabled || sending}
+            title={t('添加图片或文件，也可拖放或粘贴图片')}
+            aria-label={t('添加附件')}
+            onClick={() => fileInput.current?.click()}
+          >
+            <IconPlus size={17} />
+          </button>
           {props.onCliChange && activeCli && (
             <CliPicker value={activeCli} note={props.cliNote} disabled={props.cliDisabled} onChange={chooseCli} />
           )}

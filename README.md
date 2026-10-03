@@ -12,6 +12,7 @@ The app does not call a model itself. The main process starts the Cursor CLI, Co
 - Fork a conversation from the header, the sidebar, a message, or by sending `/fork`, preserving its history as context for the next message
 - Slash commands in a conversation: typing `/` lists `/fork` and the commands the CLI advertises. `/fork` runs in the app; other commands are sent as the next message
 - Three modes: Agent (can edit files and run commands), Plan (read-only plan; pick answers and run the plan in one click), Ask (read-only Q&A)
+- Attach images and files from the desktop or remote page by choosing files, dragging them into the composer, or pasting a screenshot. Send attachments with a message or on their own
 - Markdown replies stay intact when a Codex background subagent finishes during streaming. Existing history split by these notifications is rejoined for display, including code blocks and question cards. Question prompts and options preserve line breaks.
 - ACP message IDs keep separate commentary and final replies from running together, so Markdown fences and question cards start correctly. On loading older Codex history, missing paragraph breaks are restored only when the original session log confirms the exact joined messages.
 - Expanding a Codex command shows its output and exit code, including failed commands and saved conversations. Commands with no output say so. MCP calls show their tool name and result; a null error does not mark a successful call as failed. Older incorrect MCP labels are corrected for display, and their statuses are restored from matching native Codex records when available.
@@ -107,13 +108,13 @@ The first run needs internet access to download dependencies and Electron. Later
 | --- | --- |
 | `npm run dev` | Open the development window |
 | `npm test` | Offline unit tests. Does not call a model |
-| `npm run test:live` | One very short prompt with Composer 2.5 Fast |
+| `npm run test:live` | Short text and attachment checks with Composer 2.5 Fast |
 | `npm run typecheck` | Typecheck |
 | `npm run build` | Compile into `out/` |
 | `npm run preview` | Preview the compiled app |
 | `npm run dist` | Package installers into `release/` |
 
-`npm test` does not talk to Cursor CLI, Codex, or Claude. `npm run test:live` is the one that does: in a temporary empty directory, Ask mode calls `composer-2.5[fast=true]` with the prompt `Reply with exactly ok`. Authentication uses `CURSOR_API_KEY` when set, otherwise the saved CLI login.
+`npm test` does not talk to Cursor CLI, Codex, or Claude. `npm run test:live` calls `composer-2.5[fast=true]` in Ask mode in temporary directories: one check asks `Reply with exactly ok`, and another verifies native image recognition plus reading an original managed file outside the workspace. The text check uses `CURSOR_API_KEY` when set, otherwise the saved CLI login; the attachment check requires `CURSOR_API_KEY`. Run only the attachment check with `npm run test:live -- test/live/attachment-smoke.test.ts`.
 
 Run a focused check with `npm test -- test/claude.test.ts test/turn-usage.test.ts`. These tests isolate Claude discovery from the user's home directory, load the usage preload from paths containing spaces, and clean up their temporary fixtures. Windows-only checks are reported as skipped on other platforms.
 
@@ -122,6 +123,16 @@ Package targets: Windows NSIS, macOS DMG, and Linux AppImage.
 Press `F12` to open DevTools. Links that leave the app open in the system browser.
 
 ## Usage
+
+### Attachments
+
+Use the + button in the composer, drop files into it, or paste an image from the clipboard. Remove files from their cards before sending. Each file can be up to **10 MiB**; one message can contain up to **10 files** totaling **20 MiB**. Failed uploads and rejected sends keep the draft, and completed uploads are reused on retry.
+
+Cursor, Codex, and Claude receive PNG, JPEG, WebP, and GIF images as native image inputs. Other formats, including PDF, Office documents, code, and SVG, keep their original bytes; the agent receives a path to a local copy and uses its file tools to read it. File reads follow the CLI's permissions. Claude Ask can show a read permission card only for the exact managed attachment being read; it keeps its existing restrictions for other tools.
+
+Copies live in the app's `data/attachments` directory, separate from transcript JSON and the project. History cards preview images and download originals; desktop file cards can open their default application. App-owned attachment references survive restarts, CLI synchronization, and forks. Deleting a conversation preserves files still used by a fork, and removes originals after their last conversation reference is deleted. Unreferenced uploads expire after 24 hours and are cleaned on startup or the next upload. Imported CLI history without a trusted local binding shows an unavailable-attachment placeholder.
+
+Question replies and Run plan send only their own text, leaving draft attachments in the composer. Selecting a CLI slash command with files fills the input without sending immediately; remove attachments before using the local `/fork` command. A fallback fork sends its historical image bytes again; if those images and the new message exceed the per-message limits, reduce the selected history before retrying.
 
 ### Interface language
 
