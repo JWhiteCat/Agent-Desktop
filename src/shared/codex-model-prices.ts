@@ -1,8 +1,9 @@
 import type { ModelPrice } from './model-prices'
 
 /**
- * OpenAI API list prices, USD per million tokens. Verified 2026-09-29.
+ * OpenAI API list prices, USD per million tokens. Verified 2026-09-29; GPT-6.1 Sol verified 2026-10-04.
  * Source: https://developers.openai.com/api/docs/pricing (including All models).
+ * GPT-6.1 Sol: https://developers.openai.com/api/docs/models/gpt-6.1-sol.
  * Older Codex models: https://developers.openai.com/api/docs/models/{model-id}.
  * Standard and Fast only; these estimates do not represent ChatGPT subscription charges.
  * Cache writes are separate tokens charged instead of regular input, not an extra fee.
@@ -30,6 +31,7 @@ function flagship(id: string, label: string, rate: ModelPrice['rates']): ModelPr
 }
 
 const CODEX_PRICES: ModelPrice[] = [
+  flagship('gpt-6.1-sol', 'GPT-6.1 Sol', rates(2, 0.1, 10, 2.5)),
   flagship('gpt-6-astra', 'GPT-6 Astra', rates(10, 1, 50, 12.5)),
   flagship('gpt-6-sol', 'GPT-6 Sol', rates(2, 0.2, 10, 2.5)),
   flagship('gpt-6-luna', 'GPT-6 Luna', rates(0.1, 0.01, 0.5, 0.125)),
