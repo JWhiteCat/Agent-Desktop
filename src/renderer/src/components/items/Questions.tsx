@@ -1,4 +1,4 @@
-import { useContext, useMemo, useState } from 'react'
+import { useContext, useId, useMemo, useState } from 'react'
 import { formatAnswers, parseQuestionBlock, QUESTION_BLOCK_LANG } from '@shared/questions'
 import type { QuestionAnswer, QuestionPrompt } from '@shared/types'
 import { useT } from '../../lib/i18n'
@@ -9,25 +9,37 @@ interface QuestionFormProps {
   title?: string
   questions: QuestionPrompt[]
   answers?: QuestionAnswer[]
+  /** Only text-reply question blocks support custom answers, not ACP permission choices. */
+  allowOther?: boolean
   /** Shown instead of the buttons once the form can no longer be submitted. */
   status?: string
   onSubmit?: (answers: QuestionAnswer[]) => Promise<void> | void
   onSkip?: () => Promise<void> | void
 }
 
-export function QuestionForm({ title, questions, answers, status, onSubmit, onSkip }: QuestionFormProps) {
+export function QuestionForm({ title, questions, answers, allowOther = false, status, onSubmit, onSkip }: QuestionFormProps) {
   const t = useT()
+  const formId = useId()
   const [selected, setSelected] = useState<Record<string, string[]>>(() => {
     const init: Record<string, string[]> = {}
     for (const answer of answers ?? []) init[answer.questionId] = answer.selectedOptionIds
     return init
   })
+  const [other, setOther] = useState<Record<string, { selected: boolean; text: string }>>({})
   const [sending, setSending] = useState(false)
   const locked = !onSubmit || sending
 
   const picked = (questionId: string): string[] => {
     if (answers) return answers.find((a) => a.questionId === questionId)?.selectedOptionIds ?? []
     return selected[questionId] ?? []
+  }
+
+  const custom = (questionId: string) => {
+    if (answers) {
+      const text = answers.find((a) => a.questionId === questionId)?.otherText
+      return { selected: text !== undefined, text: text ?? '' }
+    }
+    return other[questionId] ?? { selected: false, text: '' }
   }
 
   const choose = (q: QuestionPrompt, optionId: string) => {
@@ -37,9 +49,23 @@ export function QuestionForm({ title, questions, answers, status, onSubmit, onSk
       const next = q.allowMultiple ? (cur.includes(optionId) ? cur.filter((id) => id !== optionId) : [...cur, optionId]) : [optionId]
       return { ...prev, [q.id]: next }
     })
+    if (!q.allowMultiple) {
+      setOther((prev) => ({ ...prev, [q.id]: { selected: false, text: prev[q.id]?.text ?? '' } }))
+    }
   }
 
-  const complete = questions.every((q) => picked(q.id).length > 0)
+  const chooseOther = (q: QuestionPrompt) => {
+    if (locked) return
+    setOther((prev) => ({
+      ...prev,
+      [q.id]: { selected: q.allowMultiple ? !prev[q.id]?.selected : true, text: prev[q.id]?.text ?? '' }
+    }))
+    if (!q.allowMultiple) setSelected((prev) => ({ ...prev, [q.id]: [] }))
+  }
+
+  const complete = questions.every((q) =>
+    allowOther && custom(q.id).selected ? !!custom(q.id).text.trim() : picked(q.id).length > 0
+  )
 
   const run = async (action: () => Promise<void> | void) => {
     setSending(true)
@@ -52,7 +78,11 @@ export function QuestionForm({ title, questions, answers, status, onSubmit, onSk
 
   const submit = () => {
     if (locked || !complete || !onSubmit) return
-    void run(() => onSubmit(questions.map((q) => ({ questionId: q.id, selectedOptionIds: picked(q.id) }))))
+    void run(() => onSubmit(questions.map((q) => ({
+      questionId: q.id,
+      selectedOptionIds: picked(q.id),
+      ...(allowOther && custom(q.id).selected ? { otherText: custom(q.id).text.trim() } : {})
+    }))))
   }
 
   const skip = () => {
@@ -63,13 +93,13 @@ export function QuestionForm({ title, questions, answers, status, onSubmit, onSk
   return (
     <div className={`question-card ${locked ? 'locked' : ''}`}>
       <div className="question-title">{title || t('需要你的选择')}</div>
-      {questions.map((q) => (
+      {questions.map((q, index) => (
         <div key={q.id} className="question-block">
-          <div className="question-prompt">
+          <div className="question-prompt" id={`${formId}-prompt-${index}`}>
             {q.prompt}
             {q.allowMultiple && <span className="question-hint">{t('可多选')}</span>}
           </div>
-          <div className="question-options" role={q.allowMultiple ? 'group' : 'radiogroup'}>
+          <div className="question-options" role={q.allowMultiple ? 'group' : 'radiogroup'} aria-labelledby={`${formId}-prompt-${index}`}>
             {q.options.map((o) => {
               const on = picked(q.id).includes(o.id)
               return (
@@ -78,6 +108,7 @@ export function QuestionForm({ title, questions, answers, status, onSubmit, onSk
                   type="button"
                   role={q.allowMultiple ? 'checkbox' : 'radio'}
                   aria-checked={on}
+                  disabled={locked}
                   className={`question-opt ${on ? 'selected' : ''}`}
                   onClick={() => choose(q, o.id)}
                 >
@@ -86,7 +117,36 @@ export function QuestionForm({ title, questions, answers, status, onSubmit, onSk
                 </button>
               )
             })}
+            {allowOther && (
+              <button
+                id={`${formId}-other-${index}`}
+                type="button"
+                role={q.allowMultiple ? 'checkbox' : 'radio'}
+                aria-checked={custom(q.id).selected}
+                disabled={locked}
+                className={`question-opt ${custom(q.id).selected ? 'selected' : ''}`}
+                onClick={() => chooseOther(q)}
+              >
+                <span className="question-mark">{custom(q.id).selected ? '✓' : ''}</span>
+                <span className="question-label">{t('其他（手动输入）')}</span>
+              </button>
+            )}
           </div>
+          {allowOther && custom(q.id).selected && (
+            <textarea
+              className="question-other-input"
+              aria-labelledby={`${formId}-prompt-${index} ${formId}-other-${index}`}
+              placeholder={t('请输入你的回答')}
+              value={custom(q.id).text}
+              onChange={(event) => setOther((prev) => ({
+                ...prev, [q.id]: { selected: true, text: event.target.value }
+              }))}
+              rows={3}
+              required
+              disabled={locked}
+              autoFocus={!locked}
+            />
+          )}
         </div>
       ))}
       {onSubmit ? (
@@ -120,9 +180,10 @@ export function QuestionBlock({ body }: { body: string }) {
     <QuestionForm
       title={set.title}
       questions={set.questions}
+      allowOther
       status={reply || streaming ? undefined : t('已回答')}
-      onSubmit={reply ? (answers) => reply(formatAnswers(set, answers)) : undefined}
-      onSkip={reply ? () => reply(t('这些问题先跳过，按你的判断继续。')) : undefined}
+      onSubmit={reply && !streaming ? (answers) => reply(formatAnswers(set, answers)) : undefined}
+      onSkip={reply && !streaming ? () => reply(t('这些问题先跳过，按你的判断继续。')) : undefined}
     />
   )
 }

@@ -161,6 +161,7 @@ export interface QuestionPrompt {
 export interface QuestionAnswer {
   questionId: string
   selectedOptionIds: string[]
+  otherText?: string
 }
 
 /** A blocking plan/agent question. The run waits until the user answers or skips. */

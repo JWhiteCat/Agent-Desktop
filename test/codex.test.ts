@@ -90,6 +90,9 @@ describe('codex mode and models', () => {
   it('asks Codex to emit a questions block and a markdown plan', () => {
     const text = codexPlanModePrompt('做个待办')
     expect(text).toContain('```questions')
+    expect(text).toContain('The client automatically adds an "Other (manual input)" option to every question')
+    expect(text).toContain('do not include an Other placeholder in the options')
+    expect(text).toContain('selected options and any manual answer arrive together as the next message')
     expect(text.endsWith('做个待办')).toBe(true)
   })
 })

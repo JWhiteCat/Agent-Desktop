@@ -1,12 +1,14 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { formatAnswers, normalizeQuestions, parseQuestionBlock } from '@shared/questions'
-import { acpErrorText, permissionResult, planModePrompt } from '../src/main/acp'
+import { setLanguage } from '@shared/i18n'
+import { acpErrorText, claudePlanModePrompt, codexPlanModePrompt, permissionResult, planModePrompt } from '../src/main/acp'
 import { parseModels, resolveApiKey, stripAnsi } from '../src/main/cli'
 import { leftPlanMode } from '../src/main/sessions'
 
 const previousKey = process.env.CURSOR_API_KEY
 
 afterEach(() => {
+  setLanguage('system', 'zh-CN')
   if (previousKey === undefined) delete process.env.CURSOR_API_KEY
   else process.env.CURSOR_API_KEY = previousKey
 })
@@ -66,10 +68,54 @@ describe('acp questions', () => {
     expect(parseQuestionBlock('{"questions":[{"prompt":"半截')).toBeUndefined()
   })
 
+  it('formats a custom answer without a fixed choice and preserves its internal text', () => {
+    const set = { questions: normalizeQuestions([{ id: 'lang', prompt: '用什么语言？', options: ['Python'] }]) }
+    const text = '  Rust\n保留 {answers} 和 <tag>。  '
+
+    expect(formatAnswers(set, [{ questionId: 'lang', selectedOptionIds: [], otherText: text }]))
+      .toBe('我的选择：\n- 用什么语言？：其他：Rust\n保留 {answers} 和 <tag>。')
+  })
+
+  it('combines fixed choices and custom answers per question in question order', () => {
+    const set = { questions: normalizeQuestions([
+      { id: 'lang', prompt: '用什么语言？', options: ['Python', 'Node'], allowMultiple: true },
+      { id: 'storage', prompt: '如何存储？', options: ['SQLite'] }
+    ]) }
+
+    expect(formatAnswers(set, [
+      { questionId: 'storage', selectedOptionIds: [], otherText: '  本地文件  ' },
+      { questionId: 'lang', selectedOptionIds: ['o1', 'o0'], otherText: '  Rust  ' }
+    ])).toBe('我的选择：\n- 用什么语言？：Python、Node、其他：Rust\n- 如何存储？：其他：本地文件')
+  })
+
+  it('ignores whitespace-only custom answers without changing existing choice formatting', () => {
+    const set = { questions: normalizeQuestions([{ id: 'lang', prompt: '用什么语言？', options: ['Python'] }]) }
+
+    expect(formatAnswers(set, [{ questionId: 'lang', selectedOptionIds: ['o0'], otherText: ' \n\t ' }]))
+      .toBe('我的选择：\n- 用什么语言？：Python')
+    expect(formatAnswers(set, [{ questionId: 'lang', selectedOptionIds: [], otherText: ' \n\t ' }]))
+      .toBe('我的选择：\n- 用什么语言？：（未选择）')
+  })
+
+  it('localizes the custom answer label without translating user content', () => {
+    setLanguage('en')
+    const set = { questions: normalizeQuestions([{ id: 'lang', prompt: '用什么语言？', options: ['Python'] }]) }
+
+    expect(formatAnswers(set, [{ questionId: 'lang', selectedOptionIds: ['o0'], otherText: 'Rust 和中文注释' }]))
+      .toBe('My choices:\n- 用什么语言？: Python, Other: Rust 和中文注释')
+  })
+
   it('adds the client hint to plan prompts inside a tag', () => {
     const text = planModePrompt('做个待办工具')
     expect(text.endsWith('做个待办工具')).toBe(true)
     expect(text).toMatch(/^<agent_desktop_client>[\s\S]*```questions[\s\S]*<\/agent_desktop_client>/)
+  })
+
+  it.each([planModePrompt, codexPlanModePrompt, claudePlanModePrompt])('tells Plan providers that the client supplies the manual answer option', (wrap) => {
+    const text = wrap('Choose an approach')
+    expect(text).toContain('The client automatically adds an "Other (manual input)" option to every question')
+    expect(text).toContain('do not include an Other placeholder in the options')
+    expect(text).toContain('selected options and any manual answer arrive together as the next message')
   })
 
   it('notices when a plan turn switches mode on its own', () => {

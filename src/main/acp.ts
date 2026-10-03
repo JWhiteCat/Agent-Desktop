@@ -130,7 +130,7 @@ When you need the user to choose between options, do not list the options as pla
 \`\`\`${QUESTION_BLOCK_LANG}
 {"title":"short title","questions":[{"id":"q1","prompt":"question text","allowMultiple":false,"options":[{"id":"a","label":"option text"},{"id":"b","label":"option text"}]}]}
 \`\`\`
-Write the prompts and labels in the user's language. The user's picks arrive as the next message.
+Write the prompts and labels in the user's language. The client automatically adds an "Other (manual input)" option to every question; do not include an Other placeholder in the options. The user's selected options and any manual answer arrive together as the next message.
 Ask before planning: a turn that contains a questions block must not call CreatePlan.
 Once the requirements are clear, deliver the plan with the CreatePlan tool. Stay in plan mode: never call SwitchMode and never edit files. The user starts implementation from the client with an "execute plan" button.
 </agent_desktop_client>`
@@ -149,7 +149,7 @@ When you need the user to choose between options, do not list the options as pla
 \`\`\`${QUESTION_BLOCK_LANG}
 {"title":"short title","questions":[{"id":"q1","prompt":"question text","allowMultiple":false,"options":[{"id":"a","label":"option text"},{"id":"b","label":"option text"}]}]}
 \`\`\`
-Write the prompts and labels in the user's language. The user's picks arrive as the next message.
+Write the prompts and labels in the user's language. The client automatically adds an "Other (manual input)" option to every question; do not include an Other placeholder in the options. The user's selected options and any manual answer arrive together as the next message.
 Ask before planning: a turn that contains a questions block must not emit a plan.
 Once the requirements are clear, emit one plan with a short name, a one-paragraph overview, and the full plan as Markdown. Do not change modes and do not edit files. The user starts implementation from the client.
 </agent_desktop_client>`
@@ -168,7 +168,7 @@ When you need the user to choose between options, do not list the options as pla
 \`\`\`${QUESTION_BLOCK_LANG}
 {"title":"short title","questions":[{"id":"q1","prompt":"question text","allowMultiple":false,"options":[{"id":"a","label":"option text"},{"id":"b","label":"option text"}]}]}
 \`\`\`
-Write the prompts and labels in the user's language. The user's picks arrive as the next message.
+Write the prompts and labels in the user's language. The client automatically adds an "Other (manual input)" option to every question; do not include an Other placeholder in the options. The user's selected options and any manual answer arrive together as the next message.
 Ask before planning: a turn that contains a questions block must not emit a plan.
 Once the requirements are clear, emit one plan with a short name, a one-paragraph overview, and the full plan as Markdown. Do not change modes and do not edit files. The user starts implementation from the client.
 </agent_desktop_client>`

@@ -54,11 +54,14 @@ export function parseQuestionBlock(body: string): QuestionSet | undefined {
   return { title: typeof title === 'string' && title.trim() ? title.trim() : undefined, questions }
 }
 
-/** The reply sent as the next user message after picking options in a question block. */
+/** The reply sent as the next user message after answering a question block. */
 export function formatAnswers(set: QuestionSet, answers: QuestionAnswer[]): string {
   const lines = set.questions.map((q) => {
-    const ids = answers.find((a) => a.questionId === q.id)?.selectedOptionIds ?? []
+    const answer = answers.find((a) => a.questionId === q.id)
+    const ids = answer?.selectedOptionIds ?? []
     const labels = q.options.filter((o) => ids.includes(o.id)).map((o) => o.label)
+    const otherText = answer?.otherText?.trim()
+    if (otherText) labels.push(t('其他：{text}', { text: otherText }))
     return t('- {question}：{answers}', { question: q.prompt, answers: labels.length ? labels.join(t('、')) : t('（未选择）') })
   })
   return t('我的选择：\n{answers}', { answers: lines.join('\n') })

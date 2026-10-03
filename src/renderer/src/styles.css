@@ -1171,6 +1171,30 @@ select {
   font-size: 12px;
   line-height: 1.45;
 }
+.question-other-input {
+  display: block;
+  width: 100%;
+  min-height: 76px;
+  margin-top: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font: inherit;
+  line-height: 1.45;
+  color: var(--text);
+  background: var(--bg);
+  resize: vertical;
+}
+.question-other-input:focus {
+  outline: 2px solid var(--blue);
+  outline-offset: 1px;
+}
+.question-other-input::placeholder {
+  color: var(--muted);
+}
+.question-other-input:disabled {
+  color: var(--text-2);
+}
 .question-actions {
   display: flex;
   align-items: center;
