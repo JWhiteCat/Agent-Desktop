@@ -20,7 +20,22 @@ const pick = (o: any, ...keys: string[]): any => {
 }
 
 export function successOf(item: ToolItem): any {
+  // Older Codex transcripts kept the ACP command output without normalizing it.
+  const raw = item.result
+  if (raw && typeof raw === 'object' && ('formatted_output' in raw || 'exit_code' in raw)) {
+    return { stdout: raw.formatted_output, exitCode: raw.exit_code }
+  }
   return item.result?.success
+}
+
+/** Display MCP calls misclassified as shell by older reducers; status is repaired from native logs. */
+export function toolForDisplay(item: ToolItem): ToolItem {
+  const a = item.args
+  if (item.tool !== 'shell' || typeof a?.server !== 'string' || typeof a?.tool !== 'string' || a.command !== undefined) return item
+  return {
+    ...item,
+    tool: `mcp.${a.server}.${a.tool}`
+  }
 }
 
 export function errorOf(item: ToolItem): string | undefined {
@@ -43,6 +58,10 @@ export function summarizeTool(item: ToolItem): ToolSummary {
   const running = item.status === 'running'
   const path = pick(a, 'path', 'targetFile', 'filePath', 'file', 'targetDirectory', 'target_directory', 'directory') ?? patchPath(item.args)
   const name = item.tool.toLowerCase().replace(/[^a-z]/g, '')
+
+  if (typeof a.server === 'string' && typeof a.tool === 'string' && a.command === undefined) {
+    return { kind: 'mcp', verb: t('调用工具'), target: `${a.server} · ${a.tool}` }
+  }
 
   if (name === 'read' || name === 'readfile') {
     const range = s.readRange ? `L${s.readRange.startLine}-${s.readRange.endLine}` : undefined
@@ -90,7 +109,7 @@ export function summarizeTool(item: ToolItem): ToolSummary {
     return { kind: 'web', verb: name.includes('fetch') ? t('获取网页') : t('搜索网页'), target: pick(a, 'url', 'query', 'searchTerm', 'search_term') }
   }
   if (name.includes('mcp') || name === 'calldynamictool' || name === 'getdynamictools' || name.startsWith('plugin')) {
-    const target = [pick(a, 'providerIdentifier', 'server', 'serverName', 'namespace'), pick(a, 'toolName', 'name')].filter(Boolean).join(' · ')
+    const target = [pick(a, 'providerIdentifier', 'server', 'serverName', 'namespace'), pick(a, 'toolName', 'tool', 'name')].filter(Boolean).join(' · ')
     return { kind: 'mcp', verb: name === 'getdynamictools' ? t('查询工具') : t('调用工具'), target: target || item.tool }
   }
   if (name === 'await' || name === 'awaitshell') {

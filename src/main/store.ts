@@ -6,7 +6,7 @@ import { normalizeLanguage } from '@shared/i18n'
 import { DEFAULT_SETTINGS, normalizeCliProvider, threadCli, type Item, type Project, type ResultItem, type Settings, type ThreadMeta } from '@shared/types'
 import { newId } from './id'
 import { newRemoteClientId, validClientId } from './public-tunnel'
-import { readCodexUsage } from './codex-history'
+import { readCodexUsage, repairCodexMcpTools } from './codex-history'
 import { repairCodexUsage } from './codex-usage-repair'
 import type { CodexUsageTurn } from './codex-usage'
 
@@ -198,6 +198,9 @@ export class Store {
       items = readJson<Item[]>(this.threadFile(threadId)) ?? []
       this.itemsCache.set(threadId, items)
       const thread = this.thread(threadId)
+      if (thread?.chatId && threadCli(thread) === 'codex' && repairCodexMcpTools(thread.chatId, items)) {
+        this.markItemsDirty(threadId)
+      }
       if (thread?.chatId && threadCli(thread) === 'codex'
         && items.some((item) => item.kind === 'result' && (!item.usage?.requests || item.usageComplete === false || (!item.quotaSnapshot && !item.quotaUsage)))) {
         const turns = readCodexUsage(thread.chatId)

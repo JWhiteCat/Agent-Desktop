@@ -141,6 +141,49 @@ export function readCodexUsage(chatId: string): CodexUsageTurn[] | undefined {
   }
 }
 
+/** Repair legacy MCP cards only when the native completion record proves their status. */
+export function repairCodexMcpTools(chatId: string, items: Item[]): boolean {
+  const candidates = new Map<string, ToolItem[]>()
+  for (const item of items) {
+    if (item.kind !== 'tool' || item.tool !== 'shell') continue
+    const args = item.args
+    if (!args || typeof args !== 'object' || typeof args.server !== 'string' || !args.server
+      || typeof args.tool !== 'string' || !args.tool || args.command !== undefined || args.cmd !== undefined) continue
+    const key = JSON.stringify([item.callId, args.server, args.tool])
+    const matches = candidates.get(key) ?? []
+    matches.push(item)
+    candidates.set(key, matches)
+  }
+  if (!candidates.size) return false
+
+  let text: string
+  try {
+    const file = findRollout(chatId)
+    if (!file) return false
+    text = fs.readFileSync(file, 'utf8')
+  } catch {
+    return false
+  }
+
+  let changed = false
+  for (const { row } of parseLines(text)) {
+    if (row?.type !== 'event_msg' || row.payload?.type !== 'item_completed') continue
+    const native = row.payload.item
+    if (String(native?.type ?? '').toLowerCase() !== 'mcptoolcall'
+      || (native.status !== 'completed' && native.status !== 'failed')) continue
+    const key = JSON.stringify([native.id ?? native.callId ?? native.call_id, native.server, native.tool])
+    const matches = candidates.get(key)
+    if (!matches) continue
+    const status = native.status === 'failed' || native.error != null || native.result?.isError === true ? 'error' : 'success'
+    for (const item of matches) {
+      item.tool = `mcp.${native.server}.${native.tool}`
+      item.status = status
+      changed = true
+    }
+  }
+  return changed
+}
+
 /** Creation time narrows the service's search for this session's accounting records. */
 export function readCodexSessionCreatedAt(chatId: string): number | undefined {
   try {

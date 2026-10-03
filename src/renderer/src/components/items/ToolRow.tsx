@@ -3,7 +3,7 @@ import type { ToolItem } from '@shared/types'
 import { useT } from '../../lib/i18n'
 import { DiffLines, parseUnifiedDiff } from '../../lib/diff'
 import { duration } from '../../lib/format'
-import { errorOf, successOf, summarizeTool, toolDiff, type ToolKind } from '../../lib/tools'
+import { errorOf, successOf, summarizeTool, toolDiff, toolForDisplay, type ToolKind } from '../../lib/tools'
 import {
   IconChevronDown,
   IconChevronRight,
@@ -34,19 +34,20 @@ const KIND_ICON: Record<ToolKind, React.ReactNode> = {
   other: <IconSparkle size={14} />
 }
 
-function ToolDetail({ item }: { item: ToolItem }) {
+export function ToolDetail({ item: storedItem }: { item: ToolItem }) {
   const t = useT()
+  const item = toolForDisplay(storedItem)
   const s = successOf(item)
   const err = errorOf(item)
   const sum = summarizeTool(item)
   if (sum.kind === 'shell') {
     const out = [s?.stdout, s?.stderr].filter(Boolean).join('\n') || s?.interleavedOutput || ''
+    const command = item.args?.command ?? item.args?.cmd
     return (
       <div className="tool-detail">
-        <div className="shell-cmd">
-          <span className="prompt">$</span> {item.args?.command}
-        </div>
+        {command && <div className="shell-cmd"><span className="prompt">$</span> {command}</div>}
         {(out || err) && <pre className="shell-out">{(out || err || '').replace(/\r\n/g, '\n').trimEnd()}</pre>}
+        {!out && !err && item.status !== 'running' && <div className="muted small">{t('命令未产生输出。')}</div>}
         {s?.exitCode !== undefined && <div className="muted small">{t('退出码 {code}', { code: s.exitCode })}{s.executionTime ? ` · ${duration(s.executionTime)}` : ''}</div>}
       </div>
     )
@@ -90,8 +91,9 @@ function ToolDetail({ item }: { item: ToolItem }) {
   )
 }
 
-export function ToolRow({ item }: { item: ToolItem }) {
+export function ToolRow({ item: storedItem }: { item: ToolItem }) {
   useT()
+  const item = toolForDisplay(storedItem)
   const [open, setOpen] = useState(false)
   const sum = summarizeTool(item)
   const failed = item.status === 'error'

@@ -109,6 +109,81 @@ describe('StreamReducer', () => {
     expect(success).not.toHaveProperty('oldText')
   })
 
+  it.each([
+    { status: 'completed', output: 'ok\n', exitCode: 0, expectedStatus: 'success' },
+    { status: 'failed', output: 'unknown argument\n', exitCode: 1, expectedStatus: 'error' },
+    { status: 'failed', output: '', exitCode: 1, expectedStatus: 'error' }
+  ])('retains Codex command output and exit code ($status, $exitCode)', ({ status, output, exitCode, expectedStatus }) => {
+    const items: Item[] = []
+    const reducer = new StreamReducer(items)
+    reducer.handleAcp({
+      sessionUpdate: 'tool_call',
+      toolCallId: 'command',
+      kind: 'execute',
+      status: 'pending',
+      rawInput: { command: 'gh search prs', cwd: '/project' }
+    })
+    reducer.handleAcp({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'command',
+      status,
+      rawOutput: { formatted_output: output, exit_code: exitCode }
+    })
+
+    expect(items).toHaveLength(1)
+    expect(items[0]).toMatchObject({
+      tool: 'shell',
+      status: expectedStatus,
+      args: { command: 'gh search prs' },
+      result: { success: { stdout: output, exitCode } }
+    })
+    expect((items[0] as ToolItem).result.success).not.toHaveProperty('formatted_output')
+    expect((items[0] as ToolItem).result.success).not.toHaveProperty('exit_code')
+  })
+
+  it.each([
+    { status: 'completed', error: null, isError: undefined, expectedStatus: 'success' },
+    { status: 'failed', error: null, isError: undefined, expectedStatus: 'error' },
+    { status: 'completed', error: null, isError: true, expectedStatus: 'error' },
+    { status: 'completed', error: { message: 'connection failed' }, isError: undefined, expectedStatus: 'error' }
+  ])('preserves MCP results and their actual status ($status, $isError, $expectedStatus)', ({ status, error, isError, expectedStatus }) => {
+    const items: Item[] = []
+    const reducer = new StreamReducer(items)
+    const rawInput = { server: 'codex_apps', tool: 'github.search_prs', arguments: { query: 'repo:owner/repo' } }
+    const rawOutput = { result: { content: [{ type: 'text', text: '{"issues":[]}' }], structuredContent: { issues: [] }, isError }, error }
+    reducer.handleAcp({
+      sessionUpdate: 'tool_call',
+      toolCallId: 'mcp-call',
+      kind: 'execute',
+      status: 'pending',
+      rawInput,
+      _meta: { is_mcp_tool_call: true }
+    })
+    reducer.handleAcp({ sessionUpdate: 'tool_call_update', toolCallId: 'mcp-call', status, rawInput, rawOutput })
+
+    expect(items).toHaveLength(1)
+    expect(items[0]).toMatchObject({
+      tool: 'mcp.codex_apps.github.search_prs',
+      status: expectedStatus,
+      args: rawInput,
+      result: rawOutput
+    })
+  })
+
+  it('recognizes an MCP call from either its input or metadata before execute kind', () => {
+    const reducer = new StreamReducer([])
+    const [fromInput] = reducer.handleAcp({
+      sessionUpdate: 'tool_call', toolCallId: 'mcp-input', kind: 'execute', status: 'pending',
+      rawInput: { server: 'docs', tool: 'search', arguments: {} }
+    })
+    const [fromMeta] = reducer.handleAcp({
+      sessionUpdate: 'tool_call', toolCallId: 'mcp-meta', title: 'Search docs', kind: 'execute', status: 'pending',
+      _meta: { is_mcp_tool_call: true }
+    })
+    expect(fromInput).toMatchObject({ tool: 'mcp.docs.search' })
+    expect(fromMeta).toMatchObject({ tool: 'mcp.Search docs' })
+  })
+
   it('marks an ACP file create from a null before-text', () => {
     const items: Item[] = []
     const reducer = new StreamReducer(items)

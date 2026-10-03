@@ -386,6 +386,9 @@ function planHeading(markdown: string): { name?: string; overview?: string } {
 }
 
 function toolNameFrom(update: any, args: Record<string, unknown>): string {
+  if ((typeof args.server === 'string' && typeof args.tool === 'string') || update._meta?.is_mcp_tool_call === true) {
+    return ['mcp', args.server, args.tool ?? update.title ?? 'tool'].filter(Boolean).join('.')
+  }
   if (typeof args.command === 'string') return 'shell'
   const rawName = String(args._toolName ?? args.name ?? update?.title ?? '')
   const compactName = rawName.toLowerCase().replace(/[^a-z0-9]/g, '')
@@ -410,8 +413,9 @@ function toolNameFrom(update: any, args: Record<string, unknown>): string {
 function acpToolStatus(status: string | undefined, result: unknown): ToolItem['status'] {
   if (status === 'failed') return 'error'
   if (result && typeof result === 'object') {
-    const r = result as { error?: unknown; failure?: unknown; success?: unknown }
-    if ((r.error !== undefined || r.failure !== undefined) && r.success === undefined) return 'error'
+    const r = result as { error?: unknown; failure?: unknown; success?: unknown; result?: { isError?: unknown } }
+    if ((r.error != null || r.failure != null) && r.success === undefined) return 'error'
+    if (r.result?.isError === true) return 'error'
   }
   if (status === 'completed') return 'success'
   return 'running'
@@ -479,6 +483,10 @@ function asToolResult(raw: unknown, contentText: string): unknown {
   if (raw && typeof raw === 'object') {
     const o = raw as Record<string, unknown>
     if ('success' in o || 'error' in o || 'failure' in o || 'rejected' in o) return o
+    if ('formatted_output' in o || 'exit_code' in o) {
+      const { formatted_output, exit_code, ...rest } = o
+      return { success: { ...rest, stdout: formatted_output, exitCode: exit_code } }
+    }
     if ('stdout' in o || 'stderr' in o || 'diffString' in o || 'exitCode' in o || 'linesAdded' in o) return { success: o }
     return o
   }

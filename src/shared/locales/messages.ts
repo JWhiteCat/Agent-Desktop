@@ -54,6 +54,7 @@ export const messagesMessages: Record<string, string> = {
   '已回答': 'Answered',
   '这些问题先跳过，按你的判断继续。': 'Skip these questions for now and continue using your judgment.',
   '退出码 {code}': 'Exit code {code}',
+  '命令未产生输出。': 'The command produced no output.',
   '(未知文件)': '(Unknown file)',
   '二进制': 'Binary',
   '正在读取': 'Reading',

@@ -13,7 +13,7 @@ const electron = vi.hoisted(() => ({ userData: '' }))
 vi.mock('electron', () => ({ app: { getPath: () => electron.userData } }))
 vi.mock('../src/main/history', () => ({ findChatDir: vi.fn(), readCliTranscript: vi.fn(), UNTITLED: 'Untitled' }))
 vi.mock('../src/main/fork', () => ({ materializeCliFork: vi.fn(), planCliFork: vi.fn() }))
-vi.mock('../src/main/codex-history', () => ({ readCodexTranscript: vi.fn(), readCodexUsage: vi.fn() }))
+vi.mock('../src/main/codex-history', () => ({ readCodexTranscript: vi.fn(), readCodexUsage: vi.fn(), repairCodexMcpTools: vi.fn(() => false) }))
 
 describe('conversation forks', () => {
   let store: Store
