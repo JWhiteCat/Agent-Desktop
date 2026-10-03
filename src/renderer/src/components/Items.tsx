@@ -22,10 +22,26 @@ export function ResultFooter(props: ResultFooterProps) {
 export function QuestionCard({ item, threadId }: { item: QuestionItem; threadId: string }) {
   const t = useT()
   const pending = item.status === 'pending'
+  const legacyOptions = item.questions.length === 1 ? item.questions[0].options : []
+  const planReview = item.purpose === 'codex-plan-review' || (
+    item.toolCallId.startsWith('plan-review:') && legacyOptions.length === 2 &&
+    legacyOptions.some((option) => option.id === 'implement_plan') &&
+    legacyOptions.some((option) => option.id === 'revise_plan')
+  )
+  const questions = planReview ? item.questions.map((question) => ({
+    ...question,
+    prompt: t('是否执行此计划？'),
+    options: question.options.map((option) => option.id === 'implement_plan'
+      ? { ...option, label: t('是，执行此计划') }
+      : option.id === 'revise_plan'
+        ? { ...option, label: t('否，先修改计划'), requiresText: true }
+        : option)
+  })) : item.questions
   return (
     <QuestionForm
-      title={item.title}
-      questions={item.questions}
+      title={planReview ? t('是否执行此计划？') : item.title}
+      questions={questions}
+      feedbackPlaceholder={planReview ? t('请输入希望 Codex 如何修改计划') : undefined}
       answers={item.status === 'answered' ? item.answers : undefined}
       status={pending ? undefined : item.status === 'answered' ? t('已提交') : t('已跳过')}
       onSubmit={pending ? (answers) => answerQuestion(threadId, item.id, answers) : undefined}

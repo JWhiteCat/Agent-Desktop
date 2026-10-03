@@ -34,6 +34,18 @@ const permissionParams = {
   ]
 }
 
+const planReviewParams = {
+  toolCall: {
+    toolCallId: 'plan-review:plan-1', title: 'Implement this plan?', kind: 'switch_mode',
+    rawInput: { plan: '# Plan\n\nUpdate the settings.' }
+  },
+  options: [
+    { optionId: 'implement_plan', name: 'Yes, implement this plan', kind: 'allow_once' },
+    { optionId: 'revise_plan', name: 'No, and tell Codex what to do differently', kind: 'reject_once' }
+  ],
+  _meta: { codex: { kind: 'plan_review', planItemId: 'plan-1' } }
+}
+
 function setup(overrides: Partial<Pick<InteractionRun, 'proc' | 'acceptUpdates' | 'force' | 'mode'>> = {}) {
   const items: Item[] = []
   const batches: Item[][] = []
@@ -402,5 +414,186 @@ describe('session request interactions', () => {
     expect(ctx.run.pendingQuestions?.size ?? 0).toBe(0)
     expect(ctx.items).toEqual([])
     expect(ctx.batches).toEqual([])
+  })
+})
+
+describe('Codex plan review feedback', () => {
+  it('marks the No option for input and preserves the adapter text for renderer localization', async () => {
+    const ctx = setup({ proc: { provider: 'codex' }, mode: 'plan' })
+    const response = onAcpRequest(ctx.run, 'session/request_permission', planReviewParams, ctx.queue)
+    const item = onlyQuestion(ctx.items)
+    expect(item).toMatchObject({
+      toolCallId: 'plan-review:plan-1', title: 'Implement this plan?', purpose: 'codex-plan-review', status: 'pending',
+      questions: [{
+        id: 'q', prompt: 'Implement this plan?', allowMultiple: false,
+        options: [
+          { id: 'implement_plan', label: 'Yes, implement this plan' },
+          { id: 'revise_plan', label: 'No, and tell Codex what to do differently', requiresText: true }
+        ]
+      }]
+    })
+    expect(item.questions[0].options[0].requiresText).toBeUndefined()
+    answerPendingQuestion(ctx.run, item.id, null)
+    await expect(response).resolves.toEqual({ outcome: { outcome: 'cancelled' } })
+  })
+
+  it('requires nonblank feedback only with No, without consuming invalid answers', async () => {
+    const ctx = setup({ proc: { provider: 'codex' }, mode: 'plan' })
+    const response = onAcpRequest(ctx.run, 'session/request_permission', planReviewParams, ctx.queue)
+    const item = onlyQuestion(ctx.items)
+    const invalidAnswers = [
+      { questionId: 'q', selectedOptionIds: ['revise_plan'] },
+      { questionId: 'q', selectedOptionIds: ['revise_plan'], otherText: '' },
+      { questionId: 'q', selectedOptionIds: ['revise_plan'], otherText: ' \n\t ' },
+      { questionId: 'q', selectedOptionIds: ['revise_plan'], otherText: null },
+      { questionId: 'q', selectedOptionIds: ['revise_plan'], otherText: 42 },
+      { questionId: 'q', selectedOptionIds: ['implement_plan'], otherText: 'Change the plan' },
+      { questionId: 'q', selectedOptionIds: ['implement_plan'], otherText: '' },
+      { questionId: 'q', selectedOptionIds: ['revise_plan', 'implement_plan'], otherText: 'Change the plan' }
+    ]
+    for (const answer of invalidAnswers) {
+      expect(() => answerPendingQuestion(ctx.run, item.id, [answer] as QuestionAnswer[])).toThrow('请选择')
+      expect(ctx.run.pendingQuestions?.has(item.id)).toBe(true)
+      expect(item.status).toBe('pending')
+      expect(ctx.run.planFeedback).toBeUndefined()
+    }
+    expect(ctx.batches).toHaveLength(1)
+    answerPendingQuestion(ctx.run, item.id, [{ questionId: 'q', selectedOptionIds: ['revise_plan'], otherText: 'Use a smaller change' }])
+    await expect(response).resolves.toEqual({ outcome: { outcome: 'selected', optionId: 'revise_plan' } })
+  })
+
+  it('stores trimmed No feedback and returns the exact rejection option to ACP', async () => {
+    const ctx = setup({ proc: { provider: 'codex' }, mode: 'plan' })
+    const response = onAcpRequest(ctx.run, 'session/request_permission', planReviewParams, ctx.queue)
+    const item = onlyQuestion(ctx.items)
+    answerPendingQuestion(ctx.run, item.id, [{
+      questionId: 'q', selectedOptionIds: ['revise_plan'], otherText: ' \n先保留现有配置。\n再补充迁移步骤。\t '
+    }])
+    await expect(response).resolves.toEqual({ outcome: { outcome: 'selected', optionId: 'revise_plan' } })
+    expect(ctx.run.planFeedback).toBe('先保留现有配置。\n再补充迁移步骤。')
+    expect(item).toMatchObject({
+      status: 'answered',
+      answers: [{ questionId: 'q', selectedOptionIds: ['revise_plan'], otherText: '先保留现有配置。\n再补充迁移步骤。' }]
+    })
+    expect(ctx.run.pendingQuestions?.size).toBe(0)
+    expect(ctx.batches).toHaveLength(2)
+  })
+
+  it('allows Yes without feedback and leaves implementation to the adapter', async () => {
+    const ctx = setup({ proc: { provider: 'codex' }, mode: 'plan' })
+    const response = onAcpRequest(ctx.run, 'session/request_permission', planReviewParams, ctx.queue)
+    const item = onlyQuestion(ctx.items)
+    answerPendingQuestion(ctx.run, item.id, [{ questionId: 'q', selectedOptionIds: ['implement_plan'] }])
+    await expect(response).resolves.toEqual({ outcome: { outcome: 'selected', optionId: 'implement_plan' } })
+    expect(ctx.run.planFeedback).toBeUndefined()
+    expect(item.answers).toEqual([{ questionId: 'q', selectedOptionIds: ['implement_plan'] }])
+  })
+
+  it.each([
+    ['metadata without the legacy tool id', {
+      ...planReviewParams, toolCall: { ...planReviewParams.toolCall, toolCallId: 'permission-1' }
+    }],
+    ['legacy tool id without metadata', { ...planReviewParams, _meta: undefined }]
+  ])('recognizes %s with the exact option pair', async (_name, params) => {
+    const ctx = setup({ proc: { provider: 'codex' }, mode: 'plan' })
+    const response = onAcpRequest(ctx.run, 'session/request_permission', params, ctx.queue)
+    const item = onlyQuestion(ctx.items)
+    expect(item.purpose).toBe('codex-plan-review')
+    expect(item.questions[0].options.find((option) => option.id === 'revise_plan')?.requiresText).toBe(true)
+    answerPendingQuestion(ctx.run, item.id, [{ questionId: 'q', selectedOptionIds: ['revise_plan'], otherText: 'Revise the tests' }])
+    await expect(response).resolves.toEqual({ outcome: { outcome: 'selected', optionId: 'revise_plan' } })
+    expect(ctx.run.planFeedback).toBe('Revise the tests')
+  })
+
+  it.each([
+    { name: 'Cursor with matching markers', provider: 'cursor' as const, params: planReviewParams },
+    { name: 'Claude with matching markers', provider: 'claude' as const, params: planReviewParams },
+    { name: 'an ordinary tool with plan review markers', provider: 'codex' as const, params: {
+      ...planReviewParams, toolCall: { ...planReviewParams.toolCall, kind: 'execute' }
+    } },
+    { name: 'matching English text without either marker', provider: 'codex' as const, params: {
+      ...planReviewParams, _meta: undefined, toolCall: { ...planReviewParams.toolCall, toolCallId: 'permission-1' }
+    } },
+    { name: 'a review marker with the wrong option kind', provider: 'codex' as const, params: {
+      ...planReviewParams, options: [planReviewParams.options[0], { ...planReviewParams.options[1], kind: 'allow_once' }]
+    } },
+    { name: 'a review marker with additional choices', provider: 'codex' as const, params: {
+      ...planReviewParams, options: [...planReviewParams.options, { optionId: 'later', name: 'Later', kind: 'reject_once' }]
+    } }
+  ])('keeps $name as a fixed permission choice', async ({ provider, params }) => {
+    const ctx = setup({ proc: { provider }, mode: 'plan' })
+    const response = onAcpRequest(ctx.run, 'session/request_permission', params, ctx.queue)
+    const item = onlyQuestion(ctx.items)
+    expect(item.purpose).toBeUndefined()
+    expect(item.questions[0].options.every((option) => option.requiresText === undefined)).toBe(true)
+    expect(() => answerPendingQuestion(ctx.run, item.id, [{
+      questionId: 'q', selectedOptionIds: ['revise_plan'], otherText: 'Do not forward this'
+    }])).toThrow('请选择')
+    expect(ctx.run.pendingQuestions?.has(item.id)).toBe(true)
+    answerPendingQuestion(ctx.run, item.id, [{ questionId: 'q', selectedOptionIds: ['revise_plan'] }])
+    await expect(response).resolves.toEqual({ outcome: { outcome: 'selected', optionId: 'revise_plan' } })
+    expect(ctx.run.planFeedback).toBeUndefined()
+  })
+
+  it.each(['user skip', 'turn skip', 'turn cancel'] as const)('leaves no feedback after %s', async (action) => {
+    const ctx = setup({ proc: { provider: 'codex' }, mode: 'plan' })
+    const response = onAcpRequest(ctx.run, 'session/request_permission', planReviewParams, ctx.queue)
+    const item = onlyQuestion(ctx.items)
+    if (action === 'user skip') answerPendingQuestion(ctx.run, item.id, null)
+    else settleQuestion(ctx.run, action === 'turn cancel' ? 'cancel' : 'skip')
+    await expect(response).resolves.toEqual({ outcome: { outcome: 'cancelled' } })
+    expect(item.status).toBe('skipped')
+    expect(ctx.run.planFeedback).toBeUndefined()
+    expect(ctx.run.pendingQuestions?.size).toBe(0)
+  })
+
+  it.each(['skip', 'cancel'] as const)('clears captured feedback when the turn is settled with %s', async (decision) => {
+    const ctx = setup({ proc: { provider: 'codex' }, mode: 'plan' })
+    const response = onAcpRequest(ctx.run, 'session/request_permission', planReviewParams, ctx.queue)
+    const item = onlyQuestion(ctx.items)
+    answerPendingQuestion(ctx.run, item.id, [{
+      questionId: 'q', selectedOptionIds: ['revise_plan'], otherText: 'Do not start this after stopping'
+    }])
+    await expect(response).resolves.toEqual({ outcome: { outcome: 'selected', optionId: 'revise_plan' } })
+    expect(ctx.run.planFeedback).toBeDefined()
+    settleQuestion(ctx.run, decision)
+    expect(ctx.run.planFeedback).toBeUndefined()
+    expect(item.status).toBe('answered')
+  })
+
+  it('does not restore feedback when cancellation wins the answer continuation', async () => {
+    const ctx = setup({ proc: { provider: 'codex' }, mode: 'plan' })
+    const response = onAcpRequest(ctx.run, 'session/request_permission', planReviewParams, ctx.queue)
+    const item = onlyQuestion(ctx.items)
+    answerPendingQuestion(ctx.run, item.id, [{
+      questionId: 'q', selectedOptionIds: ['revise_plan'], otherText: 'Do not start after cancellation'
+    }])
+    settleQuestion(ctx.run, 'cancel')
+    await expect(response).resolves.toEqual({ outcome: { outcome: 'selected', optionId: 'revise_plan' } })
+    expect(ctx.run.planFeedback).toBeUndefined()
+    expect(ctx.run.questionsClosed).toBe(true)
+  })
+
+  it('still waits for a plan review in Agent mode with full access', async () => {
+    const ctx = setup({ proc: { provider: 'codex' }, mode: 'agent', force: true })
+    let resolved = false
+    const response = onAcpRequest(ctx.run, 'session/request_permission', planReviewParams, ctx.queue).then((result) => {
+      resolved = true
+      return result
+    })
+    await Promise.resolve()
+    const item = onlyQuestion(ctx.items)
+    expect(resolved).toBe(false)
+    expect(item.purpose).toBe('codex-plan-review')
+    answerPendingQuestion(ctx.run, item.id, [{ questionId: 'q', selectedOptionIds: ['implement_plan'] }])
+    await expect(response).resolves.toEqual({ outcome: { outcome: 'selected', optionId: 'implement_plan' } })
+  })
+
+  it('denies a plan mode switch in Ask mode without opening a feedback card', async () => {
+    const ctx = setup({ proc: { provider: 'codex' }, mode: 'ask', force: true })
+    await expect(onAcpRequest(ctx.run, 'session/request_permission', planReviewParams, ctx.queue))
+      .resolves.toEqual({ outcome: { outcome: 'selected', optionId: 'revise_plan' } })
+    expect(ctx.items).toEqual([])
+    expect(ctx.run.planFeedback).toBeUndefined()
   })
 })

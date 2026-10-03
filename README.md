@@ -169,6 +169,8 @@ Cursor does not expose an AskQuestion tool to ACP clients. Codex Plan is a colla
 - Once the requirements are clear, Cursor uses CreatePlan, and Codex and Claude emit a plan, to produce a name, a summary, and a Markdown body. The UI shows a plan card: name, summary, todos, and an expandable full plan. Cursor also offers Open plan file (`~/.cursor/plans/*.plan.md`). Codex and Claude hide that button when there is no such file.
 - Run plan switches the composer to Agent mode and sends a message to implement the plan. Only the latest plan shows this button.
 
+Codex also asks whether to implement a completed plan. This confirmation follows the app's language setting. Choosing No opens a multiline field for the changes you want; Continue requires non-whitespace feedback. Switching back to Yes keeps the draft but does not send it. No declines implementation, then sends your feedback as the next message in Plan mode on the same session after the current turn finishes. The submitted feedback is saved in history. Skipping or stopping does not send a revision. Other native ACP permission cards keep their fixed options.
+
 Under ACP, the CLI auto-approves a SwitchMode the model starts, and it does not tell the client. If Cursor or Claude switches mode during a Plan turn, the app immediately sets the session mode back to Plan so it does not start editing files.
 
 ## MCP and skills

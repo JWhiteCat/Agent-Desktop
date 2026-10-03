@@ -21,6 +21,8 @@ export interface InteractionRun {
   pendingQuestions?: Map<string, PendingQuestion>
   /** Turn cancellation also prevents a late CLI request from reopening a card. */
   questionsClosed?: boolean
+  /** A declined Codex plan is revised by sending this as the next Plan prompt. */
+  planFeedback?: string
   force: boolean
   mode: AgentMode
 }
@@ -30,7 +32,10 @@ export function answerPendingQuestion(run: InteractionRun | undefined, questionI
   if (!run || !pending) throw new Error(translate('这个问题已经不能回答了'))
   if (answers !== null && !validAnswers(pending.questions, answers)) throw new Error(translate('请选择'))
   run.pendingQuestions!.delete(questionId)
-  pending.resolve(answers ?? 'skip')
+  pending.resolve(answers?.map((answer) => ({
+    ...answer,
+    ...(answer.otherText !== undefined ? { otherText: answer.otherText.trim() } : {})
+  })) ?? 'skip')
 }
 
 export function onIdleAcpRequest(_proc: { force: boolean }, method: string, params: any): Promise<unknown> {
@@ -72,6 +77,7 @@ async function answerPermission(run: InteractionRun, params: any, queue: QueueIt
       return true
     })
   const askFallback = options.some((o) => o.optionId === '__ask_question_skip__')
+  const planReview = run.proc.provider === 'codex' && isCodexPlanReview(params, options)
   if (run.proc.provider === 'claude' && run.mode === 'ask' && !askFallback) return permissionResult(options, false, true)
   const kind = params?.toolCall?.kind
   const readOnlyViolation = (run.mode !== 'agent' && ['edit', 'delete', 'move'].includes(kind))
@@ -83,49 +89,67 @@ async function answerPermission(run: InteractionRun, params: any, queue: QueueIt
   // user; session notifications restore Plan mode after an approved switch.
   // Claude applies bypassPermissions before sending requests. Those that still
   // reach the client explicitly require user input, even with full access on.
-  if (!askFallback && run.force && run.mode === 'agent' && run.proc.provider !== 'claude') return permissionResult(options, true)
+  if (!askFallback && !planReview && run.force && run.mode === 'agent' && run.proc.provider !== 'claude') return permissionResult(options, true)
   const choices = options.filter((o) => o.optionId !== '__ask_question_skip__')
   if (!choices.length) return cancelledPermission()
   const decision = await waitForAnswers(run, {
     toolCallId: String(params?.toolCall?.toolCallId ?? ''),
     title: typeof params?.toolCall?.title === 'string' ? params.toolCall.title : undefined,
+    ...(planReview ? { purpose: 'codex-plan-review' as const } : {}),
     questions: [
       {
         id: 'q',
         prompt: String(params?.toolCall?.title || params?.toolCall?.content?.[0]?.content?.text || translate('请选择')),
         allowMultiple: false,
         options: choices
-          .map((o) => ({ id: String(o.optionId), label: String(o.name || o.optionId) }))
+          .map((o) => ({
+            id: String(o.optionId), label: String(o.name || o.optionId),
+            ...(planReview && o.optionId === 'revise_plan' ? { requiresText: true } : {})
+          }))
       }
     ]
   }, queue)
   if (decision === 'cancel' || decision === 'skip') {
     return askFallback ? { outcome: { outcome: 'selected', optionId: '__ask_question_skip__' } } : cancelledPermission()
   }
+  if (planReview && !run.questionsClosed && decision[0].selectedOptionIds[0] === 'revise_plan') {
+    run.planFeedback = decision[0].otherText
+  }
   return { outcome: { outcome: 'selected', optionId: decision[0].selectedOptionIds[0] } }
+}
+
+/** Adapter-authored plan review, with the tool id as a fallback for older adapters. */
+function isCodexPlanReview(params: any, options: { optionId: string; kind: string }[]): boolean {
+  return params?.toolCall?.kind === 'switch_mode'
+    && (params?._meta?.codex?.kind === 'plan_review' || String(params?.toolCall?.toolCallId ?? '').startsWith('plan-review:'))
+    && options.length === 2
+    && options.some((o) => o.optionId === 'implement_plan' && o.kind === 'allow_once')
+    && options.some((o) => o.optionId === 'revise_plan' && o.kind === 'reject_once')
 }
 
 function cancelledPermission(): { outcome: { outcome: 'cancelled' } } {
   return { outcome: { outcome: 'cancelled' } }
 }
 
-/** Native ACP cards contain fixed choices; reject malformed or forged answers without consuming the request. */
+/** Fixed permission choices accept text only for an explicitly marked feedback option. */
 function validAnswers(questions: QuestionPrompt[], answers: unknown): answers is QuestionAnswer[] {
   if (!Array.isArray(answers) || answers.length !== questions.length) return false
   const seen = new Set<string>()
   return answers.every((answer) => {
     const question = questions.find((q) => q.id === answer?.questionId)
-    if (!question || seen.has(question.id) || answer.otherText !== undefined) return false
+    if (!question || seen.has(question.id)) return false
     seen.add(question.id)
     const ids: unknown = answer.selectedOptionIds
-    return Array.isArray(ids) && ids.length > 0 && (question.allowMultiple || ids.length === 1)
-      && new Set(ids).size === ids.length && ids.every((id) => question.options.some((option) => option.id === id))
+    if (!Array.isArray(ids) || ids.length === 0 || (!question.allowMultiple && ids.length !== 1)
+      || new Set(ids).size !== ids.length || !ids.every((id) => question.options.some((option) => option.id === id))) return false
+    const needsText = question.options.some((option) => option.requiresText && ids.includes(option.id))
+    return needsText ? typeof answer.otherText === 'string' && !!answer.otherText.trim() : answer.otherText === undefined
   })
 }
 
 function waitForAnswers(
   run: InteractionRun,
-  spec: Pick<QuestionItem, 'toolCallId' | 'title' | 'questions'>,
+  spec: Pick<QuestionItem, 'toolCallId' | 'title' | 'questions' | 'purpose'>,
   queue: QueueItems
 ): Promise<QuestionAnswer[] | 'skip' | 'cancel'> {
   if (run.questionsClosed) return Promise.resolve('cancel')
@@ -152,6 +176,7 @@ function waitForAnswers(
 
 export function settleQuestion(run: InteractionRun, decision: 'skip' | 'cancel'): void {
   run.questionsClosed = true
+  run.planFeedback = undefined
   const pending = [...(run.pendingQuestions?.values() ?? [])]
   run.pendingQuestions?.clear()
   for (const question of pending) question.resolve(decision)

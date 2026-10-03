@@ -151,6 +151,8 @@ export interface NoticeItem {
 export interface QuestionOption {
   id: string
   label: string
+  /** Selecting this option requires feedback in QuestionAnswer.otherText. */
+  requiresText?: boolean
 }
 
 export interface QuestionPrompt {
@@ -171,6 +173,8 @@ export interface QuestionItem {
   id: string
   kind: 'question'
   toolCallId: string
+  /** App-authored questions whose presentation follows the application language. */
+  purpose?: 'codex-plan-review'
   title?: string
   questions: QuestionPrompt[]
   status: 'pending' | 'answered' | 'skipped'

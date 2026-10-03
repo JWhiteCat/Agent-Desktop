@@ -651,10 +651,31 @@ export class SessionManager {
       })
     )
     this.queue(threadId, run, changed)
+    const planFeedback = stop === 'end_turn' && !run.stopped && !run.proc.dying && run.proc.child.exitCode === null
+      ? run.planFeedback : undefined
+    run.planFeedback = undefined
     // The CLI stays up after a turn. Parking it avoids the next message paying
     // for process startup and session/load. A later close still ends the turn.
     this.endRun(threadId, run, null)
     if (run.codexUsage && !codexUsage?.completed) void this.usage.saveTurnUsage(threadId, resultId, run.codexUsage)
+    const thread = this.store.thread(threadId)
+    if (planFeedback && !this.shuttingDown && thread?.chatId === run.proc.sessionId
+      && threadCli(thread) === 'codex' && !this.runs.has(threadId)) {
+      // The adapter consumes only the permission option id. After declining,
+      // deliver the feedback in a new Plan turn on the same session.
+      try {
+        await this.beginSend({ ...req, prompt: planFeedback, mode: 'plan', cli: 'codex', worktree: false })
+      } catch (error) {
+        if (!this.store.thread(threadId)) return
+        const notice: Item = {
+          id: newId(), kind: 'notice', level: 'error',
+          text: error instanceof Error ? error.message : String(error)
+        }
+        this.store.items(threadId).push(notice)
+        this.store.markItemsDirty(threadId)
+        this.emit({ type: 'items', threadId, items: [notice] })
+      }
+    }
   }
 
   private endRun(threadId: string, run: Run, code: number | null, spawnError?: Error): void {
