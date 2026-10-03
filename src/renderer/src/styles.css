@@ -421,8 +421,30 @@ select {
 }
 
 .sidebar-bottom {
+  flex: none;
   padding: 8px;
   border-top: 1px solid var(--border);
+}
+
+.task-counts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  padding: 4px 10px 10px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.task-count {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.task-count strong {
+  color: var(--text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ---------- buttons ---------- */

@@ -9,6 +9,7 @@ import { duration, shortPath } from '../lib/format'
 import { planPath, planUriOf } from '../lib/tools'
 import { defaultModelFor, favoritesFor, modelForChat, projectModelFor } from '../lib/model-prefs'
 import { chatModel, cliCommands, forkThread, prepareCommands, sendMessage, setCliProvider, useStore } from '../store'
+import { markDisplayedThreadRead } from '../store/threads'
 import { Composer, type ComposerHandle } from './Composer'
 import { IconBranch, IconChevronDown, IconChevronRight, IconCursor, IconDiff, IconFolder, Spinner } from './icons'
 import { ResultFooter, StepItem, TurnActionsProvider, UserMessage, type TurnActions } from './Items'
@@ -220,8 +221,8 @@ export function ThreadView({ thread, changesOpen, onToggleChanges }: Props) {
   }, [items])
 
   useEffect(() => {
-    if (thread.unread && document.hasFocus()) window.api.updateThread(thread.id, { unread: false })
-  }, [thread.id, thread.unread])
+    void markDisplayedThreadRead()
+  }, [thread.id, thread.unread, items, running])
 
   const cwd = thread.cwd ?? project?.path ?? ''
   const isWorktree = !!thread.worktree || (!!thread.cwd && !!project && thread.cwd.toLowerCase() !== project.path.toLowerCase())

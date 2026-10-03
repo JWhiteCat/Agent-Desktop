@@ -3,6 +3,7 @@ import { forwardRef, useEffect, useMemo, useRef, useState } from 'react'
 import type { Project, ThreadMeta } from '@shared/types'
 import { cliTitle, threadCli } from '@shared/types'
 import { displayThreadTitle } from '@shared/thread-title'
+import { getTaskCounts } from '@shared/task-counts'
 import { relativeTime } from '../lib/format'
 import { addProjectInteractive, forkThread, goHome, openThread, setState, syncThreadFromCli, toast, useStore } from '../store'
 import {
@@ -27,6 +28,7 @@ import {
   Spinner
 } from './icons'
 import { MenuButton, type MenuEntry } from './Menu'
+import { TaskCounts } from './TaskCounts'
 
 const COLLAPSED_LIMIT = 6
 
@@ -57,6 +59,7 @@ export const Sidebar = forwardRef<HTMLInputElement, Props>(function Sidebar({ on
   }, [])
 
   const runningSet = useMemo(() => new Set(running), [running])
+  const taskCounts = useMemo(() => getTaskCounts({ threads, running }), [threads, running])
   const activeId = view.kind === 'thread' ? view.id : undefined
   const visible = useMemo(() => threads.filter((t) => showArchived || !t.archived), [threads, showArchived])
 
@@ -205,6 +208,7 @@ export const Sidebar = forwardRef<HTMLInputElement, Props>(function Sidebar({ on
       </div>
 
       <div className="sidebar-bottom">
+        <TaskCounts counts={taskCounts} />
         <button className="nav-btn" onClick={onOpenSettings}>
           <IconSettings />
           <span>{t('设置')}</span>

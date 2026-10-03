@@ -24,6 +24,26 @@ function mergeItems(current: Item[], updates: Iterable<Item>): Item[] {
 
 const itemLoads = new Map<string, { promise: Promise<void>; updates: Map<string, Item> }>()
 const staleItemIds = new Set<string>()
+const readRequests = new Set<string>()
+
+/** Only an ended conversation actually displayed in the foreground has been read. */
+export async function markDisplayedThreadRead(): Promise<void> {
+  const state = getState()
+  if (state.view.kind !== 'thread' || !document.hasFocus() || document.visibilityState !== 'visible') return
+  const id = state.view.id
+  const thread = state.app.threads.find((thread) => thread.id === id)
+  if (!thread?.unread || state.app.running.includes(id) || !state.items[id] ||
+    itemLoads.has(id) || staleItemIds.has(id) || readRequests.has(id)) return
+
+  readRequests.add(id)
+  try {
+    await window.api.updateThread(id, { unread: false })
+  } catch (err) {
+    toast(errorText(err), 'error')
+  } finally {
+    readRequests.delete(id)
+  }
+}
 
 /** The history request and its live updates share one owner so a late snapshot cannot erase events. */
 export function receiveItems(threadId: string, items: Item[]): void {
@@ -40,6 +60,7 @@ export function receiveItems(threadId: string, items: Item[]): void {
 function loadThreadItems(id: string, refresh = false): Promise<void> {
   const pending = itemLoads.get(id)
   if (pending && !refresh) return pending.promise
+  staleItemIds.add(id)
   const updates = new Map<string, Item>()
   const promise = window.api.getItems(id).then((items) => {
     if (itemLoads.get(id)?.promise !== promise) return
@@ -60,7 +81,11 @@ export async function refreshThreadItems(): Promise<void> {
       (state.view.kind === 'thread' && state.view.id === thread.id))
     .map((thread) => thread.id)
   for (const id of ids) staleItemIds.add(id)
-  await Promise.all(ids.map((id) => loadThreadItems(id, true)))
+  await Promise.all(ids.map(async (id) => {
+    await loadThreadItems(id, true)
+    const view = getState().view
+    if (view.kind === 'thread' && view.id === id) await markDisplayedThreadRead()
+  }))
 }
 
 export async function openThread(id: string): Promise<void> {
@@ -72,7 +97,7 @@ export async function openThread(id: string): Promise<void> {
   if (!state.items[id] || staleItemIds.has(id) || (thread?.source === 'cli' && idle)) {
     await loadThreadItems(id)
   }
-  if (thread?.unread) window.api.updateThread(id, { unread: false })
+  await markDisplayedThreadRead()
 }
 
 export async function forkThread(threadId: string, throughItemId?: string): Promise<void> {
