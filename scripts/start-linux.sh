@@ -2,20 +2,22 @@
 set -euo pipefail
 
 usage() {
-  printf '%s\n' 'Usage: bash scripts/start-linux.sh [dev|preview] [--install]' \
+  printf '%s\n' 'Usage: ./start-dev.sh [--install]' \
+    '       ./start-preview.sh [--install]' \
+    '       bash scripts/start-linux.sh [dev|preview] [--install]' \
     'Start Agent Desktop on Linux. --install refreshes dependencies with npm ci.'
 }
 
 die() { printf '[ERROR] %s\n' "$*" >&2; exit 1; }
 
 mode=dev
-if [[ "${1:-}" == -h || "${1:-}" == --help ]]; then
-  usage
-  exit 0
-fi
 if [[ "${1:-}" == dev || "${1:-}" == preview ]]; then
   mode="$1"
   shift
+fi
+if [[ "${1:-}" == -h || "${1:-}" == --help ]]; then
+  usage
+  exit 0
 fi
 install=false
 if [[ "${1:-}" == --install ]]; then
@@ -82,4 +84,7 @@ else
   export NODE_ENV=development
 fi
 printf 'Starting Agent Desktop (%s)...\n' "$mode"
+if [[ "$mode" == preview ]]; then
+  exec npm run preview -- --skipBuild
+fi
 exec npm run "$mode"

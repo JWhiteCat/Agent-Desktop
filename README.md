@@ -118,7 +118,21 @@ sudo apt install git openssh-client xdg-utils libgtk-3-0t64 libnss3 libgbm1 \
 
 On Ubuntu 22.04 or Debian 12, use `libgtk-3-0` and `libasound2` instead of the two `t64` names. Other distributions use different package names. `openssh-client` supplies `ssh` and `ssh-keygen` for public remote control; `git` is needed for project operations.
 
-From the project directory:
+Linux one-click launchers are also available in the project root, alongside the Windows `.bat` files:
+
+- `start-dev.sh`: check/install dependencies and Electron, then start development mode with hot reload.
+- `start-preview.sh`: check/install dependencies and Electron, build once, then open the production preview.
+
+From a terminal in the project directory:
+
+```bash
+./start-dev.sh
+./start-preview.sh
+```
+
+In a file manager that supports executable scripts, choose **Run in Terminal**. Some file managers open `.sh` files in an editor instead; use the terminal commands above in that case. If an archive/download did not preserve executable permissions, use `bash start-dev.sh` / `bash start-preview.sh`, or run `chmod +x start-dev.sh start-preview.sh` once. Use `--help` for usage or `--install` to refresh dependencies.
+
+The existing npm commands remain available:
 
 ```bash
 npm run dev:linux       # Check dependencies, ensure Electron, and start hot reload
@@ -128,7 +142,8 @@ npm run preview:linux   # Check dependencies, build, and open production preview
 The launcher also works from another directory, including paths containing spaces:
 
 ```bash
-bash "/path/to/Agent-Desktop/scripts/start-linux.sh" dev
+bash "/path/to/Agent-Desktop/start-dev.sh"
+bash "/path/to/Agent-Desktop/start-preview.sh"
 ```
 
 The first run downloads missing dependencies using the lockfile and downloads the Electron runtime. Later runs reuse a complete local dependency tree and runtime without an install/network request. After pulling dependency or lockfile changes, run `npm run dev:linux -- --install` (or `npm ci --include=dev --include=optional`) to refresh dependencies. Do not omit optional dependencies: bundled agent binaries are platform-specific. Download failures leave an error in the terminal; check the network/proxy or `ELECTRON_MIRROR`, then retry.

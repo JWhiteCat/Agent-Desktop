@@ -4,7 +4,7 @@ import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { afterEach, describe, expect, it } from 'vitest'
 
-const script = fs.readFileSync(path.resolve('scripts/start-linux.sh'), 'utf8')
+const scriptFiles = ['scripts/start-linux.sh', 'start-dev.sh', 'start-preview.sh']
 const fixtures: string[] = []
 type Invocation = { args: string[]; cwd: string; nodeEnv?: string; electronNode?: string }
 
@@ -17,7 +17,7 @@ function fixture({ dependencies = true, runtime = true } = {}) {
   fs.mkdirSync(path.join(project, 'scripts'), { recursive: true })
   fs.mkdirSync(electron, { recursive: true })
   fs.mkdirSync(bin)
-  fs.writeFileSync(path.join(project, 'scripts/start-linux.sh'), script)
+  for (const file of scriptFiles) fs.copyFileSync(path.resolve(file), path.join(project, file))
   fs.writeFileSync(path.join(electron, 'package.json'), '{"name":"electron"}')
   fs.writeFileSync(path.join(electron, 'install.js'), `
     const fs = require('node:fs');
@@ -53,8 +53,8 @@ if (args[0] === 'run' && args[1] === process.env.TEST_RUN_FAIL) process.exit(19)
 `, { mode: 0o755 })
   return {
     project,
-    run(args: string[] = [], env: Record<string, string> = {}) {
-      return spawnSync('bash', [path.join(project, 'scripts/start-linux.sh'), ...args], {
+    run(args: string[] = [], env: Record<string, string> = {}, entrypoint = 'scripts/start-linux.sh') {
+      return spawnSync(path.join(project, entrypoint), args, {
         cwd: temp,
         encoding: 'utf8',
         env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}`, DISPLAY: ':test', WAYLAND_DISPLAY: '', ELECTRON_RUN_AS_NODE: '1', ...env }
@@ -101,7 +101,11 @@ describe.skipIf(process.platform !== 'linux' || process.getuid?.() === 0)('Linux
   it('builds before production preview and clears Electron Node mode', () => {
     const app = fixture()
     expect(app.run(['preview']).status).toBe(0)
-    expect(app.calls().map(call => call.args.slice(0, 2))).toEqual([['ls', '--depth=0'], ['run', 'build'], ['run', 'preview']])
+    expect(app.calls().map(call => call.args)).toEqual([
+      ['ls', '--depth=0', '--include=dev', '--include=optional'],
+      ['run', 'build'],
+      ['run', 'preview', '--', '--skipBuild']
+    ])
     for (const call of app.calls().slice(1)) {
       expect(call.nodeEnv).toBe('production')
       expect(call.electronNode).toBeUndefined()
@@ -151,7 +155,64 @@ describe.skipIf(process.platform !== 'linux' || process.getuid?.() === 0)('Linux
   it('shows help or rejects unknown arguments without side effects', () => {
     const app = fixture()
     expect(app.run(['--help'], { DISPLAY: '' }).status).toBe(0)
+    expect(app.run(['preview', '--help'], { DISPLAY: '' }).status).toBe(0)
     expect(app.run(['--unknown']).status).toBe(1)
     expect(app.calls()).toEqual([])
+  })
+
+  describe.each(['dev', 'preview'] as const)('root %s launcher', mode => {
+    const entrypoint = `start-${mode}.sh`
+
+    it('is executable and starts the correct mode from another cwd and a path with spaces', () => {
+      const app = fixture()
+      expect(fs.statSync(path.resolve(entrypoint)).mode & 0o111).not.toBe(0)
+      expect(app.run([], {}, entrypoint).status).toBe(0)
+      expect(app.run([], {}, entrypoint).status).toBe(0)
+      expect(app.calls().some(call => call.args[0] === 'ci')).toBe(false)
+      for (const call of app.calls()) expect(call.cwd).toBe(app.project)
+      const launches = app.calls().filter(call => call.args[1] === mode)
+      expect(launches).toHaveLength(2)
+      for (const call of launches) {
+        expect(call.args).toEqual(mode === 'dev' ? ['run', 'dev'] : ['run', 'preview', '--', '--skipBuild'])
+        expect(call.nodeEnv).toBe(mode === 'dev' ? 'development' : 'production')
+        expect(call.electronNode).toBeUndefined()
+      }
+      expect(app.calls().filter(call => call.args[1] === 'build')).toHaveLength(mode === 'preview' ? 2 : 0)
+    })
+
+    it('bootstraps missing dependencies and Electron through the shared launcher', () => {
+      const app = fixture({ dependencies: false, runtime: false })
+      expect(app.run([], {}, entrypoint).status).toBe(0)
+      expect(app.calls().map(call => call.args[0])).toEqual(mode === 'dev' ? ['ls', 'ci', 'run'] : ['ls', 'ci', 'run', 'run'])
+      expect(fs.existsSync(path.join(app.project, 'runtime-installed'))).toBe(true)
+    })
+
+    it('forwards --install and propagates launch failures', () => {
+      const app = fixture()
+      expect(app.run(['--install'], {}, entrypoint).status).toBe(0)
+      expect(app.calls()[0].args).toEqual(['ci', '--include=dev', '--include=optional', '--no-audit', '--no-fund'])
+      expect(app.run([], { TEST_RUN_FAIL: mode }, entrypoint).status).toBe(19)
+    })
+
+    it('shows help and rejects invalid arguments without installation or a graphical session', () => {
+      const app = fixture()
+      for (const help of ['--help', '-h']) {
+        const result = app.run([help], { DISPLAY: '' }, entrypoint)
+        expect(result.status).toBe(0)
+        expect(result.stdout).toContain(`./${entrypoint}`)
+      }
+      for (const args of [['--unknown'], ['--install', '--unknown'], ['--install unexpected argument']]) {
+        expect(app.run(args, {}, entrypoint).status).toBe(1)
+      }
+      expect(app.calls()).toEqual([])
+    })
+
+    it('preserves the missing-desktop guard without installing dependencies', () => {
+      const app = fixture()
+      const result = app.run([], { DISPLAY: '', WAYLAND_DISPLAY: '' }, entrypoint)
+      expect(result.status).toBe(1)
+      expect(result.stderr).toContain('No graphical session')
+      expect(app.calls()).toEqual([])
+    })
   })
 })

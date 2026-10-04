@@ -126,7 +126,21 @@ sudo apt install git openssh-client xdg-utils libgtk-3-0t64 libnss3 libgbm1 \
 
 Ubuntu 22.04 或 Debian 12 请把两个 `t64` 包名替换为 `libgtk-3-0`、`libasound2`；其他发行版的包名可能不同。`openssh-client` 提供公网远程控制所需的 `ssh` 和 `ssh-keygen`；项目操作需要 `git`。
 
-在项目目录执行：
+Linux 一键启动脚本也位于项目根目录，与 Windows 的 `.bat` 文件对应：
+
+- `start-dev.sh`：检查并补齐依赖和 Electron，然后启动开发模式（支持热更新）。
+- `start-preview.sh`：检查并补齐依赖和 Electron，构建一次后启动生产预览。
+
+在项目目录的终端中执行：
+
+```bash
+./start-dev.sh
+./start-preview.sh
+```
+
+支持运行可执行脚本的文件管理器中，可选择「在终端中运行」。部分文件管理器会将 `.sh` 作为文本打开，此时使用上面的终端命令。如果下载或解压后没有执行权限，可用 `bash start-dev.sh` / `bash start-preview.sh`，或先执行一次 `chmod +x start-dev.sh start-preview.sh`。添加 `--help` 查看用法，添加 `--install` 刷新依赖。
+
+原有 npm 命令仍然可用：
 
 ```bash
 npm run dev:linux       # 检查依赖、补齐 Electron，启动热更新开发模式
@@ -136,7 +150,8 @@ npm run preview:linux   # 检查依赖、构建并打开生产预览
 也可以从任意工作目录执行脚本，支持路径中的空格：
 
 ```bash
-bash "/path/to/Agent-Desktop/scripts/start-linux.sh" dev
+bash "/path/to/Agent-Desktop/start-dev.sh"
+bash "/path/to/Agent-Desktop/start-preview.sh"
 ```
 
 首次运行会按锁文件下载缺少的依赖，并下载 Electron 运行时。后续启动会复用完整的本地依赖与运行时，无需再次安装或联网。拉取依赖或锁文件变更后，执行 `npm run dev:linux -- --install`（或 `npm ci --include=dev --include=optional`）刷新依赖。不要省略 optional 依赖，内置代理的原生二进制按平台分发。下载失败会在终端保留错误；检查网络、代理或 `ELECTRON_MIRROR` 后重试。
