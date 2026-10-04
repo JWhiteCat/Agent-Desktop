@@ -74,13 +74,6 @@ export default function App() {
     <div className={`app ${sidebarOpen ? '' : 'sidebar-hidden'} ${showChanges ? 'changes-open' : ''}`}>
       {sidebarOpen && <Sidebar ref={search} onOpenSettings={() => setDialog('settings')} onOpenImport={() => setDialog('import')} />}
       {sidebarOpen && <div className="sidebar-scrim" onClick={() => setSidebarOpen(false)} />}
-      <button
-        className="icon-btn sidebar-toggle no-drag"
-        title={t(sidebarOpen ? '隐藏侧边栏 (Ctrl+B)' : '显示侧边栏 (Ctrl+B)')}
-        onClick={() => setSidebarOpen((o) => !o)}
-      >
-        <IconSidebar />
-      </button>
       <main className="main">
         {view.kind === 'thread' && thread ? (
           <ThreadView thread={thread} changesOpen={changesOpen} onToggleChanges={() => setChangesOpen((o) => !o)} />
@@ -89,6 +82,17 @@ export default function App() {
         )}
       </main>
       {showChanges && thread && <ChangesPanel thread={thread} onClose={() => setChangesOpen(false)} />}
+      {/* Electron applies drag regions in DOM order; exclude this button after every header. */}
+      <button
+        type="button"
+        className="icon-btn sidebar-toggle no-drag"
+        title={t(sidebarOpen ? '隐藏侧边栏 (Ctrl+B)' : '显示侧边栏 (Ctrl+B)')}
+        aria-label={t(sidebarOpen ? '隐藏侧边栏 (Ctrl+B)' : '显示侧边栏 (Ctrl+B)')}
+        aria-expanded={sidebarOpen}
+        onClick={() => setSidebarOpen((o) => !o)}
+      >
+        <IconSidebar />
+      </button>
       {dialog === 'settings' && <SettingsDialog onClose={() => setDialog(null)} onOpenImport={() => setDialog('import')} />}
       {dialog === 'import' && <ImportDialog onClose={() => setDialog(null)} />}
       {toastMsg && (

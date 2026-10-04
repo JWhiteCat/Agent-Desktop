@@ -2440,6 +2440,9 @@ select {
     z-index: 90;
     background: rgba(0, 0, 0, 0.35);
   }
+  .app:not(.sidebar-hidden) .sidebar-toggle {
+    z-index: 110;
+  }
   .app .main-header,
   .app.sidebar-hidden .main-header {
     padding-left: 56px;
