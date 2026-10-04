@@ -151,20 +151,23 @@ function probeReachable(host: string, port: number, clientId: string): Promise<b
     const finish = (ok: boolean) => {
       if (done) return
       done = true
+      clearTimeout(deadline)
+      req.destroy()
       resolve(ok)
     }
     const req = http.get({ host, port, path: `/c/${clientId}/api/public-health`, timeout: 5000 }, (res) => {
       const chunks: Buffer[] = []
       let size = 0
       res.on('data', (chunk: Buffer) => {
+        if (done) return
         size += chunk.length
-        if (size > 4096) {
-          req.destroy()
-          finish(false)
-          return
-        }
+        if (size > 4096) return finish(false)
         chunks.push(chunk)
       })
+      res.on('aborted', () => finish(false))
+      res.on('error', () => finish(false))
+      // A normal close follows end; a close without end is a failed probe.
+      res.on('close', () => finish(false))
       res.on('end', () => {
         if ((res.statusCode ?? 500) >= 500) return finish(false)
         try {
@@ -175,10 +178,9 @@ function probeReachable(host: string, port: number, clientId: string): Promise<b
         }
       })
     })
-    req.on('timeout', () => {
-      req.destroy()
-      finish(false)
-    })
+    // The socket timeout alone can be extended indefinitely by a trickling body.
+    const deadline = setTimeout(() => finish(false), 5000)
+    req.on('timeout', () => finish(false))
     req.on('error', () => finish(false))
   })
 }
@@ -295,8 +297,9 @@ export class PublicTunnel {
     for (const wait of [800, 1200, 2000]) {
       await sleep(wait)
       if (gen !== this.generation || this.child === undefined) return
-      if (await this.probe(target.host, target.port, target.clientId)) {
-        if (gen !== this.generation || this.child === undefined) return
+      const reachable = await this.probe(target.host, target.port, target.clientId)
+      if (gen !== this.generation || this.child === undefined) return
+      if (reachable) {
         this.attempt = 0
         this.setStatus('up')
         return

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { titleFrom } from '../src/main/sessions'
-import { collectEditedFiles, parseUnifiedDiff } from '../src/renderer/src/lib/diff'
+import { collectEditedFiles, collectGitFiles, parseUnifiedDiff } from '../src/renderer/src/lib/diff'
+import { decodeGitPath, quoteGitPath, untrackedGitPaths } from '../src/shared/git-path'
 import { basename, duration, formatUsd, relativePath, relativeTime, resetStamp, resetsIn, shortPath } from '../src/renderer/src/lib/format'
 import { planPath, planUriOf, summarizeTool, toolDiff } from '../src/renderer/src/lib/tools'
 import { unifiedDiff } from '../src/shared/unified-diff'
@@ -37,6 +38,57 @@ describe('format', () => {
 })
 
 describe('tools and diffs', () => {
+  it('round-trips Git control-character escapes and preserves raw whitespace', () => {
+    const file = ' spaced\x07\b\f\n\r\t\v\\"\x01\x7f文件-é.txt '
+    const quoted = quoteGitPath(file)
+    expect(quoted).not.toMatch(/[\x00-\x1f\x7f]/)
+    expect(quoted).toContain('\\001\\177')
+    expect(decodeGitPath(quoted)).toBe(file)
+    expect(decodeGitPath(' raw spaces ')).toBe(' raw spaces ')
+    expect(quoteGitPath('文件-é.txt')).toBe('文件-é.txt')
+    expect(untrackedGitPaths(`?? ${quoted}\nR  old.txt -> new.txt\n?? plain.txt\n`)).toEqual([file, 'plain.txt'])
+  })
+
+  it('uses decoded status-only paths once when no diff can be rendered', () => {
+    const path = ' file\nwith spaces.txt '
+    const status = `?? ${quoteGitPath(path)}\n?? ${quoteGitPath(path)}\n`
+    expect(collectGitFiles({ diff: '', status })).toEqual([{ path, lines: [], added: 0, removed: 0 }])
+  })
+
+  it.each([
+    'quote"file.txt', 'back\\slash.txt', 'tab\tfile.txt', 'line\nbreak.txt',
+    'carriage\rreturn.txt', ' leading and trailing spaces.txt ', '文件-é.txt'
+  ].map((file) => [JSON.stringify(file), file]))('decodes quoted diff paths for %s', (_label, file) => {
+    const header = `diff --git ${JSON.stringify(`a/${file}`)} ${JSON.stringify(`b/${file}`)}`
+    const files = parseUnifiedDiff(`${header}\n--- /dev/null\n+++ ${JSON.stringify(`b/${file}`)}\n@@ -0,0 +1 @@\n+contents\n`)
+
+    expect(files).toEqual([{ path: file, lines: ['@@ -0,0 +1 @@', '+contents'], added: 1, removed: 0 }])
+    expect(parseUnifiedDiff(`${header}\nBinary files /dev/null and ${JSON.stringify(`b/${file}`)} differ\n`))
+      .toEqual([{ path: file, lines: [], added: 0, removed: 0, binary: true }])
+  })
+
+  it('decodes octal UTF-8 Git paths without interpreting decoded backslashes again', () => {
+    const files = parseUnifiedDiff('diff --git "a/\\346\\226\\207\\344\\273\\266-\\134n.txt" "b/\\346\\226\\207\\344\\273\\266-\\134n.txt"\nBinary files differ\n')
+    expect(files).toEqual([{ path: '文件-\\n.txt', lines: [], added: 0, removed: 0, binary: true }])
+  })
+
+  it('preserves filename spaces while discarding unified header tab separators', () => {
+    const file = ' leading and trailing spaces.txt '
+    const files = parseUnifiedDiff(`diff --git a/${file} b/${file}\n--- /dev/null\n+++ b/${file}\t\n@@ -0,0 +1 @@\n+contents\n`)
+    expect(files).toEqual([{ path: file, lines: ['@@ -0,0 +1 @@', '+contents'], added: 1, removed: 0 }])
+  })
+
+  it('finds an unquoted binary path containing a diff-header delimiter', () => {
+    const file = 'dir b/name file.txt'
+    expect(parseUnifiedDiff(`diff --git a/${file} b/${file}\nBinary files a/${file} and b/${file} differ\n`))
+      .toEqual([{ path: file, lines: [], added: 0, removed: 0, binary: true }])
+  })
+
+  it('uses decoded rename destinations when no content hunk is present', () => {
+    const files = parseUnifiedDiff('diff --git a/old name.txt "b/new\\nname.txt"\nsimilarity index 100%\nrename from old name.txt\nrename to "new\\nname.txt"\n')
+    expect(files).toEqual([{ path: 'new\nname.txt', lines: [], added: 0, removed: 0 }])
+  })
+
   it('keeps header-like SQL comments and additions inside the current hunk', () => {
     const body = ['@@ -1,2 +1,3 @@', '--- old comment', '+-- new comment', '+++ extra', ' SELECT 1;']
     const files = parseUnifiedDiff(['diff --git a/query.sql b/query.sql', '--- a/query.sql', '+++ b/query.sql', ...body].join('\n'))

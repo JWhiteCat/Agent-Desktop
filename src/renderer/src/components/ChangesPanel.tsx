@@ -1,7 +1,8 @@
 import { useT } from '../lib/i18n'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { GitDiff, ThreadMeta } from '@shared/types'
-import { DiffFileView, collectEditedFiles, parseUnifiedDiff, type DiffFile } from '../lib/diff'
+import { DiffFileView, collectEditedFiles, collectGitFiles, type DiffFile } from '../lib/diff'
+import { untrackedGitPaths } from '@shared/git-path'
 import { useStore } from '../store'
 import { IconBranch, IconRefresh, IconX, Spinner } from './icons'
 
@@ -35,18 +36,11 @@ export function ChangesPanel({ thread, onClose }: { thread: ThreadMeta; onClose:
 
   const gitFiles = useMemo(() => {
     if (!git?.isRepo) return []
-    const files = parseUnifiedDiff(git.diff)
-    const known = new Set(files.map((f) => f.path))
-    for (const line of git.status.split(/\r?\n/)) {
-      if (!line.startsWith('??')) continue
-      const p = line.slice(3).trim()
-      if (!known.has(p)) files.push({ path: p, lines: [], added: 0, removed: 0 })
-    }
-    return files
+    return collectGitFiles(git)
   }, [git])
 
   const untracked = useMemo(
-    () => new Set((git?.status ?? '').split(/\r?\n/).filter((l) => l.startsWith('??')).map((l) => l.slice(3).trim())),
+    () => new Set(untrackedGitPaths(git?.status ?? '')),
     [git]
   )
 

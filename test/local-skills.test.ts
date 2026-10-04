@@ -3,7 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { deleteLocalSkill, readLocalSkill, saveLocalSkill, scanLocalSkills, toggleLocalSkill } from '../src/main/local-skills'
-import { hashText, type LocalEnv } from '../src/main/local-files'
+import { hashText, pathKey, type LocalEnv } from '../src/main/local-files'
 import { parseSkillMarkdown, updateSkillMarkdown } from '../src/shared/local-config'
 
 let root: string
@@ -23,6 +23,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  vi.restoreAllMocks()
   fs.rmSync(root, { recursive: true, force: true })
 })
 
@@ -121,6 +122,168 @@ describe('local skills', () => {
     toggleLocalSkill(env, [], held.id, true)
     expect(fs.existsSync(path.join(dir, 'SKILL.md'))).toBe(true)
     expect(scanLocalSkills(env, []).entries).toMatchObject([{ enabled: true }])
+  })
+
+  it.skipIf(process.platform === 'win32').each(['relative', 'absolute'])('disables and restores a %s skill symlink without changing its target', (kind) => {
+    const skills = path.join(env.home, '.agents', 'skills')
+    const dir = path.join(skills, 'linked')
+    const target = path.join(env.home, '.agents', 'shared-skill')
+    const text = '---\nname: linked\ndescription: Shared skill\n---\nOriginal body\n'
+    skill(target, text)
+    fs.writeFileSync(path.join(target, 'extra.txt'), 'keep')
+    fs.mkdirSync(skills, { recursive: true })
+    const link = kind === 'relative' ? '../shared-skill' : target
+    fs.symlinkSync(link, dir, 'dir')
+    const entry = scanLocalSkills(env, []).entries[0]
+
+    for (let i = 0; i < 2; i++) {
+      toggleLocalSkill(env, [], entry.id, false)
+      expect(fs.lstatSync(dir, { throwIfNoEntry: false })).toBeUndefined()
+      const held = scanLocalSkills(env, []).entries[0]
+      expect(held).toMatchObject({ id: entry.id, enabled: false, name: 'linked', description: 'Shared skill' })
+      expect(fs.lstatSync(held.dir).isSymbolicLink()).toBe(true)
+      expect(fs.realpathSync(held.dir)).toBe(target)
+      expect(readLocalSkill(env, [], entry.id).body).toBe('Original body\n')
+      expect(fs.readFileSync(path.join(target, 'SKILL.md'), 'utf8')).toBe(text)
+      expect(fs.readFileSync(path.join(target, 'extra.txt'), 'utf8')).toBe('keep')
+      toggleLocalSkill(env, [], entry.id, true)
+      expect(fs.lstatSync(dir).isSymbolicLink()).toBe(true)
+      expect(fs.readlinkSync(dir)).toBe(link)
+      expect(fs.lstatSync(held.dir, { throwIfNoEntry: false })).toBeUndefined()
+      expect(fs.readFileSync(path.join(target, 'SKILL.md'), 'utf8')).toBe(text)
+      expect(fs.readFileSync(path.join(target, 'extra.txt'), 'utf8')).toBe('keep')
+    }
+  })
+
+  it.skipIf(process.platform === 'win32')('preserves relative resolution through linked skill roots and intermediate links', () => {
+    const skills = path.join(env.home, '.agents', 'skills')
+    const actualSkills = path.join(root, 'actual-skills')
+    const target = path.join(root, 'shared', 'shared-skill')
+    skill(target, '---\nname: linked\ndescription: Shared skill\n---\nOriginal body\n')
+    fs.mkdirSync(actualSkills, { recursive: true })
+    fs.mkdirSync(path.join(root, 'shared', 'nested'), { recursive: true })
+    fs.symlinkSync(path.join(root, 'shared', 'nested'), path.join(actualSkills, 'reference'), 'dir')
+    fs.mkdirSync(path.dirname(skills), { recursive: true })
+    fs.symlinkSync(actualSkills, skills, 'dir')
+    const link = 'reference/../shared-skill'
+    fs.symlinkSync(link, path.join(skills, 'linked'), 'dir')
+    const entry = scanLocalSkills(env, []).entries[0]
+
+    toggleLocalSkill(env, [], entry.id, false)
+    const held = scanLocalSkills(env, []).entries[0]
+    expect(held).toMatchObject({ name: 'linked', description: 'Shared skill', enabled: false })
+    expect(fs.realpathSync.native(held.dir)).toBe(target)
+    toggleLocalSkill(env, [], entry.id, true)
+    expect(fs.readlinkSync(path.join(skills, 'linked'))).toBe(link)
+    expect(fs.realpathSync.native(path.join(skills, 'linked'))).toBe(target)
+  })
+
+  it.each([false, true])('moves absolute links and junctions without copying target contents (cross-device: %s)', (crossDevice) => {
+    const skills = path.join(env.home, '.agents', 'skills')
+    const dir = path.join(skills, 'linked')
+    const held = path.join(env.stateDir, 'disabled-skills', hashText(pathKey(skills)), 'linked')
+    const target = path.join(root, 'shared-skill')
+    const text = '---\nname: linked\ndescription: Shared skill\n---\nOriginal body\n'
+    skill(target, text)
+    fs.mkdirSync(skills, { recursive: true })
+    fs.symlinkSync(target, dir, process.platform === 'win32' ? 'junction' : 'dir')
+    const originalLink = fs.readlinkSync(dir)
+    const entry = scanLocalSkills(env, []).entries[0]
+    if (crossDevice) {
+      const rename = fs.renameSync
+      vi.spyOn(fs, 'renameSync').mockImplementation((from, to) => {
+        if (from === dir || from === held) throw Object.assign(new Error('Cross-device move'), { code: 'EXDEV' })
+        rename(from, to)
+      })
+    }
+    const symlink = vi.spyOn(fs, 'symlinkSync')
+    const copy = vi.spyOn(fs, 'cpSync')
+
+    toggleLocalSkill(env, [], entry.id, false)
+    expect(scanLocalSkills(env, []).entries).toMatchObject([{ id: entry.id, enabled: false, description: 'Shared skill' }])
+    expect(fs.lstatSync(held).isSymbolicLink()).toBe(true)
+    toggleLocalSkill(env, [], entry.id, true)
+    expect(fs.readlinkSync(dir)).toBe(originalLink)
+    expect(fs.readFileSync(path.join(target, 'SKILL.md'), 'utf8')).toBe(text)
+    expect(copy).not.toHaveBeenCalled()
+    expect(symlink).toHaveBeenCalledTimes(crossDevice ? 2 : 0)
+  })
+
+  it.skipIf(process.platform === 'win32')('restores a legacy relative symlink left broken in the stash', () => {
+    const skills = path.join(env.home, '.agents', 'skills')
+    const target = path.join(env.home, '.agents', 'shared-skill')
+    const held = path.join(env.stateDir, 'disabled-skills', hashText(pathKey(skills)), 'linked')
+    const text = '---\nname: linked\ndescription: Shared skill\n---\nOriginal body\n'
+    skill(target, text)
+    fs.writeFileSync(path.join(target, 'extra.txt'), 'keep')
+    fs.mkdirSync(path.dirname(held), { recursive: true })
+    fs.symlinkSync('../shared-skill', held, 'dir')
+    fs.writeFileSync(path.join(env.stateDir, 'disabled-skills.json'), JSON.stringify({ entries: [
+      { root: skills, rel: 'linked', stash: held }
+    ] }))
+
+    const entry = scanLocalSkills(env, []).entries[0]
+    expect(entry).toMatchObject({ name: 'linked', enabled: false, dir: held })
+    expect(fs.readFileSync(path.join(target, 'SKILL.md'), 'utf8')).toBe(text)
+    expect(fs.readlinkSync(held)).toBe('../shared-skill')
+    toggleLocalSkill(env, [], entry.id, true)
+    expect(fs.readlinkSync(path.join(skills, 'linked'))).toBe('../shared-skill')
+    expect(fs.readFileSync(path.join(skills, 'linked', 'SKILL.md'), 'utf8')).toBe(text)
+    expect(fs.readFileSync(path.join(target, 'extra.txt'), 'utf8')).toBe('keep')
+    expect(fs.lstatSync(held, { throwIfNoEntry: false })).toBeUndefined()
+  })
+
+  it.skipIf(process.platform === 'win32')('keeps a disabled link recoverable if its target disappears', () => {
+    const skills = path.join(env.home, '.agents', 'skills')
+    const target = path.join(env.home, '.agents', 'shared-skill')
+    skill(target, '---\nname: linked\ndescription: Shared skill\n---\n')
+    fs.mkdirSync(skills, { recursive: true })
+    fs.symlinkSync('../shared-skill', path.join(skills, 'linked'), 'dir')
+    const entry = scanLocalSkills(env, []).entries[0]
+    toggleLocalSkill(env, [], entry.id, false)
+    fs.rmSync(target, { recursive: true })
+
+    expect(scanLocalSkills(env, []).entries).toMatchObject([{ id: entry.id, enabled: false }])
+    toggleLocalSkill(env, [], entry.id, true)
+    expect(fs.readlinkSync(path.join(skills, 'linked'))).toBe('../shared-skill')
+    expect(fs.existsSync(target)).toBe(false)
+  })
+
+  it.skipIf(process.platform === 'win32')('does not replace dangling links at the stash or restore destination', () => {
+    const skills = path.join(env.home, '.agents', 'skills')
+    const dir = path.join(skills, 'mine')
+    const held = path.join(env.stateDir, 'disabled-skills', hashText(pathKey(skills)), 'mine')
+    const target = path.join(env.home, '.agents', 'shared-skill')
+    skill(target, '---\nname: mine\ndescription: Mine\n---\nOriginal body\n')
+    fs.mkdirSync(skills, { recursive: true })
+    fs.symlinkSync('../shared-skill', dir, 'dir')
+    fs.mkdirSync(path.dirname(held), { recursive: true })
+    fs.symlinkSync('missing-stash-target', held, 'dir')
+    const index = path.join(env.stateDir, 'disabled-skills.json')
+    fs.writeFileSync(index, '{damaged index')
+    const entry = scanLocalSkills(env, []).entries[0]
+    expect(() => toggleLocalSkill(env, [], entry.id, false)).toThrow()
+    expect(fs.readlinkSync(held)).toBe('missing-stash-target')
+    expect(fs.readFileSync(index, 'utf8')).toBe('{damaged index')
+    expect(fs.readFileSync(path.join(dir, 'SKILL.md'), 'utf8')).toContain('Original body')
+
+    fs.unlinkSync(held)
+    toggleLocalSkill(env, [], entry.id, false)
+    fs.symlinkSync('missing-destination-target', dir, 'dir')
+    expect(() => toggleLocalSkill(env, [], entry.id, true)).toThrow()
+    expect(fs.readlinkSync(dir)).toBe('missing-destination-target')
+    expect(fs.readFileSync(path.join(held, 'SKILL.md'), 'utf8')).toContain('Original body')
+    expect(scanLocalSkills(env, []).entries).toMatchObject([{ id: entry.id, enabled: false }])
+  })
+
+  it.skipIf(process.platform === 'win32')('does not create a same-name skill through an existing dangling link', () => {
+    const skills = path.join(env.home, '.agents', 'skills')
+    const target = path.join(root, 'missing-skill')
+    fs.mkdirSync(skills, { recursive: true })
+    fs.symlinkSync(target, path.join(skills, 'mine'), 'dir')
+    expect(() => saveLocalSkill(env, [], { target: { cli: 'codex', scope: 'user' }, name: 'mine', description: 'Mine', body: 'Body' })).toThrow()
+    expect(fs.readlinkSync(path.join(skills, 'mine'))).toBe(target)
+    expect(fs.existsSync(target)).toBe(false)
   })
 
   it('moves deleted skills to the trash and never touches read-only ones', async () => {

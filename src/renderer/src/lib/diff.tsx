@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
-import type { Item } from '@shared/types'
+import type { GitDiff, Item } from '@shared/types'
+import { decodeGitPath, untrackedGitPaths } from '@shared/git-path'
 import { t } from '@shared/i18n'
 import { useT } from './i18n'
 import { IconChevronDown, IconChevronRight } from '../components/icons'
@@ -12,6 +13,20 @@ export interface DiffFile {
   added: number
   removed: number
   binary?: boolean
+}
+
+function diffHeaderPath(paths: string): string {
+  const quotedFrom = /^"(?:\\.|[^"\\])*" /.exec(paths)
+  if (quotedFrom) return decodeGitPath(paths.slice(quotedFrom[0].length)).replace(/^b\//, '')
+  const quotedTo = / ("(?:\\.|[^"\\])*")$/.exec(paths)
+  if (quotedTo) return decodeGitPath(quotedTo[1]).replace(/^b\//, '')
+  // Spaces are unquoted in native Git diff headers. Match repeated paths before
+  // falling back to the separator, which can itself occur inside a filename.
+  for (let i = paths.indexOf(' b/'); i !== -1; i = paths.indexOf(' b/', i + 1)) {
+    const to = paths.slice(i + 3)
+    if (paths.slice(0, i).replace(/^a\//, '') === to) return to
+  }
+  return / b\/(.+)$/.exec(paths)?.[1] ?? paths
 }
 
 export function parseUnifiedDiff(text: string): DiffFile[] {
@@ -27,8 +42,7 @@ export function parseUnifiedDiff(text: string): DiffFile[] {
   }
   for (const line of text.split(/\r?\n/)) {
     if (line.startsWith('diff --git ')) {
-      const m = line.match(/ b\/(.+)$/)
-      start(m ? m[1] : line.slice(11))
+      start(diffHeaderPath(line.slice(11)))
       continue
     }
     const hunk = /^@@ -\d+(?:,(\d+))? \+\d+(?:,(\d+))? @@/.exec(line)
@@ -60,18 +74,22 @@ export function parseUnifiedDiff(text: string): DiffFile[] {
     if (!cur) start('')
     const c = cur!
     if (line.startsWith('+++ ')) {
-      const p = line.slice(4).replace(/^b\//, '')
+      const p = decodeGitPath(line.slice(4).split('\t')[0]).replace(/^b\//, '')
       if (p !== '/dev/null') c.path = p
       continue
     }
     if (line.startsWith('--- ')) {
       if (!c.path) {
-        const p = line.slice(4).replace(/^a\//, '')
+        const p = decodeGitPath(line.slice(4).split('\t')[0]).replace(/^a\//, '')
         if (p !== '/dev/null') c.path = p
       }
       continue
     }
-    if (/^(index |new file mode|deleted file mode|similarity index|rename from|rename to|old mode|new mode)/.test(line)) continue
+    if (/^(rename to |copy to )/.test(line)) {
+      c.path = decodeGitPath(line.replace(/^(rename to |copy to )/, ''))
+      continue
+    }
+    if (/^(index |new file mode|deleted file mode|similarity index|rename from|copy from|old mode|new mode)/.test(line)) continue
     if (line.startsWith('Binary files')) {
       c.binary = true
       continue
@@ -82,6 +100,18 @@ export function parseUnifiedDiff(text: string): DiffFile[] {
   }
   for (const f of files) while (f.lines.length && !f.lines[f.lines.length - 1]) f.lines.pop()
   return files.filter((f) => f.path || f.lines.length)
+}
+
+/** Include status-only files (e.g. beyond the untracked diff limit) without duplicates. */
+export function collectGitFiles(git: Pick<GitDiff, 'diff' | 'status'>): DiffFile[] {
+  const files = parseUnifiedDiff(git.diff)
+  const known = new Set(files.map((file) => file.path))
+  for (const path of untrackedGitPaths(git.status)) {
+    if (known.has(path)) continue
+    files.push({ path, lines: [], added: 0, removed: 0 })
+    known.add(path)
+  }
+  return files
 }
 
 /** Edits in one turn, grouped by path. Later edits of the same file append. */

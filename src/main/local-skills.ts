@@ -36,6 +36,8 @@ interface StashEntry {
   root: string
   rel: string
   stash: string
+  /** Original link text; the stashed link uses an absolute target. */
+  linkTarget?: string
 }
 
 interface Found {
@@ -165,7 +167,8 @@ function collect(env: LocalEnv, projects: string[]): { found: Found[]; errors: R
     if (root.walk) continue
     for (const item of stash) {
       if (!samePath(item.root, root.dir) || rels.includes(item.rel)) continue
-      if (!fs.existsSync(path.join(item.stash, SKILL_FILE))) continue
+      // Keep broken links recoverable, including relative links moved by older versions.
+      if (!fs.existsSync(path.join(item.stash, SKILL_FILE)) && !fs.lstatSync(item.stash, { throwIfNoEntry: false })?.isSymbolicLink()) continue
       found.push({ entry: toEntry(root, item.rel, item.stash, true), root, rel: item.rel, stashed: true })
     }
   }
@@ -204,7 +207,7 @@ function validate(req: LocalSkillSaveRequest, previous?: string): { name: string
 }
 
 function taken(env: LocalEnv, rootDir: string, rel: string): boolean {
-  return fs.existsSync(path.join(rootDir, rel)) || readStash(env).some((item) => samePath(item.root, rootDir) && item.rel === rel)
+  return !!fs.lstatSync(path.join(rootDir, rel), { throwIfNoEntry: false }) || readStash(env).some((item) => samePath(item.root, rootDir) && item.rel === rel)
 }
 
 export function saveLocalSkill(env: LocalEnv, projects: string[], req: LocalSkillSaveRequest): void {
@@ -234,20 +237,50 @@ export function saveLocalSkill(env: LocalEnv, projects: string[], req: LocalSkil
   writeTextSafely(path.join(dir, SKILL_FILE), text, false)
 }
 
+/** Move only the link, never copy its target (including across filesystems). */
+function moveSkill(dir: string, dest: string, linkTarget?: string): void {
+  if (!fs.lstatSync(dir).isSymbolicLink()) return moveDir(dir, dest)
+  fs.mkdirSync(path.dirname(dest), { recursive: true, mode: 0o700 })
+  const previousTarget = fs.readlinkSync(dir)
+  const target = linkTarget ?? previousTarget
+  if (target === previousTarget) {
+    // Preserve absolute links and Windows junctions without requiring symlink privileges.
+    try {
+      fs.renameSync(dir, dest)
+      return
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EXDEV') throw error
+    }
+  }
+  fs.symlinkSync(target, dest, process.platform === 'win32' && path.isAbsolute(target) ? 'junction' : 'dir')
+  try {
+    fs.unlinkSync(dir)
+  } catch (error) {
+    fs.unlinkSync(dest)
+    throw error
+  }
+}
+
 export function toggleLocalSkill(env: LocalEnv, projects: string[], id: string, enabled: boolean): void {
   const hit = find(env, projects, id)
   if (hit.stashed !== enabled) return
   const stash = readStash(env)
   if (!enabled) {
     const held = path.join(stashRoot(env, hit.root.dir), hit.rel)
-    if (fs.existsSync(held)) throw new LocalConfigError(translate('{path} 已存在', { path: held }))
-    moveDir(hit.entry.dir, held)
-    writeStash(env, [...stash, { root: path.resolve(hit.root.dir), rel: hit.rel, stash: held }])
+    if (fs.lstatSync(held, { throwIfNoEntry: false })) throw new LocalConfigError(translate('{path} 已存在', { path: held }))
+    const linkTarget = fs.lstatSync(hit.entry.dir).isSymbolicLink() ? fs.readlinkSync(hit.entry.dir) : undefined
+    // Do not normalize '..': an intermediate path component can itself be a link.
+    const heldTarget = linkTarget === undefined || path.isAbsolute(linkTarget)
+      ? linkTarget
+      : `${fs.realpathSync.native(path.dirname(hit.entry.dir))}${path.sep}${linkTarget}`
+    moveSkill(hit.entry.dir, held, heldTarget)
+    writeStash(env, [...stash, { root: path.resolve(hit.root.dir), rel: hit.rel, stash: held, ...(linkTarget === undefined ? {} : { linkTarget }) }])
     return
   }
   const dest = path.join(hit.root.dir, hit.rel)
-  if (fs.existsSync(dest)) throw new LocalConfigError(translate('{path} 已存在', { path: dest }))
-  moveDir(hit.entry.dir, dest)
+  if (fs.lstatSync(dest, { throwIfNoEntry: false })) throw new LocalConfigError(translate('{path} 已存在', { path: dest }))
+  const item = stash.find((item) => samePath(item.root, hit.root.dir) && item.rel === hit.rel)
+  moveSkill(hit.entry.dir, dest, typeof item?.linkTarget === 'string' ? item.linkTarget : undefined)
   writeStash(env, stash.filter((item) => !(samePath(item.root, hit.root.dir) && item.rel === hit.rel)))
 }
 

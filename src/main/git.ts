@@ -4,6 +4,7 @@ import fs from 'node:fs'
 import { t as translate } from '@shared/i18n'
 import path from 'node:path'
 import type { GitDiff } from '@shared/types'
+import { quoteGitPath } from '@shared/git-path'
 
 const MAX_UNTRACKED_FILES = 60
 const MAX_UNTRACKED_BYTES = 256 * 1024
@@ -19,14 +20,16 @@ function git(cwd: string, args: string[]): Promise<{ ok: boolean; out: string; e
 
 /** `git diff` ignores untracked files, so render them as whole-file additions. */
 function untrackedDiff(root: string, rel: string): string {
-  const header = `diff --git a/${rel} b/${rel}\nnew file mode 100644\n--- /dev/null\n+++ b/${rel}\n`
+  const before = quoteGitPath(`a/${rel}`)
+  const after = quoteGitPath(`b/${rel}`)
+  const header = `diff --git ${before} ${after}\nnew file mode 100644\n--- /dev/null\n+++ ${after}\n`
   try {
     const file = path.join(root, rel)
     const stat = fs.statSync(file)
     if (!stat.isFile()) return ''
     if (stat.size > MAX_UNTRACKED_BYTES) return `${header}@@ ${translate('文件过大（{size} KB），未显示', { size: Math.round(stat.size / 1024) })} @@\n`
     const buf = fs.readFileSync(file)
-    if (buf.includes(0)) return `diff --git a/${rel} b/${rel}\nBinary files /dev/null and b/${rel} differ\n`
+    if (buf.includes(0)) return `diff --git ${before} ${after}\nBinary files /dev/null and ${after} differ\n`
     const lines = buf.toString('utf8').replace(/\r\n/g, '\n').replace(/\n$/, '').split('\n')
     if (lines.length === 1 && lines[0] === '') return header
     return `${header}@@ -0,0 +1,${lines.length} @@\n${lines.map((l) => `+${l}`).join('\n')}\n`
@@ -126,10 +129,11 @@ export async function gitDiff(cwd: string): Promise<GitDiff> {
   const inside = await git(cwd, ['rev-parse', '--show-toplevel'])
   if (!inside.ok) return { isRepo: false, status: '', diff: '' }
   const root = inside.out.trim()
-  const [branch, status, hasHead] = await Promise.all([
+  const [branch, status, hasHead, untrackedFiles] = await Promise.all([
     git(cwd, ['rev-parse', '--abbrev-ref', 'HEAD']),
     git(cwd, ['-c', 'core.quotepath=false', 'status', '--porcelain=v1', '-uall']),
-    git(cwd, ['rev-parse', '--verify', '-q', 'HEAD'])
+    git(cwd, ['rev-parse', '--verify', '-q', 'HEAD']),
+    git(root, ['ls-files', '--others', '--exclude-standard', '-z'])
   ])
   // Comparing with an empty tree includes edits after staging even before the
   // first commit. hash-object respects the repository's hash format and does
@@ -143,10 +147,8 @@ export async function gitDiff(cwd: string): Promise<GitDiff> {
     '--no-color',
     '--no-ext-diff'
   ])
-  const untracked = status.out
-    .split(/\r?\n/)
-    .filter((l) => l.startsWith('?? '))
-    .map((l) => l.slice(3).trim().replace(/^"|"$/g, ''))
+  // Keep display status unchanged; NUL-delimited paths need no unquoting or trimming.
+  const untracked = untrackedFiles.out.split('\0').filter(Boolean)
   const extra = untracked.slice(0, MAX_UNTRACKED_FILES).map((rel) => untrackedDiff(root, rel)).join('')
   let text = diff.out + extra
   if (text.length > 2_000_000) text = `${text.slice(0, 2_000_000)}\n… (${translate('diff 过大，已截断')})`
