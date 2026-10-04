@@ -30,8 +30,7 @@ describe('saved public SSH port', () => {
     const applyRemote = vi.fn().mockResolvedValue(undefined)
     const deps = { store, applyRemote, broadcast: vi.fn() } as unknown as IpcDeps
     const result = await settingsHandlers(deps)['settings:update']({ remotePublicSshPort: 2222 })
-    expect(result.remotePublicSshPort).toBe(2222)
-    expect(result.remotePublicPort).toBe(8765)
+    expect(result).toMatchObject({ remotePublicSshPort: 2222, remotePublicPort: 8765 })
     expect(applyRemote).toHaveBeenCalledOnce()
     store.flush()
     store = new Store()

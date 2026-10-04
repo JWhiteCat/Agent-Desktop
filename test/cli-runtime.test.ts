@@ -37,6 +37,10 @@ beforeEach(() => {
   home = path.join(root, 'home')
   fs.mkdirSync(home)
   vi.spyOn(os, 'homedir').mockReturnValue(home)
+  for (const key of ['HOME', 'USERPROFILE']) vi.stubEnv(key, home)
+  vi.stubEnv('CODEX_HOME', path.join(home, '.codex'))
+  vi.stubEnv('CLAUDE_CONFIG_DIR', path.join(home, '.claude'))
+  for (const key of ['CURSOR_API_KEY', 'CODEX_API_KEY', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY']) vi.stubEnv(key, undefined)
   vi.stubEnv('PATH', path.join(root, 'empty-path'))
   for (const key of ['NPM_CONFIG_PREFIX', 'npm_config_prefix', 'NVM_BIN', 'PNPM_HOME', 'VOLTA_HOME', 'HOMEBREW_PREFIX']) vi.stubEnv(key, undefined)
 })
@@ -45,6 +49,7 @@ afterEach(async () => {
   cleanupAcpUsagePreload()
   vi.restoreAllMocks()
   vi.unstubAllEnvs()
+  vi.useRealTimers()
   for (const child of children.splice(0)) {
     // Fixture cleanup only: never target an inherited shell or a real CLI.
     if (child.pid && process.platform !== 'win32') {
@@ -179,7 +184,7 @@ describe.skipIf(process.platform === 'win32')('POSIX desktop CLI discovery and e
       expect(resolveClaudeAcpEntry()).toBe(claude)
     } finally {
       if (descriptor) Object.defineProperty(process, 'resourcesPath', descriptor)
-      else delete (process as Partial<NodeJS.Process>).resourcesPath
+      else Reflect.deleteProperty(process, 'resourcesPath')
     }
   })
 })
@@ -199,21 +204,37 @@ describe.skipIf(process.platform === 'win32')('POSIX CLI cancellation', () => {
     const child = spawnCliProcess(process.execPath, [adapter], { stdio: ['ignore', 'pipe', 'pipe'] })
     children.push(child)
     await once(child.stdout!, 'data')
+    expect(child.pid).toBeDefined()
+    const realKill = process.kill.bind(process)
+    const signal = vi.spyOn(process, 'kill').mockImplementation((pid, signal) => {
+      // Even a broken cancellation implementation must not signal another group.
+      if (pid !== -child.pid!) throw new Error(`Unexpected fixture process group: ${pid}`)
+      return realKill(pid, signal)
+    })
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     const closed = once(child, 'close')
     const exited = once(child, 'exit')
     killTree(child)
     killTree(child) // Repeated cancel must not schedule duplicate escalation.
+    expect(signal.mock.calls).toEqual([[-child.pid!, 'SIGTERM']])
+    expect(vi.getTimerCount()).toBe(1)
     await exited
     expect(child.signalCode).toBe('SIGTERM')
     // close waits for the descendant's inherited pipe, even after the adapter exits.
+    await vi.advanceTimersByTimeAsync(3_000)
     await closed
+    expect(signal.mock.calls).toEqual([[-child.pid!, 'SIGTERM'], [-child.pid!, 'SIGKILL']])
+    expect(vi.getTimerCount()).toBe(0)
   }, 10_000)
 
   it('never signals the caller process group for an ordinary, non-detached child', async () => {
     const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' })
     children.push(child)
+    // child.kill is safe here; process.kill could accidentally target our group.
+    const signal = vi.spyOn(process, 'kill').mockReturnValue(true)
     const closed = once(child, 'close')
     killTree(child)
+    expect(signal).not.toHaveBeenCalled()
     await closed
     expect(child.signalCode).toBe('SIGTERM')
   })

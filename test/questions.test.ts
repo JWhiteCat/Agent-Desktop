@@ -172,7 +172,9 @@ describe('fenced plan questions', () => {
     expect(html).not.toContain('question-submit')
     expect(html).not.toContain('question-skip')
     expect(html).not.toContain('已回答')
-    for (const button of html.match(/<button\b[^>]*>/g) ?? []) expect(button).toContain('disabled=""')
+    const buttons = html.match(/<button\b[^>]*>/g) ?? []
+    expect(buttons).toHaveLength(3)
+    for (const button of buttons) expect(button).toContain('disabled=""')
   })
 
   it('keeps historical question blocks read-only', () => {
@@ -286,7 +288,9 @@ describe('Codex plan review questions', () => {
     expect(html).toContain('缩小改动范围\n保留现有接口</textarea>')
     expect(html).not.toContain('question-submit')
     expect(html).not.toContain('autofocus')
-    for (const control of html.match(/<(?:button|textarea)\b[^>]*>/g) ?? []) expect(control).toContain('disabled=""')
+    const controls = html.match(/<(?:button|textarea)\b[^>]*>/g) ?? []
+    expect(controls).toHaveLength(3)
+    for (const control of controls) expect(control).toContain('disabled=""')
   })
 
   it('upgrades legacy plan reviews that have the exact known options', () => {

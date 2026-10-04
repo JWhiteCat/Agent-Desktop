@@ -1,26 +1,50 @@
+import type { ChildProcess } from 'node:child_process'
+import { EventEmitter } from 'node:events'
+import os from 'node:os'
+import { PassThrough, Writable } from 'node:stream'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { AgentEvent, CliProvider, Item, ResultItem, SendRequest } from '../src/shared/types'
+import { DEFAULT_SETTINGS, type AgentEvent, type CliProvider, type Item, type ResultItem, type SendRequest, type ThreadMeta } from '../src/shared/types'
 import type { Store } from '../src/main/store'
 import type { loadCodexAccountUsage } from '../src/main/codex-account'
 import type { loadCodexQuota } from '../src/main/quota'
 import { readCodexUsage } from '../src/main/codex-history'
+import { spawnCodexAcp } from '../src/main/codex'
 import { StreamReducer } from '../src/main/reducer'
 import { SessionManager } from '../src/main/sessions'
 
+vi.mock('../src/main/skills', () => ({ syncAllManagedSkills: vi.fn() }))
 vi.mock('../src/main/codex-history', () => ({ readCodexUsage: vi.fn(() => []) }))
 vi.mock('../src/main/cli', async (original) => ({
-  ...await original<typeof import('../src/main/cli')>(), killTree: vi.fn()
+  ...await original<typeof import('../src/main/cli')>(),
+  killTree: vi.fn((child: ChildProcess) => {
+    if (typeof child.emit === 'function') {
+      Object.assign(child, { exitCode: 0 })
+      child.emit('close', 0)
+    }
+  })
 }))
 vi.mock('../src/main/codex', async (original) => ({
   ...await original<typeof import('../src/main/codex')>(),
-  resolveCodexApiKey: vi.fn((configured?: string) => configured?.trim() ?? '')
+  resolveCodexApiKey: vi.fn((configured?: string) => configured?.trim() ?? ''),
+  resolveCodex: vi.fn(() => ({ bundled: true, display: 'Codex', acpEntry: '/mock/codex.js' })),
+  spawnCodexAcp: vi.fn()
 }))
 
 const managers: SessionManager[] = []
-afterEach(() => {
-  for (const manager of managers.splice(0)) manager.stopAll()
-  if (vi.isFakeTimers()) vi.clearAllTimers()
-  vi.useRealTimers()
+beforeEach(() => {
+  vi.useFakeTimers()
+  vi.mocked(readCodexUsage).mockReset().mockReturnValue([])
+  vi.mocked(spawnCodexAcp).mockReset()
+})
+afterEach(async () => {
+  try {
+    for (const manager of managers.splice(0)) manager.stopAll()
+    // Drain the bounded rollout reader polls instead of leaking them into another test.
+    await vi.runAllTimersAsync()
+  } finally {
+    vi.clearAllTimers()
+    vi.useRealTimers()
+  }
 })
 
 function deferred<T>() {
@@ -44,11 +68,12 @@ function setup(threadId = 'thread', sessionId = 'session') {
   const readAccount = vi.fn(() => after.promise)
   const readQuota = vi.fn<typeof loadCodexQuota>().mockResolvedValue(weeklyQuota)
   const state = { exists: true, items: [] as Item[] }
-  const meta = { id: threadId, title: 'Task', cli: 'codex' as CliProvider, chatId: sessionId }
+  const meta = { id: threadId, projectId: 'project', title: 'Task', cli: 'codex' as CliProvider, chatId: sessionId }
   const store = {
     thread: () => state.exists ? meta : undefined, items: () => state.items,
-    updateThread: () => meta, markItemsDirty: vi.fn(),
-    settings: { codexPath: '', codexApiKey: '' }
+    updateThread: (_id: string, patch: Partial<ThreadMeta>) => Object.assign(meta, patch), markItemsDirty: vi.fn(),
+    project: () => ({ id: 'project', path: os.tmpdir() }),
+    settings: { ...DEFAULT_SETTINGS, codexPath: '', codexApiKey: '' }
   }
   const events: AgentEvent[] = []
   const finished = vi.fn()
@@ -65,6 +90,26 @@ function setup(threadId = 'thread', sessionId = 'session') {
   const req = { threadId, prompt: 'Hello', mode: 'agent', model: 'gpt-6-sol', force: false } as SendRequest
   const start = () => internal.runPrompt(threadId, run, req) as Promise<void>
   return { manager, state, meta, store, events, finished, request, run, after, readAccount, readQuota, start, internal }
+}
+
+/** Exercise send/drive through ACP without replacing the cancellation under test. */
+function nextAgent(rejectMode = false) {
+  const calls: string[] = []
+  const stdout = new PassThrough()
+  const child = Object.assign(new EventEmitter(), {
+    stdout, stderr: new PassThrough(), exitCode: null,
+    stdin: new Writable({ write(chunk, _encoding, callback) {
+      const message = JSON.parse(chunk.toString())
+      calls.push(message.method)
+      const response = rejectMode && message.method === 'session/set_mode'
+        ? { error: { code: -32603, message: 'Permission mode rejected' } }
+        : { result: message.method === 'session/prompt' ? { stopReason: 'end_turn' } : {} }
+      stdout.write(`${JSON.stringify({ jsonrpc: '2.0', id: message.id, ...response })}\n`)
+      callback()
+    } })
+  }) as unknown as ChildProcess
+  vi.mocked(spawnCodexAcp).mockReturnValue(child)
+  return calls
 }
 
 function historySetup() {
@@ -104,8 +149,7 @@ describe('Codex account and session usage lifecycle', () => {
     else ctx.state.items = []
     const eventCount = ctx.events.length
     ctx.after.resolve(quotaReading)
-    await Promise.resolve()
-    await Promise.resolve()
+    await vi.advanceTimersByTimeAsync(0)
     expect(ctx.events).toHaveLength(eventCount)
   })
 
@@ -153,7 +197,7 @@ describe('Codex account and session usage lifecycle', () => {
     const ctx = setup()
     await ctx.start()
     ctx.after.resolve({})
-    await Promise.resolve()
+    await vi.advanceTimersByTimeAsync(0)
     expect(ctx.state.items[0]).not.toHaveProperty('quotaSnapshot')
     expect(ctx.state.items[0]).not.toHaveProperty('codexThreadUsage')
     expect(ctx.finished).toHaveBeenCalledOnce()
@@ -300,16 +344,47 @@ describe('Codex account and session usage lifecycle', () => {
       ctx.readQuota.mockResolvedValueOnce(weeklyQuota).mockReturnValueOnce(oldEnd.promise)
         .mockResolvedValueOnce(quotaUsed(38)).mockResolvedValueOnce(quotaUsed(38.25))
       await ctx.start()
-      // beginSend cancels outstanding end reads before installing the next Run.
-      ctx.internal.usage.cancel('thread')
-      const nextRun = { ...ctx.run, reducer: new StreamReducer(ctx.state.items), settled: false, resultId: undefined }
-      ctx.internal.runs.set('thread', nextRun)
-      await ctx.internal.runPrompt('thread', nextRun, { threadId: 'thread', prompt: 'Next', mode: 'agent', model: 'gpt-6-sol', force: false })
+      const calls = nextAgent()
+      await ctx.manager.send({ threadId: 'thread', prompt: 'Next', mode: 'agent', model: 'gpt-6-sol', force: false })
       await vi.advanceTimersByTimeAsync(0)
+      expect(calls).toContain('session/prompt')
+      expect(ctx.finished).toHaveBeenCalledTimes(2)
+      expect(ctx.manager.isRunning('thread')).toBe(false)
       oldEnd.resolve(quotaUsed(99))
       await vi.advanceTimersByTimeAsync(0)
-      expect(ctx.state.items[0]).not.toHaveProperty('weeklyQuotaEstimate.usedPercent')
-      expect(ctx.state.items[1]).toMatchObject({ weeklyQuotaEstimate: { usedPercent: 0.25, start: { weekly: { usedPercent: 38 } } } })
+      const results = ctx.state.items.filter((item) => item.kind === 'result')
+      expect(results).toHaveLength(2)
+      expect(results[0]).not.toHaveProperty('weeklyQuotaEstimate.usedPercent')
+      expect(results[1]).toMatchObject({ weeklyQuotaEstimate: { usedPercent: 0.25, start: { weekly: { usedPercent: 38 } } } })
+    })
+
+    it('discards the old end reading even if the next send fails before producing a result', async () => {
+      const ctx = setup()
+      const oldEnd = deferred<Awaited<ReturnType<typeof loadCodexQuota>>>()
+      ctx.readQuota.mockResolvedValueOnce(weeklyQuota).mockReturnValueOnce(oldEnd.promise)
+      await ctx.start()
+      expect(ctx.readQuota).toHaveBeenCalledTimes(2)
+      const originalResult = ctx.state.items[0]
+      expect(originalResult).toHaveProperty('weeklyQuotaEstimate.start.weekly.usedPercent', 37)
+      const calls = nextAgent(true)
+
+      await ctx.manager.send({ threadId: 'thread', prompt: 'Next', mode: 'agent', model: 'gpt-6-sol', force: false })
+      await vi.advanceTimersByTimeAsync(0)
+      expect(calls).toContain('session/set_mode')
+      expect(calls).not.toContain('session/prompt')
+      expect(ctx.finished).toHaveBeenCalledTimes(2)
+      expect(ctx.finished.mock.calls[1][0]).toMatchObject({ failed: true })
+      expect(ctx.manager.isRunning('thread')).toBe(false)
+      expect(ctx.state.items.filter((item) => item.kind === 'result')).toEqual([originalResult])
+      const eventCount = ctx.events.length
+      ctx.store.markItemsDirty.mockClear()
+
+      oldEnd.resolve(quotaUsed(99))
+      await vi.advanceTimersByTimeAsync(0)
+      expect(originalResult).not.toHaveProperty('weeklyQuotaEstimate.end')
+      expect(ctx.events).toHaveLength(eventCount)
+      expect(ctx.store.markItemsDirty).not.toHaveBeenCalled()
+      expect(ctx.readQuota).toHaveBeenCalledTimes(2)
     })
 
     it.each(['deleted', 'reimported', 'session changed', 'CLI changed', 'API key configured', 'disposed', 'shutdown'])

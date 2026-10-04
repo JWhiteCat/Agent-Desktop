@@ -1,4 +1,5 @@
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { loadCodexSessionUsage } from '../src/main/codex-session-usage'
@@ -7,6 +8,8 @@ const { fetchMock } = vi.hoisted(() => ({ fetchMock: vi.fn() }))
 vi.mock('electron', () => ({ net: { fetch: fetchMock } }))
 
 const threadId = 'thread-current'
+const home = path.resolve('fixture-codex-session-home')
+const defaultAuthFile = path.join(home, '.codex', 'auth.json')
 const dataAsOf = '2026-09-29T08:00:00Z'
 const payload = {
   data_as_of: dataAsOf,
@@ -25,9 +28,13 @@ beforeEach(() => {
   vi.stubEnv('CODEX_API_KEY', '')
   vi.stubEnv('OPENAI_API_KEY', '')
   vi.stubEnv('CODEX_HOME', '')
-  vi.spyOn(fs, 'readFileSync').mockReturnValue(JSON.stringify({
-    tokens: { access_token: 'private-access-token', account_id: 'private-account-id' }
-  }))
+  vi.spyOn(os, 'homedir').mockReturnValue(home)
+  // Keep authentication virtual and reject other paths rather than making every
+  // file look like valid credentials (which hides credential-discovery bugs).
+  vi.spyOn(fs, 'readFileSync').mockImplementation((file) => {
+    if (file !== defaultAuthFile) throw new Error(`Unexpected credential fixture path: ${String(file)}`)
+    return JSON.stringify({ tokens: { access_token: 'private-access-token', account_id: 'private-account-id' } })
+  })
   fetchMock.mockReset().mockResolvedValue({ ok: true, status: 200, json: async () => payload })
 })
 
@@ -41,6 +48,7 @@ describe('Codex consumer task usage client', () => {
     const signal = new AbortController().signal
     const timeout = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(signal)
     const result = await loadCodexSessionUsage(threadId, Date.parse('2026-09-29T06:30:00Z'), ['thread-child'])
+    expect(fs.readFileSync).toHaveBeenCalledExactlyOnceWith(defaultAuthFile, 'utf8')
     expect(result).toEqual({ threadId, status: 'available', weekly: 18.899977777777778, dataAsOf })
     expect(timeout).toHaveBeenCalledExactlyOnceWith(8_000)
     expect(fetchMock).toHaveBeenCalledExactlyOnceWith('https://chatgpt.com/backend-api/wham/usage/thread_usage/query_v2', {

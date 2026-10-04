@@ -1,5 +1,5 @@
 import http from 'node:http'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest'
 import { handlersForRemote, RemoteRuntime, remoteSafeSettings, remoteSafeState } from '../src/main/remote-runtime'
 import { DEFAULT_SETTINGS, type AppState, type Settings } from '../src/shared/types'
 import type { Store } from '../src/main/store'
@@ -49,9 +49,21 @@ describe('remote settings', () => {
 
 describe('remote runtime lifecycle', () => {
   let runtime: RemoteRuntime | undefined
+  let created: MockInstance<typeof http.createServer>
+  beforeEach(() => {
+    created = vi.spyOn(http, 'createServer')
+  })
   afterEach(async () => {
-    await runtime?.stop()
-    vi.restoreAllMocks()
+    try {
+      await runtime?.stop()
+    } finally {
+      const servers = created.mock.results.flatMap((result) => result.type === 'return' ? [result.value as http.Server] : [])
+      vi.restoreAllMocks()
+      await Promise.all(servers.map((server) => new Promise<void>((resolve) => {
+        server.close(() => resolve())
+        server.closeAllConnections()
+      })))
+    }
   })
 
   function setup(patch: Partial<Settings> = {}) {
@@ -65,20 +77,14 @@ describe('remote runtime lifecycle', () => {
 
   it('does not keep hidden listeners after concurrent apply calls and disabling remote access', async () => {
     const store = setup()
-    const created = vi.spyOn(http, 'createServer')
     await Promise.all([runtime!.apply(), runtime!.apply()])
+    expect(runtime!.info()).toMatchObject({ enabled: true, running: true })
+    const servers = created.mock.results.map((result) => result.value as http.Server)
+    expect(servers.filter((server) => server.listening)).toHaveLength(1)
     store.updateSettings({ remoteEnabled: false })
     await runtime!.apply()
     expect(runtime!.info()).toMatchObject({ enabled: false, running: false })
-    const servers = created.mock.results.map((result) => result.value as http.Server)
-    try {
-      expect(servers.every((server) => !server.listening)).toBe(true)
-    } finally {
-      for (const server of servers) await new Promise<void>((resolve) => {
-        server.close(() => resolve())
-        server.closeAllConnections()
-      })
-    }
+    expect(servers.every((server) => !server.listening)).toBe(true)
   })
 
   it('finishes an in-progress apply before shutdown and passes the configured SSH port', async () => {

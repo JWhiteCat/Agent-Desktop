@@ -53,15 +53,32 @@ describe('attachment drafts', () => {
       .mockResolvedValueOnce({ id: 'one', name: 'one.txt', size: 3, mimeType: 'text/plain' } satisfies AttachmentRef)
       .mockRejectedValueOnce(new Error('Disconnected'))
       .mockResolvedValueOnce({ id: 'two', name: 'two.txt', size: 3, mimeType: 'text/plain' } satisfies AttachmentRef)
-    const changed = vi.fn()
+    const changes: Array<Array<{ status: string; error?: string }>> = []
+    const changed = vi.fn(() => {
+      changes.push(drafts.map(({ status, error }) => ({ status, ...(error ? { error } : {}) })))
+    })
 
     await expect(uploadDraftAttachments(drafts, upload, changed)).rejects.toThrow('Disconnected')
     expect(drafts[0].uploaded?.id).toBe('one')
     expect(drafts[1].status).toBe('error')
     expect(drafts[1].error).toBe('Disconnected')
+    expect(changes).toEqual([
+      [{ status: 'uploading' }, { status: 'ready' }],
+      [{ status: 'ready' }, { status: 'ready' }],
+      [{ status: 'ready' }, { status: 'uploading' }],
+      [{ status: 'ready' }, { status: 'error', error: 'Disconnected' }]
+    ])
 
     await expect(uploadDraftAttachments(drafts, upload, changed)).resolves.toEqual(['one', 'two'])
-    expect(upload.mock.calls.map(([request]) => request.name)).toEqual(['one.txt', 'two.txt', 'two.txt'])
+    expect(upload.mock.calls).toEqual([
+      [{ name: 'one.txt', mimeType: 'application/octet-stream', data: 'b25l' }],
+      [{ name: 'two.txt', mimeType: 'application/octet-stream', data: 'dHdv' }],
+      [{ name: 'two.txt', mimeType: 'application/octet-stream', data: 'dHdv' }]
+    ])
+    expect(changes.slice(4)).toEqual([
+      [{ status: 'ready' }, { status: 'uploading' }],
+      [{ status: 'ready' }, { status: 'ready' }]
+    ])
     await expect(uploadDraftAttachments(drafts, upload)).resolves.toEqual(['one', 'two'])
     expect(upload).toHaveBeenCalledTimes(3)
     expect(drafts.every((draft) => draft.status === 'ready' && !draft.error)).toBe(true)

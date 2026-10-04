@@ -62,6 +62,9 @@ function loadPatchedChunk(chunkName: string, moduleSource: string, runSource: st
       cwd: dir,
       encoding: 'utf8',
       windowsHide: true,
+      // Vitest cannot interrupt a blocked spawnSync from its test timeout.
+      timeout: 5_000,
+      killSignal: 'SIGKILL',
       env: { ...process.env, NODE_OPTIONS: '' }
     })
   } finally {
@@ -106,6 +109,7 @@ while (!step.done) step = g.next()
 process.stdout.write(JSON.stringify(updates))
 `
     )
+    expect(r.error).toBeUndefined()
     expect(r.status, r.stderr).toBe(0)
     expect(JSON.parse(r.stdout)).toEqual([TURN_USAGE])
   })
@@ -124,6 +128,7 @@ const updates = []
 })().catch((err) => { console.error(err); process.exit(1) })
 `
     )
+    expect(r.error).toBeUndefined()
     expect(r.status, r.stderr).toBe(0)
     expect(JSON.parse(r.stdout)).toEqual([TURN_USAGE])
   })

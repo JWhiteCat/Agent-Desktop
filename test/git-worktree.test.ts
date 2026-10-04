@@ -2,8 +2,9 @@ import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createWorktree, releaseWorktrees, removeWorktree } from '../src/main/git'
+import { isolateGitEnvironment } from './helpers/git-environment'
 
 let root: string
 let repo: string
@@ -15,6 +16,7 @@ const branches = () => git(repo, 'branch', '--format=%(refname:short)').split(/\
 
 beforeEach(() => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-desktop-git-'))
+  isolateGitEnvironment(root)
   repo = path.join(root, 'repo')
   parent = path.join(root, 'worktrees')
   fs.mkdirSync(path.join(repo, 'sub'), { recursive: true })
@@ -24,6 +26,7 @@ beforeEach(() => {
   git(repo, 'commit', '-q', '-m', 'init')
 })
 afterEach(() => {
+  vi.unstubAllEnvs()
   const resolved = path.resolve(root)
   if (path.dirname(resolved) !== path.resolve(os.tmpdir()) || !path.basename(resolved).startsWith('agent-desktop-git-')) {
     throw new Error(`Unexpected test directory: ${resolved}`)

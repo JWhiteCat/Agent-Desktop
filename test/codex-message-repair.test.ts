@@ -58,7 +58,7 @@ describe('legacy Codex assistant message repair', () => {
     const last = '\nLater text.'
     const saved = assistant(first + questions + last)
     const tool: Item = { id: 'tool', kind: 'tool', callId: 'call', tool: 'shell', args: { command: 'echo ok' }, status: 'success', startedAt: 1 }
-    const result: Item = { id: 'usage', kind: 'result', isError: false, usage: { input_tokens: 10, output_tokens: 2 } }
+    const result: Item = { id: 'usage', kind: 'result', isError: false, usage: { inputTokens: 10, outputTokens: 2 } }
     const items: Item[] = [saved, tool, result]
     const before = structuredClone(items)
     writeRollout([native(first), native(questions), native(last), event('task_complete')])

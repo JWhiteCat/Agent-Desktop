@@ -1,9 +1,14 @@
 import { createElement } from 'react'
+import * as jsxRuntime from 'react/jsx-runtime'
+import * as jsxDevRuntime from 'react/jsx-dev-runtime'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setLanguage } from '../src/shared/i18n'
 import { Markdown, MarkdownDirectoryContext } from '../src/renderer/src/components/items/Markdown'
 import { openMarkdownLink } from '../src/renderer/src/lib/markdown-links'
+
+vi.mock('react/jsx-runtime', { spy: true })
+vi.mock('react/jsx-dev-runtime', { spy: true })
 
 const feedback = vi.hoisted(() => ({ toast: vi.fn() }))
 
@@ -33,6 +38,31 @@ afterEach(() => {
 function render(text: string, cwd?: string): string {
   return renderToStaticMarkup(createElement(MarkdownDirectoryContext.Provider, { value: cwd },
     createElement(Markdown, { text })))
+}
+
+/** Capture the actual rendered anchor without replacing Markdown or its opener. */
+async function renderedLinkClick(text: string, cwd?: string) {
+  type AnchorProps = { onClick?: (event: { preventDefault: () => void }) => void }
+  const anchors: AnchorProps[] = []
+  const original = await vi.importActual<typeof jsxRuntime>('react/jsx-runtime')
+  const originalDev = await vi.importActual<typeof jsxDevRuntime>('react/jsx-dev-runtime')
+  const spy = vi.mocked(jsxRuntime.jsx).mockImplementation((type, props, key) => {
+    if (type === 'a') anchors.push(props as AnchorProps)
+    return original.jsx(type, props, key)
+  })
+  const devSpy = vi.mocked(jsxDevRuntime.jsxDEV).mockImplementation((type, props, key, ...args) => {
+    if (type === 'a') anchors.push(props as AnchorProps)
+    return originalDev.jsxDEV(type, props, key, ...args)
+  })
+  try {
+    render(text, cwd)
+    expect(anchors).toHaveLength(1)
+    expect(anchors[0].onClick).toBeTypeOf('function')
+    return anchors[0].onClick!
+  } finally {
+    spy.mockRestore()
+    devSpy.mockRestore()
+  }
 }
 
 describe('Markdown artifact link rendering', () => {
@@ -75,6 +105,42 @@ describe('Markdown artifact link rendering', () => {
 })
 
 describe('opening Markdown links', () => {
+  it('routes a rendered relative link through the conversation directory and prevents browser navigation', async () => {
+    const click = await renderedLinkClick('[Preview](artifacts/preview%20image.png)', 'D:/project/worktree')
+    const preventDefault = vi.fn()
+    expect(api.openPath).not.toHaveBeenCalled()
+    expect(api.openExternal).not.toHaveBeenCalled()
+
+    click({ preventDefault })
+
+    expect(preventDefault).toHaveBeenCalledOnce()
+    await vi.waitFor(() => expect(api.openPath).toHaveBeenCalledExactlyOnceWith('D:\\project\\worktree\\artifacts\\preview image.png'))
+    expect(api.openExternal).not.toHaveBeenCalled()
+  })
+
+  it('routes a rendered web link through the external opener without local file access', async () => {
+    const click = await renderedLinkClick('[Website](https://example.com/preview)', 'D:/project/worktree')
+    const preventDefault = vi.fn()
+
+    click({ preventDefault })
+
+    expect(preventDefault).toHaveBeenCalledOnce()
+    await vi.waitFor(() => expect(api.openExternal).toHaveBeenCalledExactlyOnceWith('https://example.com/preview'))
+    expect(api.openPath).not.toHaveBeenCalled()
+  })
+
+  it('keeps a rendered unsafe link from navigating or invoking either opener', async () => {
+    const click = await renderedLinkClick('[Preview](javascript:alert%281%29)', 'D:/project/worktree')
+    const preventDefault = vi.fn()
+
+    click({ preventDefault })
+
+    expect(preventDefault).toHaveBeenCalledOnce()
+    expect(api.openPath).not.toHaveBeenCalled()
+    expect(api.openExternal).not.toHaveBeenCalled()
+    expect(feedback.toast).toHaveBeenCalledExactlyOnceWith('无法打开此链接：不支持的地址格式', 'error')
+  })
+
   it('opens the reported preview using the local file API', async () => {
     await openMarkdownLink(previewPath)
 

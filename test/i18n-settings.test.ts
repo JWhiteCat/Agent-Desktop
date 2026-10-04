@@ -36,7 +36,7 @@ describe('saved application language', () => {
     const applyRemote = vi.fn()
     const deps = { store, broadcast, sessions: { dropIdle }, applyRemote } as unknown as IpcDeps
     const result = await settingsHandlers(deps)['settings:update']({ language })
-    expect(result.language).toBe(language)
+    expect(result).toHaveProperty('language', language)
     expect(getLocale()).toBe(language === 'en' ? 'en' : 'zh-CN')
     expect(broadcast).toHaveBeenCalledOnce()
     expect(dropIdle).not.toHaveBeenCalled()

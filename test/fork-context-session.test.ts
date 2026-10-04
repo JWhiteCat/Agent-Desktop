@@ -1,9 +1,21 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { CliProvider, Item, SendRequest, ThreadMeta } from '../src/shared/types'
 import type { Store } from '../src/main/store'
 import { SessionManager } from '../src/main/sessions'
 import { StreamReducer } from '../src/main/reducer'
 import { parseForkPrompt } from '../src/main/fork-context'
+import { readCodexUsage } from '../src/main/codex-history'
+import type { CodexUsageTurn } from '../src/main/codex-usage'
+
+vi.mock('../src/main/codex-history', () => ({ readCodexUsage: vi.fn() }))
+vi.mock('../src/main/cli', async (original) => ({
+  ...await original<typeof import('../src/main/cli')>(), killTree: vi.fn()
+}))
+
+const managers: SessionManager[] = []
+afterEach(() => {
+  for (const manager of managers.splice(0)) manager.stopAll()
+})
 
 function setup(provider: CliProvider, mode: SendRequest['mode'] = 'ask') {
   const items: Item[] = [
@@ -19,7 +31,17 @@ function setup(provider: CliProvider, mode: SendRequest['mode'] = 'ask') {
     updateThread: (_id: string, patch: Partial<ThreadMeta>) => Object.assign(thread, patch)
   }
   const manager = new SessionManager(store as unknown as Store, vi.fn(), vi.fn(), vi.fn())
-  const request = vi.fn().mockResolvedValue({ stopReason: 'end_turn' })
+  managers.push(manager)
+  // Context delivery must not scan real rollouts or leave a background usage poll.
+  const turns: CodexUsageTurn[] = []
+  vi.mocked(readCodexUsage).mockImplementation(() => turns)
+  const request = vi.fn(async (_method: string, _params: { sessionId: string; prompt: Array<{ type: 'text'; text: string }> }) => {
+    turns.push({
+      usageId: `fork-turn-${turns.length + 1}`, startedAt: Date.now(),
+      usage: {}, isError: false, completed: true, endLine: turns.length
+    })
+    return { stopReason: 'end_turn' }
+  })
   const run = {
     proc: { provider, acp: { request }, child: { exitCode: null }, ready: true, sessionId: 'independent-session', dying: false },
     reducer: new StreamReducer(items), stopped: false, pending: new Map(), acceptUpdates: true,

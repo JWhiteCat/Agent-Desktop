@@ -55,7 +55,10 @@ describe('private executable ACP preload', () => {
   it('quotes space-containing preload paths so a Node child can load them', () => {
     const env = { ...process.env, NODE_OPTIONS: '--trace-warnings' }
     installAcpUsagePreload(env)
-    const child = spawnSync(process.execPath, ['-e', 'process.stdout.write("loaded")'], { env, encoding: 'utf8' })
+    const child = spawnSync(process.execPath, ['-e', 'process.stdout.write("loaded")'], {
+      env, encoding: 'utf8', timeout: 5_000, killSignal: 'SIGKILL'
+    })
+    expect(child.error).toBeUndefined()
     expect(child.status, child.stderr).toBe(0)
     expect(child.stdout).toBe('loaded')
   })

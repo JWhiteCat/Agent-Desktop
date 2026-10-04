@@ -163,7 +163,8 @@ chmod +x release/agent-desktop-*-linux-x86_64.AppImage
 | `npm run dev:linux` / `npm run preview:linux` | Linux startup with dependency/runtime checks |
 | `npm test` | Offline unit tests. Does not call a model |
 | `npm run test:live` | Short text and attachment checks with Composer 2.5 Fast |
-| `npm run typecheck` | Typecheck |
+| `npm run typecheck` | Typecheck the app and all tests without running them |
+| `npm run typecheck:tests` | Typecheck test fixtures, mocks, and assertions only |
 | `npm run build` | Compile into `out/` |
 | `npm run preview` | Preview the compiled app |
 | `npm run dist` | Package installers into `release/` |

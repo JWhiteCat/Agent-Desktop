@@ -171,7 +171,8 @@ chmod +x release/agent-desktop-*-linux-x86_64.AppImage
 | `npm run dev:linux` / `npm run preview:linux` | 带依赖和运行时检查的 Linux 启动 |
 | `npm test` | 离线单元测试，不调用模型 |
 | `npm run test:live` | 用 Composer 2.5 Fast 检查极短文字及附件输入 |
-| `npm run typecheck` | 类型检查 |
+| `npm run typecheck` | 检查应用与全部测试的类型，不执行测试 |
+| `npm run typecheck:tests` | 单独检查测试 fixture、mock 与断言的类型 |
 | `npm run build` | 编译到 `out/` |
 | `npm run preview` | 预览编译结果 |
 | `npm run dist` | 打包安装包到 `release/` |

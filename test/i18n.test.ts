@@ -9,6 +9,8 @@ import { coreMessages } from '../src/shared/locales/core'
 import { messagesMessages } from '../src/shared/locales/messages'
 import { settingsMessages } from '../src/shared/locales/settings'
 import { shellMessages } from '../src/shared/locales/shell'
+import { attachmentBackendMessages } from '../src/shared/locales/attachments-backend'
+import { attachmentsMessages } from '../src/shared/locales/attachments'
 import { displayQuotaText, parseCodexQuota, parseCursorQuota, windowLabel } from '../src/shared/quota'
 import type { ResultItem } from '../src/shared/types'
 import { ResultFooter } from '../src/renderer/src/components/items/ResultFooter'
@@ -138,7 +140,7 @@ function sourceFiles(directory: string): string[] {
 
 describe('translation catalogs', () => {
   it('preserves every named parameter in each English catalog entry', () => {
-    const catalogs = { coreMessages, messagesMessages, settingsMessages, shellMessages }
+    const catalogs = { coreMessages, messagesMessages, settingsMessages, shellMessages, attachmentBackendMessages, attachmentsMessages }
     const issues: string[] = []
     for (const [catalogName, catalog] of Object.entries(catalogs)) {
       for (const [source, english] of Object.entries(catalog)) {

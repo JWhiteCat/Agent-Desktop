@@ -2,7 +2,7 @@ import http from 'node:http'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest'
 import { RemoteServer, resolveDevProxyUrl, rewriteDevAbsolutePaths } from '../src/main/remote'
 
 const TOKEN = 'secret-token'
@@ -71,20 +71,32 @@ describe('RemoteServer', () => {
   })
 
   it('pushes broadcasts over SSE', async () => {
-    const res = await fetch(`${base}/api/events?token=${TOKEN}`)
+    const res = await fetch(`${base}/api/events?token=${TOKEN}`, { signal: AbortSignal.timeout(5000) })
+    expect(res.status).toBe(200)
     const reader = res.body!.getReader()
     const decoder = new TextDecoder()
-    let text = decoder.decode((await reader.read()).value)
-    server.broadcast('state:changed', { n: 1 })
-    while (!text.includes('data:')) text += decoder.decode((await reader.read()).value)
-    expect(text).toContain(JSON.stringify({ channel: 'state:changed', payload: { n: 1 } }))
-    await reader.cancel()
-  })
+    try {
+      const connected = await reader.read()
+      expect(connected.done).toBe(false)
+      let text = decoder.decode(connected.value, { stream: true })
+      server.broadcast('state:changed', { n: 1 })
+      while (!text.includes('data:')) {
+        const chunk = await reader.read()
+        // Without checking done, an early EOF loops through resolved promises forever
+        // and even prevents Vitest's timeout from running.
+        expect(chunk.done, 'SSE ended before the broadcast arrived').toBe(false)
+        text += decoder.decode(chunk.value, { stream: true })
+      }
+      expect(text).toContain(`data: ${JSON.stringify({ channel: 'state:changed', payload: { n: 1 } })}\n\n`)
+    } finally {
+      await reader.cancel()
+    }
+  }, 10_000)
 })
 
 describe('remote server lifecycle', () => {
   let remote: RemoteServer
-  let created: ReturnType<typeof vi.spyOn<typeof http, 'createServer'>>
+  let created: MockInstance<typeof http.createServer>
   const options = { port: 0, token: TOKEN, clientId: 'aaaaaaaaaaaaaaaa', handlers: { echo: () => 'ok' } }
 
   beforeEach(() => {

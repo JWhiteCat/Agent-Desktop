@@ -1,6 +1,7 @@
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { setLanguage } from '../src/shared/i18n'
 import type { CliProvider, ResultItem } from '../src/shared/types'
 import { ResultFooter } from '../src/renderer/src/components/Items'
 
@@ -8,6 +9,9 @@ vi.mock('../src/renderer/src/store', () => ({
   answerQuestion: vi.fn(),
   useStore: (selector: (state: unknown) => unknown) => selector({ modelsByCli: { cursor: [], codex: [], claude: [] } })
 }))
+
+beforeEach(() => setLanguage('zh-CN', 'zh-CN'))
+afterEach(() => setLanguage('system', 'zh-CN'))
 
 function render(quotaUsage?: ResultItem['quotaUsage'], cli: CliProvider = 'codex', extra: Partial<ResultItem> = {}) {
   return renderToStaticMarkup(createElement(ResultFooter, {

@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setLanguage } from '../src/shared/i18n'
 import { displayThreadTitle } from '../src/shared/thread-title'
 import type { ThreadMeta } from '../src/shared/types'
+import type { UsageReport } from '../src/shared/usage'
 import { scanCliSessions } from '../src/main/history'
 import { scanCodexSessions } from '../src/main/codex-history'
 import { scanClaudeSessions } from '../src/main/claude-history'
@@ -119,7 +120,7 @@ describe('automatic conversation titles', () => {
   })
 
   it('generates a title from the first submitted message only for marked placeholders', async () => {
-    vi.mocked(resolveCli).mockReturnValue({ command: 'test-agent', prefixArgs: [] })
+    vi.mocked(resolveCli).mockReturnValue({ command: 'test-agent', prefixArgs: [], display: 'test-agent' })
     const manager = new SessionManager(store, vi.fn(), vi.fn(), vi.fn())
     const generated = create()
     const literal = create()
@@ -153,7 +154,7 @@ describe('automatic conversation titles', () => {
       expect(thread.titleKind).toBe('untitled')
       expect(displayThreadTitle(thread)).toBe('Untitled session')
     }
-    const report = usageHandlers(deps)['usage:summary']('7d')
+    const report = usageHandlers(deps)['usage:summary']('7d') as UsageReport
     expect(report.sessions).toHaveLength(3)
     for (const row of report.sessions) expect(displayThreadTitle(row)).toBe('Untitled session')
   })

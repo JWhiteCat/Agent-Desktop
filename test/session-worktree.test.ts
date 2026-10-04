@@ -11,9 +11,13 @@ import { spawnCli } from '../src/main/cli'
 import { spawnClaudeAcp } from '../src/main/claude'
 import { spawnCodexAcp } from '../src/main/codex'
 import { SessionManager } from '../src/main/sessions'
+import { readCodexUsage } from '../src/main/codex-history'
+import type { CodexUsageTurn } from '../src/main/codex-usage'
 import { worktreePathFrom } from '../src/main/session/provider'
+import { isolateGitEnvironment } from './helpers/git-environment'
 
 vi.mock('../src/main/skills', () => ({ syncAllManagedSkills: vi.fn() }))
+vi.mock('../src/main/codex-history', () => ({ readCodexUsage: vi.fn() }))
 vi.mock('../src/main/cli', async (original) => ({
   ...await original<typeof import('../src/main/cli')>(),
   resolveCli: vi.fn(() => ({ command: 'mock-agent', prefixArgs: [] })),
@@ -39,6 +43,7 @@ let root: string
 beforeEach(() => {
   vi.clearAllMocks()
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-desktop-worktree-'))
+  isolateGitEnvironment(root)
 })
 afterEach(() => {
   const resolved = path.resolve(root)
@@ -46,9 +51,10 @@ afterEach(() => {
     throw new Error(`Unexpected test directory: ${resolved}`)
   }
   fs.rmSync(resolved, { recursive: true, force: true })
+  vi.unstubAllEnvs()
 })
 
-function fakeChild(calls: Array<{ method: string; params: any }>, stdout: PassThrough): ChildProcess {
+function fakeChild(calls: Array<{ method: string; params: any }>, stdout: PassThrough, turns: CodexUsageTurn[]): ChildProcess {
   return Object.assign(new EventEmitter(), {
     stdout,
     stderr: new PassThrough(),
@@ -57,6 +63,10 @@ function fakeChild(calls: Array<{ method: string; params: any }>, stdout: PassTh
       write(chunk, _encoding, callback) {
         const message = JSON.parse(chunk.toString())
         calls.push({ method: message.method, params: message.params })
+        if (message.method === 'session/prompt') turns.push({
+          usageId: `worktree-turn-${turns.length + 1}`, startedAt: Date.now(),
+          usage: {}, isError: false, completed: true, endLine: turns.length
+        })
         const result = message.method === 'session/new'
           ? { sessionId: 'new-session' }
           : message.method === 'session/prompt' ? { stopReason: 'end_turn' } : {}
@@ -74,7 +84,10 @@ function setup(provider: CliProvider = 'cursor') {
   fs.mkdirSync(worktree, { recursive: true })
   const calls: Array<{ method: string; params: any }> = []
   const stdout = new PassThrough()
-  const child = fakeChild(calls, stdout)
+  // Publish a completed fixture at the same boundary as each ACP prompt reply.
+  const turns: CodexUsageTurn[] = []
+  vi.mocked(readCodexUsage).mockImplementation(() => turns)
+  const child = fakeChild(calls, stdout, turns)
   vi.mocked(spawnCli).mockImplementation(() => {
     stdout.write(`Using worktree: ${worktree}\r\n`)
     return child

@@ -2,17 +2,20 @@ import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { gitDiff } from '../src/main/git'
+import { isolateGitEnvironment } from './helpers/git-environment'
 
 describe('Git changes', () => {
   let root: string
 
   beforeEach(() => {
     root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-desktop-git-'))
+    isolateGitEnvironment(root)
   })
 
   afterEach(() => {
+    vi.unstubAllEnvs()
     const resolved = path.resolve(root)
     if (path.dirname(resolved) !== path.resolve(os.tmpdir()) || !path.basename(resolved).startsWith('agent-desktop-git-')) {
       throw new Error(`Unexpected test directory: ${resolved}`)

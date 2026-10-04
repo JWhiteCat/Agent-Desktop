@@ -8,17 +8,21 @@ import { DEFAULT_SETTINGS, type CliProvider, type Item, type SendRequest, type T
 import { MAX_MESSAGE_ATTACHMENT_BYTES, type AttachmentRef } from '../src/shared/attachments'
 import { parseAttachmentPrompt } from '../src/shared/attachment-message'
 import { parseForkPrompt } from '../src/main/fork-context'
+import { codexPlanModePrompt } from '../src/main/acp'
 import type { Store } from '../src/main/store'
 import { spawnCli } from '../src/main/cli'
 import { spawnCodexAcp } from '../src/main/codex'
 import { spawnClaudeAcp } from '../src/main/claude'
 import { SessionManager } from '../src/main/sessions'
+import { readCodexUsage } from '../src/main/codex-history'
+import type { CodexUsageTurn } from '../src/main/codex-usage'
 
 const attachmentStore = vi.hoisted(() => ({
   resolveMany: vi.fn(), pathFor: vi.fn(), read: vi.fn(), scopedRead: vi.fn(), retain: vi.fn()
 }))
 vi.mock('../src/main/attachments', () => ({ attachmentsFor: () => attachmentStore }))
 vi.mock('../src/main/skills', () => ({ syncAllManagedSkills: vi.fn() }))
+vi.mock('../src/main/codex-history', () => ({ readCodexUsage: vi.fn() }))
 vi.mock('../src/main/cli', async (original) => ({
   ...await original<typeof import('../src/main/cli')>(),
   resolveCli: vi.fn(() => ({ command: 'mock-agent', prefixArgs: [] })),
@@ -46,6 +50,9 @@ const managers: SessionManager[] = []
 
 function setup(provider: CliProvider = 'cursor', imageSupport: boolean | null = true) {
   const calls: Array<{ method: string; params: any }> = []
+  // Keep the real usage reader, but never scan the developer's Codex history.
+  const turns: CodexUsageTurn[] = []
+  vi.mocked(readCodexUsage).mockImplementation(() => turns)
   const reply = vi.fn(async (method: string, _params: any): Promise<any> => {
     if (method === 'initialize') return { agentCapabilities: { promptCapabilities: { image: imageSupport ?? undefined } } }
     if (method === 'session/new') return { sessionId: 'attachment-session' }
@@ -59,6 +66,10 @@ function setup(provider: CliProvider = 'cursor', imageSupport: boolean | null = 
       const message = JSON.parse(chunk.toString())
       calls.push({ method: message.method, params: message.params })
       void reply(message.method, message.params).then((result) => {
+        if (message.method === 'session/prompt') turns.push({
+          usageId: `attachment-turn-${turns.length + 1}`, startedAt: Date.now(),
+          usage: {}, isError: false, completed: true, endLine: turns.length
+        })
         stdout.write(`${JSON.stringify({ jsonrpc: '2.0', id: message.id, result })}\n`)
       })
       callback()
@@ -83,8 +94,9 @@ function setup(provider: CliProvider = 'cursor', imageSupport: boolean | null = 
   const req: SendRequest = { threadId: 'thread', prompt: 'Review the attachments', model: 'composer-2.5[fast=true]', mode: 'ask', force: false,
     attachmentIds: [image.id, document.id] }
   const send = async () => {
+    const completed = finished.mock.calls.length
     await manager.send(req)
-    await vi.waitFor(() => expect(finished).toHaveBeenCalled())
+    await vi.waitFor(() => expect(finished).toHaveBeenCalledTimes(completed + 1))
   }
   return { calls, reply, items, thread, store, emit, manager, req, send, finished }
 }
@@ -220,19 +232,31 @@ describe('attachments delivered through ACP sessions', () => {
     const ctx = setup('codex')
     ctx.req.mode = 'plan'
     const internal = ctx.manager as any
+    let promptCount = 0
     ctx.reply.mockImplementation(async (method) => {
       if (method === 'initialize') return { agentCapabilities: { promptCapabilities: { image: true } } }
       if (method === 'session/new') return { sessionId: 'attachment-session' }
       if (method === 'session/prompt') {
-        internal.runs.get('thread').planFeedback = 'Use a simpler design'
+        if (promptCount++ === 0) internal.runs.get('thread').planFeedback = 'Use a simpler design'
         return { stopReason: 'end_turn' }
       }
       return {}
     })
-    const originalBegin = internal.beginSend.bind(internal)
-    const begin = vi.spyOn(internal, 'beginSend').mockImplementationOnce(originalBegin).mockResolvedValue(undefined)
     await ctx.manager.send(ctx.req)
-    await vi.waitFor(() => expect(begin).toHaveBeenCalledTimes(2))
-    expect(begin.mock.calls[1][0]).toMatchObject({ prompt: 'Use a simpler design', attachmentIds: undefined })
+    await vi.waitFor(() => expect(ctx.finished).toHaveBeenCalledTimes(2))
+    expect(ctx.manager.isRunning('thread')).toBe(false)
+    const prompts = ctx.calls.filter((call) => call.method === 'session/prompt')
+    expect(prompts).toHaveLength(2)
+    expect(prompts[0].params.prompt).toHaveLength(3)
+    expect(prompts[1].params).toEqual({
+      sessionId: 'attachment-session',
+      prompt: [{ type: 'text', text: codexPlanModePrompt('Use a simpler design') }]
+    })
+    expect(ctx.items.filter((item) => item.kind === 'user')).toEqual([
+      expect.objectContaining({ text: ctx.req.prompt, attachments: [image, document] }),
+      expect.objectContaining({ text: 'Use a simpler design' })
+    ])
+    expect(ctx.items.filter((item) => item.kind === 'user')[1]).not.toHaveProperty('attachments')
+    expect(attachmentStore.read).toHaveBeenCalledTimes(1)
   })
 })
