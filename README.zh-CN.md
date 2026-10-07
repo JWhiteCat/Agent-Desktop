@@ -6,6 +6,20 @@
 
 应用本身不调用模型。主进程在本机启动 Cursor CLI、Codex CLI 或 Claude Code 适配器，通过 [Agent Client Protocol](https://agentclientprotocol.com)（ACP）与之通信。输入框可以直接选择 Cursor、Codex 或 Claude。新建对话使用这个选择，并把它记住。已有对话里切换 CLI 时，屏幕上已有的消息保留，下一条消息会用所选 CLI 新开一段会话。侧边栏会标出每一段是 Cursor、Codex 还是 Claude。
 
+## 下载编译版
+
+从 [Agent Desktop v1.0.0](https://github.com/JWhiteCat/Agent-Desktop/releases/tag/v1.0.0) 下载基于 `release1.0` 分支构建的 Windows x64 编译版：
+
+- `agent-desktop-1.0.0-win-x64-setup.exe`：安装版，包含开始菜单快捷方式和卸载程序。
+- `agent-desktop-1.0.0-win-x64-portable.exe`：免安装版，直接运行。
+- `SHA256SUMS.txt`：两个下载文件的 SHA-256 校验值，可在 PowerShell 中用 `Get-FileHash <文件名> -Algorithm SHA256` 核对。
+
+编译版包含 Electron 和 Codex/Claude 适配器；发送消息前，需在设置中配置 CLI 登录或 API Key。Windows 编译版未做代码签名。Linux 和 macOS 可按下文命令从源码构建。
+
+在 Windows 上复现打包：执行 `npm ci --include=dev --include=optional` 安装依赖，再执行 `npm run dist:win`，安装版和免安装版输出到 `release/`，不会自动发布。
+
+如果下载 Electron 卡住，确认 `node_modules/electron/dist/version` 与已安装的 Electron 包版本一致后，可执行 `npm run dist:win -- --config.electronDist=node_modules/electron/dist` 复用本机运行时。
+
 ## 功能
 
 - 多项目侧边栏：添加、重命名、排序、折叠、搜索对话。搜索匹配标题、预览和项目名
@@ -191,14 +205,15 @@ chmod +x release/agent-desktop-*-linux-x86_64.AppImage
 | `npm run build` | 编译到 `out/` |
 | `npm run preview` | 预览编译结果 |
 | `npm run dist` | 打包安装包到 `release/` |
+| `npm run dist:win` | 构建 Windows x64 NSIS 安装版和免安装版，不会发布 |
 | `npm run dist:linux` | 构建 Linux x64 AppImage 和 Debian 安装包，不会发布 |
 | `npm run dist:linux:dir` | 构建 Linux x64 未封装应用 |
 
 `npm test` 不访问 Cursor CLI、Codex 或 Claude。`npm run test:live` 在临时目录中用 Ask 模式调用 `composer-2.5[fast=true]`：文字检查只要求 `Reply with exactly ok`，附件检查验证原生图片识别及工作目录之外的受管理原文件读取。文字检查优先使用 `CURSOR_API_KEY`，未设置时使用 CLI 保存的登录；附件检查要求 `CURSOR_API_KEY`。只运行附件检查可用 `npm run test:live -- test/live/attachment-smoke.test.ts`。
 
-可用 `npm test -- test/claude.test.ts test/turn-usage.test.ts` 定向检查。这些测试将 Claude 检测与用户主目录隔离，覆盖含空格路径下的用量 preload 加载，并清理临时夹具。仅适用于 Windows 的检查在其他平台会明确标为跳过。
+可用 `npm test -- test/claude.test.ts test/turn-usage.test.ts` 定向检查。这些测试将 Claude 检测与用户主目录隔离，覆盖含空格路径下的用量 preload 加载，并清理临时夹具。仅适用于 Windows 的检查在其他平台会明确标为跳过。如果当前终端设置了 `NODE_ENV=production`，测试前需改为 `test`（PowerShell：`$env:NODE_ENV = 'test'`），以加载 React 开发 JSX 运行时。Git 测试在临时 `.git` 目录内使用空配置文件隔离本机设置，避免 Windows 空设备路径兼容问题。
 
-打包目标：Windows NSIS、macOS DMG、Linux x64 AppImage / Debian（`.deb`）。
+打包目标：Windows x64 NSIS / 免安装版、macOS DMG、Linux x64 AppImage / Debian（`.deb`）。
 
 `npm test -- test/linux-launcher.test.ts test/linux-packaging.test.ts` 检查 Linux 启动、重复/离线启动、错误处理、打包元数据及图标、桌面标识和 AppImage 启动器，不下载安装包或启动代理。每个目标发行版仍需在真实图形会话内进行冒烟测试。
 

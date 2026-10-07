@@ -2,9 +2,13 @@
   "name": "agent-desktop",
   "productName": "Agent Desktop",
   "desktopName": "dev.agentdesktop.app.desktop",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "A desktop client for Cursor CLI, Codex CLI, and Claude Code with multi-project history",
   "homepage": "https://github.com/JWhiteCat/Agent-Desktop",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/JWhiteCat/Agent-Desktop.git"
+  },
   "main": "out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
@@ -18,6 +22,7 @@
     "setup:public-server": "node scripts/setup-public-server.mjs",
     "test:live": "vitest run --config vitest.live.config.ts",
     "dist": "electron-vite build && electron-builder",
+    "dist:win": "electron-vite build && electron-builder --win --x64 --publish never",
     "dist:linux": "electron-vite build && electron-builder --linux --x64 --publish never",
     "dist:linux:dir": "electron-vite build && electron-builder --linux --x64 --dir --publish never"
   },
@@ -50,7 +55,14 @@
       "node_modules/zod/**/*"
     ],
     "win": {
-      "target": "nsis"
+      "target": ["nsis", "portable"],
+      "icon": "resources/icons/256x256.png"
+    },
+    "nsis": {
+      "artifactName": "${name}-${version}-win-${arch}-setup.${ext}"
+    },
+    "portable": {
+      "artifactName": "${name}-${version}-win-${arch}-portable.${ext}"
     },
     "mac": {
       "target": "dmg"

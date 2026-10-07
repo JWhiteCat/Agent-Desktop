@@ -6,6 +6,20 @@ A desktop client for [Cursor CLI](https://cursor.com/cli) (`agent`), [Codex CLI]
 
 The app does not call a model itself. The main process starts the Cursor CLI, Codex CLI, or Claude Code adapter on this machine and talks to it over the [Agent Client Protocol](https://agentclientprotocol.com) (ACP). The composer picks Cursor, Codex, or Claude. A new conversation uses that choice and remembers it. In an existing conversation, switching CLI keeps the messages already on screen and starts the next message as a new session on the CLI you picked. The sidebar marks each one Cursor, Codex, or Claude.
 
+## Download
+
+Download the Windows x64 binaries from [Agent Desktop v1.0.0](https://github.com/JWhiteCat/Agent-Desktop/releases/tag/v1.0.0), built from the `release1.0` branch:
+
+- `agent-desktop-1.0.0-win-x64-setup.exe`: installer with Start menu shortcuts and an uninstaller.
+- `agent-desktop-1.0.0-win-x64-portable.exe`: launch without installing.
+- `SHA256SUMS.txt`: SHA-256 checksums for both downloads. Use `Get-FileHash <filename> -Algorithm SHA256` in PowerShell to verify a file.
+
+The binaries include Electron and the Codex/Claude adapters. Configure a CLI login or API key in Settings before sending a message. Windows binaries are not code signed. Linux and macOS builds can be produced from source with the commands below.
+
+To reproduce the Windows packages on Windows, install dependencies with `npm ci --include=dev --include=optional`, then run `npm run dist:win`. Packages are written to `release/` without being published automatically.
+
+If downloading Electron stalls, reuse the installed runtime with `npm run dist:win -- --config.electronDist=node_modules/electron/dist` after confirming `node_modules/electron/dist/version` matches the installed Electron package version.
+
 ## Features
 
 - Multi-project sidebar: add, rename, reorder, collapse, and search conversations. Search matches the title, the preview, and the project name
@@ -183,14 +197,15 @@ chmod +x release/agent-desktop-*-linux-x86_64.AppImage
 | `npm run build` | Compile into `out/` |
 | `npm run preview` | Preview the compiled app |
 | `npm run dist` | Package installers into `release/` |
+| `npm run dist:win` | Build Windows x64 NSIS and portable executables without publishing |
 | `npm run dist:linux` | Build Linux x64 AppImage and Debian packages without publishing |
 | `npm run dist:linux:dir` | Build the unpacked Linux x64 application |
 
 `npm test` does not talk to Cursor CLI, Codex, or Claude. `npm run test:live` calls `composer-2.5[fast=true]` in Ask mode in temporary directories: one check asks `Reply with exactly ok`, and another verifies native image recognition plus reading an original managed file outside the workspace. The text check uses `CURSOR_API_KEY` when set, otherwise the saved CLI login; the attachment check requires `CURSOR_API_KEY`. Run only the attachment check with `npm run test:live -- test/live/attachment-smoke.test.ts`.
 
-Run a focused check with `npm test -- test/claude.test.ts test/turn-usage.test.ts`. These tests isolate Claude discovery from the user's home directory, load the usage preload from paths containing spaces, and clean up their temporary fixtures. Windows-only checks are reported as skipped on other platforms.
+Run a focused check with `npm test -- test/claude.test.ts test/turn-usage.test.ts`. These tests isolate Claude discovery from the user's home directory, load the usage preload from paths containing spaces, and clean up their temporary fixtures. Windows-only checks are reported as skipped on other platforms. If your shell sets `NODE_ENV=production`, set it to `test` before running tests (PowerShell: `$env:NODE_ENV = 'test'`) so React's development JSX runtime is available. Git fixtures use an empty configuration file inside their temporary `.git` directory to isolate user settings without relying on Windows device paths.
 
-Package targets: Windows NSIS, macOS DMG, and Linux x64 AppImage / Debian (`.deb`).
+Package targets: Windows x64 NSIS / portable, macOS DMG, and Linux x64 AppImage / Debian (`.deb`).
 
 `npm test -- test/linux-launcher.test.ts test/linux-packaging.test.ts` checks Linux startup, repeated/offline starts, failure handling, package metadata/icons, desktop identity, and the AppImage launcher without downloading packages or launching an agent. A real graphical-session smoke test is still needed for each target distribution.
 
