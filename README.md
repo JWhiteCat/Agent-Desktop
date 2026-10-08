@@ -11,6 +11,7 @@ Agent Desktop runs the CLIs on your computer through the [Agent Client Protocol]
 - Manage multiple projects and search, pin, archive, and fork conversations
 - Work in Agent, Plan, or Ask mode, with question cards and one-click plan execution
 - Stream replies and tool calls, attach images and files, open local file links, and preview or copy link destinations
+- Use desktop right-click menus to copy selected text and paste into chat and other editable fields
 - Choose models with saved favorites, context length, reasoning effort, and Fast settings
 - Start conversations in isolated git worktrees and review changes and diffs
 - Import and resume Cursor, Codex, and Claude history

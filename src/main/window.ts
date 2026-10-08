@@ -1,7 +1,8 @@
-import { app, BrowserWindow, nativeTheme, shell } from 'electron'
+import { app, BrowserWindow, Menu, nativeTheme, shell, type MenuItemConstructorOptions } from 'electron'
 import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
+import { t } from '@shared/i18n'
 import type { Settings } from '@shared/types'
 import { cliEnvironment } from './cli-runtime'
 
@@ -58,6 +59,18 @@ export function createMainWindow(): BrowserWindow {
   })
   win.webContents.on('before-input-event', (_e, input) => {
     if (input.type === 'keyDown' && input.key === 'F12') win.webContents.toggleDevTools()
+  })
+  win.webContents.on('context-menu', (_event, params) => {
+    const items: MenuItemConstructorOptions[] = []
+    if (params.isEditable || params.selectionText.length > 0) {
+      items.push({ label: t('复制'), enabled: params.editFlags.canCopy, click: () => win.webContents.copy() })
+    }
+    if (params.isEditable) {
+      // Native paste retains the caret and dispatches the composer's image paste event.
+      items.push({ label: t('粘贴'), enabled: params.editFlags.canPaste, click: () => win.webContents.paste() })
+    }
+    if (!items.length) return
+    Menu.buildFromTemplate(items).popup({ window: win, x: params.x, y: params.y, sourceType: params.menuSourceType })
   })
 
   if (process.env.ELECTRON_RENDERER_URL) win.loadURL(process.env.ELECTRON_RENDERER_URL)

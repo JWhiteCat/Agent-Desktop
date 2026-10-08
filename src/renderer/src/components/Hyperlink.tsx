@@ -29,6 +29,7 @@ export function Hyperlink({ href, cwd, children, onContextMenu, onKeyDown, ...pr
     const rect = el.getBoundingClientRect()
     return { x: rect.left, y: rect.bottom }
   }
+  const nativeSelectionMenu = () => !window.api.isRemote && !!window.getSelection()?.toString()
 
   return (
     <>
@@ -40,6 +41,10 @@ export function Hyperlink({ href, cwd, children, onContextMenu, onKeyDown, ...pr
           onContextMenu={(event) => {
             onContextMenu?.(event)
             if (event.defaultPrevented || !address) return
+            if (nativeSelectionMenu()) {
+              close()
+              return
+            }
             event.preventDefault()
             event.stopPropagation()
             setPoint(event.clientX || event.clientY
@@ -50,6 +55,10 @@ export function Hyperlink({ href, cwd, children, onContextMenu, onKeyDown, ...pr
             onKeyDown?.(event)
             if (event.defaultPrevented || !address) return
             if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+              if (nativeSelectionMenu()) {
+                close()
+                return
+              }
               event.preventDefault()
               event.stopPropagation()
               setPoint(keyboardPoint(event.currentTarget))

@@ -20,6 +20,7 @@ vi.mock('../src/renderer/src/store/feedback', async (importOriginal) => ({
 const previewPath = 'D:/projects/game/artifacts/strategy-panel-1920x1080.png'
 const nativePreviewPath = 'D:\\projects\\game\\artifacts\\strategy-panel-1920x1080.png'
 const api = { openPath: vi.fn(), openExternal: vi.fn(), isRemote: false }
+const getSelection = vi.fn<() => Pick<Selection, 'toString'> | null>()
 
 beforeEach(() => {
   setLanguage('zh-CN', 'zh-CN')
@@ -27,7 +28,8 @@ beforeEach(() => {
   api.openPath.mockReset().mockResolvedValue(undefined)
   api.openExternal.mockReset().mockResolvedValue(undefined)
   api.isRemote = false
-  vi.stubGlobal('window', { api })
+  getSelection.mockReset().mockReturnValue(null)
+  vi.stubGlobal('window', { api, getSelection })
 })
 
 afterEach(() => {
@@ -145,6 +147,41 @@ describe('Markdown artifact link rendering', () => {
 })
 
 describe('opening Markdown links', () => {
+  it.each(['selected preview text', ' \n\t '])('lets selection %j on a rendered desktop file link use the native menu', async (text) => {
+    getSelection.mockReturnValue({ toString: () => text })
+    const anchor = await renderedLinkAnchor('[Preview](artifacts/preview%20image.png)', 'D:/project/worktree')
+    const event = {
+      preventDefault: vi.fn(), stopPropagation: vi.fn(), defaultPrevented: false,
+      clientX: 120, clientY: 240
+    }
+
+    anchor.onContextMenu!(event)
+
+    expect(event.preventDefault).not.toHaveBeenCalled()
+    expect(event.stopPropagation).not.toHaveBeenCalled()
+    expect(api.openPath).not.toHaveBeenCalled()
+    expect(api.openExternal).not.toHaveBeenCalled()
+    expect(feedback.toast).not.toHaveBeenCalled()
+  })
+
+  it('retains the custom menu for a selected rendered remote file link', async () => {
+    api.isRemote = true
+    getSelection.mockReturnValue({ toString: () => 'selected preview text' })
+    const anchor = await renderedLinkAnchor('[Preview](artifacts/preview%20image.png)', 'D:/project/worktree')
+    const event = {
+      preventDefault: vi.fn(), stopPropagation: vi.fn(), defaultPrevented: false,
+      clientX: 120, clientY: 240
+    }
+
+    anchor.onContextMenu!(event)
+
+    expect(event.preventDefault).toHaveBeenCalledOnce()
+    expect(event.stopPropagation).toHaveBeenCalledOnce()
+    expect(api.openPath).not.toHaveBeenCalled()
+    expect(api.openExternal).not.toHaveBeenCalled()
+    expect(feedback.toast).not.toHaveBeenCalled()
+  })
+
   it('captures right-click on a rendered file link without invoking either opener', async () => {
     const anchor = await renderedLinkAnchor('[Preview](artifacts/preview%20image.png)', 'D:/project/worktree')
     const event = {

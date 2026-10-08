@@ -33,6 +33,7 @@ export const messagesMessages: Record<string, string> = {
   '思考': 'Thinking',
   '思考中': 'Thinking',
   '复制': 'Copy',
+  '粘贴': 'Paste',
   '从这里分叉': 'Fork from here',
   '正在制定计划': 'Creating a plan',
   '计划': 'Plan',

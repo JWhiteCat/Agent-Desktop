@@ -23,6 +23,7 @@ type AnchorProps = ComponentProps<'a'>
 type ContextMenuProps = ComponentProps<typeof ContextMenu>
 
 const api = { openPath: vi.fn(), openExternal: vi.fn(), isRemote: false }
+const getSelection = vi.fn<() => Pick<Selection, 'toString'> | null>()
 
 beforeEach(() => {
   setLanguage('zh-CN', 'zh-CN')
@@ -30,7 +31,9 @@ beforeEach(() => {
   actions.toast.mockReset()
   api.openPath.mockReset()
   api.openExternal.mockReset()
-  vi.stubGlobal('window', { api })
+  api.isRemote = false
+  getSelection.mockReset().mockReturnValue(null)
+  vi.stubGlobal('window', { api, getSelection })
 })
 
 afterEach(() => {
@@ -132,6 +135,45 @@ describe('hyperlink addresses', () => {
 })
 
 describe('hyperlink copy menu', () => {
+  it.each(['selected text', ' \n\t '])('lets desktop selection %j use the native context menu', async (text) => {
+    getSelection.mockReturnValue({ toString: () => text })
+    const onContextMenu = vi.fn()
+    const { anchor } = await renderedLink({ href: 'https://example.com', onContextMenu })
+    const event = contextEvent()
+
+    anchor.onContextMenu!(event as unknown as MouseEvent<HTMLAnchorElement>)
+
+    expect(onContextMenu).toHaveBeenCalledExactlyOnceWith(event)
+    expect(event.preventDefault).not.toHaveBeenCalled()
+    expect(event.stopPropagation).not.toHaveBeenCalled()
+    expect(actions.copyText).not.toHaveBeenCalled()
+    expect(api.openExternal).not.toHaveBeenCalled()
+  })
+
+  it.each([null, ''])('retains the desktop link menu for an empty selection %j', async (text) => {
+    getSelection.mockReturnValue(text === null ? null : { toString: () => text })
+    const { anchor } = await renderedLink({ href: 'https://example.com' })
+    const event = contextEvent()
+
+    anchor.onContextMenu!(event as unknown as MouseEvent<HTMLAnchorElement>)
+
+    expect(event.preventDefault).toHaveBeenCalledOnce()
+    expect(event.stopPropagation).toHaveBeenCalledOnce()
+  })
+
+  it.each(['selected text', ' \n\t '])('retains the remote link menu for selection %j', async (text) => {
+    api.isRemote = true
+    getSelection.mockReturnValue({ toString: () => text })
+    const { anchor } = await renderedLink({ href: 'https://example.com' })
+    const event = contextEvent()
+
+    anchor.onContextMenu!(event as unknown as MouseEvent<HTMLAnchorElement>)
+
+    expect(event.preventDefault).toHaveBeenCalledOnce()
+    expect(event.stopPropagation).toHaveBeenCalledOnce()
+    expect(actions.copyText).not.toHaveBeenCalled()
+  })
+
   it('captures right-click without opening or copying until the menu action is selected', async () => {
     const onClick = vi.fn()
     const onContextMenu = vi.fn()
@@ -150,7 +192,8 @@ describe('hyperlink copy menu', () => {
     expect(api.openExternal).not.toHaveBeenCalled()
   })
 
-  it('respects a caller that prevents the context menu event', async () => {
+  it.each([null, 'selected text'])('respects a caller that prevents the context menu event with selection %j', async (text) => {
+    getSelection.mockReturnValue(text === null ? null : { toString: () => text })
     const { anchor } = await renderedLink({
       href: 'https://example.com', onContextMenu: (event) => event.preventDefault()
     })
@@ -175,6 +218,53 @@ describe('hyperlink copy menu', () => {
     expect(event.stopPropagation).toHaveBeenCalledOnce()
     expect(actions.copyText).not.toHaveBeenCalled()
     expect(api.openExternal).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['ContextMenu', false, 'selected text'], ['ContextMenu', false, ' \n\t '],
+    ['F10', true, 'selected text'], ['F10', true, ' \n\t ']
+  ] as const)('lets desktop selection use the native keyboard menu for %s with shift=%s (%j)', async (key, shiftKey, text) => {
+    getSelection.mockReturnValue({ toString: () => text })
+    const onKeyDown = vi.fn()
+    const { anchor } = await renderedLink({ href: 'https://example.com', onKeyDown })
+    const event = { ...contextEvent(), key, shiftKey }
+
+    anchor.onKeyDown!(event as unknown as KeyboardEvent<HTMLAnchorElement>)
+
+    expect(onKeyDown).toHaveBeenCalledExactlyOnceWith(event)
+    expect(event.preventDefault).not.toHaveBeenCalled()
+    expect(event.stopPropagation).not.toHaveBeenCalled()
+    expect(actions.copyText).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['ContextMenu', false], ['F10', true]
+  ])('retains the remote keyboard menu for selected text via %s with shift=%s', async (key, shiftKey) => {
+    api.isRemote = true
+    getSelection.mockReturnValue({ toString: () => 'selected text' })
+    const { anchor } = await renderedLink({ href: 'https://example.com' })
+    const event = { ...contextEvent(), key, shiftKey }
+
+    anchor.onKeyDown!(event as unknown as KeyboardEvent<HTMLAnchorElement>)
+
+    expect(event.preventDefault).toHaveBeenCalledOnce()
+    expect(event.stopPropagation).toHaveBeenCalledOnce()
+  })
+
+  it.each([
+    ['ContextMenu', false], ['F10', true]
+  ])('respects a caller that prevents the keyboard menu via %s with shift=%s', async (key, shiftKey) => {
+    getSelection.mockReturnValue({ toString: () => 'selected text' })
+    const { anchor } = await renderedLink({
+      href: 'https://example.com', onKeyDown: (event) => event.preventDefault()
+    })
+    const event = { ...contextEvent(), key, shiftKey }
+
+    anchor.onKeyDown!(event as unknown as KeyboardEvent<HTMLAnchorElement>)
+
+    expect(event.preventDefault).toHaveBeenCalledOnce()
+    expect(event.stopPropagation).not.toHaveBeenCalled()
+    expect(actions.copyText).not.toHaveBeenCalled()
   })
 
   it('reports a failed copy without opening the link or showing success', async () => {
