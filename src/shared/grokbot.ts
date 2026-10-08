@@ -18,6 +18,11 @@ export function mergeGrokBotMessages(current: GrokBotMessage[], incoming: GrokBo
   return [...bySeq.values()].sort((a, b) => Number(a.seq) - Number(b.seq))
 }
 
+/** A poll page applied to the shown messages: a reset replaces them, otherwise updates merge by seq. */
+export function applyGrokBotPage(current: GrokBotMessage[], page: { messages: GrokBotMessage[]; reset?: boolean }): GrokBotMessage[] {
+  return page.reset ? mergeGrokBotMessages([], page.messages) : mergeGrokBotMessages(current, page.messages)
+}
+
 export function grokBotBusy(turn: GrokBotTurn | undefined): boolean {
   return !!turn && (turn.inFlight || turn.queued > 0)
 }

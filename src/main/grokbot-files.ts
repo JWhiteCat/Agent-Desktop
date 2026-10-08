@@ -74,6 +74,7 @@ export class GrokBotFiles {
   private readonly bySha = new Map<string, string>()
   /** Hashes that appeared in a transcript, with their display metadata. */
   private readonly known = new Map<string, { name: string; mimeType: string }>()
+  private lastRefresh = 0
 
   constructor(private readonly cacheDir: () => string) {}
 
@@ -85,8 +86,19 @@ export class GrokBotFiles {
     return isSha256(sha256) && this.known.has(sha256)
   }
 
+  /**
+   * Makes sure the index has a chance to contain these hashes. Rescans only when one is missing,
+   * at most once per `minIntervalMs`, so repeated polls and bot switches cost nothing.
+   */
+  async ensure(hashes: string[], minIntervalMs = 2_000): Promise<void> {
+    if (this.lastRefresh && hashes.every((h) => this.bySha.has(h))) return
+    if (this.lastRefresh && Date.now() - this.lastRefresh < minIntervalMs) return
+    await this.refresh()
+  }
+
   /** Re-scans the cache folder, hashing only new or changed files. */
   async refresh(): Promise<void> {
+    this.lastRefresh = Date.now()
     const dir = this.cacheDir()
     let names: string[]
     try {
@@ -136,7 +148,15 @@ export class GrokBotFiles {
       found = this.lookup(sha256)
     }
     if (!found) throw new Error(translate('Grok Bot 桌面端缓存里没有这个文件，请在 Grok Bot 应用中下载'))
-    const bytes = await fs.promises.readFile(found.file)
+    let bytes: Buffer
+    try {
+      bytes = await fs.promises.readFile(found.file)
+    } catch {
+      // Removed by the Grok Bot app since the last scan.
+      this.index.delete(found.file)
+      this.bySha.delete(sha256)
+      throw new Error(translate('Grok Bot 桌面端缓存里没有这个文件，请在 Grok Bot 应用中下载'))
+    }
     if (sha256Of(bytes) !== sha256) {
       this.index.delete(found.file)
       this.bySha.delete(sha256)

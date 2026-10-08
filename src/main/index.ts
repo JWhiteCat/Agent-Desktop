@@ -6,7 +6,7 @@ import { getTaskCounts } from '@shared/task-counts'
 import type { AgentEvent, AppState, CliProvider, ModelInfo, Settings } from '@shared/types'
 import { grokBotFileResponse } from './grokbot-files'
 import { createIpcHandlers } from './ipc'
-import { grokBotFiles } from './ipc/grokbot'
+import { flushGrokBotCaches, grokBotFiles } from './ipc/grokbot'
 import { notifyRunFinished } from './notify'
 import { publish } from './publish'
 import { RemoteRuntime } from './remote-runtime'
@@ -116,6 +116,7 @@ app.on('before-quit', () => {
   sessions?.stopAll()
   void remoteRuntime.stop()
   store?.flush()
+  flushGrokBotCaches()
 })
 
 app.on('window-all-closed', () => {

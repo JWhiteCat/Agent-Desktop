@@ -4,6 +4,7 @@ import { grokBotBusy, mergeGrokBotMessages, unresolvedGrokBotMessages, validateG
 import { useT } from '../lib/i18n'
 import { relativeTime } from '../lib/format'
 import { errorText, openGrokBot, toast, useStore } from '../store'
+import { applyGrokBotPoll, cachedGrokBotChat, rememberGrokBotChat } from '../store/grokbot'
 import { GrokBotMessageExtras } from './GrokBotAttachments'
 import { IconArrowUp, IconBot, IconPlus, IconRefresh, IconStop, IconX, Spinner } from './icons'
 import { Markdown } from './items/Markdown'
@@ -26,6 +27,7 @@ interface Chat {
   messages: GrokBotMessage[]
   cursor: string
   turn?: GrokBotTurn
+  sessionId?: string
   loading: boolean
   error: string
 }
@@ -163,17 +165,26 @@ export function GrokBotView({ botId, onOpenSettings }: Props) {
   const hasKey = list?.hasApiKey !== false
 
   useEffect(() => {
-    setChat(null)
     setPending(null)
-    if (!selectedName || !hasKey) return
+    if (!selectedName || !hasKey) {
+      setChat(null)
+      return
+    }
     let alive = true
     let timer: ReturnType<typeof setTimeout> | undefined
-    let state: Chat = { bot: selectedName, messages: [], cursor: '', loading: true, error: '' }
+    // A bot shown earlier in this session appears at once and continues from its cursor.
+    const remembered = cachedGrokBotChat(selectedName)
+    let state: Chat = remembered
+      ? { bot: selectedName, ...remembered, loading: false, error: '' }
+      : { bot: selectedName, messages: [], cursor: '', loading: true, error: '' }
     setChat(state)
     atBottom.current = true
 
     const update = (next: Partial<Chat>) => {
       state = { ...state, ...next }
+      if (!state.loading && state.cursor) {
+        rememberGrokBotChat(selectedName, { messages: state.messages, cursor: state.cursor, turn: state.turn, sessionId: state.sessionId })
+      }
       if (alive) setChat(state)
     }
     applyMessages.current = (messages) => {
@@ -200,23 +211,40 @@ export function GrokBotView({ botId, onOpenSettings }: Props) {
       if (!alive) return
       if (document.hidden || !state.cursor) return schedule()
       try {
-        const page = await window.api.grokbotPoll(selectedName, state.cursor)
+        const page = await window.api.grokbotPoll(selectedName, state.cursor, state.sessionId)
         if (!alive) return
         if (page.messages.some((m) => m.role === 'user')) setPending(null)
-        update({ messages: mergeGrokBotMessages(state.messages, page.messages), cursor: page.cursor, turn: page.turn, error: '' })
+        update({ ...applyGrokBotPoll(state, page), error: '' })
         await recheckAttachments()
       } catch (err) {
         update({ error: errorText(err) })
       }
       schedule()
     }
-    window.api.grokbotHistory(selectedName).then(
-      (history) => {
-        update({ messages: history.messages, cursor: history.cursor, turn: history.turn, loading: false })
-        schedule()
-      },
-      (err) => update({ loading: false, error: errorText(err) })
-    )
+    const loadHistory = () =>
+      window.api.grokbotHistory(selectedName).then(
+        (history) => {
+          if (!alive) return
+          update({ messages: history.messages, cursor: history.cursor, turn: history.turn, sessionId: history.sessionId, loading: false, error: '' })
+          schedule()
+        },
+        (err) => update({ loading: false, error: errorText(err) })
+      )
+    if (remembered) {
+      void tick()
+    } else {
+      // Messages the desktop host saved on an earlier run show without waiting for the network.
+      window.api.grokbotCached(selectedName).then(
+        (saved) => {
+          if (!alive) return
+          if (!saved) return void loadHistory()
+          update({ messages: saved.messages, cursor: saved.cursor, turn: saved.turn, sessionId: saved.sessionId, loading: false })
+          if (saved.truncated) void loadHistory()
+          else void tick()
+        },
+        () => alive && void loadHistory()
+      )
+    }
     const wake = () => {
       if (document.hidden || !timer) return
       clearTimeout(timer)

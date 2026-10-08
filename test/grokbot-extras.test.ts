@@ -11,6 +11,7 @@ vi.mock('electron', () => ({
 }))
 
 import { attachReplica, GrokBotClient, matchReplica, readReplica, toReplicaEntry, withAttachments, type ReplicaEntry } from '../src/main/grokbot'
+import { GrokBotChatCache } from '../src/main/grokbot-cache'
 import { grokBotFileResponse, GrokBotFiles, mimeTypeFor, safeFileName } from '../src/main/grokbot-files'
 import { grokbotHandlers } from '../src/main/ipc/grokbot'
 import type { IpcDeps } from '../src/main/ipc/deps'
@@ -267,7 +268,8 @@ function handlerFixture(root: string, manual: string[] = []) {
   })
   const client = new GrokBotClient(() => 'key_1', fetchImpl as unknown as typeof fetch, () => 'https://api.test')
   const files = new GrokBotFiles(() => cacheDir(root))
-  const handlers = grokbotHandlers({ store, broadcast, getWindow: () => null } as unknown as IpcDeps, { appDataDir: () => root, client, files })
+  const cache = new GrokBotChatCache(() => path.join(root, 'grokbot-cache.json'))
+  const handlers = grokbotHandlers({ store, broadcast, getWindow: () => null } as unknown as IpcDeps, { appDataDir: () => root, client, files, cache })
   return { handlers, settings, store, broadcast, fetchImpl, files }
 }
 
@@ -338,7 +340,8 @@ describe('grok bot IPC', () => {
     const failing = new GrokBotClient(() => 'k', (async () => jsonResponse({ error: 'quota' }, 429)) as unknown as typeof fetch, () => 'https://api.test')
     const handlers = grokbotHandlers({ store: { settings, updateSettings: vi.fn() }, broadcast: vi.fn() } as unknown as IpcDeps, {
       appDataDir: () => root,
-      client: failing
+      client: failing,
+      cache: new GrokBotChatCache(() => path.join(root, 'grokbot-cache.json'))
     })
     await expect(handlers['grokbot:create']('Ada')).rejects.toThrow(/429.*quota/)
     expect(settings.grokbotBots).toEqual([])

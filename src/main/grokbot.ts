@@ -304,11 +304,20 @@ export async function withAttachments(
 ): Promise<GrokBotMessage[]> {
   if (bot.manual || !messages.some((m) => m.role === 'bot')) return messages
   const replica = readReplica(appDataDir, bot.id)
-  if (!replica) return messages
-  const wanted = messages.flatMap((m) => matchReplica(m, replica)?.attachments ?? [])
-  if (wanted.length) await files.refresh()
-  for (const a of wanted) files.remember(a)
-  return attachReplica(messages, replica, (sha) => files.lookup(sha))
+  // Messages the cached transcript no longer has keep the files saved with them.
+  const matched = replica ? attachReplica(messages, replica) : messages
+  const hashes = matched.flatMap((m) => m.attachments ?? []).map((a) => a.sha256).filter(Boolean)
+  if (!hashes.length) return matched
+  await files.ensure(hashes)
+  return matched.map((m) => {
+    if (!m.attachments?.length) return m
+    const attachments = m.attachments.map(({ size: _size, ...a }): GrokBotAttachment => {
+      files.remember(a)
+      const found = a.sha256 ? files.lookup(a.sha256) : undefined
+      return found ? { ...a, available: true, size: found.size } : { ...a, available: false }
+    })
+    return { ...m, attachments }
+  })
 }
 
 function apiErrorMessage(text: string): string {
@@ -338,17 +347,32 @@ export class GrokBotClient {
 
   /** The bot's session, by name. The API creates a bot when the name is unknown, so callers pass known names only. */
   async sessionId(name: string): Promise<string> {
-    const key = this.apiKey()
-    if (key !== this.sessionsKey) {
-      this.sessions.clear()
-      this.sessionsKey = key
-    }
-    const known = this.sessions.get(name)
+    const known = this.knownSession(name)
     if (known) return known
     const parsed = await this.request('POST', '/v0/grokbot/sessions', { name })
     if (typeof parsed?.id !== 'string' || !parsed.id) throw new GrokBotError(translate('Grok Bot 没有返回会话 id'))
     this.sessions.set(name, parsed.id)
     return parsed.id
+  }
+
+  /** The cached session id for this name under the current key, without a request. */
+  knownSession(name: string): string | undefined {
+    const key = this.apiKey()
+    if (key !== this.sessionsKey) {
+      this.sessions.clear()
+      this.sessionsKey = key
+    }
+    return this.sessions.get(name)
+  }
+
+  /** Seeds a session id saved by an earlier run, so the slow name lookup is skipped. */
+  rememberSession(name: string, id: string): void {
+    if (!id || this.knownSession(name)) return
+    this.sessions.set(name, id)
+  }
+
+  forgetSession(name: string): void {
+    this.sessions.delete(name)
   }
 
   /** Opens the bot of this name, creating it when the account has none. Used only by explicit creation. */
@@ -369,15 +393,17 @@ export class GrokBotClient {
       cursor = page.latestUpdatedSeq
       if (!page.entries.length || !advanced) break
     }
-    return { messages, cursor, turn }
+    return { messages, cursor, turn, sessionId: id }
   }
 
   async poll(name: string, cursor: string): Promise<GrokBotPoll> {
-    const page = await this.entries(await this.sessionId(name), cursor || EMPTY_TRANSCRIPT_TAIL)
+    const id = await this.sessionId(name)
+    const page = await this.entries(id, cursor || EMPTY_TRANSCRIPT_TAIL)
     return {
       messages: page.entries.map(toMessage).filter((m): m is GrokBotMessage => !!m),
       cursor: page.latestUpdatedSeq,
-      turn: page.turn
+      turn: page.turn,
+      sessionId: id
     }
   }
 

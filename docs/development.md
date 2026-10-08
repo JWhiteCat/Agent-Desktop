@@ -140,6 +140,7 @@ src/main              Electron main process
   quota.ts            Cursor and Codex account quota
   grokbot.ts          Grok Bot roster and cached transcripts from the Grok Bot desktop app, and the /v0/grokbot session API client
   grokbot-files.ts    Cached Grok Bot files by SHA-256, served through the grokbot-file:// protocol
+  grokbot-cache.ts    Bounded on-disk cache of recent Grok Bot messages, cursors, and session ids
   ipc/                IPC split by projects, conversations, settings, CLI, usage, and local actions
 src/preload           The API the renderer is allowed to call
 src/renderer/src      React UI

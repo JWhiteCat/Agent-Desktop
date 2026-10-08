@@ -140,6 +140,7 @@ src/main              Electron 主进程
   quota.ts            Cursor 与 Codex 的账号额度
   grokbot.ts          从 Grok Bot 桌面端读取 Bot 列表和缓存的对话记录，以及 /v0/grokbot 会话 API 客户端
   grokbot-files.ts    按 SHA-256 查找 Grok Bot 缓存的文件，通过 grokbot-file:// 协议提供
+  grokbot-cache.ts    磁盘上有上限的 Grok Bot 最近消息、读取位置和会话 id 缓存
   ipc/                按项目、对话、设置、CLI、用量和本机操作拆开的 IPC
 src/preload           渲染进程可以调用的 API
 src/renderer/src      React 界面

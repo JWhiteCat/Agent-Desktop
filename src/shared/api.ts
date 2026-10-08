@@ -6,6 +6,7 @@ import type {
   CliProvider,
   CliSession,
   GitDiff,
+  GrokBotCachedChat,
   GrokBotHistory,
   GrokBotInfo,
   GrokBotList,
@@ -89,8 +90,11 @@ export interface DesktopApi {
   openExternal(url: string): Promise<void>
   /** Bots cached by the Grok Bot desktop app on the desktop host, plus names added in Settings. */
   grokbotList(): Promise<GrokBotList>
+  /** Messages saved on the desktop host from an earlier visit, without a network request. */
+  grokbotCached(name: string): Promise<GrokBotCachedChat | null>
   grokbotHistory(name: string): Promise<GrokBotHistory>
-  grokbotPoll(name: string, cursor: string): Promise<GrokBotPoll>
+  /** Entries after `cursor`. Passing the shown `sessionId` lets the host reload when the bot behind the name changed. */
+  grokbotPoll(name: string, cursor: string, sessionId?: string): Promise<GrokBotPoll>
   grokbotSend(name: string, text: string): Promise<void>
   grokbotInterrupt(name: string): Promise<void>
   /** Opens the bot of this name, creating it when the account has none, and adds it to the Settings list. */

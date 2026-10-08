@@ -430,6 +430,16 @@ export interface GrokBotHistory {
   messages: GrokBotMessage[]
   cursor: string
   turn: GrokBotTurn
+  /** API session the messages belong to. A different id means another bot or account behind the name. */
+  sessionId?: string
+  /** The saved cursor could not be continued; `messages` is the full transcript and replaces the cached one. */
+  reset?: boolean
+}
+
+/** Messages saved on the desktop host from an earlier visit; continue with a poll from `cursor`. */
+export interface GrokBotCachedChat extends GrokBotHistory {
+  /** Older messages were dropped to bound the cache; load the full history to show them. */
+  truncated?: boolean
 }
 
 /** Messages added or updated after the cursor. */
