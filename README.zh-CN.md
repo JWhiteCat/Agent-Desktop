@@ -16,6 +16,7 @@
 - 超链接：悬浮查看完整地址，右键选择「复制链接」，支持网页与本地文件路径。
 - 变更查看：显示本轮修改的文件、git 状态和 diff，支持隔离的 git worktree。
 - MCP 与 Skill：配置本应用集成，或管理各 CLI 的本机原生配置。
+- Grok Bot：从 Grok Bot 桌面端读取 Bot 列表，直接和 [Grok Bot](https://cursor.com/docs/grok-bot) 对话，认证使用 `CURSOR_API_KEY`。
 - 用量统计：查看账号额度、本机 token 和费用估算，以及每轮任务的耗时。
 - 桌面与远程体验：系统通知、未读状态、中英文和主题切换，支持局域网与 SSH 公网访问。
 

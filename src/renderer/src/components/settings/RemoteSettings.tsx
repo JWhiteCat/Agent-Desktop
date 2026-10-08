@@ -47,7 +47,7 @@ export function RemoteSettings() {
     if (index >= 0) setUrlIndex(index)
   }, [info?.publicUrl])
 
-  const hash = view.kind === 'thread' ? `#thread=${view.id}` : view.projectId ? `#project=${view.projectId}` : ''
+  const hash = view.kind === 'thread' ? `#thread=${view.id}` : view.kind === 'home' && view.projectId ? `#project=${view.projectId}` : ''
   const base = info?.urls[urlIndex] ?? info?.urls[0]
   const link = base ? base + hash : ''
 

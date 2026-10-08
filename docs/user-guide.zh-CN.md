@@ -60,6 +60,15 @@ Git 页签显示工作区的实际内容；仓库尚无提交时，也会包含�
 
 导航、设置、弹窗、工具摘要、用量说明、日期、相对时间和应用系统通知均支持中英文。新生成的应用提示和自动会话标题保留文案标识，之后切换语言也会更新；用户自定义名称、消息、模型回复、CLI 原始输出，以及没有文案标识的旧历史文字保留原文。
 
+## Grok Bot
+
+点击侧边栏「项目」上方的 **Grok Bot**，可以和 Cursor 账号下的 [Grok Bot](https://cursor.com/docs/grok-bot) 对话。左栏列出你的 Bot，选中一个即可查看对话并发送消息。这里的对话和 Grok Bot 应用里是同一个，Bot 的记忆和工具都会保留。
+
+- **Bot 列表**：读取 Grok Bot 桌面端缓存在本机的 Bot 列表（`<appData>/Grok Bot/sand-client-persistence`）。公共 API 不提供列出 Bot 的接口，因此需要在这台电脑上安装并登录 Grok Bot，并至少打开一次。群聊和在 Grok Bot 侧边栏中隐藏的 Bot 不会显示。新建或改名 Bot 后点击刷新。
+- **认证**：请求发往 `https://api.cursor.com/v0/grokbot`，使用 **设置 → CLI → Cursor** 中的 API Key；设置为空时使用环境变量 `CURSOR_API_KEY`。浏览器登录不能用于这里。可用 `CURSOR_API_BASE_URL` 覆盖 API 地址。
+- **消息**：只显示你发的消息和 Bot 发给你的消息，不显示 Bot 内部的工作过程。Bot 处理中时每 1.5 秒刷新一次，可以中断当前这一轮；要等 Bot 处理完才能发下一条。空闲时每 10 秒检查一次新回复。
+- **名称**：API 按名称查找 Bot。只会发送列表中已有的名称，因此不会因拼错名字而新建空 Bot。如果两个 Bot 同名，界面会提示这段对话可能属于其中任意一个，建议在 Grok Bot 中改名。
+
 ## Plan 模式
 
 Cursor 不向 ACP 客户端提供 AskQuestion 工具。Codex 的 Plan 是协作模式（`collaboration_mode=plan`），保留所选的 Agent 权限配置，让确认执行后的实现阶段继承完全访问设置；规划期间，应用仍拒绝明确的文件修改权限请求。适配器若无法启用 Plan 或应用所选权限，本轮会报错停止。它不是 Cursor 的 `modeId: plan`。Claude 的 Plan 是适配器的 `plan` 权限模式。三种 CLI 的 Plan 消息前都会附一段说明，用 `<agent_desktop_client>` 标签包住。导入 CLI 历史时会去掉这个标签。这段说明要求模型这样工作：

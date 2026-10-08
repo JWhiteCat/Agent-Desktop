@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { ChangesPanel } from './components/ChangesPanel'
+import { GrokBotView } from './components/GrokBotView'
 import { ImportDialog } from './components/ImportDialog'
 import { SettingsDialog } from './components/settings/SettingsDialog'
 import { Home } from './components/Home'
@@ -77,6 +78,8 @@ export default function App() {
       <main className="main">
         {view.kind === 'thread' && thread ? (
           <ThreadView thread={thread} changesOpen={changesOpen} onToggleChanges={() => setChangesOpen((o) => !o)} />
+        ) : view.kind === 'grokbot' ? (
+          <GrokBotView botId={view.botId} onOpenSettings={() => setDialog('settings')} />
         ) : (
           <Home projectId={view.kind === 'home' ? view.projectId : undefined} onOpenImport={() => setDialog('import')} />
         )}

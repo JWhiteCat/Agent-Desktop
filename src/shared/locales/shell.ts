@@ -122,5 +122,30 @@ export const shellMessages: Record<string, string> = {
   '上下文': 'Context',
   '思考强度': 'Reasoning effort',
   '速度': 'Speed',
-  '标准': 'Standard'
+  '标准': 'Standard',
+  'Grok Bot 没有返回会话 id': 'Grok Bot did not return a session id',
+  '消息不能为空': 'The message is empty',
+  'Grok Bot 没有接收这条消息（{delivery}）': 'Grok Bot did not accept the message ({delivery})',
+  'Grok Bot 需要 Cursor API Key。请在设置 → CLI → Cursor 中填写，或设置环境变量 CURSOR_API_KEY。':
+    'Grok Bot needs a Cursor API key. Enter one in Settings → CLI → Cursor, or set the CURSOR_API_KEY environment variable.',
+  'Grok Bot 请求失败：{message}': 'Grok Bot request failed: {message}',
+  'Grok Bot 请求失败（{status}）：{message}': 'Grok Bot request failed ({status}): {message}',
+  'Grok Bot 返回了无法解析的内容': 'Grok Bot returned an unreadable response',
+  '找不到 Grok Bot「{name}」，请刷新列表': 'Grok Bot "{name}" was not found. Refresh the list.',
+  '未检测到 Grok Bot 桌面端。请在这台电脑上安装并登录 Grok Bot，然后刷新。':
+    'The Grok Bot desktop app was not found. Install Grok Bot on this computer, sign in, and refresh.',
+  'Grok Bot 桌面端还没有缓存 Bot 列表。请打开一次 Grok Bot，然后刷新。':
+    'The Grok Bot desktop app has not cached its bot list yet. Open Grok Bot once, then refresh.',
+  '无法读取 Grok Bot 的 Bot 列表，可能是 Grok Bot 版本已更新。': 'The Grok Bot bot list could not be read. Grok Bot may have changed its format.',
+  '还没有 Bot。请先在 Grok Bot 中创建。': 'No bots yet. Create one in Grok Bot first.',
+  '选择左侧的 Bot 开始对话': 'Choose a bot on the left to start chatting',
+  '还没有消息，发一条开始对话吧。': 'No messages yet. Send one to start.',
+  '{name} 正在处理…': '{name} is working…',
+  '给 {name} 发消息，Enter 发送，Shift+Enter 换行': 'Message {name}. Enter to send, Shift+Enter for a new line',
+  'Bot 还在处理上一条消息，完成后才能继续发送。': 'The bot is still working on the previous message. You can send again when it finishes.',
+  '这个 Bot 已不在 Grok Bot 列表中，请刷新': 'This bot is no longer in the Grok Bot list. Refresh.',
+  '有多个 Bot 叫「{name}」。Grok Bot API 按名称查找，这里的对话可能属于其中任意一个。建议在 Grok Bot 中改名。':
+    'More than one bot is named "{name}". The Grok Bot API looks bots up by name, so this conversation may belong to either one. Rename them in Grok Bot.',
+  '打开设置': 'Open settings',
+  '中断': 'Interrupt'
 }

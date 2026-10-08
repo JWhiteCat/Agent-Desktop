@@ -56,6 +56,15 @@ Open **Settings → Appearance and history → Language** and choose **System**,
 
 Navigation, settings, dialogs, tool summaries, usage explanations, dates, relative times, and application notifications use the selected language. New application notices and automatic conversation titles keep their source identifiers so they can also change language later. User names and messages, model replies, CLI output, and older saved text without these identifiers retain their original wording.
 
+## Grok Bot
+
+Click **Grok Bot** above **Projects** in the sidebar to chat with the [Grok Bot](https://cursor.com/docs/grok-bot) bots on your Cursor account. The left column lists your bots; choose one to read its conversation and send messages. The conversation is the same one you see in the Grok Bot app, so the bot keeps its memory and tools.
+
+- **Bot list**: read from the roster that the Grok Bot desktop app caches on this computer (`<appData>/Grok Bot/sand-client-persistence`). The public API cannot list bots, so install Grok Bot, sign in, and open it at least once. Group chats and bots hidden from the Grok Bot sidebar are left out. Click refresh after you add or rename a bot.
+- **Authentication**: requests go to `https://api.cursor.com/v0/grokbot` with the Cursor API key from **Settings → CLI → Cursor**, or `CURSOR_API_KEY` when Settings is empty. Browser login cannot be used here. `CURSOR_API_BASE_URL` overrides the API host.
+- **Messages**: only your messages and what the bot sends you are shown; the bot's internal work is not. While the bot is working, the view polls every 1.5 seconds and you can interrupt the turn. A new message can be sent only after the bot finishes. When idle, it checks for new replies every 10 seconds.
+- **Names**: the API finds a bot by name. Only names in the roster are sent, so a typo cannot create an empty bot. When two bots share a name, the view warns that the conversation may belong to either one; rename one in Grok Bot.
+
 ## Plan mode
 
 Cursor does not expose an AskQuestion tool to ACP clients. Codex Plan is a collaboration mode (`collaboration_mode=plan`); it keeps the selected Agent permission preset so that approved implementation inherits full access when enabled. The client still rejects explicit file-edit permission requests during planning. If the adapter cannot enable Plan or apply the permission preset, the turn stops with an error. Codex Plan is not Cursor’s `modeId: plan`. Claude Plan is the adapter's `plan` permission mode. All three get a short instruction in front of Plan messages, wrapped in an `<agent_desktop_client>` tag. That tag is stripped when CLI history is imported. The instruction asks the model to work like this:

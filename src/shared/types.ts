@@ -365,6 +365,47 @@ export interface GitDiff {
   error?: string
 }
 
+/** A bot from the Grok Bot desktop app's roster. */
+export interface GrokBotInfo {
+  id: string
+  name: string
+  description: string
+  color: string
+  lastText: string
+  lastActivityAt: number
+}
+
+export interface GrokBotList {
+  bots: GrokBotInfo[]
+  /** Why the list is empty: no Grok Bot app data, no cached roster, or an unreadable roster. */
+  reason?: 'no-app' | 'no-roster' | 'unreadable'
+  /** False when neither Settings nor CURSOR_API_KEY provides a Cursor API key. */
+  hasApiKey?: boolean
+}
+
+export interface GrokBotMessage {
+  seq: string
+  updatedSeq: string
+  role: 'user' | 'bot'
+  text: string
+  createdAtMs: number
+}
+
+export interface GrokBotTurn {
+  idle: boolean
+  inFlight: boolean
+  queued: number
+}
+
+export interface GrokBotHistory {
+  messages: GrokBotMessage[]
+  cursor: string
+  turn: GrokBotTurn
+}
+
+/** Messages added or updated after the cursor. */
+export type GrokBotPoll = GrokBotHistory
+
 export type AgentEvent =
   | { type: 'items'; threadId: string; items: Item[] }
   | { type: 'running'; threadId: string; running: boolean }

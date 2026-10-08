@@ -2,6 +2,7 @@ import type { Handler } from '../remote'
 import type { IpcDeps } from './deps'
 import { cliHandlers } from './cli'
 import { attachmentHandlers } from './attachments'
+import { grokbotHandlers } from './grokbot'
 import { hostHandlers } from './host'
 import { localConfigHandlers } from './local-config'
 import { projectHandlers } from './projects'
@@ -20,6 +21,7 @@ export function createIpcHandlers(deps: IpcDeps): Record<string, Handler> {
     ...cliHandlers(deps),
     ...hostHandlers(),
     ...localConfigHandlers(deps),
+    ...grokbotHandlers(deps),
     ...remoteIpcHandlers(deps)
   }
 }

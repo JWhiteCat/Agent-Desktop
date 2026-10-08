@@ -6,6 +6,9 @@ import type {
   CliProvider,
   CliSession,
   GitDiff,
+  GrokBotHistory,
+  GrokBotList,
+  GrokBotPoll,
   Item,
   ModelInfo,
   Project,
@@ -82,6 +85,12 @@ export interface DesktopApi {
   localSkillDelete(id: string): Promise<void>
   openInEditor(path: string): Promise<boolean>
   openExternal(url: string): Promise<void>
+  /** Bots cached by the Grok Bot desktop app on the desktop host. */
+  grokbotList(): Promise<GrokBotList>
+  grokbotHistory(name: string): Promise<GrokBotHistory>
+  grokbotPoll(name: string, cursor: string): Promise<GrokBotPoll>
+  grokbotSend(name: string, text: string): Promise<void>
+  grokbotInterrupt(name: string): Promise<void>
   remoteInfo(): Promise<RemoteInfo>
   /** Issues a new token; links handed out earlier stop working. */
   resetRemoteToken(): Promise<RemoteInfo>

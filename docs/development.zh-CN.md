@@ -138,6 +138,7 @@ src/main              Electron 主进程
   public-tunnel.ts    公网 SSH 反向隧道
   remote-runtime.ts   按设置开关局域网服务和公网隧道
   quota.ts            Cursor 与 Codex 的账号额度
+  grokbot.ts          从 Grok Bot 桌面端读取 Bot 列表，以及 /v0/grokbot 会话 API 客户端
   ipc/                按项目、对话、设置、CLI、用量和本机操作拆开的 IPC
 src/preload           渲染进程可以调用的 API
 src/renderer/src      React 界面

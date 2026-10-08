@@ -5,9 +5,10 @@ import { cliTitle, threadCli } from '@shared/types'
 import { displayThreadTitle } from '@shared/thread-title'
 import { getTaskCounts } from '@shared/task-counts'
 import { relativeTime } from '../lib/format'
-import { addProjectInteractive, forkThread, goHome, openThread, setState, syncThreadFromCli, toast, useStore } from '../store'
+import { addProjectInteractive, forkThread, goHome, openGrokBot, openThread, setState, syncThreadFromCli, toast, useStore } from '../store'
 import {
   IconArchive,
+  IconBot,
   IconBranch,
   IconChevronDown,
   IconChevronRight,
@@ -126,6 +127,12 @@ export const Sidebar = forwardRef<HTMLInputElement, Props>(function Sidebar({ on
       </div>
 
       <div className="sidebar-scroll">
+        {!results && (
+          <button className={`nav-btn grokbot-entry ${view.kind === 'grokbot' ? 'active' : ''}`} onClick={() => openGrokBot()}>
+            <IconBot />
+            <span>Grok Bot</span>
+          </button>
+        )}
         {results ? (
           <div className="section">
             <div className="section-title">

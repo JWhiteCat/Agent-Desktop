@@ -138,6 +138,7 @@ src/main              Electron main process
   public-tunnel.ts    Public SSH reverse tunnel
   remote-runtime.ts   Turn the LAN server and public tunnel on from settings
   quota.ts            Cursor and Codex account quota
+  grokbot.ts          Grok Bot roster from the Grok Bot desktop app, and the /v0/grokbot session API client
   ipc/                IPC split by projects, conversations, settings, CLI, usage, and local actions
 src/preload           The API the renderer is allowed to call
 src/renderer/src      React UI

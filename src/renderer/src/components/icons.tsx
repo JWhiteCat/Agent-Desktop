@@ -127,6 +127,13 @@ export const IconBranch = (p: P) =>
     </>
   ))
 export const IconRefresh = (p: P) => base(p, <path d="M20 11a8 8 0 0 0-14.9-3M4 5v4h4M4 13a8 8 0 0 0 14.9 3M20 19v-4h-4" />)
+export const IconBot = (p: P) =>
+  base(p, (
+    <>
+      <rect x="4" y="8" width="16" height="12" rx="3" />
+      <path d="M12 8V4M9 13v1M15 13v1M10 17h4" />
+    </>
+  ))
 export const IconImport = (p: P) => base(p, <path d="M12 3v12M7 10l5 5 5-5M5 21h14" />)
 export const IconSparkle = (p: P) =>
   base(p, <path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M18 6l-2.5 2.5M8.5 15.5 6 18" />)

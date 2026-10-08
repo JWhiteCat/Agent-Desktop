@@ -4,7 +4,7 @@ import type { CommandCache, SlashCommand } from '@shared/commands'
 import type { AgentMode, AppState, CliProvider, Item, ModelInfo } from '@shared/types'
 import { readCommandCache } from './persistence'
 
-export type View = { kind: 'home'; projectId?: string } | { kind: 'thread'; id: string }
+export type View = { kind: 'home'; projectId?: string } | { kind: 'thread'; id: string } | { kind: 'grokbot'; botId?: string }
 
 export interface UIState {
   app: AppState

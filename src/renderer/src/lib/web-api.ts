@@ -130,6 +130,11 @@ export function createWebApi(): DesktopApi {
     openExternal: async (url) => {
       window.open(url, '_blank', 'noopener')
     },
+    grokbotList: () => call('grokbot:list'),
+    grokbotHistory: (name) => call('grokbot:history', name),
+    grokbotPoll: (name, cursor) => call('grokbot:poll', name, cursor),
+    grokbotSend: (name, text) => call('grokbot:send', name, text),
+    grokbotInterrupt: (name) => call('grokbot:interrupt', name),
     remoteInfo: () => Promise.reject(new Error(translate('仅桌面端可用'))),
     resetRemoteToken: () => Promise.reject(new Error(translate('仅桌面端可用'))),
     onEvent: (cb) => subscribe('agent:event', cb),

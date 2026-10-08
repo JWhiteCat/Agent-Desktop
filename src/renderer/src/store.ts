@@ -11,6 +11,7 @@ export {
   answerQuestion,
   forkThread,
   goHome,
+  openGrokBot,
   openThread,
   rememberProject,
   sendMessage,

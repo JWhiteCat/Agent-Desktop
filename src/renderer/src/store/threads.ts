@@ -126,6 +126,10 @@ export async function syncThreadFromCli(id: string): Promise<void> {
   }
 }
 
+export function openGrokBot(botId?: string): void {
+  setState({ view: { kind: 'grokbot', botId } })
+}
+
 export function goHome(projectId?: string): void {
   const state = getState()
   const pid = projectId ?? state.lastProjectId ?? state.app.projects[0]?.id
