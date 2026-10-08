@@ -10,7 +10,7 @@
 | macOS | `~/Library/Application Support/Agent Desktop/data` |
 | Linux | `~/.config/Agent Desktop/data` |
 
-`state.json` 保存项目、对话列表和设置，包括 MCP 服务器、Skill 正文和默认 CLI。每段对话记住自己用的是 Cursor、Codex 还是 Claude。每段对话的消息在 `threads/` 里。Cursor 的会话记录仍在 `~/.cursor/chats`，Codex 的在 `~/.codex/sessions`，Claude 的在 `~/.claude/projects`。本应用读取和续接这些记录，并在分叉时创建独立副本。启用的 Skill 写到 `~/.cursor/skills`、`~/.agents/skills`、`~/.codex/skills` 和 `~/.claude/skills`。「本地所有」分区停用的 MCP 服务器和 Skill 暂存在数据目录的 `local-config/` 下。Codex 和 Claude 对话的 worktree 放在数据目录的 `worktrees/<仓库名>/<分支>-<随机后缀>` 下，分支名为 `agent-desktop/<分支>-<随机后缀>`。删除对话或项目时，如果没有其他对话或项目还在使用这个 worktree 或其子目录，会执行 `git worktree remove`；worktree 里有未提交或未跟踪的文件时会保留。分支用 `git branch -d` 删除，含未合并提交的分支会留下。已保存的 worktree 目录缺失时，会话会报错，不会悄悄回到主项目继续执行。
+`state.json` 保存项目、对话列表和设置，包括 MCP 服务器、Skill 正文、默认 CLI 和手动添加的 Grok Bot 名称。Grok Bot 的文件不会复制到这里：显示时从 Grok Bot 桌面端自己的缓存读取，只在你另存为时写到你选的位置。每段对话记住自己用的是 Cursor、Codex 还是 Claude。每段对话的消息在 `threads/` 里。Cursor 的会话记录仍在 `~/.cursor/chats`，Codex 的在 `~/.codex/sessions`，Claude 的在 `~/.claude/projects`。本应用读取和续接这些记录，并在分叉时创建独立副本。启用的 Skill 写到 `~/.cursor/skills`、`~/.agents/skills`、`~/.codex/skills` 和 `~/.claude/skills`。「本地所有」分区停用的 MCP 服务器和 Skill 暂存在数据目录的 `local-config/` 下。Codex 和 Claude 对话的 worktree 放在数据目录的 `worktrees/<仓库名>/<分支>-<随机后缀>` 下，分支名为 `agent-desktop/<分支>-<随机后缀>`。删除对话或项目时，如果没有其他对话或项目还在使用这个 worktree 或其子目录，会执行 `git worktree remove`；worktree 里有未提交或未跟踪的文件时会保留。分支用 `git branch -d` 删除，含未合并提交的分支会留下。已保存的 worktree 目录缺失时，会话会报错，不会悄悄回到主项目继续执行。
 
 ## 分叉对话
 

@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { normalizeMcpServers, normalizeSkills } from '@shared/agent-config'
 import { normalizeLanguage } from '@shared/i18n'
+import { normalizeGrokBotNames } from '@shared/grokbot'
 import { DEFAULT_SETTINGS, normalizeCliProvider, threadCli, type Item, type Project, type ResultItem, type Settings, type ThreadMeta } from '@shared/types'
 import { newId } from './id'
 import { pathKey, writeTextSafely } from './local-files'
@@ -74,6 +75,7 @@ export class Store {
         claudeFavoriteModels: Array.isArray(loaded?.settings?.claudeFavoriteModels) ? loaded.settings.claudeFavoriteModels : [],
         mcpServers: normalizeMcpServers(loaded?.settings?.mcpServers),
         skills: normalizeSkills(loaded?.settings?.skills),
+        grokbotBots: normalizeGrokBotNames(loaded?.settings?.grokbotBots),
         remoteClientId,
         remotePublicSshPort
       }

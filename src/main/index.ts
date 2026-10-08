@@ -1,9 +1,12 @@
-import { app, BrowserWindow, ipcMain, Menu, nativeTheme } from 'electron'
+import { app, BrowserWindow, ipcMain, Menu, nativeTheme, protocol } from 'electron'
 import path from 'node:path'
+import { GROKBOT_FILE_SCHEME } from '@shared/grokbot'
 import { setLanguage } from '@shared/i18n'
 import { getTaskCounts } from '@shared/task-counts'
 import type { AgentEvent, AppState, CliProvider, ModelInfo, Settings } from '@shared/types'
+import { grokBotFileResponse } from './grokbot-files'
 import { createIpcHandlers } from './ipc'
+import { grokBotFiles } from './ipc/grokbot'
 import { notifyRunFinished } from './notify'
 import { publish } from './publish'
 import { RemoteRuntime } from './remote-runtime'
@@ -58,10 +61,13 @@ if (process.env.AGENT_DESKTOP_USER_DATA) app.setPath('userData', process.env.AGE
 // "Unable to move the cache" / "Gpu Cache Creation failed". App data stays in userData.
 const sessionDataDir = installSessionData()
 if (isWin) app.setAppUserModelId(windowsAppId)
+// Cached Grok Bot files, by SHA-256. Only hashes seen in a transcript are served; see grokbot-files.ts.
+protocol.registerSchemesAsPrivileged([{ scheme: GROKBOT_FILE_SCHEME, privileges: { standard: true, secure: true } }])
 
 app.whenReady().then(() => {
   store = new Store()
   setLanguage(store.settings.language, app.getLocale())
+  protocol.handle(GROKBOT_FILE_SCHEME, (request) => grokBotFileResponse(grokBotFiles, request.url))
   try {
     syncAllManagedSkills(store.settings.skills)
   } catch (err) {

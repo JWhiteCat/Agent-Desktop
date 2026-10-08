@@ -271,6 +271,8 @@ export interface Settings {
   remoteToken: string
   /** Stable id in the public URL and the server socket name. Not a secret. */
   remoteClientId: string
+  /** Grok Bot names added by hand. Merged with the Grok Bot app's cached roster. */
+  grokbotBots: string[]
   /** Expose the LAN server through an SSH reverse tunnel. */
   remotePublicEnabled: boolean
   /** SSH login on the public server. */
@@ -365,14 +367,17 @@ export interface GitDiff {
   error?: string
 }
 
-/** A bot from the Grok Bot desktop app's roster. */
+/** A bot from the Grok Bot desktop app's roster, or a name added by hand in Settings. */
 export interface GrokBotInfo {
+  /** Roster id, or `manual:<name>` for a name that only exists in Settings. */
   id: string
   name: string
   description: string
   color: string
   lastText: string
   lastActivityAt: number
+  /** Added in Settings and missing from the Grok Bot app's cached roster. */
+  manual?: boolean
 }
 
 export interface GrokBotList {
@@ -383,12 +388,36 @@ export interface GrokBotList {
   hasApiKey?: boolean
 }
 
+/**
+ * A file the bot delivered. The public API omits files; they come from the Grok Bot
+ * desktop app's undocumented local cache on the desktop host.
+ */
+export interface GrokBotAttachment {
+  /** SHA-256 of the bytes, taken from the content-addressed file name. Empty when unknown. */
+  sha256: string
+  name: string
+  mimeType: string
+  /** Images (including SVG) are previewed through `<img>`. */
+  kind: 'image' | 'file'
+  alt?: string
+  width?: number
+  height?: number
+  /** The bytes were found in the Grok Bot app's attachment cache. */
+  available: boolean
+  size?: number
+}
+
 export interface GrokBotMessage {
   seq: string
   updatedSeq: string
   role: 'user' | 'bot'
+  /** Empty for deliveries without text, such as files. */
   text: string
   createdAtMs: number
+  /** Set once the local cache had this entry; an empty list means it carried no files. */
+  attachments?: GrokBotAttachment[]
+  /** Message type from the local cache when the delivery is neither text nor a file (for example `widget`). */
+  localType?: string
 }
 
 export interface GrokBotTurn {
@@ -439,6 +468,7 @@ export const DEFAULT_SETTINGS: Settings = {
   remotePort: 8765,
   remoteToken: '',
   remoteClientId: '',
+  grokbotBots: [],
   remotePublicEnabled: false,
   remotePublicUser: 'root',
   remotePublicHost: '43.167.166.239',

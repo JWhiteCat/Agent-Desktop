@@ -3,12 +3,15 @@ import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { mergeGrokBotMessages } from '@shared/grokbot'
 import { t as translate } from '@shared/i18n'
-import type { GrokBotHistory, GrokBotInfo, GrokBotList, GrokBotMessage, GrokBotPoll, GrokBotTurn } from '@shared/types'
+import type { GrokBotAttachment, GrokBotHistory, GrokBotInfo, GrokBotList, GrokBotMessage, GrokBotPoll, GrokBotTurn } from '@shared/types'
+import { isPreviewType, isSha256, mimeTypeFor, type GrokBotFiles } from './grokbot-files'
 
 /**
  * Grok Bot over the public `/v0/grokbot` session API (api.cursor.com), the same
  * routes `cursor-grokbot-agents` uses. The API cannot list bots, so the list
- * comes from the roster the Grok Bot desktop app caches on this machine.
+ * comes from the roster the Grok Bot desktop app caches on this machine plus
+ * names added in Settings. The API also drops files from transcript entries;
+ * those come from the app's undocumented local transcript and attachment caches.
  */
 
 const DEFAULT_API_URL = 'https://api.cursor.com'
@@ -151,13 +154,161 @@ interface EntriesPage {
   turn: GrokBotTurn
 }
 
-/** User messages and what the bot delivered to the user; its internal work is not shown. */
+/**
+ * User messages and what the bot delivered to the user; its internal work is not shown.
+ * Deliveries without text are kept: the API omits files, which the local cache may supply.
+ */
 export function toMessage(entry: RawEntry): GrokBotMessage | undefined {
   const text = typeof entry.text === 'string' ? entry.text : ''
-  if (!text.trim()) return undefined
   const role = entry.role === 'user' ? 'user' : entry.kind === 'send-message' ? 'bot' : undefined
   if (!role) return undefined
+  if (role === 'user' && !text.trim()) return undefined
   return { seq: String(entry.seq), updatedSeq: String(entry.updatedSeq), role, text, createdAtMs: Number(entry.createdAtMs) || 0 }
+}
+
+/** An entry of the Grok Bot app's cached transcript, reduced to what the view needs. */
+export interface ReplicaEntry {
+  seq: string
+  kind: string
+  role?: string
+  timestampMs: number
+  type?: string
+  attachments: Omit<GrokBotAttachment, 'available' | 'size'>[]
+}
+
+const REPLICA_KEY = /^sand\.client\.slice\.account\.(.+)\.transcript\.replicas\.(.+)$/
+/** Cached and API timestamps of one entry differ by well under a second; larger gaps mean another entry. */
+const MAX_REPLICA_SKEW_MS = 120_000
+
+function decode(text: string): string {
+  try {
+    return decodeURIComponent(text)
+  } catch {
+    return text
+  }
+}
+
+function urlFileName(url: string): string {
+  let pathname = url
+  try {
+    pathname = new URL(url).pathname
+  } catch {
+    // A bare path.
+  }
+  return decode(pathname.split(/[\\/]/).pop() ?? '')
+}
+
+/** Bot files are stored under their SHA-256, e.g. `.../attachments/<sha256>.svg`. */
+export function replicaAttachment(url: unknown, fileName?: unknown, extra: { alt?: unknown; width?: unknown; height?: unknown } = {}): ReplicaEntry['attachments'][number] | undefined {
+  if (typeof url !== 'string' || !url) return undefined
+  const base = urlFileName(url)
+  const stem = base.replace(/\.[^.]*$/, '').toLowerCase()
+  const name = (typeof fileName === 'string' && fileName.trim()) || base || 'file'
+  const mimeType = mimeTypeFor(typeof fileName === 'string' && /\.[^.]+$/.test(fileName) ? fileName : base)
+  const out: ReplicaEntry['attachments'][number] = {
+    sha256: isSha256(stem) ? stem : '',
+    name: name.split(/[\\/]/).pop() || 'file',
+    mimeType,
+    kind: isPreviewType(mimeType) ? 'image' : 'file'
+  }
+  if (typeof extra.alt === 'string' && extra.alt) out.alt = extra.alt
+  if (typeof extra.width === 'number' && extra.width > 0) out.width = extra.width
+  if (typeof extra.height === 'number' && extra.height > 0) out.height = extra.height
+  return out
+}
+
+export function toReplicaEntry(raw: any): ReplicaEntry | undefined {
+  if (!raw || typeof raw !== 'object' || typeof raw.kind !== 'string') return undefined
+  const seq = Number(raw.seq)
+  if (!Number.isFinite(seq)) return undefined
+  const message = raw.message && typeof raw.message === 'object' ? raw.message : undefined
+  const attachments: ReplicaEntry['attachments'] = []
+  if (message) {
+    if (Array.isArray(message.images)) {
+      for (const image of message.images) {
+        const item = replicaAttachment(image?.url, image?.file_name ?? image?.fileName, image ?? {})
+        if (item) attachments.push(item)
+      }
+    }
+    if (message.type === 'attachment') {
+      const item = replicaAttachment(message.url, message.file_name ?? message.fileName)
+      if (item) attachments.push(item)
+    }
+  }
+  return {
+    seq: String(seq),
+    kind: raw.kind,
+    role: typeof raw.role === 'string' ? raw.role : undefined,
+    timestampMs: Number(raw.timestampMs) || 0,
+    type: typeof message?.type === 'string' ? message.type : undefined,
+    attachments
+  }
+}
+
+/** The Grok Bot app's cached transcript of one bot, by seq. Undefined when there is none. */
+export function readReplica(appDataDir: string, botId: string): Map<string, ReplicaEntry> | undefined {
+  const files = blobFiles(grokBotDataDir(appDataDir))
+  const replicas = files
+    .map((f) => ({ ...f, match: REPLICA_KEY.exec(f.key) }))
+    .filter((f) => f.match?.[2] === botId)
+    .sort((a, b) => b.mtimeMs - a.mtimeMs)
+  if (!replicas.length) return undefined
+  const account = activeAccount(files)
+  const chosen = (account && replicas.find((r) => sameAccount(r.match![1], account))) || replicas[0]
+  const entries = readBlob(chosen.file)?.entries
+  if (!Array.isArray(entries)) return undefined
+  const out = new Map<string, ReplicaEntry>()
+  for (const raw of entries) {
+    const entry = toReplicaEntry(raw)
+    if (entry) out.set(entry.seq, entry)
+  }
+  return out
+}
+
+/** The cached entry for this message, only when kind, role, and time agree with the API. */
+export function matchReplica(message: GrokBotMessage, replica: Map<string, ReplicaEntry> | undefined): ReplicaEntry | undefined {
+  const entry = replica?.get(message.seq)
+  if (!entry) return undefined
+  if (message.role === 'bot' ? entry.kind !== 'send-message' : entry.kind !== 'message' || entry.role !== 'user') return undefined
+  if (message.createdAtMs && entry.timestampMs && Math.abs(message.createdAtMs - entry.timestampMs) > MAX_REPLICA_SKEW_MS) return undefined
+  return entry
+}
+
+/** Adds cached files to bot messages and marks which bytes the attachment cache holds. */
+export function attachReplica(
+  messages: GrokBotMessage[],
+  replica: Map<string, ReplicaEntry> | undefined,
+  lookup: (sha256: string) => { size: number } | undefined = () => undefined
+): GrokBotMessage[] {
+  if (!replica) return messages
+  return messages.map((message) => {
+    if (message.role !== 'bot') return message
+    const entry = matchReplica(message, replica)
+    if (!entry) return message
+    const attachments = entry.attachments.map((a): GrokBotAttachment => {
+      const found = a.sha256 ? lookup(a.sha256) : undefined
+      return found ? { ...a, available: true, size: found.size } : { ...a, available: false }
+    })
+    const next: GrokBotMessage = { ...message, attachments }
+    if (!message.text.trim() && entry.type && entry.type !== 'text' && entry.type !== 'attachment') next.localType = entry.type
+    return next
+  })
+}
+
+/** Messages with files from the local cache. Bots added by hand have no cached transcript. */
+export async function withAttachments(
+  appDataDir: string,
+  bot: Pick<GrokBotInfo, 'id' | 'manual'>,
+  messages: GrokBotMessage[],
+  files: GrokBotFiles
+): Promise<GrokBotMessage[]> {
+  if (bot.manual || !messages.some((m) => m.role === 'bot')) return messages
+  const replica = readReplica(appDataDir, bot.id)
+  if (!replica) return messages
+  const wanted = messages.flatMap((m) => matchReplica(m, replica)?.attachments ?? [])
+  if (wanted.length) await files.refresh()
+  for (const a of wanted) files.remember(a)
+  return attachReplica(messages, replica, (sha) => files.lookup(sha))
 }
 
 function apiErrorMessage(text: string): string {
@@ -185,7 +336,7 @@ export class GrokBotClient {
     private readonly baseUrl: () => string = () => (process.env.CURSOR_API_BASE_URL ?? DEFAULT_API_URL).replace(/\/+$/, '')
   ) {}
 
-  /** The bot's session, by name. The API creates a bot when the name is unknown, so callers pass roster names only. */
+  /** The bot's session, by name. The API creates a bot when the name is unknown, so callers pass known names only. */
   async sessionId(name: string): Promise<string> {
     const key = this.apiKey()
     if (key !== this.sessionsKey) {
@@ -198,6 +349,11 @@ export class GrokBotClient {
     if (typeof parsed?.id !== 'string' || !parsed.id) throw new GrokBotError(translate('Grok Bot 没有返回会话 id'))
     this.sessions.set(name, parsed.id)
     return parsed.id
+  }
+
+  /** Opens the bot of this name, creating it when the account has none. Used only by explicit creation. */
+  async create(name: string): Promise<string> {
+    return this.sessionId(name)
   }
 
   async history(name: string): Promise<GrokBotHistory> {

@@ -7,7 +7,9 @@ import type {
   CliSession,
   GitDiff,
   GrokBotHistory,
+  GrokBotInfo,
   GrokBotList,
+  GrokBotMessage,
   GrokBotPoll,
   Item,
   ModelInfo,
@@ -85,12 +87,22 @@ export interface DesktopApi {
   localSkillDelete(id: string): Promise<void>
   openInEditor(path: string): Promise<boolean>
   openExternal(url: string): Promise<void>
-  /** Bots cached by the Grok Bot desktop app on the desktop host. */
+  /** Bots cached by the Grok Bot desktop app on the desktop host, plus names added in Settings. */
   grokbotList(): Promise<GrokBotList>
   grokbotHistory(name: string): Promise<GrokBotHistory>
   grokbotPoll(name: string, cursor: string): Promise<GrokBotPoll>
   grokbotSend(name: string, text: string): Promise<void>
   grokbotInterrupt(name: string): Promise<void>
+  /** Opens the bot of this name, creating it when the account has none, and adds it to the Settings list. */
+  grokbotCreate(name: string): Promise<GrokBotInfo>
+  /** Looks again in the Grok Bot app's local cache for files of these messages. */
+  grokbotAttachments(name: string, messages: GrokBotMessage[]): Promise<GrokBotMessage[]>
+  /** Bytes of a cached bot file seen in a transcript. */
+  grokbotAttachmentData(sha256: string): Promise<AttachmentData>
+  /** Desktop only: save dialog. Resolves to the saved path, or empty when cancelled. */
+  grokbotSaveAttachment(sha256: string): Promise<string>
+  /** Desktop only: shows the cached file in the file manager. */
+  grokbotRevealAttachment(sha256: string): Promise<void>
   remoteInfo(): Promise<RemoteInfo>
   /** Issues a new token; links handed out earlier stop working. */
   resetRemoteToken(): Promise<RemoteInfo>

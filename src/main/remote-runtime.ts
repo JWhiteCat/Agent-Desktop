@@ -23,7 +23,14 @@ export function remoteSafeState(state: AppState): AppState {
   return { ...state, settings: remoteSafeSettings(state.settings) }
 }
 
-const REMOTE_BLOCKED = new Set(['project:pick', 'remote:info', 'remote:resetToken', 'attachment:open'])
+const REMOTE_BLOCKED = new Set([
+  'project:pick',
+  'remote:info',
+  'remote:resetToken',
+  'attachment:open',
+  'grokbot:attachmentSave',
+  'grokbot:attachmentReveal'
+])
 const REMOTE_ONLY_DESKTOP_SETTINGS: (keyof Settings)[] = [
   'remoteEnabled',
   'remotePort',

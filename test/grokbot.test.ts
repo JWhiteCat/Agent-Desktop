@@ -93,7 +93,9 @@ describe('grok bot transcript', () => {
   it('keeps user messages and deliveries with text', () => {
     expect(toMessage({ seq: '1', updatedSeq: '1', kind: 'message', role: 'user', text: 'hi', createdAtMs: 5 })).toMatchObject({ role: 'user', text: 'hi' })
     expect(toMessage({ seq: '2', updatedSeq: '2', kind: 'send-message', text: 'hello', createdAtMs: 6 })).toMatchObject({ role: 'bot' })
-    expect(toMessage({ seq: '3', updatedSeq: '4', kind: 'send-message', text: '', createdAtMs: 7 })).toBeUndefined()
+    // Files arrive as deliveries without text; the local cache may fill them in.
+    expect(toMessage({ seq: '3', updatedSeq: '4', kind: 'send-message', createdAtMs: 7 })).toMatchObject({ role: 'bot', text: '' })
+    expect(toMessage({ seq: '4', updatedSeq: '4', kind: 'message', role: 'user', text: ' ', createdAtMs: 7 })).toBeUndefined()
     expect(toMessage({ seq: '5', updatedSeq: '5', kind: 'tool', text: 'work', createdAtMs: 8 })).toBeUndefined()
   })
 

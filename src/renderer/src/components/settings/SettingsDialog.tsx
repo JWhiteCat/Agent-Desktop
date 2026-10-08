@@ -10,6 +10,7 @@ import { Modal } from '../Modal'
 import { CliCard } from './CliCard'
 import { FavoriteModels } from './FavoriteModels'
 import { Field } from './Field'
+import { GrokBotSettings } from './GrokBotSettings'
 import { LocalMcpSettings } from './LocalMcpSettings'
 import { LocalSkillSettings } from './LocalSkillSettings'
 import { RemoteSettings } from './RemoteSettings'
@@ -23,6 +24,7 @@ const SETTINGS_TABS = [
   { id: 'usage', label: '用量' },
   { id: 'defaults', label: '默认值' },
   { id: 'notify', label: '通知' },
+  { id: 'grokbot', label: 'Grok Bot' },
   { id: 'remote', label: '远程控制' },
   { id: 'appearance', label: '外观与历史' }
 ] as const
@@ -233,6 +235,13 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
               onChange={(e) => update({ notifyOnComplete: e.target.checked })}
             />
           </Field>
+        </section>
+      )}
+
+      {tab === 'grokbot' && (
+        <section className="settings-section">
+          <h4>Grok Bot</h4>
+          <GrokBotSettings />
         </section>
       )}
 

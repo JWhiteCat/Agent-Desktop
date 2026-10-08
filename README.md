@@ -16,7 +16,7 @@ Agent Desktop runs the CLIs on your computer through the [Agent Client Protocol]
 - Start conversations in isolated git worktrees and review changes and diffs
 - Import and resume Cursor, Codex, and Claude history
 - Manage MCP servers and skills, track usage, and receive completion notifications
-- Chat with your [Grok Bot](https://cursor.com/docs/grok-bot) bots, listed from the Grok Bot desktop app and authenticated with `CURSOR_API_KEY`
+- Chat with your [Grok Bot](https://cursor.com/docs/grok-bot) bots, authenticated with `CURSOR_API_KEY`. The list merges the Grok Bot desktop app's cache with names you add in Settings, you can create bots by name, and files bots send are shown when the Grok Bot desktop app has cached them
 - Use the same interface remotely over the LAN or an SSH reverse tunnel, with Chinese/English and light/dark themes
 
 See the [user guide](docs/user-guide.md) for detailed behavior and shortcuts.

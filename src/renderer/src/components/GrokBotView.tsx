@@ -1,16 +1,20 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { GrokBotInfo, GrokBotList, GrokBotMessage, GrokBotTurn } from '@shared/types'
-import { grokBotBusy, mergeGrokBotMessages } from '@shared/grokbot'
+import { grokBotBusy, mergeGrokBotMessages, unresolvedGrokBotMessages, validateGrokBotName } from '@shared/grokbot'
 import { useT } from '../lib/i18n'
 import { relativeTime } from '../lib/format'
-import { errorText, openGrokBot, toast } from '../store'
-import { IconArrowUp, IconBot, IconRefresh, IconStop, Spinner } from './icons'
+import { errorText, openGrokBot, toast, useStore } from '../store'
+import { GrokBotMessageExtras } from './GrokBotAttachments'
+import { IconArrowUp, IconBot, IconPlus, IconRefresh, IconStop, IconX, Spinner } from './icons'
 import { Markdown } from './items/Markdown'
+import { Modal } from './Modal'
 
 const BUSY_POLL_MS = 1_500
 const IDLE_POLL_MS = 10_000
 /** A turn may still report idle right after a send, before the bot picks the message up. */
 const AFTER_SEND_FAST_MS = 20_000
+/** The Grok Bot app may cache a delivered file a little after the API reports the message. */
+const ATTACHMENT_RECHECK_MS = 10 * 60_000
 
 interface Props {
   botId?: string
@@ -39,6 +43,78 @@ const AVATAR_COLORS: Record<string, string> = {
   gray: '#8b8d98'
 }
 
+function CreateBotDialog({ bots, onClose, onDone }: { bots: GrokBotInfo[]; onClose: () => void; onDone: (bot: GrokBotInfo) => void }) {
+  const t = useT()
+  const [name, setName] = useState('')
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const submit = async () => {
+    if (busy) return
+    let wanted: string
+    try {
+      wanted = validateGrokBotName(name)
+    } catch (err) {
+      setError(errorText(err))
+      return
+    }
+    const existing = bots.find((b) => b.name === wanted)
+    if (existing) {
+      // The API resolves bots by name, so it would open this one rather than create another.
+      if (window.confirm(t('列表里已经有叫「{name}」的 Bot。Grok Bot 按名称查找，不会再新建一个。要打开已有的这个吗？', { name: wanted }))) onDone(existing)
+      return
+    }
+    setBusy(true)
+    setError('')
+    try {
+      onDone(await window.api.grokbotCreate(wanted))
+    } catch (err) {
+      setError(errorText(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Modal
+      title={t('新建 Bot')}
+      onClose={onClose}
+      footer={
+        <>
+          <button type="button" className="btn" onClick={onClose}>
+            {t('取消')}
+          </button>
+          <button type="button" className="btn primary" disabled={busy || !name.trim()} onClick={() => void submit()}>
+            {busy ? <Spinner size={12} /> : t('创建')}
+          </button>
+        </>
+      }
+    >
+      <div className="grokbot-create">
+        <input
+          className="input"
+          autoFocus
+          value={name}
+          disabled={busy}
+          placeholder={t('Bot 名称')}
+          aria-label={t('Bot 名称')}
+          onChange={(e) => {
+            setName(e.target.value)
+            setError('')
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.nativeEvent.isComposing) void submit()
+          }}
+        />
+        <p className="muted small">
+          {t('会在你的 Grok Bot 账号里新建一个这个名字的 Bot，并加入设置 → Grok Bot 的手动列表。如果账号里已有同名 Bot，会直接打开它。')}
+        </p>
+        {error && <div className="grokbot-error">{error}</div>}
+      </div>
+    </Modal>
+  )
+}
+
 function BotAvatar({ bot }: { bot: GrokBotInfo }) {
   return (
     <span className="grokbot-avatar" style={{ background: AVATAR_COLORS[bot.color] ?? 'var(--muted)' }}>
@@ -55,7 +131,13 @@ export function GrokBotView({ botId, onOpenSettings }: Props) {
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
   const [pending, setPending] = useState<string | null>(null)
+  const [creating, setCreating] = useState(false)
+  const manualNames = useStore((s) => s.app.settings.grokbotBots)
+  /** State broadcasts replace the settings object; reload the list only when the names change. */
+  const manualKey = (manualNames ?? []).join('\n')
   const sentAt = useRef(0)
+  /** Merges messages into the active chat from outside the polling effect. */
+  const applyMessages = useRef<(messages: GrokBotMessage[]) => void>(() => {})
   const scroller = useRef<HTMLDivElement>(null)
   const atBottom = useRef(true)
 
@@ -70,12 +152,13 @@ export function GrokBotView({ botId, onOpenSettings }: Props) {
 
   useEffect(() => {
     void loadList()
-  }, [loadList])
+  }, [loadList, manualKey])
 
   const bots = list?.bots ?? []
   const selected = bots.find((b) => b.id === botId) ?? (botId ? undefined : bots[0])
   const selectedId = selected?.id
   const selectedName = selected?.name
+  const selectedManual = !!selected?.manual
   const sharedName = !!selected && bots.some((b) => b.id !== selected.id && b.name === selected.name)
   const hasKey = list?.hasApiKey !== false
 
@@ -93,6 +176,21 @@ export function GrokBotView({ botId, onOpenSettings }: Props) {
       state = { ...state, ...next }
       if (alive) setChat(state)
     }
+    applyMessages.current = (messages) => {
+      if (alive && messages.length) update({ messages: mergeGrokBotMessages(state.messages, messages) })
+    }
+    /** Files of recent deliveries can land in the Grok Bot app's cache after the API reports them. */
+    const recheckAttachments = async () => {
+      if (selectedManual) return
+      const pendingFiles = unresolvedGrokBotMessages(state.messages, Date.now() - ATTACHMENT_RECHECK_MS)
+      if (!pendingFiles.length) return
+      try {
+        const found = await window.api.grokbotAttachments(selectedName, pendingFiles)
+        applyMessages.current(found.filter((m) => m.attachments !== undefined))
+      } catch {
+        // The next tick tries again.
+      }
+    }
     const schedule = () => {
       if (!alive) return
       const fast = grokBotBusy(state.turn) || Date.now() - sentAt.current < AFTER_SEND_FAST_MS
@@ -106,6 +204,7 @@ export function GrokBotView({ botId, onOpenSettings }: Props) {
         if (!alive) return
         if (page.messages.some((m) => m.role === 'user')) setPending(null)
         update({ messages: mergeGrokBotMessages(state.messages, page.messages), cursor: page.cursor, turn: page.turn, error: '' })
+        await recheckAttachments()
       } catch (err) {
         update({ error: errorText(err) })
       }
@@ -126,10 +225,11 @@ export function GrokBotView({ botId, onOpenSettings }: Props) {
     document.addEventListener('visibilitychange', wake)
     return () => {
       alive = false
+      applyMessages.current = () => {}
       if (timer) clearTimeout(timer)
       document.removeEventListener('visibilitychange', wake)
     }
-  }, [selectedId, selectedName, hasKey])
+  }, [selectedId, selectedName, selectedManual, hasKey])
 
   useLayoutEffect(() => {
     const el = scroller.current
@@ -165,6 +265,32 @@ export function GrokBotView({ botId, onOpenSettings }: Props) {
     }
   }
 
+  const recheck = async (message: GrokBotMessage) => {
+    if (!selectedName) return
+    try {
+      const [found] = await window.api.grokbotAttachments(selectedName, [message])
+      if (found?.attachments !== undefined) applyMessages.current([found])
+      else toast(t('Grok Bot 桌面端缓存里还没有这条消息的内容'))
+    } catch (err) {
+      toast(errorText(err), 'error')
+    }
+  }
+
+  const removeManual = async (bot: GrokBotInfo) => {
+    if (!window.confirm(t('从手动列表移除「{name}」？只会从本应用移除，不会删除 Grok Bot 里的 Bot。', { name: bot.name }))) return
+    try {
+      await window.api.updateSettings({ grokbotBots: (manualNames ?? []).filter((name) => name !== bot.name) })
+      if (bot.id === selected?.id) openGrokBot()
+    } catch (err) {
+      toast(errorText(err), 'error')
+    }
+  }
+
+  const created = (bot: GrokBotInfo) => {
+    setCreating(false)
+    void loadList().then(() => openGrokBot(bot.id))
+  }
+
   const emptyReason = (): string => {
     if (listError) return listError
     if (list?.reason === 'no-app') return t('未检测到 Grok Bot 桌面端。请在这台电脑上安装并登录 Grok Bot，然后刷新。')
@@ -178,9 +304,14 @@ export function GrokBotView({ botId, onOpenSettings }: Props) {
       <aside className="grokbot-list">
         <div className="grokbot-list-head drag">
           <span>Grok Bot</span>
-          <button className="icon-btn tiny no-drag" title={t('刷新')} onClick={() => void loadList()}>
-            <IconRefresh size={14} />
-          </button>
+          <span className="grokbot-list-actions no-drag">
+            <button className="icon-btn tiny" title={t('新建 Bot')} aria-label={t('新建 Bot')} onClick={() => setCreating(true)}>
+              <IconPlus size={14} />
+            </button>
+            <button className="icon-btn tiny" title={t('刷新')} aria-label={t('刷新')} onClick={() => void loadList()}>
+              <IconRefresh size={14} />
+            </button>
+          </span>
         </div>
         <div className="grokbot-list-scroll">
           {!list && !listError && (
@@ -188,24 +319,45 @@ export function GrokBotView({ botId, onOpenSettings }: Props) {
               <Spinner />
             </div>
           )}
-          {list && !bots.length && <div className="empty-hint">{emptyReason()}</div>}
+          {list && !bots.length && (
+            <div className="empty-hint">
+              {emptyReason()}
+              <br />
+              {t('也可以点上方的 + 新建 Bot，或在设置 → Grok Bot 中手动添加已有 Bot 的名称。')}
+            </div>
+          )}
           {listError && list && <div className="empty-hint">{listError}</div>}
           {bots.map((b) => (
-            <button
-              key={b.id}
-              className={`grokbot-row ${b.id === selected?.id ? 'active' : ''}`}
-              title={b.description || b.name}
-              onClick={() => openGrokBot(b.id)}
-            >
-              <BotAvatar bot={b} />
-              <span className="grokbot-row-text">
-                <span className="grokbot-row-name">
-                  <span>{b.name}</span>
-                  {b.lastActivityAt > 0 && <span className="grokbot-row-time">{relativeTime(b.lastActivityAt)}</span>}
+            <div key={b.id} className={`grokbot-row-wrap ${b.manual ? 'manual' : ''}`}>
+              <button
+                className={`grokbot-row ${b.id === selected?.id ? 'active' : ''}`}
+                title={b.manual ? t('手动添加的 Bot（设置 → Grok Bot）') : b.description || b.name}
+                onClick={() => openGrokBot(b.id)}
+              >
+                <BotAvatar bot={b} />
+                <span className="grokbot-row-text">
+                  <span className="grokbot-row-name">
+                    <span>{b.name}</span>
+                    {b.lastActivityAt > 0 && <span className="grokbot-row-time">{relativeTime(b.lastActivityAt)}</span>}
+                  </span>
+                  {b.lastText ? (
+                    <span className="grokbot-row-last">{b.lastText}</span>
+                  ) : (
+                    b.manual && <span className="grokbot-row-last">{t('手动添加')}</span>
+                  )}
                 </span>
-                {b.lastText && <span className="grokbot-row-last">{b.lastText}</span>}
-              </span>
-            </button>
+              </button>
+              {b.manual && (
+                <button
+                  className="icon-btn tiny grokbot-row-remove"
+                  title={t('从手动列表移除')}
+                  aria-label={t('从手动列表移除')}
+                  onClick={() => void removeManual(b)}
+                >
+                  <IconX size={12} />
+                </button>
+              )}
+            </div>
           ))}
         </div>
       </aside>
@@ -263,7 +415,8 @@ export function GrokBotView({ botId, onOpenSettings }: Props) {
                   ) : (
                     <div key={m.seq} className="msg-assistant-wrap grokbot-reply">
                       <div className="msg-assistant">
-                        <Markdown text={m.text} />
+                        {m.text.trim() && <Markdown text={m.text} />}
+                        <GrokBotMessageExtras message={m} onRecheck={selectedManual ? undefined : () => recheck(m)} />
                       </div>
                     </div>
                   )
@@ -315,6 +468,7 @@ export function GrokBotView({ botId, onOpenSettings }: Props) {
           </>
         )}
       </section>
+      {creating && <CreateBotDialog bots={bots} onClose={() => setCreating(false)} onDone={created} />}
     </div>
   )
 }
