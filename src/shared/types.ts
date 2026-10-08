@@ -5,6 +5,7 @@ import type { Language, LocalizedMessage } from './i18n'
 import type { TokenUsage } from './model-prices'
 import type { TurnQuotaSnapshot, TurnQuotaUsage, WeeklyQuotaEstimate } from './turn-quota'
 import type { CodexSessionUsage, CodexThreadUsage } from './codex-account'
+import type { PanelWidths } from './panel-widths'
 
 export type AgentMode = 'agent' | 'plan' | 'ask'
 
@@ -273,6 +274,8 @@ export interface Settings {
   remoteClientId: string
   /** Grok Bot names added by hand. Merged with the Grok Bot app's cached roster. */
   grokbotBots: string[]
+  /** Desktop widths of the resizable panels, in pixels. Missing panels use their default width. */
+  panelWidths: Partial<PanelWidths>
   /** Expose the LAN server through an SSH reverse tunnel. */
   remotePublicEnabled: boolean
   /** SSH login on the public server. */
@@ -479,6 +482,7 @@ export const DEFAULT_SETTINGS: Settings = {
   remoteToken: '',
   remoteClientId: '',
   grokbotBots: [],
+  panelWidths: {},
   remotePublicEnabled: false,
   remotePublicUser: 'root',
   remotePublicHost: '43.167.166.239',

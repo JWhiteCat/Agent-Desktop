@@ -29,6 +29,7 @@ import {
   Spinner
 } from './icons'
 import { MenuButton, type MenuEntry } from './Menu'
+import { ResizeHandle } from './ResizeHandle'
 import { TaskCounts } from './TaskCounts'
 
 const COLLAPSED_LIMIT = 6
@@ -221,6 +222,7 @@ export const Sidebar = forwardRef<HTMLInputElement, Props>(function Sidebar({ on
           <span>{t('设置')}</span>
         </button>
       </div>
+      <ResizeHandle panel="sidebar" label={t('调整侧边栏宽度')} />
     </aside>
   )
 })

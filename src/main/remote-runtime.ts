@@ -40,7 +40,9 @@ const REMOTE_ONLY_DESKTOP_SETTINGS: (keyof Settings)[] = [
   'remotePublicUser',
   'remotePublicHost',
   'remotePublicSshPort',
-  'remotePublicPort'
+  'remotePublicPort',
+  // The remote web client keeps its own panel widths in its browser.
+  'panelWidths'
 ]
 
 /** What a phone browser may call: no native dialogs, no remote-control settings, no secrets. */

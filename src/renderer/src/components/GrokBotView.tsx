@@ -9,6 +9,7 @@ import { GrokBotMessageExtras } from './GrokBotAttachments'
 import { IconArrowUp, IconBot, IconPlus, IconRefresh, IconStop, IconX, Spinner } from './icons'
 import { Markdown } from './items/Markdown'
 import { Modal } from './Modal'
+import { ResizeHandle } from './ResizeHandle'
 
 const BUSY_POLL_MS = 1_500
 const IDLE_POLL_MS = 10_000
@@ -388,6 +389,7 @@ export function GrokBotView({ botId, onOpenSettings }: Props) {
             </div>
           ))}
         </div>
+        <ResizeHandle panel="grokbotList" label={t('调整 Bot 列表宽度')} />
       </aside>
 
       <section className="grokbot-chat">

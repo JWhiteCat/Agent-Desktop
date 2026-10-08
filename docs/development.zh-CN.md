@@ -150,6 +150,7 @@ src/renderer/src      React 界面
   components/items/   Markdown、消息、工具、计划、问答和结果展示
   components/settings 设置各页
   lib/model-prefs.ts  决定选中哪个模型，不放在界面状态里
+  lib/panel-layout.ts 可调面板宽度，写入 CSS 变量，保存在设置里（远程页面保存在浏览器）
 src/shared            主进程和界面共用的类型、Cursor / OpenAI / Anthropic 价目、用量、额度、斜杠命令，以及 Plan 提问块
 scripts               公网入口（public-gateway.py）、服务器安装脚本（setup-public-server.sh）、本机一键配置（setup-public-server.mjs）
 test                  离线单元测试，以及在线冒烟测试

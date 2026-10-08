@@ -5,6 +5,7 @@ import { DiffFileView, collectEditedFiles, collectGitFiles, type DiffFile } from
 import { untrackedGitPaths } from '@shared/git-path'
 import { useStore } from '../store'
 import { IconBranch, IconRefresh, IconX, Spinner } from './icons'
+import { ResizeHandle } from './ResizeHandle'
 
 type Tab = 'thread' | 'git'
 
@@ -99,6 +100,8 @@ export function ChangesPanel({ thread, onClose }: { thread: ThreadMeta; onClose:
           />
         ))}
       </div>
+      {/* After the draggable header, so the handle stays clickable in the title-bar area. */}
+      <ResizeHandle panel="changes" label={t('调整变更面板宽度')} />
     </aside>
   )
 }

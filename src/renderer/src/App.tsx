@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { ChangesPanel } from './components/ChangesPanel'
 import { GrokBotView } from './components/GrokBotView'
 import { ImportDialog } from './components/ImportDialog'
@@ -9,6 +9,7 @@ import { Sidebar } from './components/Sidebar'
 import { ThreadView } from './components/ThreadView'
 import { goHome, useStore } from './store'
 import { useT } from './lib/i18n'
+import { isWebClient, panelLayout, readStoredPanelWidths } from './lib/panel-layout'
 
 const NARROW = '(max-width: 720px)'
 const isNarrow = (): boolean => window.matchMedia(NARROW).matches
@@ -19,6 +20,8 @@ export default function App() {
   const thread = useStore((s) => (s.view.kind === 'thread' ? s.app.threads.find((t) => t.id === (s.view as { id: string }).id) : undefined))
   const toastMsg = useStore((s) => s.toast)
   const theme = useStore((s) => s.app.settings.theme)
+  // A string, so unrelated state broadcasts do not reload the widths. The remote web client keeps its own widths and loads them once.
+  const panelWidths = useStore((s) => (isWebClient() ? '' : JSON.stringify(s.app.settings.panelWidths ?? {})))
   const [sidebarOpen, setSidebarOpen] = useState(() => !isNarrow())
   const [changesOpen, setChangesOpen] = useState(false)
   const [dialog, setDialog] = useState<'settings' | 'import' | null>(null)
@@ -31,6 +34,23 @@ export default function App() {
   useEffect(() => {
     if (isNarrow()) setSidebarOpen(false)
   }, [view])
+
+  useLayoutEffect(() => {
+    panelLayout().load(panelWidths ? JSON.parse(panelWidths) : readStoredPanelWidths())
+  }, [panelWidths])
+
+  useEffect(() => {
+    let frame = 0
+    const onResize = () => {
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(() => panelLayout().apply())
+    }
+    window.addEventListener('resize', onResize)
+    return () => {
+      cancelAnimationFrame(frame)
+      window.removeEventListener('resize', onResize)
+    }
+  }, [])
 
   useEffect(() => {
     const media = window.matchMedia('(prefers-color-scheme: dark)')

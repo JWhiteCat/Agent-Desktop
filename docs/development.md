@@ -150,6 +150,7 @@ src/renderer/src      React UI
   components/items/   Markdown, messages, tools, plans, questions, and result views
   components/settings Settings pages
   lib/model-prefs.ts  Which model is selected. The choice is not kept in UI state
+  lib/panel-layout.ts Resizable panel widths as CSS variables, saved in settings or, on the remote page, browser storage
 src/shared            Types, Cursor / OpenAI / Anthropic price tables, usage, quota, slash commands, and Plan question blocks shared by the main process and the UI
 scripts               Public gateway (public-gateway.py), server installer (setup-public-server.sh), and the local one-shot setup (setup-public-server.mjs)
 test                  Offline unit tests, plus the live smoke test

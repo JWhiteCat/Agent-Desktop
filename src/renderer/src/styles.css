@@ -4,6 +4,7 @@
   --header-h: 44px;
   --sidebar-w: 272px;
   --changes-w: 460px;
+  --grokbot-list-w: 240px;
   --overlay-w: 0px;
   --traffic-w: 0px;
   --radius: 10px;
@@ -201,6 +202,7 @@ select {
 /* ---------- sidebar ---------- */
 
 .sidebar {
+  position: relative;
   width: var(--sidebar-w);
   flex: none;
   display: flex;
@@ -1661,6 +1663,7 @@ select {
 /* ---------- changes panel ---------- */
 
 .changes {
+  position: relative;
   width: var(--changes-w);
   flex: none;
   display: flex;
@@ -2427,6 +2430,58 @@ select {
   display: none;
 }
 
+/* ---------- panel resize handles ---------- */
+
+.resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 30;
+  width: 6px;
+  cursor: col-resize;
+  touch-action: none;
+  outline: none;
+}
+.resize-handle.edge-right {
+  right: -3px;
+}
+.resize-handle.edge-left {
+  left: -3px;
+}
+.resize-handle::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 2px;
+  width: 2px;
+  background: transparent;
+  transition: background 0.12s ease;
+}
+.resize-handle:hover::after {
+  background: var(--border-strong);
+  transition-delay: 0.15s;
+}
+.resize-handle.active::after,
+.resize-handle:focus-visible::after {
+  background: var(--blue);
+  transition-delay: 0s;
+}
+body.panel-resizing {
+  cursor: col-resize;
+  user-select: none;
+  -webkit-user-select: none;
+}
+body.panel-resizing * {
+  cursor: col-resize !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
+}
+body.panel-resizing iframe,
+body.panel-resizing webview {
+  pointer-events: none;
+}
+
 /* ---------- grok bot ---------- */
 
 .nav-btn.active {
@@ -2441,7 +2496,8 @@ select {
   min-height: 0;
 }
 .grokbot-list {
-  width: 240px;
+  position: relative;
+  width: var(--grokbot-list-w);
   flex: none;
   display: flex;
   flex-direction: column;
@@ -2700,6 +2756,10 @@ select {
   .grokbot-list {
     width: 38%;
     min-width: 130px;
+  }
+  /* Narrow layouts use overlay and percentage widths; the panels are not resizable there. */
+  .resize-handle {
+    display: none;
   }
   .grokbot-row-last,
   .grokbot-row-time {

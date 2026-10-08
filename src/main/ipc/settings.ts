@@ -1,6 +1,7 @@
 import { t as translate } from '@shared/i18n'
 import { normalizeMcpServers, normalizeSkills } from '@shared/agent-config'
 import { normalizeGrokBotNames } from '@shared/grokbot'
+import { normalizePanelWidths } from '@shared/panel-widths'
 import { normalizeLanguage, setLanguage } from '@shared/i18n'
 import { isCliProvider, type Settings } from '@shared/types'
 import { syncAllManagedSkills } from '../skills'
@@ -15,6 +16,7 @@ export function settingsHandlers(deps: IpcDeps): Record<string, Handler> {
       if (patch.language !== undefined) next.language = normalizeLanguage(patch.language)
       if (patch.mcpServers !== undefined) next.mcpServers = normalizeMcpServers(patch.mcpServers)
       if (patch.grokbotBots !== undefined) next.grokbotBots = normalizeGrokBotNames(patch.grokbotBots)
+      if (patch.panelWidths !== undefined) next.panelWidths = normalizePanelWidths(patch.panelWidths)
       if (patch.remotePort !== undefined) {
         const port = Math.trunc(Number(patch.remotePort))
         if (!(port >= 1024 && port <= 65535)) throw new Error(translate('端口需在 1024–65535 之间'))
