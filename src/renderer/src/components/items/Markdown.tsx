@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm'
 import { QUESTION_BLOCK_LANG } from '@shared/questions'
 import { isLocalFileLink } from '@shared/markdown-links'
 import { openMarkdownLink } from '../../lib/markdown-links'
+import { Hyperlink } from '../Hyperlink'
 import { CodeBlock } from './primitives'
 import { QuestionBlock } from './Questions'
 
@@ -12,15 +13,16 @@ export const MarkdownDirectoryContext = createContext<string | undefined>(undefi
 function MarkdownLink({ href, children }: React.ComponentProps<'a'>) {
   const cwd = useContext(MarkdownDirectoryContext)
   return (
-    <a
+    <Hyperlink
       href={href}
+      cwd={cwd}
       onClick={(e) => {
         e.preventDefault()
         void openMarkdownLink(href, cwd)
       }}
     >
       {children}
-    </a>
+    </Hyperlink>
   )
 }
 

@@ -40,9 +40,21 @@ function render(text: string, cwd?: string): string {
     createElement(Markdown, { text })))
 }
 
+function expectAnchor(html: string, href: string, label: string): void {
+  const anchor = /<a\b[^>]*>.*?<\/a>/.exec(html)?.[0]
+  expect(anchor).toContain(`href="${href}"`)
+  expect(anchor).toContain(`>${label}</a>`)
+}
+
 /** Capture the actual rendered anchor without replacing Markdown or its opener. */
-async function renderedLinkClick(text: string, cwd?: string) {
-  type AnchorProps = { onClick?: (event: { preventDefault: () => void }) => void }
+async function renderedLinkAnchor(text: string, cwd?: string) {
+  type AnchorProps = {
+    onClick?: (event: { preventDefault: () => void }) => void
+    onContextMenu?: (event: {
+      preventDefault: () => void; stopPropagation: () => void; defaultPrevented: boolean
+      clientX: number; clientY: number
+    }) => void
+  }
   const anchors: AnchorProps[] = []
   const original = await vi.importActual<typeof jsxRuntime>('react/jsx-runtime')
   const originalDev = await vi.importActual<typeof jsxDevRuntime>('react/jsx-dev-runtime')
@@ -50,7 +62,7 @@ async function renderedLinkClick(text: string, cwd?: string) {
     if (type === 'a') anchors.push(props as AnchorProps)
     return original.jsx(type, props, key)
   })
-  const devSpy = vi.mocked(jsxDevRuntime.jsxDEV).mockImplementation((type, props, key, ...args) => {
+  const devSpy = jsxDevRuntime.jsxDEV && vi.mocked(jsxDevRuntime.jsxDEV).mockImplementation((type, props, key, ...args) => {
     if (type === 'a') anchors.push(props as AnchorProps)
     return originalDev.jsxDEV(type, props, key, ...args)
   })
@@ -58,36 +70,64 @@ async function renderedLinkClick(text: string, cwd?: string) {
     render(text, cwd)
     expect(anchors).toHaveLength(1)
     expect(anchors[0].onClick).toBeTypeOf('function')
-    return anchors[0].onClick!
+    return anchors[0]
   } finally {
     spy.mockRestore()
-    devSpy.mockRestore()
+    devSpy?.mockRestore()
   }
+}
+
+async function renderedLinkClick(text: string, cwd?: string) {
+  return (await renderedLinkAnchor(text, cwd)).onClick!
 }
 
 describe('Markdown artifact link rendering', () => {
   it('preserves the reported Windows preview link instead of erasing its href', () => {
-    expect(render(`[查看界面预览](${previewPath})`)).toContain(`<a href="${previewPath}">查看界面预览</a>`)
+    const html = render(`[查看界面预览](${previewPath})`)
+    expectAnchor(html, previewPath, '查看界面预览')
+    expect(html).toContain(`<span class="hover-tip-copy">${nativePreviewPath}</span>`)
   })
 
   it('preserves an encoded file URL', () => {
     const href = 'file:///D:/my%20project/preview.png'
-    expect(render(`[Preview](${href})`)).toContain(`<a href="${href}">Preview</a>`)
+    const html = render(`[Preview](${href})`)
+    expectAnchor(html, href, 'Preview')
+    expect(html).toContain('<span class="hover-tip-copy">D:\\my project\\preview.png</span>')
   })
 
   it.each(['main.ts:12', 'main.ts:12:3'])('preserves relative source location %s with a conversation directory', (href) => {
-    expect(render(`[Code](${href})`, 'D:/project/worktree')).toContain(`<a href="${href}">Code</a>`)
+    const html = render(`[Code](${href})`, 'D:/project/worktree')
+    expectAnchor(html, href, 'Code')
+    expect(html).toContain('<span class="hover-tip-copy">D:\\project\\worktree\\main.ts</span>')
+  })
+
+  it('displays a relative artifact as the full decoded path inside its worktree', () => {
+    const href = 'artifacts/preview%20%E9%A2%84%E8%A7%88.png'
+    const html = render(`[Preview](${href})`, 'D:/project/worktree')
+    expectAnchor(html, href, 'Preview')
+    expect(html).toContain('<span class="hover-tip-copy">D:\\project\\worktree\\artifacts\\preview 预览.png</span>')
+  })
+
+  it('displays a complete web URL while retaining its query and fragment', () => {
+    const href = 'https://example.com/preview?theme=dark#panel'
+    const html = render(`[Website](${href})`, 'D:/project/worktree')
+    expectAnchor(html, href, 'Website')
+    expect(html).toContain(`<span class="hover-tip-copy">${href}</span>`)
   })
 
   it.each([
     ['javascript:123', ''], ['data:123', ''], ['mailto:123', 'mailto:123']
   ])('keeps the default URL filter for numeric protocol target %s even with a directory', (href, expected) => {
-    expect(render(`[Preview](${href})`, 'D:/project/worktree')).toContain(`<a href="${expected}">Preview</a>`)
+    const html = render(`[Preview](${href})`, 'D:/project/worktree')
+    expectAnchor(html, expected, 'Preview')
+    if (!expected) expect(html).not.toContain('hover-tip-copy')
   })
 
   it.each(['javascript:alert%281%29', 'data:text/html;base64,PHNjcmlwdD4=', 'vbscript:msgbox%281%29'])
     ('keeps filtering unsafe anchor URLs: %s', (href) => {
-      expect(render(`[Preview](${href})`)).toContain('<a href="">Preview</a>')
+      const html = render(`[Preview](${href})`)
+      expectAnchor(html, '', 'Preview')
+      expect(html).not.toContain('hover-tip-copy')
     })
 
   it('does not relax the URL filter for image sources', () => {
@@ -105,6 +145,23 @@ describe('Markdown artifact link rendering', () => {
 })
 
 describe('opening Markdown links', () => {
+  it('captures right-click on a rendered file link without invoking either opener', async () => {
+    const anchor = await renderedLinkAnchor('[Preview](artifacts/preview%20image.png)', 'D:/project/worktree')
+    const event = {
+      preventDefault: vi.fn(), stopPropagation: vi.fn(), defaultPrevented: false,
+      clientX: 120, clientY: 240
+    }
+
+    expect(anchor.onContextMenu).toBeTypeOf('function')
+    anchor.onContextMenu!(event)
+
+    expect(event.preventDefault).toHaveBeenCalledOnce()
+    expect(event.stopPropagation).toHaveBeenCalledOnce()
+    expect(api.openPath).not.toHaveBeenCalled()
+    expect(api.openExternal).not.toHaveBeenCalled()
+    expect(feedback.toast).not.toHaveBeenCalled()
+  })
+
   it('routes a rendered relative link through the conversation directory and prevents browser navigation', async () => {
     const click = await renderedLinkClick('[Preview](artifacts/preview%20image.png)', 'D:/project/worktree')
     const preventDefault = vi.fn()

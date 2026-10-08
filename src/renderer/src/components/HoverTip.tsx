@@ -1,18 +1,35 @@
-import { useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
 /**
  * Hover detail that stays up while the pointer is over the trigger.
  * Native `title` tooltips are dismissed by any keydown; this one is not.
  */
-export function HoverTip({ text, children }: { text?: string; children: React.ReactNode }) {
+export function HoverTip({ text, children, disabled = false, interactive = false }: {
+  text?: string; children: React.ReactNode; disabled?: boolean; interactive?: boolean
+}) {
   const anchor = useRef<HTMLSpanElement>(null)
   const bubble = useRef<HTMLDivElement>(null)
+  const hideTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const [open, setOpen] = useState(false)
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
+  const cancelHide = () => clearTimeout(hideTimer.current)
+  const show = () => {
+    cancelHide()
+    if (!disabled) setOpen(true)
+  }
+  const hide = () => {
+    cancelHide()
+    if (interactive) hideTimer.current = setTimeout(() => setOpen(false), 150)
+    else setOpen(false)
+  }
+
+  useEffect(() => () => clearTimeout(hideTimer.current), [])
 
   useLayoutEffect(() => {
-    if (!open) {
+    if (!open || disabled || !text) {
+      cancelHide()
+      setOpen(false)
       setPos(null)
       return
     }
@@ -40,19 +57,21 @@ export function HoverTip({ text, children }: { text?: string; children: React.Re
       window.removeEventListener('resize', place)
       window.removeEventListener('scroll', place, true)
     }
-  }, [open, text])
+  }, [open, text, disabled])
 
   if (!text) return <>{children}</>
   return (
-    <span ref={anchor} className="hover-tip" onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
+    <span ref={anchor} className="hover-tip" onMouseEnter={show} onMouseLeave={hide}>
       <span className="hover-tip-label">{children}</span>
       <span className="hover-tip-copy">{text}</span>
-      {open &&
+      {open && !disabled &&
         createPortal(
           <div
             ref={bubble}
-            className="hover-tip-bubble"
+            className={`hover-tip-bubble${interactive ? ' interactive' : ''}`}
             role="tooltip"
+            onMouseEnter={interactive ? show : undefined}
+            onMouseLeave={interactive ? hide : undefined}
             style={{ top: pos?.top ?? -9999, left: pos?.left ?? -9999, visibility: pos ? 'visible' : 'hidden' }}
           >
             {text}

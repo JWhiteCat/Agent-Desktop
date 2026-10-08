@@ -85,15 +85,16 @@ export function Popover({ anchor, open, onClose, children, placement = 'bottom-s
   )
 }
 
-export function MenuList({ items, onClose }: { items: MenuEntry[]; onClose: () => void }) {
+export function MenuList({ items, onClose, role }: { items: MenuEntry[]; onClose: () => void; role?: 'menu' }) {
   return (
-    <div className="menu">
+    <div className="menu" role={role}>
       {items.map((it, i) =>
         it === 'separator' ? (
           <div key={i} className="menu-sep" />
         ) : (
           <button
             key={i}
+            role={role ? 'menuitem' : undefined}
             className={`menu-item ${it.danger ? 'danger' : ''}`}
             disabled={it.disabled}
             onClick={() => {
@@ -109,6 +110,102 @@ export function MenuList({ items, onClose }: { items: MenuEntry[]; onClose: () =
         )
       )}
     </div>
+  )
+}
+
+/** A pointer-positioned menu, also opened from a focused link with the keyboard. */
+export function ContextMenu({ point, anchor, items, onClose }: {
+  point: { x: number; y: number } | null
+  anchor: HTMLElement | null
+  items: MenuEntry[]
+  onClose: () => void
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
+  const positioned = pos !== null
+  const close = (restoreFocus = false) => {
+    if (restoreFocus && anchor?.isConnected) anchor.focus({ preventScroll: true })
+    onClose()
+  }
+
+  useLayoutEffect(() => {
+    if (!point || !ref.current) {
+      setPos(null)
+      return
+    }
+    const el = ref.current
+    const place = () => {
+      const rect = el.getBoundingClientRect()
+      setPos({
+        left: Math.min(Math.max(8, point.x), Math.max(8, window.innerWidth - rect.width - 8)),
+        top: Math.min(Math.max(8, point.y), Math.max(8, window.innerHeight - rect.height - 8))
+      })
+    }
+    place()
+    const observer = new ResizeObserver(place)
+    observer.observe(el)
+    window.addEventListener('resize', place)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', place)
+    }
+  }, [point])
+
+  useLayoutEffect(() => {
+    if (point && positioned) ref.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus({ preventScroll: true })
+  }, [point, positioned])
+
+  useEffect(() => {
+    if (!point) return
+    const onDown = (event: PointerEvent) => {
+      if (!ref.current?.contains(event.target as Node)) onClose()
+    }
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        event.stopPropagation()
+        if (anchor?.isConnected) anchor.focus({ preventScroll: true })
+        onClose()
+      }
+    }
+    window.addEventListener('pointerdown', onDown)
+    window.addEventListener('keydown', onKey, true)
+    window.addEventListener('scroll', onClose, true)
+    window.addEventListener('blur', onClose)
+    return () => {
+      window.removeEventListener('pointerdown', onDown)
+      window.removeEventListener('keydown', onKey, true)
+      window.removeEventListener('scroll', onClose, true)
+      window.removeEventListener('blur', onClose)
+    }
+  }, [point, anchor, onClose])
+
+  if (!point) return null
+  return createPortal(
+    <div
+      ref={ref}
+      className="popover context-menu"
+      style={{ top: pos?.top ?? -9999, left: pos?.left ?? -9999, visibility: pos ? 'visible' : 'hidden' }}
+      onContextMenu={(event) => event.preventDefault()}
+      onKeyDown={(event) => {
+        if (event.key === 'Tab') {
+          close(true)
+          return
+        }
+        const buttons = Array.from(ref.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? [])
+        if (!buttons.length) return
+        const current = buttons.indexOf(document.activeElement as HTMLButtonElement)
+        const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1
+          : event.key === 'ArrowDown' ? (current + 1) % buttons.length
+            : event.key === 'ArrowUp' ? (current - 1 + buttons.length) % buttons.length : undefined
+        if (next === undefined) return
+        event.preventDefault()
+        buttons[next].focus({ preventScroll: true })
+      }}
+    >
+      <MenuList items={items} onClose={() => close(true)} role="menu" />
+    </div>,
+    document.body
   )
 }
 
