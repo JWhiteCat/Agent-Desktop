@@ -11,6 +11,7 @@ import { defaultModelFor, favoritesFor, modelForChat, projectModelFor } from '..
 import { chatModel, cliCommands, forkThread, prepareCommands, sendMessage, setCliProvider, useStore } from '../store'
 import { markDisplayedThreadRead } from '../store/threads'
 import { Composer, type ComposerHandle } from './Composer'
+import { FindBar } from './FindBar'
 import { IconBranch, IconChevronDown, IconChevronRight, IconCursor, IconDiff, IconFolder, Spinner } from './icons'
 import { ResultFooter, StepItem, TurnActionsProvider, UserMessage, type TurnActions } from './Items'
 import { MarkdownDirectoryContext } from './items/Markdown'
@@ -168,6 +169,8 @@ export function ThreadView({ thread, changesOpen, onToggleChanges }: Props) {
   const cli = threadCli(thread)
   const models = useStore((s) => s.modelsByCli[cli] ?? s.models)
   const scroller = useRef<HTMLDivElement>(null)
+  const view = useRef<HTMLDivElement>(null)
+  const body = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
   const composer = useRef<ComposerHandle>(null)
   const [editingTitle, setEditingTitle] = useState(false)
@@ -228,7 +231,7 @@ export function ThreadView({ thread, changesOpen, onToggleChanges }: Props) {
   const isWorktree = !!thread.worktree || (!!thread.cwd && !!project && thread.cwd.toLowerCase() !== project.path.toLowerCase())
 
   return (
-    <div className="thread-view">
+    <div className="thread-view" ref={view}>
       <header className="main-header drag">
         <div className="header-title no-drag">
           {editingTitle ? (
@@ -283,6 +286,7 @@ export function ThreadView({ thread, changesOpen, onToggleChanges }: Props) {
         </div>
       </header>
 
+      <FindBar scope={view} body={body} scroller={scroller} />
       <div
         className="messages"
         ref={scroller}
@@ -292,7 +296,7 @@ export function ThreadView({ thread, changesOpen, onToggleChanges }: Props) {
         }}
       >
         <MarkdownDirectoryContext.Provider value={cwd}>
-          <div className="messages-inner">
+          <div className="messages-inner" ref={body}>
             {!items && (
               <div className="center-hint">
                 <Spinner />

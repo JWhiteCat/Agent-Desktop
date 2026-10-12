@@ -8,6 +8,7 @@ import { applyGrokBotPoll, cachedGrokBotChat, rememberGrokBotChat } from '../sto
 import { GrokBotMessageExtras } from './GrokBotAttachments'
 import { IconArrowUp, IconBot, IconPlus, IconRefresh, IconStop, IconX, Spinner } from './icons'
 import { Markdown } from './items/Markdown'
+import { FindBar } from './FindBar'
 import { Modal } from './Modal'
 import { ResizeHandle } from './ResizeHandle'
 
@@ -142,6 +143,8 @@ export function GrokBotView({ botId, onOpenSettings }: Props) {
   /** Merges messages into the active chat from outside the polling effect. */
   const applyMessages = useRef<(messages: GrokBotMessage[]) => void>(() => {})
   const scroller = useRef<HTMLDivElement>(null)
+  const chatView = useRef<HTMLElement>(null)
+  const chatBody = useRef<HTMLDivElement>(null)
   const atBottom = useRef(true)
 
   const loadList = useCallback(async () => {
@@ -392,13 +395,14 @@ export function GrokBotView({ botId, onOpenSettings }: Props) {
         <ResizeHandle panel="grokbotList" label={t('调整 Bot 列表宽度')} />
       </aside>
 
-      <section className="grokbot-chat">
+      <section className="grokbot-chat" ref={chatView}>
         <header className="main-header drag">
           <div className="header-title no-drag">
             <h1>{selected?.name ?? 'Grok Bot'}</h1>
             {selected?.description && <span className="header-project grokbot-desc">{selected.description}</span>}
           </div>
         </header>
+        <FindBar scope={chatView} body={chatBody} scroller={scroller} />
 
         {!hasKey ? (
           <div className="grokbot-empty">
@@ -423,7 +427,7 @@ export function GrokBotView({ botId, onOpenSettings }: Props) {
                 atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40
               }}
             >
-              <div className="messages-inner">
+              <div className="messages-inner" ref={chatBody}>
                 {sharedName && (
                   <div className="grokbot-notice">
                     {t('有多个 Bot 叫「{name}」。Grok Bot API 按名称查找，这里的对话可能属于其中任意一个。建议在 Grok Bot 中改名。', { name: selected.name })}

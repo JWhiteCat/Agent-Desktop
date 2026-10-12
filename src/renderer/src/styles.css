@@ -3,6 +3,8 @@
   --mono: 'Cascadia Code', 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --header-h: 44px;
   --sidebar-w: 272px;
+  --find-match-bg: rgba(255, 210, 0, 0.45);
+  --find-current-bg: rgba(255, 150, 0, 0.85);
   --changes-w: 460px;
   --grokbot-list-w: 240px;
   --overlay-w: 0px;
@@ -35,6 +37,8 @@
 }
 
 :root[data-theme='dark'] {
+  --find-match-bg: rgba(255, 196, 0, 0.32);
+  --find-current-bg: rgba(255, 140, 0, 0.8);
   --bg: #181818;
   --bg-sidebar: #1f1f1f;
   --bg-elev: #242424;
@@ -1019,6 +1023,7 @@ select {
 /* ---------- thread ---------- */
 
 .thread-view {
+  position: relative;
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -2430,6 +2435,83 @@ select {
   display: none;
 }
 
+/* ---------- find in conversation ---------- */
+
+.find-bar {
+  position: absolute;
+  top: calc(var(--header-h) + 8px);
+  right: 16px;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  max-width: calc(100% - 32px);
+  height: 36px;
+  padding: 0 6px 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--bg-elev);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+}
+/* Room above the first message, so a match there is not under the bar. */
+.thread-view:has(> .find-bar) .messages-inner,
+.grokbot-chat:has(> .find-bar) .messages-inner {
+  padding-top: 60px;
+}
+.find-icon {
+  flex: none;
+  color: var(--muted);
+}
+.find-bar input {
+  width: 200px;
+  min-width: 60px;
+  flex: 1 1 auto;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+}
+.find-bar input.no-match {
+  color: var(--red);
+}
+.find-count {
+  flex: none;
+  min-width: 48px;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.find-toggle {
+  flex: none;
+  height: 22px;
+  min-width: 24px;
+  padding: 0 4px;
+  border-radius: 6px;
+  color: var(--text-2);
+  font-size: 12px;
+}
+.find-toggle:hover {
+  background: var(--bg-hover);
+}
+.find-toggle.active {
+  background: var(--bg-active);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+}
+.find-word {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+::highlight(agent-find) {
+  background-color: var(--find-match-bg);
+}
+::highlight(agent-find-current) {
+  background-color: var(--find-current-bg);
+  color: #000;
+}
+
 /* ---------- panel resize handles ---------- */
 
 .resize-handle {
@@ -2584,6 +2666,7 @@ body.panel-resizing webview {
   white-space: nowrap;
 }
 .grokbot-chat {
+  position: relative;
   flex: 1;
   min-width: 0;
   display: flex;
@@ -2760,6 +2843,14 @@ body.panel-resizing webview {
   /* Narrow layouts use overlay and percentage widths; the panels are not resizable there. */
   .resize-handle {
     display: none;
+  }
+  .find-bar {
+    left: 8px;
+    right: 8px;
+    max-width: none;
+  }
+  .find-bar input {
+    width: auto;
   }
   .grokbot-row-last,
   .grokbot-row-time {
