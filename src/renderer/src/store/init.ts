@@ -1,8 +1,9 @@
+import { enableRemoteViewSync, publishRemoteView, restoreRemoteView } from '../lib/view-route'
 import { receiveCommands } from './commands'
 import { errorText, toast } from './feedback'
 import { loadModels } from './models'
-import { LAST_PROJECT_KEY, LEGACY_MODEL_KEY } from './persistence'
-import { setState } from './state'
+import { LAST_PROJECT_KEY, LEGACY_MODEL_KEY, REMOTE_VIEW_KEY } from './persistence'
+import { setState, type View } from './state'
 import { markDisplayedThreadRead, openThread, receiveItems, refreshThreadItems } from './threads'
 
 /** Bootstrap state and route bridge events to the module that owns each update. */
@@ -18,7 +19,16 @@ export async function initStore(): Promise<void> {
       void window.api.updateSettings({ defaultModel: legacyModel })
     }
   }
-  setState({ app, lastProjectId, view: { kind: 'home', projectId: lastProjectId } })
+  const home: View = { kind: 'home', projectId: lastProjectId }
+  const view = window.api.isRemote
+    ? restoreRemoteView(location.hash, localStorage.getItem(REMOTE_VIEW_KEY), app) ?? home
+    : home
+  setState({ app, lastProjectId, view })
+  if (window.api.isRemote) {
+    publishRemoteView(view)
+    enableRemoteViewSync()
+  }
+  if (view.kind === 'thread') void openThread(view.id).catch((err) => toast(errorText(err), 'error'))
 
   window.api.onState((app) => {
     setState({ app })

@@ -2,6 +2,7 @@ import { useSyncExternalStore } from 'react'
 import { setLanguage } from '@shared/i18n'
 import type { CommandCache, SlashCommand } from '@shared/commands'
 import type { AgentMode, AppState, CliProvider, Item, ModelInfo } from '@shared/types'
+import { syncRemoteViewIfEnabled } from '../lib/view-route'
 import { readCommandCache } from './persistence'
 
 export type View = { kind: 'home'; projectId?: string } | { kind: 'thread'; id: string } | { kind: 'grokbot'; botId?: string }
@@ -48,9 +49,11 @@ export function getState(): UIState {
 }
 
 export function setState(patch: Partial<UIState> | ((s: UIState) => Partial<UIState>)): void {
+  const prevView = state.view
   const next = typeof patch === 'function' ? patch(state) : patch
   state = { ...state, ...next }
   if (next.app) setLanguage(next.app.settings.language, next.app.systemLocale ?? (typeof navigator === 'undefined' ? undefined : navigator.language))
+  if (next.view) syncRemoteViewIfEnabled(prevView, state.view)
   for (const l of listeners) l()
 }
 

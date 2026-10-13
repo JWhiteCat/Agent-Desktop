@@ -5,6 +5,8 @@ const COMMANDS_KEY = 'agent-desktop:slash-commands'
 const MODELS_KEY = 'agent-desktop:models'
 export const LAST_PROJECT_KEY = 'agent-desktop:lastProject'
 export const LEGACY_MODEL_KEY = 'agent-desktop:model'
+/** Last page shown by the remote web client in this browser. */
+export const REMOTE_VIEW_KEY = 'agent-desktop:remoteView'
 
 export function readCommandCache(): CommandCache {
   try {
