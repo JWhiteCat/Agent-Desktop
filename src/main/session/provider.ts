@@ -42,9 +42,30 @@ export function providerApiKey(provider: CliProvider, settings: { apiKey: string
   return resolveApiKey(settings.apiKey)
 }
 
+const CURSOR_MODEL_CONFIG_ID = 'model'
+
+/**
+ * `grok-4.7[context=500k,reasoning_effort=high,fast=true]` is one catalog variant.
+ * Cursor's `--model` flag does not accept that form: it logs every model id and exits.
+ * The parameterized picker takes the base id, then each `key=value` as its own option.
+ */
+export function cursorModelParameters(model: string): { id: string; parameters: { id: string; value: string }[] } | undefined {
+  const match = /^([^[\s]+)\[([^\]]+)\]$/.exec(model.trim())
+  if (!match || !match[2].includes('=')) return undefined
+  const parameters: { id: string; value: string }[] = []
+  for (const part of match[2].split(',')) {
+    const eq = part.indexOf('=')
+    if (eq <= 0) continue
+    const id = part.slice(0, eq).trim()
+    const value = part.slice(eq + 1).trim()
+    if (id && value) parameters.push({ id, value })
+  }
+  return parameters.length ? { id: match[1], parameters } : undefined
+}
+
 export function cursorArgs(req: SendRequest, sandbox: Sandbox, cwd: string, hasChat: boolean): string[] {
   const args = ['--trust']
-  if (req.model && req.model !== 'auto') args.push('--model', req.model)
+  if (req.model && req.model !== 'auto' && !cursorModelParameters(req.model)) args.push('--model', req.model)
   if (req.mode !== 'agent') args.push('--mode', req.mode)
   if (req.force) args.push('--force')
   if (sandbox !== 'default') args.push('--sandbox', sandbox)
@@ -103,6 +124,7 @@ export async function initializeSession(acp: SessionConnection['acp'], provider:
     clientCapabilities: {
       fs: { readTextFile: false, writeTextFile: false },
       terminal: false,
+      ...(provider === 'cursor' ? { _meta: { parameterizedModelPicker: true } } : {}),
       ...(provider === 'codex' ? { plan: {} } : {})
     },
     clientInfo: { name: 'agent-desktop', version: '0.1.0' }
@@ -125,17 +147,33 @@ export async function applySessionOptions(session: SessionConnection, req: SendR
     await applyClaudeOptions(session, req)
     return
   }
+  await applyCursorOptions(session, req)
+}
+
+async function applyCursorOptions(session: SessionConnection, req: SendRequest): Promise<void> {
   const { acp, sessionId } = session
   try {
     await acp.request('session/set_mode', { sessionId, modeId: req.mode })
   } catch {
     /* --mode on the process is the fallback */
   }
-  if (req.model) {
+  if (!req.model || req.model === 'auto') return
+  const selection = cursorModelParameters(req.model)
+  try {
+    await acp.request('session/set_config_option', {
+      sessionId,
+      configId: CURSOR_MODEL_CONFIG_ID,
+      value: selection?.id ?? req.model
+    })
+    for (const parameter of selection?.parameters ?? []) {
+      await acp.request('session/set_config_option', { sessionId, configId: parameter.id, value: parameter.value })
+    }
+  } catch (error) {
     try {
       await acp.request('session/set_model', { sessionId, modelId: req.model })
-    } catch {
-      /* --model on the process is the fallback when it is not "auto" */
+    } catch (fallbackError) {
+      // A flat slug can still be applied with --model. A bracket id cannot, so keep the real error.
+      if (selection) throw error instanceof Error ? error : fallbackError
     }
   }
 }

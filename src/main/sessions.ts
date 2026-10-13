@@ -12,7 +12,7 @@ import { isCliProvider, threadCli } from '@shared/types'
 import { normalizeTurnUsage } from '@shared/turn-usage'
 import type { WeeklyQuotaEstimate } from '@shared/turn-quota'
 import { AcpConnection } from './acp'
-import { killTree, stripAnsi } from './cli'
+import { exitFailureDetail, killTree, stripAnsi } from './cli'
 import { createWorktree } from './git'
 import { syncAllManagedSkills } from './skills'
 import { newId } from './id'
@@ -784,7 +784,7 @@ export class SessionManager {
     } else if (spawnError) {
       changed.push(r.push({ id: newId(), kind: 'notice', level: 'error', ...localizedMessage('无法启动 {label}：{error}', { label: cliLabel(run.proc.provider), error: spawnError.message }) }))
     } else if (!r.gotResult) {
-      const detail = [run.failText, stripAnsi(run.proc.stderr).trim()].filter(Boolean).join('\n').slice(-4000)
+      const detail = exitFailureDetail(run.failText, run.proc.stderr)
       changed.push(
         r.push({
           id: newId(),

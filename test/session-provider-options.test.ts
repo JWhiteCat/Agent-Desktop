@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { SendRequest } from '../src/shared/types'
-import { applySessionOptions, type SessionConnection } from '../src/main/session/provider'
+import { applySessionOptions, cursorArgs, initializeSession, type SessionConnection } from '../src/main/session/provider'
 
 const SESSION_ID = 'codex-options-session'
 
@@ -68,5 +68,63 @@ describe('Codex session permission configuration', () => {
 
     await expect(applySessionOptions(ctx.session, ctx.req, 'default')).rejects.toThrow()
     expect(ctx.request.mock.calls.filter(([method]) => method === 'session/set_mode')).toHaveLength(1)
+  })
+})
+
+const GROK_500K = 'grok-4.7[context=500k,reasoning_effort=high,fast=true]'
+
+function cursorRequest(model: string): SendRequest {
+  return { threadId: 'thread', prompt: 'Inspect the project', model, mode: 'agent', force: false }
+}
+
+describe('Cursor parameterized model selection', () => {
+  it('does not pass a bracket variant to --model', () => {
+    const req = cursorRequest(GROK_500K)
+    expect(cursorArgs(req, 'default', 'D:\\repo', false)).toEqual(['--trust', '--workspace', 'D:\\repo', 'acp'])
+    expect(cursorArgs(cursorRequest('composer-2.5'), 'default', 'D:\\repo', false)).toEqual([
+      '--trust', '--model', 'composer-2.5', '--workspace', 'D:\\repo', 'acp'
+    ])
+    expect(cursorArgs(cursorRequest('auto'), 'default', 'D:\\repo', true)).not.toContain('--model')
+  })
+
+  it('enables the parameterized model picker when Cursor starts', async () => {
+    const request = vi.fn(async () => ({}))
+    await initializeSession({ request }, 'cursor', 'key')
+    expect(request).toHaveBeenCalledWith('initialize', expect.objectContaining({
+      clientCapabilities: expect.objectContaining({ _meta: { parameterizedModelPicker: true } })
+    }))
+  })
+
+  it('sets the base model and then each variant parameter', async () => {
+    const request = vi.fn(async () => ({}))
+    const session: SessionConnection = { provider: 'cursor', sessionId: SESSION_ID, acp: { request } }
+    await applySessionOptions(session, cursorRequest(GROK_500K), 'default')
+    expect(request.mock.calls).toEqual([
+      ['session/set_mode', { sessionId: SESSION_ID, modeId: 'agent' }],
+      ['session/set_config_option', { sessionId: SESSION_ID, configId: 'model', value: 'grok-4.7' }],
+      ['session/set_config_option', { sessionId: SESSION_ID, configId: 'context', value: '500k' }],
+      ['session/set_config_option', { sessionId: SESSION_ID, configId: 'reasoning_effort', value: 'high' }],
+      ['session/set_config_option', { sessionId: SESSION_ID, configId: 'fast', value: 'true' }]
+    ])
+  })
+
+  it('reports a rejected variant instead of continuing with another model', async () => {
+    const request = vi.fn(async (method: string) => {
+      if (method === 'session/set_config_option') throw new Error('Invalid value for context: 500k')
+      if (method === 'session/set_model') throw new Error('Invalid model value')
+      return {}
+    })
+    const session: SessionConnection = { provider: 'cursor', sessionId: SESSION_ID, acp: { request } }
+    await expect(applySessionOptions(session, cursorRequest(GROK_500K), 'default')).rejects.toThrow('Invalid value for context: 500k')
+  })
+
+  it('keeps a flat slug when the config option is unavailable', async () => {
+    const request = vi.fn(async (method: string) => {
+      if (method === 'session/set_config_option') throw new Error('Method not found')
+      if (method === 'session/set_model') throw new Error('Method not found')
+      return {}
+    })
+    const session: SessionConnection = { provider: 'cursor', sessionId: SESSION_ID, acp: { request } }
+    await expect(applySessionOptions(session, cursorRequest('composer-2.5'), 'default')).resolves.toBeUndefined()
   })
 })

@@ -125,6 +125,21 @@ export function stripAnsi(s: string): string {
   return s.replace(ANSI, '')
 }
 
+/**
+ * Cursor prints `Cannot use this model: …. Available models: id, id, id, …` and exits.
+ * The reason is the first sentence; the model list runs for thousands of characters.
+ */
+export function exitFailureDetail(failText: string | undefined, stderr: string): string {
+  const clean = stripAnsi(stderr).trim()
+  const rejectedAt = clean.indexOf('Cannot use this model:')
+  if (rejectedAt >= 0) {
+    const listAt = clean.indexOf('Available models:', rejectedAt)
+    const reason = (listAt >= 0 ? clean.slice(rejectedAt, listAt) : clean.slice(rejectedAt)).trim()
+    return [failText?.trim(), reason].filter(Boolean).join('\n').slice(0, 2000)
+  }
+  return [failText?.trim(), clean].filter(Boolean).join('\n').slice(-4000)
+}
+
 export function runCliOnce(
   cli: ResolvedCli,
   args: string[],

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { formatAnswers, normalizeQuestions, parseQuestionBlock } from '@shared/questions'
 import { setLanguage } from '@shared/i18n'
 import { acpErrorText, claudePlanModePrompt, codexPlanModePrompt, permissionResult, planModePrompt } from '../src/main/acp'
-import { parseModels, resolveApiKey, stripAnsi } from '../src/main/cli'
+import { exitFailureDetail, parseModels, resolveApiKey, stripAnsi } from '../src/main/cli'
 import { leftPlanMode } from '../src/main/sessions'
 
 const previousKey = process.env.CURSOR_API_KEY
@@ -31,6 +31,21 @@ describe('cli parsing', () => {
 
   it('strips ANSI color codes', () => {
     expect(stripAnsi('\u001b[31mok\u001b[0m')).toBe('ok')
+  })
+
+  it('keeps the rejected-model reason and drops the model list', () => {
+    const stderr = 'Cannot use this model: grok-4.7[context=500k,reasoning_effort=high,fast=true]. Available models: claude-opus-4-8, gpt-5.5, glm-5.2'
+    expect(exitFailureDetail(undefined, stderr)).toBe(
+      'Cannot use this model: grok-4.7[context=500k,reasoning_effort=high,fast=true].'
+    )
+    expect(exitFailureDetail('startup failed', `${stderr}${' ,x'.repeat(3000)}`)).toBe(
+      'startup failed\nCannot use this model: grok-4.7[context=500k,reasoning_effort=high,fast=true].'
+    )
+  })
+
+  it('keeps the tail of an ordinary CLI failure', () => {
+    const stderr = `${'x'.repeat(5000)}tail`
+    expect(exitFailureDetail(undefined, stderr)).toBe(`${'x'.repeat(3996)}tail`)
   })
 
   it('prefers the settings API key over the environment', () => {
