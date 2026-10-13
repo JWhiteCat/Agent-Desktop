@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { codexPlanModePrompt } from '../src/main/acp'
 import { transcriptItems } from '../src/main/codex-history'
-import { codexModeId, modelsFromConfig, modelsFromSession, resolveCodexAcpEntry } from '../src/main/codex'
+import {
+  codexModelConfig, codexModeId, configOffersFastMode, currentCodexModel, modelsFromConfig, modelsFromSession,
+  resolveCodexAcpEntry, withCodexFastVariants
+} from '../src/main/codex'
 
 describe('codex mode and models', () => {
   it('keeps Ask read-only regardless of full access or sandbox settings', () => {
@@ -49,6 +52,56 @@ describe('codex mode and models', () => {
       models: { availableModels: [{ modelId: 'gpt-5.4[high]', name: '5.4 (high)' }] }
     })
     expect(listed.models).toEqual([{ id: 'gpt-5.4[high]', label: '5.4 (high)' }])
+  })
+
+  it('adds a Fast sibling only for models that advertise fast mode', () => {
+    const created = {
+      configOptions: [
+        { id: 'model', currentValue: 'gpt-5.5', options: [{ value: 'gpt-5.5', name: '5.5' }, { value: 'gpt-6-astra', name: '6 Astra' }] },
+        { id: 'reasoning_effort', currentValue: 'high', options: [{ value: 'low' }, { value: 'high' }] },
+        { id: 'fast-mode', currentValue: 'off', options: [{ value: 'off' }, { value: 'on' }] }
+      ],
+      models: {
+        availableModels: [
+          { modelId: 'gpt-6-astra[low]', name: '6 Astra (low)' },
+          { modelId: 'gpt-6-astra[ultra]', name: '6 Astra (ultra)' },
+          { modelId: 'gpt-5.5[low]', name: '5.5 (low)' },
+          { modelId: 'gpt-5.5[high]', name: '5.5 (high)' }
+        ]
+      }
+    }
+    expect(currentCodexModel(created)).toBe('gpt-5.5')
+    expect(configOffersFastMode(created.configOptions)).toBe(true)
+    expect(configOffersFastMode([{ id: 'reasoning_effort' }])).toBe(false)
+    const expanded = withCodexFastVariants(modelsFromSession(created), new Set(['gpt-5.5']))
+    expect(expanded.recommended).toBe('gpt-5.5[high]')
+    expect(expanded.models.map((model) => model.id)).toEqual([
+      'gpt-5.5[high]',
+      'gpt-5.5[reasoning_effort=high,fast=true]',
+      'gpt-6-astra[low]',
+      'gpt-6-astra[ultra]',
+      'gpt-5.5[low]',
+      'gpt-5.5[reasoning_effort=low,fast=true]'
+    ])
+    expect(expanded.models.find((model) => model.id === 'gpt-5.5[reasoning_effort=high,fast=true]')?.label).toBe('5.5 (high) Fast')
+  })
+
+  it('sets fast-mode on or off without treating the parameter string as an effort', () => {
+    expect(codexModelConfig('gpt-5.4[reasoning_effort=high,fast=true]')).toEqual([
+      { configId: 'model', value: 'gpt-5.4' },
+      { configId: 'reasoning_effort', value: 'high' },
+      { configId: 'fast-mode', value: 'on' }
+    ])
+    expect(codexModelConfig('gpt-5.4[high]')).toEqual([
+      { configId: 'model', value: 'gpt-5.4' },
+      { configId: 'reasoning_effort', value: 'high' },
+      { configId: 'fast-mode', value: 'off' }
+    ])
+    expect(codexModelConfig('gpt-5.4[fast=true]')).toEqual([
+      { configId: 'model', value: 'gpt-5.4' },
+      { configId: 'fast-mode', value: 'on' }
+    ])
+    expect(codexModelConfig('auto')).toEqual([])
   })
 
   it('keeps Astra ultra and does not give every model the current effort list', () => {

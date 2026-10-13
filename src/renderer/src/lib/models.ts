@@ -65,7 +65,7 @@ function formatContext(raw: string): string {
 function parseBracket(id: string): { base: string; context?: string; effort?: string; thinking: boolean; fast: boolean } | undefined {
   const match = id.match(/^([^[]+)\[([^\]]+)\]$/)
   if (!match) return undefined
-  // Codex ids are `model[effort]`, without `key=value` parameters.
+  // Codex standard speed is `model[effort]`. Its Fast sibling uses key=value parameters, like Cursor.
   if (!match[2].includes('=')) {
     const effort = match[2].trim()
     return { base: match[1], effort: effort || undefined, thinking: false, fast: false }

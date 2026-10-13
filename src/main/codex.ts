@@ -166,10 +166,23 @@ export async function listCodexModels(customPath: string, apiKey: string): Promi
           if (apiKey) await acp.request('authenticate', { methodId: 'api-key' })
           const created = await acp.request('session/new', { cwd, mcpServers: [] })
           sessionId = String(created?.sessionId ?? '')
-          clearTimeout(timer)
           const listed = modelsFromSession(created)
           if (!listed.models.length) throw new Error(translate('Codex 没有返回模型'))
-          resolve(listed)
+          // fast-mode is advertised only for the current model, the same way reasoning efforts are.
+          const fast = new Set<string>()
+          const current = currentCodexModel(created)
+          if (current && configOffersFastMode(created?.configOptions)) fast.add(current)
+          for (const base of codexModelBases(listed.models)) {
+            if (fast.has(base) || base === current) continue
+            try {
+              const switched = await acp.request('session/set_config_option', { sessionId, configId: 'model', value: base })
+              if (configOffersFastMode(switched?.configOptions)) fast.add(base)
+            } catch {
+              /* a model this account cannot select keeps the standard entry */
+            }
+          }
+          clearTimeout(timer)
+          resolve(withCodexFastVariants(listed, fast))
         } catch (err) {
           clearTimeout(timer)
           reject(err)
@@ -210,6 +223,94 @@ export function modelsFromSession(created: { configOptions?: unknown; models?: u
   const recommended = fromConfig.recommended && models.some((model) => model.id === fromConfig.recommended) ? fromConfig.recommended : undefined
   if (!recommended) return { models }
   return { recommended, models: models.slice().sort((a, b) => Number(b.id === recommended) - Number(a.id === recommended)) }
+}
+
+export const CODEX_FAST_CONFIG_ID = 'fast-mode'
+const CODEX_FAST_ON = 'on'
+const CODEX_FAST_OFF = 'off'
+
+/** `gpt-5.4[high]` is standard speed. Fast is `gpt-5.4[reasoning_effort=high,fast=true]`, the same parameter form Cursor uses. */
+export function parseCodexModelId(id: string): { model: string; effort?: string; fast: boolean } {
+  const trimmed = id.trim()
+  const match = /^([^[]+)\[([^\]]+)\]$/.exec(trimmed)
+  if (!match) return { model: trimmed, fast: false }
+  const body = match[2]
+  if (!body.includes('=')) {
+    const effort = body.trim()
+    return { model: match[1], effort: effort || undefined, fast: false }
+  }
+  let effort: string | undefined
+  let fast = false
+  for (const part of body.split(',')) {
+    const eq = part.indexOf('=')
+    if (eq <= 0) {
+      const bare = part.trim()
+      if (bare && !effort) effort = bare
+      continue
+    }
+    const key = part.slice(0, eq).trim()
+    const value = part.slice(eq + 1).trim()
+    if (key === 'reasoning_effort' || key === 'effort' || key === 'reasoning') effort = value || undefined
+    else if ((key === 'fast' && value === 'true') || (key === 'speed' && value === 'fast')) fast = true
+  }
+  return { model: match[1], effort, fast }
+}
+
+export function codexFastModelId(base: string, effort?: string): string {
+  const parts = [effort ? `reasoning_effort=${effort}` : '', 'fast=true'].filter(Boolean)
+  return `${base}[${parts.join(',')}]`
+}
+
+/** Base ids in list order. Fast support is probed per base, because one session only describes the current model. */
+export function codexModelBases(models: ModelInfo[]): string[] {
+  const bases: string[] = []
+  const seen = new Set<string>()
+  for (const model of models) {
+    const base = parseCodexModelId(model.id).model
+    if (!base || seen.has(base)) continue
+    seen.add(base)
+    bases.push(base)
+  }
+  return bases
+}
+
+export function currentCodexModel(created: { configOptions?: unknown } | null | undefined): string | undefined {
+  if (!Array.isArray(created?.configOptions)) return undefined
+  const model = (created.configOptions as ConfigOption[]).find((option) => option?.id === 'model')
+  return typeof model?.currentValue === 'string' && model.currentValue ? model.currentValue : undefined
+}
+
+export function configOffersFastMode(raw: unknown): boolean {
+  return Array.isArray(raw) && raw.some((option) => !!option && typeof option === 'object' && (option as { id?: string }).id === CODEX_FAST_CONFIG_ID)
+}
+
+/** Adds a Fast sibling for models the adapter advertises. Standard ids stay unchanged so saved selections still match. */
+export function withCodexFastVariants(listed: CodexModelList, fastModels: ReadonlySet<string>): CodexModelList {
+  if (!fastModels.size) return listed
+  const models: ModelInfo[] = []
+  const seen = new Set<string>()
+  for (const model of listed.models) {
+    if (seen.has(model.id)) continue
+    seen.add(model.id)
+    models.push(model)
+    const parsed = parseCodexModelId(model.id)
+    if (!parsed.model || parsed.fast || !fastModels.has(parsed.model)) continue
+    const id = codexFastModelId(parsed.model, parsed.effort)
+    if (seen.has(id)) continue
+    seen.add(id)
+    models.push({ id, label: `${model.label} Fast` })
+  }
+  return { models, recommended: listed.recommended }
+}
+
+/** Session options for one picker id: base model, effort, then fast-mode `on` or `off`. */
+export function codexModelConfig(model: string): { configId: string; value: string }[] {
+  if (!model || model === 'auto') return []
+  const parsed = parseCodexModelId(model)
+  const options = [{ configId: 'model', value: parsed.model }]
+  if (parsed.effort) options.push({ configId: 'reasoning_effort', value: parsed.effort })
+  options.push({ configId: CODEX_FAST_CONFIG_ID, value: parsed.fast ? CODEX_FAST_ON : CODEX_FAST_OFF })
+  return options
 }
 
 /** Expands Codex model and reasoning-effort selects into picker ids like `gpt-5.4[high]`. */

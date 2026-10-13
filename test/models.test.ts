@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { catalogFromStorageJson, mergeModelLists } from '../src/shared/model-catalog'
 import { modelForChat, pruneFavoriteList } from '../src/renderer/src/lib/model-prefs'
-import { contextChoices, describeModel, effortChoices, findVariant, groupModels, listedModelGroups, modelCaption, pickVariant } from '../src/renderer/src/lib/models'
+import { contextChoices, describeModel, effortChoices, findVariant, groupModels, hasFastVariant, listedModelGroups, modelCaption, pickVariant, speedAvailable } from '../src/renderer/src/lib/models'
 import type { ModelInfo } from '../src/shared/types'
 import { GROK_47_500K_HIGH_FAST } from './grok-model'
 
@@ -124,9 +124,17 @@ describe('model picker', () => {
     expect(modelCaption([], 'auto')).toBe('Auto')
     const codex = groupModels([
       { id: 'gpt-5.4[high]', label: '5.4 high' },
+      { id: 'gpt-5.4[reasoning_effort=high,fast=true]', label: '5.4 high Fast' },
       { id: 'gpt-5.4[low]', label: '5.4 low' }
     ])
-    expect(codex[0].variants.map((variant) => variant.effort)).toEqual(['high', 'low'])
+    expect(hasFastVariant(codex[0])).toBe(true)
+    expect(pickVariant(codex[0], { effort: 'high', fast: true }).id).toBe('gpt-5.4[reasoning_effort=high,fast=true]')
+    expect(pickVariant(codex[0], { effort: 'low', fast: true }).id).toBe('gpt-5.4[low]')
+    const high = codex[0].variants.find((variant) => variant.effort === 'high' && !variant.fast)!
+    expect(speedAvailable(codex[0], high, true)).toBe(true)
+    expect(speedAvailable(codex[0], high, false)).toBe(true)
+    expect(describeModel(codex, 'gpt-5.4[reasoning_effort=high,fast=true]')).toMatchObject({ name: '5.4', effortLabel: 'High', fast: true })
+    expect(codex[0].variants.map((variant) => variant.effort)).toEqual(['high', 'high', 'low'])
     const astra = groupModels([
       { id: 'gpt-6-astra[max]', label: '6 Astra (max)' },
       { id: 'gpt-6-astra[ultra]', label: '6 Astra (ultra)' }

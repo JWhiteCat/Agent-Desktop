@@ -6,7 +6,7 @@ import {
   claudeAsCli, claudeModeId, CLAUDE_EFFORT_CONFIG_ID, CLAUDE_MODEL_CONFIG_ID,
   parseClaudeModelId, resolveClaude, resolveClaudeApiKey, spawnClaudeAcp, type ResolvedClaude
 } from '../claude'
-import { codexAsCli, codexModeId, resolveCodex, resolveCodexApiKey, spawnCodexAcp, type ResolvedCodex } from '../codex'
+import { codexAsCli, codexModeId, codexModelConfig, resolveCodex, resolveCodexApiKey, spawnCodexAcp, type ResolvedCodex } from '../codex'
 
 /** Provider operations only need the ACP request channel and the current session identity. */
 export interface SessionConnection {
@@ -223,23 +223,12 @@ async function applyClaudeModel(session: SessionConnection, model: string): Prom
 }
 
 async function applyCodexModel(session: SessionConnection, model: string): Promise<void> {
-  if (!model || model === 'auto') return
-  const bracket = model.match(/^([^[]+)\[([^\]]+)\]$/)
-  const id = bracket?.[1] ?? model
-  try {
-    await session.acp.request('session/set_config_option', { sessionId: session.sessionId, configId: 'model', value: id })
-  } catch {
-    /* keep the session's current model */
-  }
-  if (!bracket?.[2]) return
-  try {
-    await session.acp.request('session/set_config_option', {
-      sessionId: session.sessionId,
-      configId: 'reasoning_effort',
-      value: bracket[2]
-    })
-  } catch {
-    /* the model keeps its default effort */
+  for (const option of codexModelConfig(model)) {
+    try {
+      await session.acp.request('session/set_config_option', { sessionId: session.sessionId, configId: option.configId, value: option.value })
+    } catch {
+      /* keep the session's current value when this model or adapter does not offer the option */
+    }
   }
 }
 

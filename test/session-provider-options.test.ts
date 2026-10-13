@@ -4,10 +4,10 @@ import { applySessionOptions, cursorArgs, initializeSession, type SessionConnect
 
 const SESSION_ID = 'codex-options-session'
 
-function setup(mode: SendRequest['mode'] = 'plan', force = true) {
+function setup(mode: SendRequest['mode'] = 'plan', force = true, model = 'auto') {
   const request = vi.fn(async (_method: string, _params: unknown) => ({}))
   const session: SessionConnection = { provider: 'codex', sessionId: SESSION_ID, acp: { request } }
-  const req: SendRequest = { threadId: 'thread', prompt: 'Inspect the project', model: 'auto', mode, force }
+  const req: SendRequest = { threadId: 'thread', prompt: 'Inspect the project', model, mode, force }
   return { request, session, req }
 }
 
@@ -57,6 +57,26 @@ describe('Codex session permission configuration', () => {
       sessionId: SESSION_ID, configId: 'collaboration_mode', value: 'default'
     })
     expect(ctx.request).toHaveBeenCalledWith('session/set_mode', { sessionId: SESSION_ID, modeId: 'agent-full-access' })
+  })
+
+  it('sets the base model, effort, and fast mode for a Fast variant', async () => {
+    const ctx = setup('agent', false, 'gpt-5.4[reasoning_effort=high,fast=true]')
+    await applySessionOptions(ctx.session, ctx.req, 'default')
+    expect(ctx.request.mock.calls).toEqual([
+      ['session/set_config_option', { sessionId: SESSION_ID, configId: 'collaboration_mode', value: 'default' }],
+      ['session/set_mode', { sessionId: SESSION_ID, modeId: 'agent' }],
+      ['session/set_config_option', { sessionId: SESSION_ID, configId: 'model', value: 'gpt-5.4' }],
+      ['session/set_config_option', { sessionId: SESSION_ID, configId: 'reasoning_effort', value: 'high' }],
+      ['session/set_config_option', { sessionId: SESSION_ID, configId: 'fast-mode', value: 'on' }]
+    ])
+  })
+
+  it('turns fast mode off for a saved standard id', async () => {
+    const ctx = setup('agent', false, 'gpt-5.4[high]')
+    await applySessionOptions(ctx.session, ctx.req, 'default')
+    expect(ctx.request.mock.calls.at(-1)).toEqual([
+      'session/set_config_option', { sessionId: SESSION_ID, configId: 'fast-mode', value: 'off' }
+    ])
   })
 
   it.each(['ask', 'plan', 'agent'] as const)('propagates a failed %s permission mode instead of silently continuing', async (mode) => {
