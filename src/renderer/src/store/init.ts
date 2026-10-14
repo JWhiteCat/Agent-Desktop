@@ -4,7 +4,7 @@ import { errorText, toast } from './feedback'
 import { loadModels } from './models'
 import { LAST_PROJECT_KEY, LEGACY_MODEL_KEY, REMOTE_VIEW_KEY } from './persistence'
 import { setState, type View } from './state'
-import { markDisplayedThreadRead, openThread, receiveItems, refreshThreadItems } from './threads'
+import { markDisplayedThreadRead, openThread, receiveItems, refreshThreadItems, rememberProject } from './threads'
 
 /** Bootstrap state and route bridge events to the module that owns each update. */
 export async function initStore(): Promise<void> {
@@ -24,6 +24,9 @@ export async function initStore(): Promise<void> {
     ? restoreRemoteView(location.hash, localStorage.getItem(REMOTE_VIEW_KEY), app) ?? home
     : home
   setState({ app, lastProjectId, view })
+  // A restored project home is the project new conversations start in, like goHome(projectId);
+  // a restored conversation does the same through openThread.
+  if (view.kind === 'home' && view.projectId && view.projectId !== lastProjectId) rememberProject(view.projectId)
   if (window.api.isRemote) {
     publishRemoteView(view)
     enableRemoteViewSync()

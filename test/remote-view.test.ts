@@ -118,6 +118,70 @@ describe('remote page refresh', () => {
     expect(location.hash).toBe('#project=project')
   })
 
+  describe('with two projects', () => {
+    const other: Project = { id: 'other', name: 'Other', path: '/other', createdAt: 2 }
+    const otherThread: ThreadMeta = { ...thread, id: 'other-thread', projectId: other.id }
+    beforeEach(() => {
+      api.getState.mockResolvedValue({
+        projects: [{ ...project }, { ...other }], threads: [{ ...thread }, { ...otherThread }],
+        settings: { ...DEFAULT_SETTINGS }, running: []
+      } satisfies AppState)
+      // This browser last worked in the first project.
+      localStorage.setItem('agent-desktop:lastProject', project.id)
+    })
+
+    it.each([
+      ['a link', () => { location.hash = '#project=other' }],
+      ['this browser', () => { localStorage.setItem('agent-desktop:remoteView', 'project=other') }]
+    ])('keeps a project home restored from %s as the project for a new conversation', async (_source, restore) => {
+      restore()
+      await store.initStore()
+      expect(store.getState().view).toEqual({ kind: 'home', projectId: 'other' })
+      expect(store.getState().lastProjectId).toBe('other')
+      expect(localStorage.getItem('agent-desktop:lastProject')).toBe('other')
+
+      store.goHome() // Ctrl+N
+      expect(store.getState().view).toEqual({ kind: 'home', projectId: 'other' })
+      expect(location.hash).toBe('#project=other')
+    })
+
+    it('lets a link beat the project remembered in this browser', async () => {
+      location.hash = '#project=other'
+      localStorage.setItem('agent-desktop:remoteView', 'project=project')
+      await store.initStore()
+      store.goHome()
+      expect(store.getState().view).toEqual({ kind: 'home', projectId: 'other' })
+    })
+
+    it('starts a new conversation in the project of a restored conversation', async () => {
+      location.hash = '#thread=other-thread'
+      await store.initStore()
+      await vi.waitFor(() => expect(store.getState().lastProjectId).toBe('other'))
+      store.goHome()
+      expect(store.getState().view).toEqual({ kind: 'home', projectId: 'other' })
+      expect(location.hash).toBe('#project=other')
+    })
+
+    it('falls back to the remembered project when the linked conversation is gone', async () => {
+      location.hash = '#thread=missing'
+      await store.initStore()
+      expect(store.getState().view).toEqual({ kind: 'home', projectId: 'project' })
+      store.goHome()
+      expect(store.getState().view).toEqual({ kind: 'home', projectId: 'project' })
+    })
+
+    it('leaves the desktop window on its own project when the address names another', async () => {
+      api.isRemote = false
+      location.hash = '#project=other'
+      await store.initStore()
+      expect(store.getState().view).toEqual({ kind: 'home', projectId: 'project' })
+      expect(localStorage.getItem('agent-desktop:lastProject')).toBe('project')
+      store.goHome()
+      expect(store.getState().view).toEqual({ kind: 'home', projectId: 'project' })
+      expect(replaceState).not.toHaveBeenCalled()
+    })
+  })
+
   it('leaves the desktop window on its own start page', async () => {
     api.isRemote = false
     location.hash = '#thread=thread'
