@@ -1,4 +1,5 @@
 import type { ChildProcess } from 'node:child_process'
+import { t as translate } from '@shared/i18n'
 import type { CliProvider, SendRequest } from '@shared/types'
 import { claudePlanModePrompt, codexPlanModePrompt, planModePrompt, type AcpConnection } from '../acp'
 import { resolveApiKey, resolveCli, spawnCli, type ResolvedCli } from '../cli'
@@ -13,6 +14,8 @@ export interface SessionConnection {
   acp: Pick<AcpConnection, 'request'>
   sessionId: string
   provider: CliProvider
+  /** Cursor model this app set on the session, so a later Auto turn knows a reset is required. */
+  cursorModel?: string
 }
 
 export interface AgentLaunch {
@@ -43,6 +46,7 @@ export function providerApiKey(provider: CliProvider, settings: { apiKey: string
 }
 
 const CURSOR_MODEL_CONFIG_ID = 'model'
+const CURSOR_AUTO_MODEL = 'auto'
 
 /**
  * `grok-4.7[context=500k,reasoning_effort=high,fast=true]` is one catalog variant.
@@ -157,7 +161,11 @@ async function applyCursorOptions(session: SessionConnection, req: SendRequest):
   } catch {
     /* --mode on the process is the fallback */
   }
-  if (!req.model || req.model === 'auto') return
+  if (!req.model) return
+  if (req.model === CURSOR_AUTO_MODEL) {
+    await resetCursorModel(session)
+    return
+  }
   const selection = cursorModelParameters(req.model)
   try {
     await acp.request('session/set_config_option', {
@@ -176,6 +184,31 @@ async function applyCursorOptions(session: SessionConnection, req: SendRequest):
       if (selection) throw error instanceof Error ? error : fallbackError
     }
   }
+  session.cursorModel = req.model
+}
+
+/**
+ * Auto is not a flag: a process started without --model begins in Auto, but a reused process or a loaded chat
+ * keeps whatever model it had. Select `auto` explicitly, through the model config option or, on older adapters,
+ * session/set_model. When neither works after this app chose another model, fail the turn: the caller restarts
+ * the process, which then starts in Auto, instead of silently running Auto turns on the previous model.
+ */
+async function resetCursorModel(session: SessionConnection): Promise<void> {
+  const { acp, sessionId } = session
+  try {
+    await acp.request('session/set_config_option', { sessionId, configId: CURSOR_MODEL_CONFIG_ID, value: CURSOR_AUTO_MODEL })
+  } catch {
+    try {
+      await acp.request('session/set_model', { sessionId, modelId: CURSOR_AUTO_MODEL })
+    } catch (error) {
+      if (session.cursorModel && session.cursorModel !== CURSOR_AUTO_MODEL) {
+        throw new Error(translate('Cursor CLI 无法切回 Auto 模型（{error}）。已重启这个对话的 CLI 进程，请重新发送。', {
+          error: error instanceof Error ? error.message : String(error)
+        }))
+      }
+    }
+  }
+  session.cursorModel = CURSOR_AUTO_MODEL
 }
 
 async function applyCodexOptions(session: SessionConnection, req: SendRequest, sandbox: Sandbox): Promise<void> {

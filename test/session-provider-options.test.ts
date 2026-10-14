@@ -148,3 +148,51 @@ describe('Cursor parameterized model selection', () => {
     await expect(applySessionOptions(session, cursorRequest('composer-2.5'), 'default')).resolves.toBeUndefined()
   })
 })
+
+describe('Cursor Auto model selection', () => {
+  const cursorSession = (unsupported: string[] = []) => {
+    const request = vi.fn(async (method: string, _params?: unknown) => {
+      if (unsupported.includes(method)) throw new Error(`Method not found: ${method}`)
+      return {}
+    })
+    const session: SessionConnection = { provider: 'cursor', sessionId: SESSION_ID, acp: { request } }
+    const modelCalls = () => request.mock.calls.filter(([method]) => method !== 'session/set_mode')
+    return { request, session, modelCalls }
+  }
+
+  it('selects auto explicitly after a concrete model, then the concrete model again', async () => {
+    const ctx = cursorSession()
+    await applySessionOptions(ctx.session, cursorRequest('composer-2.5'), 'default')
+    await applySessionOptions(ctx.session, cursorRequest('auto'), 'default')
+    await applySessionOptions(ctx.session, cursorRequest(GROK_500K), 'default')
+    expect(ctx.modelCalls()).toEqual([
+      ['session/set_config_option', { sessionId: SESSION_ID, configId: 'model', value: 'composer-2.5' }],
+      ['session/set_config_option', { sessionId: SESSION_ID, configId: 'model', value: 'auto' }],
+      ['session/set_config_option', { sessionId: SESSION_ID, configId: 'model', value: 'grok-4.7' }],
+      ['session/set_config_option', { sessionId: SESSION_ID, configId: 'context', value: '500k' }],
+      ['session/set_config_option', { sessionId: SESSION_ID, configId: 'reasoning_effort', value: 'high' }],
+      ['session/set_config_option', { sessionId: SESSION_ID, configId: 'fast', value: 'true' }]
+    ])
+  })
+
+  it('uses session/set_model auto on an older adapter', async () => {
+    const ctx = cursorSession(['session/set_config_option'])
+    await applySessionOptions(ctx.session, cursorRequest('auto'), 'default')
+    expect(ctx.modelCalls()).toEqual([
+      ['session/set_config_option', { sessionId: SESSION_ID, configId: 'model', value: 'auto' }],
+      ['session/set_model', { sessionId: SESSION_ID, modelId: 'auto' }]
+    ])
+  })
+
+  it('accepts Auto on a fresh session when the adapter has no model requests', async () => {
+    const ctx = cursorSession(['session/set_config_option', 'session/set_model'])
+    await expect(applySessionOptions(ctx.session, cursorRequest('auto'), 'default')).resolves.toBeUndefined()
+    await expect(applySessionOptions(ctx.session, cursorRequest('auto'), 'default')).resolves.toBeUndefined()
+  })
+
+  it('fails instead of keeping a concrete model it cannot reset', async () => {
+    const ctx = cursorSession(['session/set_config_option', 'session/set_model'])
+    await applySessionOptions(ctx.session, cursorRequest('composer-2.5'), 'default')
+    await expect(applySessionOptions(ctx.session, cursorRequest('auto'), 'default')).rejects.toThrow('Auto')
+  })
+})

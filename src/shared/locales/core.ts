@@ -21,6 +21,7 @@ export const coreMessages: Record<string, string> = {
   '仅桌面端可用': 'Available on the desktop only',
   '已分叉为「{title}」': 'Forked as “{title}”',
   '已从 CLI 同步 {count} 条记录': 'Synced {count} records from the CLI',
+  'Cursor CLI 无法切回 Auto 模型（{error}）。已重启这个对话的 CLI 进程，请重新发送。': 'Cursor CLI could not switch back to the Auto model ({error}). The CLI process for this conversation was restarted; send the message again.',
   '未找到 Cursor CLI，请先检查 CLI 路径。': 'Cursor CLI was not found. Check the CLI path.',
   '未找到 Codex CLI，请先检查 CLI 路径。': 'Codex CLI was not found. Check the CLI path.',
   '无法识别此 Codex CLI 的安装方式。请使用原安装工具更新，或在 CLI 路径中选择 npm / Homebrew 安装的 Codex。': 'Unable to identify this Codex CLI installation. Update it with its original installer, or select a Codex CLI installed with npm or Homebrew.',
