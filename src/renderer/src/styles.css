@@ -1125,8 +1125,10 @@ select {
 }
 
 .msg-assistant {
+  max-width: 100%;
   font-size: 14px;
   line-height: 1.65;
+  overflow-wrap: break-word;
 }
 .msg-assistant.streaming .markdown > :last-child::after {
   content: '';
