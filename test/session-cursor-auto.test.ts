@@ -8,6 +8,9 @@ import type { Store } from '../src/main/store'
 import { spawnCli } from '../src/main/cli'
 import { SessionManager } from '../src/main/sessions'
 
+// File snapshots are covered with real directories in turn-files/session-active tests.
+vi.mock('../src/main/turn-files', () => ({ snapshotTurnFiles: vi.fn(async () => []), changedTurnFiles: vi.fn(async () => []) }))
+
 vi.mock('../src/main/skills', () => ({ syncAllManagedSkills: vi.fn() }))
 vi.mock('../src/main/cli', async (original) => ({
   ...await original<typeof import('../src/main/cli')>(),

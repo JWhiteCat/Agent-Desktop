@@ -45,8 +45,9 @@ interface RpcMessage {
 }
 
 const managers: SessionManager[] = []
+let workspace: string
 
-function setup(provider: CliProvider = 'cursor', initialization?: Promise<void>, cwd = os.tmpdir()) {
+function setup(provider: CliProvider = 'cursor', initialization?: Promise<void>, cwd = workspace) {
   const stdout = new PassThrough()
   const calls: RpcMessage[] = []
   let promptId: number | string | undefined
@@ -90,18 +91,29 @@ function setup(provider: CliProvider = 'cursor', initialization?: Promise<void>,
   }
 }
 
-beforeEach(() => vi.clearAllMocks())
-afterEach(() => {
-  for (const manager of managers.splice(0)) manager.stopAll()
+beforeEach(() => {
+  vi.clearAllMocks()
+  workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-desktop-active-'))
+})
+afterEach(async () => {
+  const current = managers.splice(0)
+  for (const manager of current) manager.stopAll()
+  await vi.waitFor(() => expect(current.every((manager) => !manager.active().length)).toBe(true))
+  const resolved = path.resolve(workspace)
+  if (path.dirname(resolved) !== path.resolve(os.tmpdir()) || !path.basename(resolved).startsWith('agent-desktop-active-')) throw new Error('Unexpected test directory')
+  fs.rmSync(resolved, { recursive: true, force: true })
 })
 
 describe('unfinished session activity', () => {
-  it.each(['complete', 'exit'] as const)('persists script-only file changes when the prompt ends by %s', async (ending) => {
+  it.each([
+    { ending: 'complete', repository: true }, { ending: 'exit', repository: true },
+    { ending: 'complete', repository: false }, { ending: 'exit', repository: false }
+  ])('persists script-only file changes on $ending (Git repository: $repository)', async ({ ending, repository }) => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-desktop-session-files-'))
     let ctx: ReturnType<typeof setup> | undefined
     try {
       isolateGitEnvironment(root)
-      execFileSync('git', ['init', '-q'], { cwd: root, windowsHide: true })
+      if (repository) execFileSync('git', ['init', '-q'], { cwd: root, windowsHide: true })
       fs.writeFileSync(path.join(root, 'file.txt'), 'before\n')
       ctx = setup('cursor', undefined, root)
       await ctx.manager.send({ ...ctx.req, model: 'composer-2.5[fast=true]' })
@@ -134,7 +146,7 @@ describe('unfinished session activity', () => {
     await vi.waitFor(() => expect(createWorktree).toHaveBeenCalledOnce())
     expect(ctx.manager.active()).toEqual(['thread'])
     expect(spawnProvider).not.toHaveBeenCalled()
-    worktree.resolve(os.tmpdir())
+    worktree.resolve(workspace)
     await sending
     await ctx.waitForPrompt()
     expect(ctx.manager.running()).toEqual(['thread'])
@@ -160,7 +172,7 @@ describe('unfinished session activity', () => {
     expect(ctx.manager.active()).toEqual(['thread'])
     expect(ctx.calls.some((call) => call.id === 'permission' || call.id === 'question')).toBe(false)
     ctx.manager.stopAll()
-    expect(ctx.manager.active()).toEqual([])
+    await vi.waitFor(() => expect(ctx.manager.active()).toEqual([]))
   })
 
   it('does not count prepare alone, but includes sends queued behind it', async () => {
@@ -209,7 +221,7 @@ describe('unfinished session activity', () => {
     const queued = ctx.manager.send(ctx.req).catch((error: Error) => error)
     await vi.waitFor(() => expect(createWorktree).toHaveBeenCalledOnce())
     ctx.manager.stopAll()
-    worktree.resolve(os.tmpdir())
+    worktree.resolve(workspace)
     expect(await sending).toMatchObject({ message: '应用正在关闭' })
     expect(await queued).toMatchObject({ message: '应用正在关闭' })
     await expect(ctx.manager.send(ctx.req)).rejects.toThrow('应用正在关闭')

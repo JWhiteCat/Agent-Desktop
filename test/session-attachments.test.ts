@@ -17,6 +17,9 @@ import { SessionManager } from '../src/main/sessions'
 import { readCodexUsage } from '../src/main/codex-history'
 import type { CodexUsageTurn } from '../src/main/codex-usage'
 
+// Attachment scenarios do not scan the machine's shared temporary directory.
+vi.mock('../src/main/turn-files', () => ({ snapshotTurnFiles: vi.fn(async () => []), changedTurnFiles: vi.fn(async () => []) }))
+
 const attachmentStore = vi.hoisted(() => ({
   resolveMany: vi.fn(), pathFor: vi.fn(), read: vi.fn(), scopedRead: vi.fn(), retain: vi.fn()
 }))
