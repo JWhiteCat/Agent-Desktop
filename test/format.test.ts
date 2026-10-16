@@ -5,7 +5,7 @@ import { decodeGitPath, quoteGitPath, untrackedGitPaths } from '../src/shared/gi
 import { basename, duration, formatUsd, relativePath, relativeTime, resetStamp, resetsIn, shortPath } from '../src/renderer/src/lib/format'
 import { planPath, planUriOf, summarizeTool, toolDiff } from '../src/renderer/src/lib/tools'
 import { unifiedDiff } from '../src/shared/unified-diff'
-import type { ToolItem } from '../src/shared/types'
+import type { Item, ToolItem } from '../src/shared/types'
 
 describe('format', () => {
   const now = Date.UTC(2026, 8, 25, 8, 0, 0)
@@ -175,6 +175,32 @@ describe('tools and diffs', () => {
     expect(uri).toBe('file:///C:/Users/me/.cursor/plans/Python%20CLI-819cf0af.plan.md')
     expect(planPath(uri!)).toBe('C:\\Users\\me\\.cursor\\plans\\Python CLI-819cf0af.plan.md')
     expect(planPath('file:///home/me/.cursor/plans/a.plan.md')).toBe('/home/me/.cursor/plans/a.plan.md')
+  })
+
+  it('recovers historical shell diffs once, excludes surrounding output, and leaves read commands alone', () => {
+    const diff = unifiedDiff('plugin/plugin.js', 'old\n', 'new\n').text
+    const shell: ToolItem = { id: 's', kind: 'tool', callId: 'c', tool: 'shell', startedAt: 0, status: 'error',
+      args: { command: 'git status --short; git diff --stat; git diff -- plugin/plugin.js; rg --files -g AGENTS.md', cwd: 'C:/game/code' },
+      result: { success: { stdout: ` M plugin/plugin.js\n${diff}\ncommit 12345\n 2 files changed, 15 insertions(+), 15 deletions(-)\n`, exitCode: 1 } } }
+    expect(collectEditedFiles([shell, { ...shell, id: 's2' }], 'C:/game')).toEqual([
+      { path: 'code/plugin/plugin.js', lines: ['@@ -1,1 +1,1 @@', '-old', '+new'], added: 1, removed: 1 }
+    ])
+    expect(collectEditedFiles([{ ...shell, args: { command: 'Get-Content patch.diff' } }])).toEqual([])
+    expect(collectEditedFiles([{ ...shell, args: { command: 'git diff --no-index a.txt b.txt' } }])).toEqual([])
+  })
+
+  it('uses saved turn snapshots without counting tool and shell diffs twice or counting old dirty files', () => {
+    const edit: ToolItem = { id: 'e', kind: 'tool', callId: 'c', tool: 'edit', status: 'success', startedAt: 0,
+      args: { path: 'C:/proj/a.ts', old_string: 'old', new_string: 'new' } }
+    const shell: ToolItem = { ...edit, id: 's', tool: 'shell', args: { command: 'git diff', cwd: 'C:/proj' },
+      result: { success: { stdout: unifiedDiff('dirty.txt', 'before', 'unrelated').text } } }
+    const items: Item[] = [edit, shell, { id: 'r', kind: 'result', isError: false,
+      fileChanges: [{ path: 'C:/proj/a.ts', diff: unifiedDiff('a.ts', 'old', 'final').text }] }]
+    expect(collectEditedFiles(items, 'C:/proj')).toEqual([
+      { path: 'a.ts', lines: ['@@ -1,1 +1,1 @@', '-old', '+final'], added: 1, removed: 1 }
+    ])
+    items.push({ id: 'u2', kind: 'user', text: 'next turn', createdAt: 0 }, { ...edit, id: 'e2' })
+    expect(collectEditedFiles(items, 'C:/proj')[0]).toMatchObject({ path: 'a.ts', added: 2, removed: 2 })
   })
 })
 

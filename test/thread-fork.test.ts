@@ -146,6 +146,46 @@ describe('conversation forks', () => {
   })
 
   describe('weekly estimate preservation when syncing Codex history', () => {
+    it('keeps saved file diffs on the same Codex turn through sync, disk reload, and fork', async () => {
+      const original = source('codex')
+      const saved = store.items(original.id)[2] as ResultItem
+      saved.cli = 'codex'
+      saved.fileChanges = [{ path: 'C:/repo/file.txt', diff: 'diff --git a/file.txt b/file.txt\n@@ -1 +1 @@\n-before\n+after' }]
+      const imported = structuredClone(transcript)
+      imported[2] = { id: 'new-result-id', kind: 'result', cli: 'codex', isError: false, usageId: 'original-usage' }
+      vi.mocked(readCodexTranscript).mockReturnValue(imported)
+      syncFromCli(deps, original.id)
+      expect(imported[2]).toHaveProperty('fileChanges', saved.fileChanges)
+      expect((imported[2] as ResultItem).fileChanges).not.toBe(saved.fileChanges)
+      store.flush()
+      expect(new Store().items(original.id)[2]).toHaveProperty('fileChanges', saved.fileChanges)
+      expect((await forkThread(deps, original.id)).items[2]).toHaveProperty('fileChanges', saved.fileChanges)
+    })
+
+    it('preserves shell snapshots by exact tool call IDs when the CLI has no native result item', () => {
+      const original = source('cursor')
+      const tool: Item = { id: 'tool', kind: 'tool', callId: 'stable-shell-call', tool: 'shell', args: { command: 'script' }, startedAt: 0, status: 'success' }
+      const changes = [{ path: 'C:/repo/file.txt', diff: 'diff --git a/file.txt b/file.txt\n' }]
+      store.setItems(original.id, [transcript[0], tool, { id: 'result', kind: 'result', cli: 'cursor', isError: false, fileChanges: changes }, transcript[3]])
+      const imported: Item[] = [transcript[0], { ...tool, id: 'fresh-tool' }, transcript[3]]
+      vi.mocked(readCliTranscript).mockReturnValue(imported)
+      syncFromCli(deps, original.id)
+      expect(imported[2]).toMatchObject({ kind: 'result', fileChanges: changes })
+      expect(imported[3].id).toBe(transcript[3].id)
+    })
+
+    it('does not move snapshots onto an unrelated turn', () => {
+      const original = source('codex')
+      const saved = store.items(original.id)[2] as ResultItem
+      saved.cli = 'codex'
+      saved.fileChanges = [{ path: 'C:/repo/file.txt', diff: 'diff --git a/file.txt b/file.txt\n' }]
+      const imported = structuredClone(transcript)
+      imported[2] = { id: 'unmatched', kind: 'result', cli: 'codex', isError: false, usageId: 'different-usage' }
+      vi.mocked(readCodexTranscript).mockReturnValue(imported)
+      syncFromCli(deps, original.id)
+      expect(imported.filter((item) => item.kind === 'result').every((item) => !item.fileChanges)).toBe(true)
+    })
+
     const start = { sampledAt: 1_800_000_000_000, weekly: { usedPercent: 37, resetsAt: 1_900_000_000_000 } }
     const complete = { start, end: { ...start, sampledAt: start.sampledAt + 1_000, weekly: { ...start.weekly, usedPercent: 37.5 } }, usedPercent: 0.5 }
 

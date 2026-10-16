@@ -13,6 +13,8 @@ import { StreamReducer } from '../src/main/reducer'
 import { SessionManager } from '../src/main/sessions'
 
 vi.mock('../src/main/skills', () => ({ syncAllManagedSkills: vi.fn() }))
+// Quota lifecycle tests use fake timers; filesystem capture has its own real-Git tests.
+vi.mock('../src/main/turn-files', () => ({ snapshotTurnFiles: vi.fn(async () => []), changedTurnFiles: vi.fn(async () => []) }))
 vi.mock('../src/main/codex-history', () => ({ readCodexUsage: vi.fn(() => []) }))
 vi.mock('../src/main/cli', async (original) => ({
   ...await original<typeof import('../src/main/cli')>(),

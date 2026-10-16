@@ -64,6 +64,47 @@ function preserveQuotaEstimates(previous: Item[], imported: Item[]): void {
   }
 }
 
+/** Tool call IDs survive CLI reloads even for providers without a native result item. */
+function preserveTurnFiles(previous: Item[], imported: Item[], cli: ThreadMeta['cli']): void {
+  const turns = (items: Item[]) => {
+    const groups: Array<{ keys: string[]; result?: ResultItem; end: number }> = []
+    let calls: string[] = []
+    let result: ResultItem | undefined
+    const finish = (end: number) => {
+      const keys: string[] = []
+      if (result?.usageId && result.cli === 'codex') keys.push(`usage:${result.usageId}`)
+      if (calls.length) keys.push(`calls:${JSON.stringify(calls)}`)
+      groups.push({ keys, result, end })
+      calls = []
+      result = undefined
+    }
+    items.forEach((item, index) => {
+      if (item.kind === 'user') finish(index)
+      else if (item.kind === 'tool') calls.push(item.callId)
+      else if (item.kind === 'result') result = item
+    })
+    finish(items.length)
+    return groups
+  }
+  const saved = new Map<string, ResultItem | undefined>()
+  for (const turn of turns(previous)) {
+    if (turn.result?.fileChanges === undefined || (turn.result.cli && turn.result.cli !== cli)) continue
+    for (const key of turn.keys) saved.set(key, saved.has(key) ? undefined : turn.result)
+  }
+  const incoming = turns(imported)
+  const counts = new Map<string, number>()
+  for (const turn of incoming) for (const key of turn.keys) counts.set(key, (counts.get(key) ?? 0) + 1)
+  for (const turn of incoming.reverse()) {
+    const matches = new Set(turn.keys.flatMap((key) => counts.get(key) === 1 && saved.get(key) ? [saved.get(key)!] : []))
+    if (matches.size !== 1) continue
+    const original = [...matches][0]
+    const fileChanges = structuredClone(original.fileChanges!)
+    if (turn.result) turn.result.fileChanges = fileChanges
+    else imported.splice(turn.end, 0, { id: newId(), kind: 'result', isError: original.isError,
+      cli: original.cli, createdAt: original.createdAt, fileChanges })
+  }
+}
+
 /** A CLI transcript may echo a marker, but only this thread's saved turn owns its files. */
 function preserveManagedAttachments(previous: Item[], imported: Item[]): void {
   const uniqueUsers = (items: Item[]): Map<string, UserItem | undefined> => {
@@ -175,6 +216,7 @@ export function syncFromCli(deps: Pick<HistoryDeps, 'store' | 'isRunning'>, thre
   if (!items?.length) return undefined
   const previous = deps.store.items(threadId)
   preserveManagedAttachments(previous, items)
+  preserveTurnFiles(previous, items, cli)
   if (cli === 'codex') preserveQuotaEstimates(previous, items)
   deps.store.setItems(threadId, items)
   const firstUser = items.find((i) => i.kind === 'user')

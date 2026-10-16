@@ -5,7 +5,7 @@ import { t } from '@shared/i18n'
 import { useT } from './i18n'
 import { IconChevronDown, IconChevronRight } from '../components/icons'
 import { relativePath } from './format'
-import { toolDiff, toolPath } from './tools'
+import { shellDiff, toolDiff, toolPath } from './tools'
 
 export interface DiffFile {
   path: string
@@ -117,23 +117,56 @@ export function collectGitFiles(git: Pick<GitDiff, 'diff' | 'status'>): DiffFile
 /** Edits in one turn, grouped by path. Later edits of the same file append. */
 export function collectEditedFiles(items: Item[], cwd?: string): DiffFile[] {
   const byPath = new Map<string, DiffFile>()
-  for (const it of items) {
-    if (it.kind !== 'tool') continue
-    const diff = toolDiff(it)
-    if (!diff) continue
-    for (const file of parseUnifiedDiff(diff)) {
-      const p = relativePath(file.path || toolPath(it) || t('(未知文件)'), cwd).replace(/\\/g, '/')
-      const prev = byPath.get(p)
-      if (!prev) {
-        byPath.set(p, { ...file, path: p })
-        continue
-      }
+  let turn = new Map<string, DiffFile>()
+  let shell = new Map<string, DiffFile>()
+  let hasSnapshot = false
+  const key = (p: string) => relativePath(p, cwd).replace(/\\/g, '/')
+  const append = (map: Map<string, DiffFile>, file: DiffFile) => {
+    const prev = map.get(file.path)
+    if (!prev) map.set(file.path, file)
+    else {
       prev.lines.push(...file.lines)
       prev.added += file.added
       prev.removed += file.removed
       prev.binary = prev.binary || file.binary
     }
   }
+  const flush = () => {
+    if (!hasSnapshot) for (const [p, file] of shell) if (!turn.has(p)) turn.set(p, file)
+    for (const file of turn.values()) append(byPath, file)
+    turn = new Map()
+    shell = new Map()
+    hasSnapshot = false
+  }
+  for (const it of items) {
+    if (it.kind === 'user') { flush(); continue }
+    if (it.kind === 'result') {
+      hasSnapshot ||= it.fileChanges !== undefined
+      for (const change of it.fileChanges ?? []) {
+        const file = parseUnifiedDiff(change.diff)[0]
+        if (file) turn.set(key(change.path), { ...file, path: key(change.path) })
+      }
+      continue
+    }
+    if (it.kind !== 'tool') continue
+    const diff = toolDiff(it)
+    if (diff) {
+      for (const file of parseUnifiedDiff(diff)) {
+        const p = key(file.path || toolPath(it) || t('(未知文件)'))
+        append(turn, { ...file, path: p })
+      }
+    } else {
+      const saved = shellDiff(it)
+      if (!saved) continue
+      for (const file of parseUnifiedDiff(saved)) {
+        const root = typeof it.args?.cwd === 'string' ? it.args.cwd : cwd
+        const p = key(root ? `${root}/${file.path}` : file.path)
+        // Repeated git diff commands observe the same edit; do not add it twice.
+        shell.set(p, { ...file, path: p })
+      }
+    }
+  }
+  flush()
   return [...byPath.values()]
 }
 

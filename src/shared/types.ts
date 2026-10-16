@@ -124,10 +124,18 @@ export interface ToolItem {
   endedAt?: number
 }
 
+export interface FileChange {
+  /** Absolute working file path; diff headers can remain repository-relative. */
+  path: string
+  diff: string
+}
+
 export interface ResultItem {
   id: string
   kind: 'result'
   isError: boolean
+  /** Working-file changes during this turn, including edits made by shell scripts. */
+  fileChanges?: FileChange[]
   durationMs?: number
   /** When this turn finished. Older transcripts omit it; usage stats then use the preceding user message. */
   createdAt?: number

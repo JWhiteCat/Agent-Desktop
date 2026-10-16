@@ -149,7 +149,7 @@ function TurnView({
           onFork={onFork && s.kind === 'assistant' ? () => onFork(s.id) : undefined}
         />
       ))}
-      <TurnFiles steps={turn.steps} cwd={cwd} />
+      <TurnFiles steps={turn.result ? [...turn.steps, turn.result] : turn.steps} cwd={cwd} />
       {turn.result && <ResultFooter item={turn.result} text={finalText} fallbackModel={fallbackModel} cli={cli} />}
     </div>
   )

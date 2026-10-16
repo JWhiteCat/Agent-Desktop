@@ -129,6 +129,44 @@ export function summarizeTool(item: ToolItem): ToolSummary {
 
 const EDIT_TOOLS = new Set(['edit', 'write', 'searchreplace', 'strreplace', 'multiedit', 'applypatch'])
 
+/** Recover historical shell edits only from an explicit Git working-tree diff. */
+export function shellDiff(item: ToolItem): string | undefined {
+  if (!['shell', 'terminal', 'runterminalcommand'].includes(item.tool.toLowerCase().replace(/[^a-z]/g, ''))) return undefined
+  const command = pick(item.args, 'command', 'cmd')
+  if (typeof command !== 'string' || !/(?:^|[;\r\n]|&&|\|\|)\s*git\s+diff(?=\s|$)(?![^;\r\n]*--no-index)/i.test(command)) return undefined
+  const stdout = successOf(item)?.stdout
+  if (typeof stdout !== 'string') return undefined
+  const lines: string[] = []
+  let active = false
+  let old = 0
+  let current = 0
+  for (const line of stdout.split(/\r?\n/)) {
+    if (line.startsWith('diff --git ')) {
+      active = true
+      old = current = 0
+      lines.push(line)
+      continue
+    }
+    if (!active) continue
+    if (line.startsWith('\\ No newline')) { lines.push(line); continue }
+    const hunk = /^@@ -\d+(?:,(\d+))? \+\d+(?:,(\d+))? @@/.exec(line)
+    if (hunk) {
+      old = Number(hunk[1] ?? 1)
+      current = Number(hunk[2] ?? 1)
+    } else if (old > 0 || current > 0) {
+      if (line.startsWith('-')) old--
+      else if (line.startsWith('+')) current--
+      else if (line.startsWith(' ')) { old--; current-- }
+      else { active = false; continue }
+    } else if (!/^(--- |\+\+\+ |index |new file mode |deleted file mode |old mode |new mode |similarity index |rename (?:from|to) |copy (?:from|to) |Binary files |\\ No newline)/.test(line)) {
+      active = false
+      continue
+    }
+    lines.push(line)
+  }
+  return lines.length ? lines.join('\n') : undefined
+}
+
 /** Unified diff from a tool result, or from edit args when the CLI only kept the replacement text. */
 export function toolDiff(item: ToolItem): string | undefined {
   const s = successOf(item)

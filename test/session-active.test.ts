@@ -1,6 +1,9 @@
 import type { ChildProcess } from 'node:child_process'
 import { EventEmitter } from 'node:events'
 import os from 'node:os'
+import fs from 'node:fs'
+import path from 'node:path'
+import { execFileSync } from 'node:child_process'
 import { PassThrough, Writable } from 'node:stream'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_SETTINGS, type CliProvider, type Item, type SendRequest, type ThreadMeta } from '../src/shared/types'
@@ -8,6 +11,8 @@ import { createWorktree } from '../src/main/git'
 import { spawnProvider } from '../src/main/session/provider'
 import { SessionManager } from '../src/main/sessions'
 import type { Store } from '../src/main/store'
+import { isolateGitEnvironment } from './helpers/git-environment'
+import { collectEditedFiles } from '../src/renderer/src/lib/diff'
 
 vi.mock('../src/main/skills', () => ({ syncAllManagedSkills: vi.fn() }))
 vi.mock('../src/main/git', () => ({ createWorktree: vi.fn() }))
@@ -41,7 +46,7 @@ interface RpcMessage {
 
 const managers: SessionManager[] = []
 
-function setup(provider: CliProvider = 'cursor', initialization?: Promise<void>) {
+function setup(provider: CliProvider = 'cursor', initialization?: Promise<void>, cwd = os.tmpdir()) {
   const stdout = new PassThrough()
   const calls: RpcMessage[] = []
   let promptId: number | string | undefined
@@ -70,7 +75,7 @@ function setup(provider: CliProvider = 'cursor', initialization?: Promise<void>)
   const store = {
     dataDir: os.tmpdir(), settings: { ...DEFAULT_SETTINGS },
     thread: (id: string) => id === thread.id ? thread : undefined,
-    project: () => ({ id: 'project', path: os.tmpdir() }),
+    project: () => ({ id: 'project', path: cwd }),
     items: () => items, markItemsDirty: vi.fn(),
     updateThread: vi.fn((_id: string, patch: Partial<ThreadMeta>) => Object.assign(thread, patch))
   }
@@ -91,6 +96,34 @@ afterEach(() => {
 })
 
 describe('unfinished session activity', () => {
+  it.each(['complete', 'exit'] as const)('persists script-only file changes when the prompt ends by %s', async (ending) => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-desktop-session-files-'))
+    let ctx: ReturnType<typeof setup> | undefined
+    try {
+      isolateGitEnvironment(root)
+      execFileSync('git', ['init', '-q'], { cwd: root, windowsHide: true })
+      fs.writeFileSync(path.join(root, 'file.txt'), 'before\n')
+      ctx = setup('cursor', undefined, root)
+      await ctx.manager.send({ ...ctx.req, model: 'composer-2.5[fast=true]' })
+      await ctx.waitForPrompt()
+      fs.writeFileSync(path.join(root, 'file.txt'), 'after\n')
+      if (ending === 'complete') ctx.complete()
+      else ctx.manager.dispose('thread')
+      await vi.waitFor(() => expect(ctx!.finished).toHaveBeenCalledOnce())
+      const reloaded = JSON.parse(JSON.stringify(ctx.items)) as Item[]
+      expect(collectEditedFiles(reloaded, root)).toEqual([
+        { path: 'file.txt', lines: ['@@ -1,1 +1,1 @@', '-before', '+after'], added: 1, removed: 1 }
+      ])
+      expect(ctx.manager.active()).toEqual([])
+    } finally {
+      ctx?.manager.stopAll()
+      vi.unstubAllEnvs()
+      const resolved = path.resolve(root)
+      if (path.dirname(resolved) !== path.resolve(os.tmpdir()) || !path.basename(resolved).startsWith('agent-desktop-session-files-')) throw new Error('Unexpected test directory')
+      fs.rmSync(resolved, { recursive: true, force: true })
+    }
+  })
+
   it('counts a send immediately and throughout worktree startup and execution, then excludes the idle process', async () => {
     const worktree = deferred<string>()
     vi.mocked(createWorktree).mockReturnValue(worktree.promise)

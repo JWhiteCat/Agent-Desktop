@@ -14,6 +14,7 @@ import type { WeeklyQuotaEstimate } from '@shared/turn-quota'
 import { AcpConnection } from './acp'
 import { exitFailureDetail, killTree, stripAnsi } from './cli'
 import { createWorktree } from './git'
+import { changedTurnFiles, snapshotTurnFiles } from './turn-files'
 import { syncAllManagedSkills } from './skills'
 import { newId } from './id'
 import { forkPrompt } from './fork-context'
@@ -71,6 +72,7 @@ interface Run extends InteractionRun {
   attachments?: AttachmentRef[]
   managedMessageId?: string
   userItemId?: string
+  fileSnapshot?: Awaited<ReturnType<typeof snapshotTurnFiles>>
 }
 
 export interface RunFinished {
@@ -693,6 +695,12 @@ export class SessionManager {
       }
       run.weeklyQuotaEstimate = start ? { start } : {}
     }
+    run.fileSnapshot = await snapshotTurnFiles(run.proc.cwd).catch(() => [])
+    if (this.runs.get(threadId) !== run || run.settled) return
+    if (run.stopped) {
+      await this.endRun(threadId, run, null)
+      return
+    }
     const started = Date.now()
     if (run.proc.provider === 'codex') run.codexUsage = new CodexTurnUsageReader(run.proc.sessionId)
     const result = await run.proc.acp.request('session/prompt', {
@@ -735,7 +743,7 @@ export class SessionManager {
     run.planFeedback = undefined
     // The CLI stays up after a turn. Parking it avoids the next message paying
     // for process startup and session/load. A later close still ends the turn.
-    this.endRun(threadId, run, null)
+    await this.endRun(threadId, run, null)
     if (run.codexUsage && !codexUsage?.completed) void this.usage.saveTurnUsage(threadId, resultId, run.codexUsage)
     const thread = this.store.thread(threadId)
     if (planFeedback && !this.shuttingDown && thread?.chatId === run.proc.sessionId
@@ -765,9 +773,10 @@ export class SessionManager {
     return `${prompt}\n\n${label}\nRead the original files at these exact local paths when needed.\n${files.join('\n')}`
   }
 
-  private endRun(threadId: string, run: Run, code: number | null, spawnError?: Error): void {
+  private async endRun(threadId: string, run: Run, code: number | null, spawnError?: Error): Promise<void> {
     if (run.settled) return
     run.settled = true
+    run.acceptUpdates = false
     if (run.killTimer) {
       clearTimeout(run.killTimer)
       run.killTimer = undefined
@@ -779,6 +788,15 @@ export class SessionManager {
       return
     }
 
+    const fileChanges = run.fileSnapshot?.length
+      ? await changedTurnFiles(run.fileSnapshot).catch(() => undefined) : undefined
+    run.fileSnapshot = undefined
+    // A conversation may have been deleted while reading its final files.
+    if (!this.store.thread(threadId)) {
+      this.runs.delete(threadId)
+      this.killProc(run.proc)
+      return
+    }
     const r = run.reducer
     const items = this.store.items(threadId)
     const changed: Item[] = [...r.closeSegments(), ...r.abortRunningTools(), ...abandonQuestions(items)]
@@ -792,6 +810,18 @@ export class SessionManager {
           createdAt: Date.now(), usageId: recorded.usageId, usage: recorded.usage, usageComplete: recorded.completed,
           ...(recorded.quotaSnapshot ? { quotaSnapshot: recorded.quotaSnapshot } : {})
         }))
+      }
+    }
+    if (fileChanges !== undefined) {
+      let result = items.find((item) => item.kind === 'result' && item.id === run.resultId)
+      if (!result && fileChanges.length) {
+        run.resultId = newId()
+        result = r.push({ id: run.resultId, kind: 'result', isError: !r.gotResult && !run.stopped,
+          cli: run.proc.provider, model: r.init.model, createdAt: Date.now() })
+      }
+      if (result?.kind === 'result') {
+        result.fileChanges = fileChanges
+        changed.push(result)
       }
     }
     if (run.stopped) {
