@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm'
 import { QUESTION_BLOCK_LANG } from '@shared/questions'
 import { isLocalFileLink } from '@shared/markdown-links'
 import { openMarkdownLink } from '../../lib/markdown-links'
+import { remarkChineseStrong } from '../../lib/remark-chinese-strong'
 import { Hyperlink } from '../Hyperlink'
 import { CodeBlock } from './primitives'
 import { QuestionBlock } from './Questions'
@@ -50,7 +51,7 @@ export const Markdown = memo(function Markdown({ text }: { text: string }) {
   return (
     <div className="markdown">
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={[remarkGfm, remarkChineseStrong]}
         components={mdComponents}
         urlTransform={(url, key, node) =>
           key === 'href' && node.tagName === 'a' && isLocalFileLink(url, cwd) ? url : defaultUrlTransform(url)

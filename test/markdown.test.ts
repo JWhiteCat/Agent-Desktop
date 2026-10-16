@@ -92,6 +92,83 @@ afterEach(() => {
   setLanguage('system', 'zh-CN')
 })
 
+describe('Chinese strong emphasis', () => {
+  const render = (text: string) => renderToStaticMarkup(createElement(Markdown, { text }))
+
+  it.each([
+    ['**xxx**', '<p><strong>xxx</strong></p>'],
+    ['**中文粗体**', '<p><strong>中文粗体</strong></p>'],
+    ['这是**粗体**文字', '<p>这是<strong>粗体</strong>文字</p>'],
+    ['这是**“重点”**内容', '<p>这是<strong>“重点”</strong>内容</p>'],
+    ['这是**重点：**内容', '<p>这是<strong>重点：</strong>内容</p>'],
+    ['这是**（重点）**内容', '<p>这是<strong>（重点）</strong>内容</p>'],
+    ['这是**「重点」**内容', '<p>这是<strong>「重点」</strong>内容</p>'],
+    ['这是**"重点"**内容', '<p>这是<strong>&quot;重点&quot;</strong>内容</p>'],
+    ['这是**“重点”**。', '<p>这是<strong>“重点”</strong>。</p>'],
+    ['**重点：**内容', '<p><strong>重点：</strong>内容</p>'],
+    ['**粗体和 *斜体***', '<p><strong>粗体和 <em>斜体</em></strong></p>'],
+    ['***粗斜体***', '<p><em><strong>粗斜体</strong></em></p>'],
+    ['这是**“含 *斜体*”**内容', '<p>这是<strong>“含 <em>斜体</em>”</strong>内容</p>']
+  ])('renders %s', (text, expected) => {
+    expect(render(text)).toBe(`<div class="markdown">${expected}</div>`)
+  })
+
+  it('renders multiple strong spans in paragraphs, lists, and GFM tables', () => {
+    const html = render('这是**“甲”**以及**乙：**内容\n\n- 选择**（丙）**继续\n\n| 内容 |\n| --- |\n| 这是**“丁”**内容 |')
+    expect(html.match(/<strong>/g)).toHaveLength(4)
+    expect(html).toContain('<p>这是<strong>“甲”</strong>以及<strong>乙：</strong>内容</p>')
+    expect(html).toContain('<li>选择<strong>（丙）</strong>继续</li>')
+    expect(html).toContain('<td>这是<strong>“丁”</strong>内容</td>')
+  })
+
+  it.each([
+    ['这是\\*\\*“重点”\\*\\*内容', '<p>这是**“重点”**内容</p>'],
+    ['这是**“重点”', '<p>这是**“重点”</p>'],
+    ['这是** 重点 **内容', '<p>这是** 重点 **内容</p>'],
+    ['这是*“重点”*内容', '<p>这是*“重点”*内容</p>'],
+    ['这是__“重点”__内容', '<p>这是__“重点”__内容</p>'],
+    ['word**"bold"**word', '<p>word**&quot;bold&quot;**word</p>'],
+    ['这是`**“重点”**`内容', '<p>这是<code class="inline-code">**“重点”**</code>内容</p>']
+  ])('preserves literal or standard Markdown behavior for %s', (text, expected) => {
+    expect(render(text)).toBe(`<div class="markdown">${expected}</div>`)
+  })
+
+  it('preserves fenced and indented code and link destinations', () => {
+    const literal = '这是**“重点”**内容'
+    for (const text of [`\`\`\`text\n${literal}\n\`\`\``, `    ${literal}`]) {
+      const html = render(text)
+      expect(html).toContain(`<pre><code>${literal}</code></pre>`)
+      expect(html).not.toContain('<strong>')
+    }
+    const html = render('[链接](https://example.com/**bold**/file)')
+    expect(html).toContain('href="https://example.com/**bold**/file"')
+    expect(html).not.toContain('<strong>')
+  })
+
+  it('reparses streamed delimiters without changing saved or copied Markdown', () => {
+    const text = '这是**“重点”**内容'
+    const items: Item[] = [user]
+    const reducer = new StreamReducer(items)
+    for (const chunk of ['这是*', '*“重点”', '*', '*', '内容']) {
+      reducer.handleAcp({ sessionUpdate: 'agent_message_chunk', messageId: 'final', content: { text: chunk } })
+      const html = renderThread(items, true)
+      const reply = items.at(-1) as AssistantItem
+      if (reply.text === '这是**“重点”**' || reply.text === text) {
+        expect(html).toContain('<strong>“重点”</strong>')
+      } else {
+        expect(html).not.toContain('<strong>')
+      }
+    }
+    expect(items.at(-1)).toMatchObject({ kind: 'assistant', text })
+    const before = JSON.stringify(items)
+    items.push(result)
+    const html = renderThread(items)
+    expect(html).toContain('这是<strong>“重点”</strong>内容')
+    expect(actions.copyTexts).toContain(text)
+    expect(JSON.stringify(items.slice(0, -1))).toBe(before)
+  })
+})
+
 describe('assistant messages interrupted by background completions', () => {
   it('joins exact text without mutating history, preserving tools and the final fork checkpoint', () => {
     const tool = background()

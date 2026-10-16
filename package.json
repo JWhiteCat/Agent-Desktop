@@ -89,6 +89,7 @@
     "@agentclientprotocol/codex-acp": "^1.13.1",
     "cross-spawn": "^7.0.6",
     "mermaid": "^12.2.0",
+    "micromark-core-commonmark": "2.0.3",
     "qrcode": "^1.5.4",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
@@ -105,7 +106,9 @@
     "electron": "^44.4.5",
     "electron-builder": "^26.15.3",
     "electron-vite": "^5.0.0",
+    "micromark-util-types": "2.0.2",
     "typescript": "^5.9.3",
+    "unified": "^11.0.5",
     "vite": "^7.3.6",
     "vitest": "^5.0.1"
   }
