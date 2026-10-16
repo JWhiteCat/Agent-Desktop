@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setLanguage } from '../src/shared/i18n'
 import { DEFAULT_THREAD_TOOLBAR_BUTTONS } from '../src/shared/toolbar'
 import { DEFAULT_SETTINGS, type AppState, type ToolbarButton } from '../src/shared/types'
-import { ThreadToolbar, toolbarVisibleCount } from '../src/renderer/src/components/ThreadToolbar'
+import { ThreadToolbar, measureToolbarLayout, toolbarVisibleCount } from '../src/renderer/src/components/ThreadToolbar'
 import { ToolbarSettings, toolbarArgumentLines } from '../src/renderer/src/components/settings/ToolbarSettings'
 import { SettingsDialog } from '../src/renderer/src/components/settings/SettingsDialog'
 
@@ -30,6 +30,15 @@ afterEach(() => {
 })
 
 describe('conversation toolbar', () => {
+  it('ignores unavailable measurements instead of shrinking the toolbar into the Windows caption area', () => {
+    expect(measureToolbarLayout([30, 30, 30, 30, 30], 158)).toEqual({ count: 5, width: 158 })
+    expect(measureToolbarLayout([0, 0, 0, 0, 0], 158)).toBeNull()
+    expect(measureToolbarLayout([30, 30, 30, 30, 30], 0)).toBeNull()
+    expect(measureToolbarLayout([30, NaN], 158)).toBeNull()
+    expect(measureToolbarLayout([], 158)).toBeNull()
+    expect(measureToolbarLayout([30, 30, 30, 30, 30], 95)).toEqual({ count: 1, width: 158 })
+  })
+
   it('renders VS Code immediately before Cursor in the default order', () => {
     const html = toolbar()
     const labels = ['分叉对话（/fork）', '在文件管理器中打开 D:/Project worktree', '在 VS Code 中打开', '在 Cursor 中打开', '变更面板 (Ctrl+Shift+D)']
@@ -81,9 +90,12 @@ describe('toolbar settings', () => {
     expect(html).toContain('添加命令按钮')
   })
 
-  it('shows the toolbar settings category on desktop and omits it entirely remotely', () => {
+  it('keeps appearance as the settings category and exposes no standalone toolbar category', () => {
     const props = { onClose: vi.fn(), onOpenImport: vi.fn() }
-    expect(renderToStaticMarkup(createElement(SettingsDialog, props))).toContain('顶部按钮')
+    const desktop = renderToStaticMarkup(createElement(SettingsDialog, props))
+    expect(desktop).toContain('外观与历史')
+    expect(desktop).not.toContain('顶部按钮')
+    expect(renderToStaticMarkup(createElement(ToolbarSettings))).toContain('顶部按钮')
     vi.stubGlobal('window', { api: { isRemote: true } })
     expect(renderToStaticMarkup(createElement(SettingsDialog, props))).not.toContain('顶部按钮')
     expect(renderToStaticMarkup(createElement(ToolbarSettings))).toBe('')

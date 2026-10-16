@@ -32,6 +32,13 @@ export function toolbarVisibleCount(widths: readonly number[], available: number
   return count
 }
 
+/** Hidden or not-yet-laid-out elements must not replace a usable toolbar width with zero. */
+export function measureToolbarLayout(widths: readonly number[], available: number): { count: number; width: number } | null {
+  if (!widths.length || !(available > 0) || !Number.isFinite(available) || widths.some((width) => !(width > 0) || !Number.isFinite(width))) return null
+  const width = widths.reduce((sum, value) => sum + value, 0) + Math.max(0, widths.length - 1) * 2
+  return { count: toolbarVisibleCount(widths, available), width }
+}
+
 const ICONS: Record<BuiltinToolbarAction, ReactNode> = {
   fork: <IconBranch />, files: <IconFolder />, vscode: <IconVSCode />, cursor: <IconCursor />, changes: <IconDiff />
 }
@@ -51,11 +58,14 @@ export function ThreadToolbar({ buttons, threadId, cwd, modelLabel, canFork, onF
     const element = actions.current
     const measurements = measure.current
     if (!element || !measurements) return
+    let lastWidths: number[] = []
     const update = () => {
       const widths = Array.from(measurements.children, (child) => child.getBoundingClientRect().width)
-      const width = widths.reduce((sum, value) => sum + value, 0) + Math.max(0, widths.length - 1) * 2
-      const count = toolbarVisibleCount(widths, element.getBoundingClientRect().width)
-      setLayout((previous) => previous?.count === count && previous.width === width ? previous : { count, width })
+      const available = element.getBoundingClientRect().width
+      const measured = measureToolbarLayout(widths, available)
+      if (measured) lastWidths = widths
+      const next = measured ?? measureToolbarLayout(lastWidths, available)
+      if (next) setLayout((previous) => previous?.count === next.count && previous.width === next.width ? previous : next)
     }
     update()
     const observer = new ResizeObserver(update)
@@ -124,7 +134,7 @@ export function ThreadToolbar({ buttons, threadId, cwd, modelLabel, canFork, onF
   }))
 
   return (
-    <div className="header-actions thread-toolbar no-drag">
+    <div className={`header-actions thread-toolbar no-drag${configured.length ? ' thread-toolbar-has-actions' : ''}`}>
       {modelLabel && <span className="muted small model-label" title={modelLabel}>{modelLabel}</span>}
       {configured.length > 0 && <div className="thread-toolbar-actions" ref={actions} style={{ width: layout?.width }}>
         {configured.slice(0, count).map((button) => renderButton(button))}

@@ -28,7 +28,6 @@ const SETTINGS_TABS = [
   { id: 'notify', label: '通知' },
   { id: 'grokbot', label: 'Grok Bot' },
   { id: 'remote', label: '远程控制' },
-  { id: 'toolbar', label: '顶部按钮' },
   { id: 'appearance', label: '外观与历史' }
 ] as const
 
@@ -73,7 +72,7 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
   const [modelCli, setModelCli] = useState<CliProvider>(cli)
   const [tab, setTab] = useState<SettingsTab>('cli')
   const [configSource, setConfigSource] = useState<ConfigSource>('app')
-  const tabs = SETTINGS_TABS.filter((item) => !window.api.isRemote || (item.id !== 'remote' && item.id !== 'toolbar'))
+  const tabs = SETTINGS_TABS.filter((item) => item.id !== 'remote' || !window.api.isRemote)
 
   const update = (patch: Partial<Settings>) => window.api.updateSettings(patch)
   const saveCli = async (patch: Partial<Settings>, provider: CliProvider) => {
@@ -202,8 +201,6 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
 
       {tab === 'usage' && <UsageSettings />}
 
-      {tab === 'toolbar' && !window.api.isRemote && <ToolbarSettings />}
-
       {tab === 'defaults' && (
         <section className="settings-section">
           <h4>{t('默认值')}</h4>
@@ -280,6 +277,7 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
             </select>
           </Field>
           <FontSettings />
+          {!window.api.isRemote && <ToolbarSettings />}
           <Field label={t('显示已归档对话')}>
             <input type="checkbox" className="toggle" checked={settings.showArchived} onChange={(e) => update({ showArchived: e.target.checked })} />
           </Field>

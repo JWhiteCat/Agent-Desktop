@@ -61,7 +61,7 @@ export function ToolbarSettings() {
 
   if (window.api.isRemote) return null
   return (
-    <section className="settings-section toolbar-settings">
+    <div className="toolbar-settings">
       <h4>{t('顶部按钮')}</h4>
       <p className="muted small">{t('设置会话顶部按钮的显示和顺序。自定义命令在新的终端窗口运行，输出保留至按 Enter 关闭。')}</p>
       <div className="toolbar-settings-list" aria-label={t('顶部按钮顺序')}>
@@ -97,6 +97,6 @@ export function ToolbarSettings() {
           <button className="btn primary" type="submit" disabled={saving || !editing.name.trim() || !editing.program.trim()}>{saving ? t('保存中…') : t('保存')}</button>
         </div>
       </form>}
-    </section>
+    </div>
   )
 }

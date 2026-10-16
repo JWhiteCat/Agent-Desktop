@@ -1096,6 +1096,9 @@ select {
   max-width: 55%;
   flex: 0 1 auto;
 }
+.header-actions.thread-toolbar-has-actions {
+  min-width: 32px;
+}
 .thread-toolbar .model-label {
   min-width: 0;
   max-width: 130px;
@@ -1140,6 +1143,12 @@ select {
   pointer-events: none;
 }
 
+.toolbar-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 8px;
+}
 .toolbar-settings > p {
   margin: 0;
 }
