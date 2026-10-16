@@ -44,6 +44,12 @@ In a conversation, typing `/` opens a command menu. Arrow keys move through it, 
 
 With full access off, tool permission requests show a choice card and wait for an explicit allow or reject decision. Skipping or stopping does not grant permission. Claude can also require explicit confirmation for operations that its adapter excludes from full access; these requests still show a card.
 
+## Quitting the app
+
+If any conversation on this machine is starting, running, or waiting for a permission decision or an answer, quitting asks you to confirm. Choose **Cancel** to keep the app open and the conversations running, or **Stop conversations and quit** to stop them and exit. With no unfinished conversations, the app quits directly. Tasks started through the remote page receive the same protection; closing that page leaves the host app running.
+
+On macOS, closing the window keeps the app and its conversations running in the background. Confirmation appears when you quit the app.
+
 ## Attachments
 
 Use the + button in the composer, drop files into it, or paste an image from the clipboard. Remove files from their cards before sending. Each file can be up to **10 MiB**; one message can contain up to **10 files** totaling **20 MiB**. Failed uploads and rejected sends keep the draft, and completed uploads are reused on retry.

@@ -9,6 +9,7 @@ import { createIpcHandlers } from './ipc'
 import { flushGrokBotCaches, grokBotFiles } from './ipc/grokbot'
 import { notifyRunFinished } from './notify'
 import { publish } from './publish'
+import { QuitConfirmation } from './quit-confirmation'
 import { RemoteRuntime } from './remote-runtime'
 import { SessionManager } from './sessions'
 import { cleanupAcpUsagePreload } from './acp-usage'
@@ -64,6 +65,18 @@ if (isWin) app.setAppUserModelId(windowsAppId)
 // Cached Grok Bot files, by SHA-256. Only hashes seen in a transcript are served; see grokbot-files.ts.
 protocol.registerSchemesAsPrivileged([{ scheme: GROKBOT_FILE_SCHEME, privileges: { standard: true, secure: true } }])
 
+const quitConfirmation = new QuitConfirmation({
+  getActiveCount: () => sessions?.active().length ?? 0,
+  getWindow: () => win,
+  onQuit: () => {
+    taskbarBadge?.restore()
+    sessions?.stopAll()
+    void remoteRuntime.stop()
+    store?.flush()
+    flushGrokBotCaches()
+  }
+})
+
 app.whenReady().then(() => {
   store = new Store()
   setLanguage(store.settings.language, app.getLocale())
@@ -97,23 +110,15 @@ app.whenReady().then(() => {
   for (const [name, fn] of Object.entries(handlers)) ipcMain.handle(name, (_e, ...args) => fn(...args))
   void remoteRuntime.apply()
   win = createMainWindow()
-  if (isWin) win.once('close', () => taskbarBadge?.restore())
+  quitConfirmation.watchWindow(win)
   taskbarBadge.sync(getTaskCounts(snapshot()).unread)
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       win = createMainWindow()
-      if (isWin) win.once('close', () => taskbarBadge?.restore())
+      quitConfirmation.watchWindow(win)
       taskbarBadge?.sync(getTaskCounts(snapshot()).unread)
     }
   })
-})
-
-app.on('before-quit', () => {
-  taskbarBadge?.restore()
-  sessions?.stopAll()
-  void remoteRuntime.stop()
-  store?.flush()
-  flushGrokBotCaches()
 })
 
 app.on('window-all-closed', () => {

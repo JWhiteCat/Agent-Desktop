@@ -99,6 +99,8 @@ const FORK_TIMEOUT_MS = 60_000
 
 export class SessionManager {
   private runs = new Map<string, Run>()
+  /** Sends queued or still preparing before they hand over to `runs`. */
+  private pendingSends = new Map<string, number>()
   /** Idle or preparing CLI processes, keyed by thread id. Not included in `running()`. */
   private agents = new Map<string, AgentProc>()
   /** Last slash-command list for a thread. Kept after the process exits, until the thread is deleted. */
@@ -124,6 +126,11 @@ export class SessionManager {
     return [...this.runs.keys()]
   }
 
+  /** All unfinished sends, including startup and turns waiting for user input. */
+  active(): string[] {
+    return [...new Set([...this.pendingSends.keys(), ...this.runs.keys()])]
+  }
+
   isRunning(threadId: string): boolean {
     return this.runs.has(threadId)
   }
@@ -134,7 +141,13 @@ export class SessionManager {
   }
 
   send(req: SendRequest): Promise<void> {
-    return this.enqueue(req.threadId, () => this.beginSend(req))
+    const id = req.threadId
+    this.pendingSends.set(id, (this.pendingSends.get(id) ?? 0) + 1)
+    return this.enqueue(id, () => this.beginSend(req)).finally(() => {
+      const remaining = this.pendingSends.get(id)! - 1
+      if (remaining === 0) this.pendingSends.delete(id)
+      else this.pendingSends.set(id, remaining)
+    })
   }
 
   /**
@@ -211,6 +224,7 @@ export class SessionManager {
   }
 
   private async beginSend(req: SendRequest): Promise<void> {
+    if (this.shuttingDown) throw new Error(translate('应用正在关闭'))
     if (this.runs.has(req.threadId)) throw new Error(translate('该对话正在运行中'))
     const thread = this.store.thread(req.threadId)
     if (!thread) throw new Error(translate('对话不存在'))
@@ -234,6 +248,7 @@ export class SessionManager {
     // Cursor creates its own worktree from `--worktree`; the Codex and Claude adapters have no such flag.
     if (provider !== 'cursor' && req.worktree && !thread.chatId && !thread.cwd) {
       cwd = await createWorktree(cwd, worktreeRoot(this.store))
+      if (this.shuttingDown) throw new Error(translate('应用正在关闭'))
       if (!this.store.thread(thread.id)) throw new Error(translate('对话不存在'))
       this.store.updateThread(thread.id, { cwd, worktree: true })
     }
