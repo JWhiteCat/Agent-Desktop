@@ -1237,6 +1237,39 @@ select {
   overflow-x: auto;
   margin: 0.7em 0;
 }
+.mermaid-measure {
+  position: absolute;
+  top: 0;
+  left: -100000px;
+  /* Width-dependent diagrams such as Gantt need a real layout width during measurement. */
+  width: min(800px, 100vw);
+  visibility: hidden;
+  pointer-events: none;
+}
+.mermaid-diagram {
+  padding: 16px;
+  overflow-x: auto;
+  text-align: center;
+  background: var(--bg);
+}
+.mermaid-diagram > svg {
+  display: block;
+  margin: 0 auto;
+  max-width: 100%;
+  height: auto;
+}
+.mermaid-status,
+.mermaid-source summary {
+  padding: 7px 14px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.mermaid-source {
+  border-top: 1px solid var(--border);
+}
+.mermaid-source summary {
+  cursor: pointer;
+}
 .markdown table {
   border-collapse: collapse;
   font-size: 13px;

@@ -7,6 +7,7 @@ import { openMarkdownLink } from '../../lib/markdown-links'
 import { Hyperlink } from '../Hyperlink'
 import { CodeBlock } from './primitives'
 import { QuestionBlock } from './Questions'
+import { MermaidBlock } from './MermaidBlock'
 
 export const MarkdownDirectoryContext = createContext<string | undefined>(undefined)
 
@@ -33,6 +34,7 @@ const mdComponents: Components = {
     const text = String(code?.children ?? '').replace(/\n$/, '')
     const lang = /language-([\w+-]+)/.exec(code?.className ?? '')?.[1]
     if (lang === QUESTION_BLOCK_LANG) return <QuestionBlock body={text} />
+    if (lang?.toLowerCase() === 'mermaid') return <MermaidBlock text={text} />
     return <CodeBlock lang={lang} text={text} />
   },
   code: ({ children }) => <code className="inline-code">{children}</code>,

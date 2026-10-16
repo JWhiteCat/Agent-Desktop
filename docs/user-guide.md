@@ -19,6 +19,8 @@ Opening or refreshing a conversation keeps streamed messages that arrive while h
 
 The Git tab compares against the working files, including edits made after staging in a repository with no commits yet. Diff views preserve content that resembles patch headers, such as SQL `--` comments, and keep file grouping and added/deleted line counts correct.
 
+Markdown code blocks labeled `mermaid` render as diagrams, including in saved conversations and the remote interface. Diagrams follow the light/dark theme, with **View source** and a copy button for the original Mermaid text. While a diagram is loading or if its syntax cannot be rendered, the source stays visible.
+
 Shortcuts (on macOS, Ctrl is ⌘):
 
 | Shortcut | Action |
