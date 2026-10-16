@@ -77,10 +77,7 @@ app.whenReady().then(() => {
     notifyRunFinished(info, { enabled: store.settings.notifyOnComplete, getWindow: () => win, send })
   )
   taskbarBadge = new UnreadTaskbarBadge({
-    getWindow: () => win,
-    appId: windowsAppId,
-    iconPath: process.execPath,
-    cacheDir: path.join(app.getPath('userData'), 'taskbar-icons')
+    getWindow: () => win
   })
   nativeTheme.themeSource = store.settings.theme
   nativeTheme.on('updated', () => syncTitleBar(win))

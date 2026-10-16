@@ -1,83 +1,88 @@
-import { app, nativeImage, type BrowserWindow, type NativeImage } from 'electron'
-import fs from 'node:fs'
-import path from 'node:path'
-import { paintUnreadBadge, pngsToIco, unreadBadgeLabel } from './taskbar-icon'
+import { nativeImage, type BrowserWindow, type NativeImage } from 'electron'
+import { t } from '@shared/i18n'
+import { createUnreadBadgeBitmap, unreadBadgeLabel } from './taskbar-icon'
 
 interface Options {
   getWindow(): BrowserWindow | null
-  appId: string
-  iconPath: string
-  cacheDir: string
 }
 
 /** The main process owns the count, even while the renderer is minimized or disconnected. */
 export class UnreadTaskbarBadge {
-  private base?: NativeImage
-  private loading?: Promise<void>
-  private failed = false
   private stopped = false
   private count = 0
-  private appliedWindow?: BrowserWindow
+  private window?: BrowserWindow
   private appliedLabel?: string
-  private readonly icons = new Map<string, { image: NativeImage; file: string }>()
+  private refreshTimer?: ReturnType<typeof setInterval>
+  private readonly icons = new Map<string, NativeImage>()
+  private readonly refresh = (): void => this.apply(true)
+  private readonly closed = (): void => this.detachWindow()
 
   constructor(private readonly options: Options) {}
 
   sync(count: number): void {
-    if (process.platform !== 'win32' || this.failed || this.stopped) return
+    if (process.platform !== 'win32' || this.stopped) return
     this.count = count
-    if (this.base) this.apply()
-    else if (!this.loading) {
-      this.loading = app.getFileIcon(this.options.iconPath, { size: 'normal' }).then((icon) => {
-        if (icon.isEmpty()) throw new Error('The executable has no readable icon')
-        this.base = icon
-        this.apply()
-      }).catch((error) => {
-        this.failed = true
-        console.error('[taskbar] Icon initialization failed', error)
-      })
-    }
+    this.apply()
   }
 
-  /** Do not leave the running window's relaunch properties pointing at an unread icon on quit. */
   restore(): void {
     this.sync(0)
     this.stopped = true
+    this.detachWindow()
   }
 
-  private apply(): void {
+  private detachWindow(): void {
+    this.window?.removeListener('show', this.refresh)
+    this.window?.removeListener('restore', this.refresh)
+    this.window?.removeListener('closed', this.closed)
+    this.window = undefined
+    this.appliedLabel = undefined
+    if (this.refreshTimer) clearInterval(this.refreshTimer)
+    this.refreshTimer = undefined
+  }
+
+  private apply(force = false): void {
+    if (this.stopped) return
     const win = this.options.getWindow()
-    if (!this.base || !win || win.isDestroyed()) return
+    if (!win || win.isDestroyed()) {
+      this.detachWindow()
+      return
+    }
+    if (win !== this.window) {
+      this.detachWindow()
+      this.window = win
+      win.on('show', this.refresh)
+      win.on('restore', this.refresh)
+      win.once('closed', this.closed)
+    }
     const label = unreadBadgeLabel(this.count)
-    if (win === this.appliedWindow && label === this.appliedLabel) return
+    if (!label && this.refreshTimer) {
+      clearInterval(this.refreshTimer)
+      this.refreshTimer = undefined
+    } else if (label && !this.refreshTimer) {
+      // Explorer can silently discard an update before TaskbarButtonCreated, and
+      // Electron does not replay overlays after Explorer restarts. Reassert while
+      // unread, including when minimized, without depending on renderer activity.
+      this.refreshTimer = setInterval(this.refresh, 5_000)
+      this.refreshTimer.unref()
+    }
+    if (!force && label === this.appliedLabel) return
     try {
-      let icon = this.icons.get(label)
-      if (!icon) {
-        if (!label) icon = { image: this.base, file: this.options.iconPath }
-        else {
-          // Shell icons can carry the display's scale factor. Flatten to 1x so bitmap
-          // dimensions agree with createFromBitmap at 125%, 150%, and 200% scaling.
-          const bitmapBase = nativeImage.createFromBuffer(this.base.toPNG({ scaleFactor: 1 }), { scaleFactor: 1 })
-          const images = [16, 32, 48, 64].map((size) => {
-            const base = bitmapBase.resize({ width: size, height: size, quality: 'best' })
-            const image = nativeImage.createFromBitmap(paintUnreadBadge(base.toBitmap({ scaleFactor: 1 }), size, label), { width: size, height: size, scaleFactor: 1 })
-            return { size, png: image.toPNG() }
-          })
-          fs.mkdirSync(this.options.cacheDir, { recursive: true })
-          const file = path.join(this.options.cacheDir, `unread-${label.replace('+', 'plus')}.ico`)
-          fs.writeFileSync(file, pngsToIco(images))
-          icon = { image: nativeImage.createFromPath(file), file }
-          if (icon.image.isEmpty()) throw new Error('Could not load the generated taskbar icon')
-        }
+      let icon: NativeImage | null = null
+      if (label) {
+        icon = this.icons.get(label) ?? nativeImage.createFromBitmap(createUnreadBadgeBitmap(32, label), {
+          width: 32, height: 32, scaleFactor: 1
+        })
+        if (icon.isEmpty()) throw new Error('Could not create the taskbar overlay')
         this.icons.set(label, icon)
       }
-      win.setIcon(icon.image)
-      win.setAppDetails({ appId: this.options.appId, appIconPath: icon.file, appIconIndex: 0 })
-      this.appliedWindow = win
+      // A native overlay applies to pinned/grouped buttons too. setIcon only
+      // changes the window icon; setAppDetails supplies shortcut relaunch metadata.
+      win.setOverlayIcon(icon, label ? `${label} ${t('未读')}` : '')
       this.appliedLabel = label
     } catch (error) {
-      // A shell or cache error must not interrupt task execution or state broadcasts.
-      console.error('[taskbar] Icon update failed', error)
+      // Shell errors must not interrupt task execution or state broadcasts.
+      console.error('[taskbar] Overlay update failed', error)
     }
   }
 }

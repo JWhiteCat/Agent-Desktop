@@ -1,231 +1,213 @@
-import path from 'node:path'
+import { EventEmitter } from 'node:events'
 import type { BrowserWindow, NativeImage } from 'electron'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { setLanguage } from '../src/shared/i18n'
 import { UnreadTaskbarBadge } from '../src/main/taskbar-badge'
 
-const mocks = vi.hoisted(() => ({
-  getFileIcon: vi.fn(), createFromBitmap: vi.fn(), createFromPath: vi.fn(), createFromBuffer: vi.fn(),
-  mkdirSync: vi.fn(), writeFileSync: vi.fn()
-}))
-vi.mock('electron', () => ({
-  app: { getFileIcon: mocks.getFileIcon },
-  nativeImage: { createFromBitmap: mocks.createFromBitmap, createFromPath: mocks.createFromPath, createFromBuffer: mocks.createFromBuffer }
-}))
-vi.mock('node:fs', () => ({ default: { mkdirSync: mocks.mkdirSync, writeFileSync: mocks.writeFileSync } }))
+const mocks = vi.hoisted(() => ({ createFromBitmap: vi.fn() }))
+vi.mock('electron', () => ({ nativeImage: { createFromBitmap: mocks.createFromBitmap } }))
 
-function image(size = 64, empty = false): NativeImage {
-  return {
-    isEmpty: () => empty,
-    resize: vi.fn(({ width }: { width: number }) => image(width)),
-    toBitmap: () => Buffer.alloc(size * size * 4, 30),
-    toPNG: () => Buffer.from(`png-${size}`)
-  } as unknown as NativeImage
+function image(empty = false): NativeImage {
+  return { isEmpty: () => empty } as NativeImage
 }
 
 function windowMock() {
-  return { isDestroyed: vi.fn(() => false), setIcon: vi.fn(), setAppDetails: vi.fn() }
+  return Object.assign(new EventEmitter(), {
+    isDestroyed: vi.fn(() => false),
+    setOverlayIcon: vi.fn()
+  })
 }
 
 function fixture() {
   const win = windowMock()
   let current = win as typeof win | null
-  const options = {
-    getWindow: () => current as unknown as BrowserWindow | null,
-    appId: 'dev.agentdesktop.app', iconPath: path.resolve('electron.exe'), cacheDir: path.resolve('badge-cache')
-  }
-  return { win, options, badge: new UnreadTaskbarBadge(options), setWindow: (next: typeof win | null) => { current = next } }
-}
-
-function deferred<T>() {
-  let resolve!: (value: T) => void
-  let reject!: (reason: Error) => void
-  const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no })
-  return { promise, resolve, reject }
-}
-
-async function initialized() {
-  await Promise.resolve()
-  await Promise.resolve()
+  const badge = new UnreadTaskbarBadge({ getWindow: () => current as unknown as BrowserWindow | null })
+  return { win, badge, setWindow: (next: typeof win | null) => { current = next } }
 }
 
 describe('unread taskbar badge controller', () => {
   const platform = Object.getOwnPropertyDescriptor(process, 'platform')!
-  let original: NativeImage
   let errors: ReturnType<typeof vi.spyOn>
 
   beforeEach(() => {
     Object.defineProperty(process, 'platform', { ...platform, value: 'win32' })
+    vi.useFakeTimers()
     vi.resetAllMocks()
-    original = image()
-    mocks.getFileIcon.mockResolvedValue(original)
-    mocks.createFromBitmap.mockImplementation((bitmap, { width, height }) => {
-      if (bitmap.length !== width * height * 4) throw new Error('invalid buffer size')
-      return image(width)
-    })
-    mocks.createFromBuffer.mockImplementation(() => image())
-    mocks.createFromPath.mockImplementation(() => image())
+    mocks.createFromBitmap.mockImplementation(() => image())
+    setLanguage('en')
     errors = vi.spyOn(console, 'error').mockImplementation(() => {})
   })
 
   afterEach(() => {
+    vi.clearAllTimers()
+    vi.useRealTimers()
     Object.defineProperty(process, 'platform', platform)
+    setLanguage('system', 'zh-CN')
     vi.restoreAllMocks()
   })
 
-  it('applies the latest unread count after one asynchronous icon initialization', async () => {
-    const pending = deferred<NativeImage>()
-    mocks.getFileIcon.mockReturnValue(pending.promise)
-    const { badge, win, options } = fixture()
-    badge.sync(1)
-    badge.sync(12)
-    badge.sync(100)
-    expect(mocks.getFileIcon).toHaveBeenCalledExactlyOnceWith(options.iconPath, { size: 'normal' })
-    expect(win.setIcon).not.toHaveBeenCalled()
-    pending.resolve(original)
-    await initialized()
-    expect(win.setIcon).toHaveBeenCalledOnce()
-    expect(win.setAppDetails).toHaveBeenCalledExactlyOnceWith({
-      appId: options.appId, appIconPath: path.join(options.cacheDir, 'unread-99plus.ico'), appIconIndex: 0
-    })
-    expect(mocks.createFromBitmap).toHaveBeenCalledTimes(4)
-    expect(mocks.mkdirSync).toHaveBeenCalledExactlyOnceWith(options.cacheDir, { recursive: true })
-  })
-
-  it('normalizes high-DPI shell representations before painting the badge', async () => {
-    // At 150% scaling a resized 16-DIP shell image can carry a 24-pixel bitmap.
-    vi.mocked(original.resize).mockImplementation(({ width }) => image((width ?? 32) * 1.5))
+  it('sets a native taskbar overlay with the unread number and accessible description', () => {
     const { badge, win } = fixture()
     badge.sync(12)
-    await initialized()
+    expect(mocks.createFromBitmap).toHaveBeenCalledOnce()
+    const [bitmap, options] = mocks.createFromBitmap.mock.calls[0]
+    expect(bitmap).toBeInstanceOf(Buffer)
+    expect(bitmap).toHaveLength(32 * 32 * 4)
+    expect(options).toEqual({ width: 32, height: 32, scaleFactor: 1 })
+    expect(win.setOverlayIcon).toHaveBeenCalledExactlyOnceWith(mocks.createFromBitmap.mock.results[0].value, '12 Unread')
     expect(errors).not.toHaveBeenCalled()
-    expect(win.setIcon).toHaveBeenCalledOnce()
-    expect(mocks.createFromBitmap).toHaveBeenCalledTimes(4)
   })
 
-  it.each(['read', 'delete', 'restore'])('restores the executable icon when unread tasks %s to zero', async (action) => {
-    const { badge, win, options } = fixture()
-    badge.sync(12)
-    await initialized()
-    if (action === 'restore') badge.restore()
-    else badge.sync(0)
-    expect(win.setIcon).toHaveBeenLastCalledWith(original)
-    expect(win.setAppDetails).toHaveBeenLastCalledWith({ appId: options.appId, appIconPath: options.iconPath, appIconIndex: 0 })
-    expect(mocks.writeFileSync).toHaveBeenCalledOnce()
-    badge.sync(0)
-    expect(win.setIcon).toHaveBeenCalledTimes(2)
-  })
-
-  it('does not draw a badge when the latest count becomes zero during initialization', async () => {
-    const pending = deferred<NativeImage>()
-    mocks.getFileIcon.mockReturnValue(pending.promise)
-    const { badge, win, options } = fixture()
-    badge.sync(12)
-    badge.sync(0)
-    pending.resolve(original)
-    await initialized()
-    expect(win.setIcon).toHaveBeenCalledExactlyOnceWith(original)
-    expect(win.setAppDetails).toHaveBeenCalledExactlyOnceWith({ appId: options.appId, appIconPath: options.iconPath, appIconIndex: 0 })
-    expect(mocks.writeFileSync).not.toHaveBeenCalled()
-  })
-
-  it('restores the original icon after pending initialization even when state arrives during quit', async () => {
-    const pending = deferred<NativeImage>()
-    mocks.getFileIcon.mockReturnValue(pending.promise)
-    const { badge, win, options } = fixture()
-    badge.sync(1)
-    badge.restore()
-    badge.sync(12)
-    pending.resolve(original)
-    await initialized()
-    expect(win.setIcon).toHaveBeenCalledExactlyOnceWith(original)
-    expect(win.setAppDetails).toHaveBeenCalledExactlyOnceWith({ appId: options.appId, appIconPath: options.iconPath, appIconIndex: 0 })
-    expect(mocks.writeFileSync).not.toHaveBeenCalled()
-  })
-
-  it('ignores later task updates once quitting has restored an initialized icon', async () => {
-    const { badge, win, options } = fixture()
-    badge.sync(1)
-    await initialized()
-    badge.restore()
-    const iconsApplied = win.setIcon.mock.calls.length
-    const detailsApplied = win.setAppDetails.mock.calls.length
-    badge.sync(12)
-    badge.sync(100)
-    expect(win.setIcon).toHaveBeenCalledTimes(iconsApplied)
-    expect(win.setAppDetails).toHaveBeenCalledTimes(detailsApplied)
-    expect(win.setIcon).toHaveBeenLastCalledWith(original)
-    expect(win.setAppDetails).toHaveBeenLastCalledWith({ appId: options.appId, appIconPath: options.iconPath, appIconIndex: 0 })
-    expect(mocks.writeFileSync).toHaveBeenCalledOnce()
-  })
-
-  it('skips the same displayed label and reuses a previously generated icon', async () => {
+  it('caps the displayed count and reuses cached overlays after a count changes back', () => {
     const { badge, win } = fixture()
     badge.sync(100)
-    await initialized()
-    const cappedIcon = win.setIcon.mock.calls[0][0]
+    const cappedIcon = win.setOverlayIcon.mock.calls[0][0]
     badge.sync(1_000)
-    expect(win.setIcon).toHaveBeenCalledOnce()
-    expect(mocks.writeFileSync).toHaveBeenCalledOnce()
+    expect(win.setOverlayIcon).toHaveBeenCalledOnce()
     badge.sync(12)
     badge.sync(100)
-    expect(win.setIcon).toHaveBeenLastCalledWith(cappedIcon)
-    expect(mocks.writeFileSync).toHaveBeenCalledTimes(2)
+    expect(win.setOverlayIcon).toHaveBeenLastCalledWith(cappedIcon, '99+ Unread')
+    expect(mocks.createFromBitmap).toHaveBeenCalledTimes(2)
+    expect(vi.getTimerCount()).toBe(1)
   })
 
-  it('waits for a live window and reapplies the same label to a replacement window', async () => {
+  it.each(['read', 'delete', 'quit'])('clears the native overlay when unread tasks %s to zero', (action) => {
+    const { badge, win } = fixture()
+    badge.sync(12)
+    if (action === 'quit') badge.restore()
+    else badge.sync(0)
+    expect(win.setOverlayIcon).toHaveBeenLastCalledWith(null, '')
+    expect(vi.getTimerCount()).toBe(0)
+    badge.sync(0)
+    vi.advanceTimersByTime(15_000)
+    expect(win.setOverlayIcon).toHaveBeenCalledTimes(2)
+    expect(mocks.createFromBitmap).toHaveBeenCalledOnce()
+  })
+
+  it('clears a zero-count window without generating any bitmap or refresh timer', () => {
+    const { badge, win } = fixture()
+    badge.sync(0)
+    expect(win.setOverlayIcon).toHaveBeenCalledExactlyOnceWith(null, '')
+    expect(mocks.createFromBitmap).not.toHaveBeenCalled()
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it.each(['show', 'restore'])('reapplies the same count when the window emits %s', (event) => {
+    const { badge, win } = fixture()
+    badge.sync(2)
+    const overlay = win.setOverlayIcon.mock.calls[0][0]
+    win.emit(event)
+    expect(win.setOverlayIcon).toHaveBeenLastCalledWith(overlay, '2 Unread')
+    expect(win.setOverlayIcon).toHaveBeenCalledTimes(2)
+    expect(mocks.createFromBitmap).toHaveBeenCalledOnce()
+  })
+
+  it('periodically reasserts the overlay without renderer events while the window is in the background', () => {
+    const { badge, win } = fixture()
+    badge.sync(2)
+    vi.advanceTimersByTime(4_999)
+    expect(win.setOverlayIcon).toHaveBeenCalledOnce()
+    vi.advanceTimersByTime(1)
+    expect(win.setOverlayIcon).toHaveBeenCalledTimes(2)
+    vi.advanceTimersByTime(5_000)
+    expect(win.setOverlayIcon).toHaveBeenCalledTimes(3)
+    expect(mocks.createFromBitmap).toHaveBeenCalledOnce()
+  })
+
+  it('waits for a live window, then applies the count when one is supplied', () => {
     const { badge, win, setWindow } = fixture()
-    win.isDestroyed.mockReturnValue(true)
-    badge.sync(1)
-    await initialized()
-    expect(win.setIcon).not.toHaveBeenCalled()
     setWindow(null)
     badge.sync(1)
-    expect(mocks.writeFileSync).not.toHaveBeenCalled()
-    win.isDestroyed.mockReturnValue(false)
+    expect(mocks.createFromBitmap).not.toHaveBeenCalled()
+    expect(vi.getTimerCount()).toBe(0)
     setWindow(win)
+    win.isDestroyed.mockReturnValue(true)
     badge.sync(1)
-    expect(win.setIcon).toHaveBeenCalledOnce()
+    expect(win.setOverlayIcon).not.toHaveBeenCalled()
+    win.isDestroyed.mockReturnValue(false)
+    badge.sync(1)
+    expect(win.setOverlayIcon).toHaveBeenCalledOnce()
+    expect(vi.getTimerCount()).toBe(1)
+  })
+
+  it('moves refresh listeners and the count to a replacement window', () => {
+    const { badge, win, setWindow } = fixture()
+    badge.sync(1)
     const replacement = windowMock()
     setWindow(replacement)
     badge.sync(1)
-    expect(replacement.setIcon).toHaveBeenCalledExactlyOnceWith(win.setIcon.mock.calls[0][0])
-    expect(mocks.writeFileSync).toHaveBeenCalledOnce()
+    expect(replacement.setOverlayIcon).toHaveBeenCalledExactlyOnceWith(win.setOverlayIcon.mock.calls[0][0], '1 Unread')
+    expect(win.listenerCount('show')).toBe(0)
+    expect(win.listenerCount('restore')).toBe(0)
+    expect(win.listenerCount('closed')).toBe(0)
+    win.emit('show')
+    win.emit('restore')
+    expect(win.setOverlayIcon).toHaveBeenCalledOnce()
+    vi.advanceTimersByTime(5_000)
+    expect(replacement.setOverlayIcon).toHaveBeenCalledTimes(2)
+    expect(vi.getTimerCount()).toBe(1)
+    expect(mocks.createFromBitmap).toHaveBeenCalledOnce()
   })
 
-  it.each(['rejected', 'empty'])('keeps the original icon and logs %s initialization failure once', async (failure) => {
-    if (failure === 'rejected') mocks.getFileIcon.mockRejectedValue(new Error('Icon unavailable'))
-    else mocks.getFileIcon.mockResolvedValue(image(64, true))
+  it('detaches listeners and stops refresh when the window closes', () => {
     const { badge, win } = fixture()
-    expect(() => badge.sync(1)).not.toThrow()
-    await initialized()
+    badge.sync(1)
+    win.isDestroyed.mockReturnValue(true)
+    win.emit('closed')
+    expect(win.listenerCount('show')).toBe(0)
+    expect(win.listenerCount('restore')).toBe(0)
+    expect(win.listenerCount('closed')).toBe(0)
+    expect(vi.getTimerCount()).toBe(0)
+    vi.advanceTimersByTime(15_000)
+    expect(win.setOverlayIcon).toHaveBeenCalledOnce()
+  })
+
+  it('ignores state and window events after quit restores the overlay', () => {
+    const { badge, win } = fixture()
+    badge.sync(1)
+    badge.restore()
     badge.sync(12)
-    expect(errors).toHaveBeenCalledOnce()
-    expect(mocks.getFileIcon).toHaveBeenCalledOnce()
-    expect(win.setIcon).not.toHaveBeenCalled()
-    expect(mocks.writeFileSync).not.toHaveBeenCalled()
+    win.emit('show')
+    win.emit('restore')
+    vi.advanceTimersByTime(15_000)
+    expect(win.setOverlayIcon).toHaveBeenCalledTimes(2)
+    expect(win.setOverlayIcon).toHaveBeenLastCalledWith(null, '')
+    expect(win.listenerCount('show')).toBe(0)
+    expect(win.listenerCount('restore')).toBe(0)
+    expect(vi.getTimerCount()).toBe(0)
   })
 
-  it('treats icon cache failure as nonfatal and retries on the next state update', async () => {
-    mocks.writeFileSync.mockImplementationOnce(() => { throw new Error('Cache not writable') })
+  it.each(['throws', 'empty'])('retries an overlay bitmap that %s without interrupting task updates', (failure) => {
+    if (failure === 'throws') mocks.createFromBitmap.mockImplementationOnce(() => { throw new Error('Bitmap unavailable') })
+    else mocks.createFromBitmap.mockReturnValueOnce(image(true))
     const { badge, win } = fixture()
     expect(() => badge.sync(1)).not.toThrow()
-    await initialized()
     expect(errors).toHaveBeenCalledOnce()
-    expect(win.setIcon).not.toHaveBeenCalled()
-    expect(() => badge.sync(1)).not.toThrow()
-    expect(win.setIcon).toHaveBeenCalledOnce()
-    expect(mocks.getFileIcon).toHaveBeenCalledOnce()
-    expect(mocks.writeFileSync).toHaveBeenCalledTimes(2)
+    expect(win.setOverlayIcon).not.toHaveBeenCalled()
+    badge.sync(1)
+    expect(win.setOverlayIcon).toHaveBeenCalledOnce()
+    expect(mocks.createFromBitmap).toHaveBeenCalledTimes(2)
   })
 
-  it.each(['darwin', 'linux'])('does no native or file work on %s', (platformName) => {
+  it('retries a failed shell update on the background refresh without regenerating the overlay', () => {
+    const { badge, win } = fixture()
+    win.setOverlayIcon.mockImplementationOnce(() => { throw new Error('Taskbar not ready') })
+    expect(() => badge.sync(1)).not.toThrow()
+    expect(errors).toHaveBeenCalledOnce()
+    vi.advanceTimersByTime(5_000)
+    expect(win.setOverlayIcon).toHaveBeenCalledTimes(2)
+    expect(win.setOverlayIcon).toHaveBeenLastCalledWith(mocks.createFromBitmap.mock.results[0].value, '1 Unread')
+    expect(mocks.createFromBitmap).toHaveBeenCalledOnce()
+  })
+
+  it.each(['darwin', 'linux'])('does no native or timer work on %s', (platformName) => {
     Object.defineProperty(process, 'platform', { ...platform, value: platformName })
     const { badge, win } = fixture()
     badge.sync(1)
     badge.restore()
-    expect(mocks.getFileIcon).not.toHaveBeenCalled()
-    expect(mocks.writeFileSync).not.toHaveBeenCalled()
-    expect(win.setIcon).not.toHaveBeenCalled()
-    expect(win.setAppDetails).not.toHaveBeenCalled()
+    expect(mocks.createFromBitmap).not.toHaveBeenCalled()
+    expect(win.setOverlayIcon).not.toHaveBeenCalled()
+    expect(win.listenerCount('show')).toBe(0)
+    expect(vi.getTimerCount()).toBe(0)
   })
 })
