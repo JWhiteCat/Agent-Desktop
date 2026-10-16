@@ -104,6 +104,8 @@ chmod +x release/agent-desktop-*-linux-x86_64.AppImage
 
 Run a focused check with `npm test -- test/claude.test.ts test/turn-usage.test.ts`. These tests isolate Claude discovery from the user's home directory, load the usage preload from paths containing spaces, and clean up their temporary fixtures. Windows-only checks are reported as skipped on other platforms.
 
+Toolbar command checks live in `test/toolbar-terminal.test.ts` and `test/toolbar-runner.test.ts`. They build the standalone runner in a temporary directory and verify literal arguments, Windows `.cmd` shims, startup failures, output, and exit codes. On Windows, setting `AGENT_DESKTOP_CONSOLE_SMOKE=1` opts into a real new-console check that reads the console buffer and sends Enter to close it. Set `AGENT_DESKTOP_CONSOLE_EXECUTABLE` and `AGENT_DESKTOP_CONSOLE_RUNNER` to the packaged executable and its `resources/toolbar-runner.cjs` to repeat that check against an unpacked build. The normal test run does not open terminal windows.
+
 Package targets: Windows NSIS, macOS DMG, and Linux x64 AppImage / Debian (`.deb`).
 
 `npm test -- test/linux-launcher.test.ts test/linux-packaging.test.ts` checks Linux startup, repeated/offline starts, failure handling, package metadata/icons, desktop identity, and the AppImage launcher without downloading packages or launching an agent. A real graphical-session smoke test is still needed for each target distribution.

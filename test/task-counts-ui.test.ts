@@ -6,9 +6,13 @@ import { DEFAULT_SETTINGS, type AppState } from '../src/shared/types'
 import { TaskCounts } from '../src/renderer/src/components/TaskCounts'
 import { Sidebar } from '../src/renderer/src/components/Sidebar'
 
-const { mockState } = vi.hoisted(() => ({ mockState: { app: {} as AppState, view: { kind: 'home' } } }))
+const { mockState } = vi.hoisted(() => ({ mockState: {
+  app: {} as AppState,
+  view: { kind: 'home' } as { kind: 'home' } | { kind: 'thread'; id: string },
+  sidebarReveal: undefined as { threadId: string; token: number } | undefined
+} }))
 vi.mock('../src/renderer/src/store', () => ({
-  addProjectInteractive: vi.fn(), forkThread: vi.fn(), goHome: vi.fn(), openThread: vi.fn(),
+  addProjectInteractive: vi.fn(), collapseAllProjects: vi.fn(), forkThread: vi.fn(), goHome: vi.fn(), openGrokBot: vi.fn(), openNextUnreadThread: vi.fn(), openThread: vi.fn(),
   setState: vi.fn(), syncThreadFromCli: vi.fn(), toast: vi.fn(),
   useStore: (selector: (state: typeof mockState) => unknown) => selector(mockState)
 }))
@@ -16,6 +20,8 @@ vi.mock('../src/renderer/src/store', () => ({
 afterEach(() => {
   setLanguage('system', 'zh-CN')
   vi.unstubAllGlobals()
+  mockState.view = { kind: 'home' }
+  mockState.sidebarReveal = undefined
 })
 
 describe('task count display', () => {
@@ -39,6 +45,18 @@ describe('task count display', () => {
     expect(html).not.toContain('99+')
   })
 
+  it('offers an accessible unread jump button and disables it for zero or pending navigation', () => {
+    setLanguage('en')
+    const render = (unread: number, unreadPending = false) => renderToStaticMarkup(createElement(TaskCounts, {
+      counts: { running: 0, unread }, onOpenUnread: vi.fn(), unreadPending
+    }))
+    expect(render(2)).toContain('aria-label="Go to the next unread conversation (2)"')
+    expect(render(2)).not.toContain('disabled=""')
+    expect(render(0)).toContain('disabled=""')
+    expect(render(2, true)).toContain('disabled=""')
+    expect(render(2, true)).toContain('aria-busy="true"')
+  })
+
   it('shows global counts above Settings while archived and collapsed conversations are hidden', () => {
     setLanguage('en')
     vi.stubGlobal('window', { api: { platform: 'win32' } })
@@ -58,5 +76,38 @@ describe('task count display', () => {
     expect(html).toContain('<span>In progress</span><strong>1</strong>')
     expect(html).toContain('<span>Unread</span><strong>1</strong>')
     expect(html.indexOf('class="task-counts"')).toBeLessThan(html.indexOf('<span>Settings</span>'))
+  })
+
+  it('reveals the selected archived conversation beyond six rows after the sidebar remounts', () => {
+    vi.stubGlobal('window', { api: { platform: 'win32' } })
+    const target = { id: 'target', projectId: 'project', title: 'Archived unread target', mode: 'agent' as const, source: 'app' as const, createdAt: 1, updatedAt: 0, unread: true, archived: true }
+    mockState.app = {
+      projects: [{ id: 'project', name: 'Example', path: '/example', createdAt: 1 }],
+      threads: [
+        ...Array.from({ length: 7 }, (_, index) => ({ ...target, id: `newer-${index}`, title: `Newer ${index}`, archived: false, unread: false, updatedAt: index + 1 })),
+        target,
+        { ...target, id: 'other-archived', title: 'Other archived target' }
+      ],
+      settings: { ...DEFAULT_SETTINGS, showArchived: false }, running: []
+    }
+    mockState.view = { kind: 'thread', id: target.id }
+    mockState.sidebarReveal = { threadId: target.id, token: 1 }
+
+    const html = renderToStaticMarkup(createElement(Sidebar, { onOpenSettings: vi.fn(), onOpenImport: vi.fn() }))
+
+    expect(html).toContain('Archived unread target')
+    expect(html).not.toContain('Other archived target')
+    expect(html).toContain('Newer 0')
+    expect(html).toContain('Newer 6')
+    expect(html).toContain('aria-label="全部折叠"')
+
+    mockState.app = { ...mockState.app, projects: [{ ...mockState.app.projects[0], collapsed: true }] }
+    const collapsedHtml = renderToStaticMarkup(createElement(Sidebar, { onOpenSettings: vi.fn(), onOpenImport: vi.fn() }))
+    expect(collapsedHtml).not.toContain('Archived unread target')
+
+    mockState.app = { ...mockState.app, projects: [{ ...mockState.app.projects[0], collapsed: false }] }
+    mockState.view = { kind: 'home' }
+    const homeHtml = renderToStaticMarkup(createElement(Sidebar, { onOpenSettings: vi.fn(), onOpenImport: vi.fn() }))
+    expect(homeHtml).not.toContain('Archived unread target')
   })
 })

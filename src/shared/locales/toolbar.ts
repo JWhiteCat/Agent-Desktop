@@ -1,0 +1,21 @@
+export const toolbarMessages: Record<string, string> = {
+  '在 VS Code 中打开': 'Open in VS Code',
+  '顶部按钮': 'Toolbar buttons',
+  '变更面板': 'Changes panel',
+  '更多顶部操作': 'More toolbar actions',
+  '顶部按钮顺序': 'Toolbar button order',
+  '设置会话顶部按钮的显示和顺序。自定义命令在新的终端窗口运行，输出保留至按 Enter 关闭。': 'Choose and reorder conversation toolbar buttons. Custom commands run in a new terminal window, with output kept until you press Enter to close it.',
+  '显示 {name}': 'Show {name}',
+  '上移 {name}': 'Move {name} up',
+  '下移 {name}': 'Move {name} down',
+  '编辑 {name}': 'Edit {name}',
+  '删除 {name}': 'Delete {name}',
+  '添加命令按钮': 'Add command button',
+  '编辑命令按钮': 'Edit command button',
+  '按钮名称': 'Button name',
+  '程序路径': 'Program path',
+  '绝对路径或 PATH 中的程序名': 'Absolute path or program name on PATH',
+  '参数（每行一个）': 'Arguments (one per line)',
+  '每个非空行作为一个独立参数，无需给路径加引号。程序与参数支持 {cwd}（会话工作目录）和 {projectPath}（项目根目录）。默认在会话工作目录执行。': 'Each nonempty line is a separate argument; paths do not need quotes. Programs and arguments support {cwd} (conversation working directory) and {projectPath} (project root). Commands run in the conversation working directory.',
+  '保存中…': 'Saving…'
+}

@@ -453,6 +453,24 @@ select {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
+.task-count-button {
+  width: fit-content;
+  border-radius: 5px;
+  color: inherit;
+  text-align: left;
+}
+.task-count-button:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+.task-count-button:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 3px;
+}
+.task-count-button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
 
 /* ---------- buttons ---------- */
 
@@ -1067,6 +1085,134 @@ select {
 }
 .model-label {
   margin-right: 6px;
+}
+
+.thread-view .header-title {
+  flex: 1;
+  overflow: hidden;
+}
+.header-actions.thread-toolbar {
+  min-width: 0;
+  max-width: 55%;
+  flex: 0 1 auto;
+}
+.thread-toolbar .model-label {
+  min-width: 0;
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.thread-toolbar-actions {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 32px;
+  flex: 0 1 auto;
+}
+.thread-toolbar-button {
+  flex: none;
+}
+.icon-btn.thread-toolbar-command {
+  width: auto;
+  max-width: 132px;
+  padding: 0 8px;
+  gap: 6px;
+}
+.thread-toolbar-command svg,
+.thread-toolbar-command .spinner {
+  flex: none;
+}
+.thread-toolbar-command > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.thread-toolbar-measure {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  width: max-content;
+  gap: 2px;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.toolbar-settings > p {
+  margin: 0;
+}
+.toolbar-settings-list {
+  display: flex;
+  flex-direction: column;
+}
+.toolbar-settings-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.toolbar-settings-row > .toggle {
+  flex: none;
+}
+.toolbar-settings-name {
+  min-width: 0;
+  flex: 1;
+}
+.toolbar-settings-name > span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-wrap: anywhere;
+}
+.toolbar-settings-name code {
+  display: block;
+  margin-top: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: calc(11.5px * var(--font-scale));
+}
+.toolbar-settings-controls {
+  display: flex;
+  align-items: center;
+  flex: none;
+  gap: 2px;
+}
+.toolbar-command-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.toolbar-command-form h4,
+.toolbar-command-form p {
+  margin: 0;
+}
+.toolbar-command-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.toolbar-command-form .input {
+  width: 100%;
+}
+.toolbar-command-form textarea.input {
+  min-height: 100px;
+  height: auto;
+  padding: 8px 10px;
+  resize: vertical;
+  font-family: var(--mono);
+}
+.toolbar-command-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .messages {

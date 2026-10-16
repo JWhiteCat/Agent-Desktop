@@ -1,11 +1,11 @@
 import { useT } from '../lib/i18n'
-import { forwardRef, useEffect, useMemo, useRef, useState } from 'react'
+import { forwardRef, useEffect, useMemo, useRef, useState, type Ref } from 'react'
 import type { Project, ThreadMeta } from '@shared/types'
 import { cliTitle, threadCli } from '@shared/types'
 import { displayThreadTitle } from '@shared/thread-title'
 import { getTaskCounts } from '@shared/task-counts'
 import { relativeTime } from '../lib/format'
-import { addProjectInteractive, forkThread, goHome, openGrokBot, openThread, setState, syncThreadFromCli, toast, useStore } from '../store'
+import { addProjectInteractive, collapseAllProjects, forkThread, goHome, openGrokBot, openNextUnreadThread, openThread, setState, syncThreadFromCli, toast, useStore } from '../store'
 import {
   IconArchive,
   IconBot,
@@ -50,9 +50,18 @@ export const Sidebar = forwardRef<HTMLInputElement, Props>(function Sidebar({ on
   const running = useStore((s) => s.app.running)
   const showArchived = useStore((s) => s.app.settings.showArchived)
   const view = useStore((s) => s.view)
+  const sidebarReveal = useStore((s) => s.sidebarReveal)
+  const unreadNavigationPending = useStore((s) => s.unreadNavigationPending)
+  const activeId = view.kind === 'thread' ? view.id : undefined
+  const reveal = sidebarReveal?.threadId === activeId ? sidebarReveal : undefined
+  const revealThread = reveal ? threads.find((thread) => thread.id === reveal.threadId) : undefined
+  const revealProject = projects.find((project) => project.id === revealThread?.projectId)
   const [query, setQuery] = useState('')
   const [editing, setEditing] = useState<string | null>(null)
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
+  const [expanded, setExpanded] = useState<Record<string, boolean>>(() => revealThread ? { [revealThread.projectId]: true } : {})
+  const [collapsing, setCollapsing] = useState(false)
+  const revealedRow = useRef<HTMLDivElement>(null)
+  const scrolledReveal = useRef<number | undefined>(undefined)
   const [, tick] = useState(0)
 
   useEffect(() => {
@@ -60,10 +69,24 @@ export const Sidebar = forwardRef<HTMLInputElement, Props>(function Sidebar({ on
     return () => clearInterval(t)
   }, [])
 
+  useEffect(() => {
+    if (!revealThread || !reveal) return
+    setQuery('')
+    setExpanded((current) => ({ ...current, [revealThread.projectId]: true }))
+  }, [reveal?.token, revealThread?.projectId])
+
+  useEffect(() => {
+    if (!reveal || query.trim() || scrolledReveal.current === reveal.token || !revealedRow.current) return
+    revealedRow.current.scrollIntoView({ block: 'nearest' })
+    scrolledReveal.current = reveal.token
+  }, [reveal?.token, revealProject?.collapsed, expanded, query])
+
   const runningSet = useMemo(() => new Set(running), [running])
   const taskCounts = useMemo(() => getTaskCounts({ threads, running }), [threads, running])
-  const activeId = view.kind === 'thread' ? view.id : undefined
-  const visible = useMemo(() => threads.filter((t) => showArchived || !t.archived), [threads, showArchived])
+  const visible = useMemo(
+    () => threads.filter((thread) => showArchived || !thread.archived || thread.id === revealThread?.id),
+    [threads, showArchived, revealThread?.id]
+  )
 
   const byProject = useMemo(() => {
     const m = new Map<string, ThreadMeta[]>()
@@ -96,6 +119,7 @@ export const Sidebar = forwardRef<HTMLInputElement, Props>(function Sidebar({ on
       running={runningSet.has(t.id)}
       editing={editing === t.id}
       projectName={showProject}
+      rowRef={t.id === revealThread?.id ? revealedRow : undefined}
       onEdit={() => setEditing(t.id)}
       onEditDone={() => setEditing(null)}
     />
@@ -147,6 +171,19 @@ export const Sidebar = forwardRef<HTMLInputElement, Props>(function Sidebar({ on
             <div className="section-title">
               <span>{t('项目')}</span>
               <div className="section-tools">
+                <button
+                  type="button"
+                  className="icon-btn tiny"
+                  title={t('全部折叠')}
+                  aria-label={t('全部折叠')}
+                  disabled={collapsing || unreadNavigationPending || projects.every((project) => project.collapsed)}
+                  onClick={() => {
+                    setCollapsing(true)
+                    void collapseAllProjects().finally(() => setCollapsing(false))
+                  }}
+                >
+                  <IconChevronRight size={14} />
+                </button>
                 <MenuButton
                   className="icon-btn tiny"
                   title={t('更多')}
@@ -216,7 +253,7 @@ export const Sidebar = forwardRef<HTMLInputElement, Props>(function Sidebar({ on
       </div>
 
       <div className="sidebar-bottom">
-        <TaskCounts counts={taskCounts} />
+        <TaskCounts counts={taskCounts} onOpenUnread={() => void openNextUnreadThread()} unreadPending={unreadNavigationPending || collapsing} />
         <button className="nav-btn" onClick={onOpenSettings}>
           <IconSettings />
           <span>{t('设置')}</span>
@@ -335,6 +372,7 @@ function ThreadRow(props: {
   running: boolean
   editing: boolean
   projectName?: string
+  rowRef?: Ref<HTMLDivElement>
   onEdit: () => void
   onEditDone: () => void
 }) {
@@ -392,6 +430,7 @@ function ThreadRow(props: {
   ]
   return (
     <div
+      ref={props.rowRef}
       className={`thread-row ${active ? 'active' : ''} ${thread.archived ? 'archived' : ''}`}
       onClick={() => openThread(thread.id)}
       onDoubleClick={props.onEdit}

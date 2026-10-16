@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { getTaskCounts } from '../src/shared/task-counts'
+import { getNextUnreadThread, getTaskCounts, getUnreadThreads } from '../src/shared/task-counts'
 import type { ThreadMeta } from '../src/shared/types'
 
 function thread(id: string, extra: Partial<ThreadMeta> = {}): ThreadMeta {
@@ -41,5 +41,31 @@ describe('global task counts', () => {
     expect(getTaskCounts({ threads: threads.map((item) => ({ ...item, unread: false })), running: [] }))
       .toEqual({ running: 0, unread: 0 })
     expect(getTaskCounts({ threads: [], running: ['success'] })).toEqual({ running: 0, unread: 0 })
+  })
+
+  it('navigates newest unread first across archives, ignoring pinned and running conversations', () => {
+    const state = {
+      threads: [
+        thread('pinned-old', { pinned: true, unread: true, updatedAt: 1 }),
+        thread('archived-new', { archived: true, unread: true, updatedAt: 3 }),
+        thread('running', { unread: true, updatedAt: 4 }),
+        thread('middle', { unread: true, updatedAt: 2 }),
+        thread('read', { updatedAt: 5 })
+      ],
+      running: ['running']
+    }
+    expect(getUnreadThreads(state).map((item) => item.id)).toEqual(['archived-new', 'middle', 'pinned-old'])
+    expect(getNextUnreadThread(state)?.id).toBe('archived-new')
+    expect(getNextUnreadThread(state, 'archived-new')?.id).toBe('middle')
+    expect(getNextUnreadThread(state, 'middle')?.id).toBe('pinned-old')
+    expect(getNextUnreadThread(state, 'pinned-old')?.id).toBe('archived-new')
+    expect(getNextUnreadThread(state, 'read')?.id).toBe('archived-new')
+  })
+
+  it('retries a sole unread target, deduplicates it, and handles no unread targets', () => {
+    const unread = thread('only', { unread: true })
+    expect(getUnreadThreads({ threads: [unread, { ...unread }], running: [] })).toEqual([unread])
+    expect(getNextUnreadThread({ threads: [unread], running: [] }, unread.id)).toBe(unread)
+    expect(getNextUnreadThread({ threads: [], running: [] })).toBeUndefined()
   })
 })

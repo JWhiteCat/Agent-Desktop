@@ -6,6 +6,7 @@ import { normalizeLanguage } from '@shared/i18n'
 import { normalizeGrokBotNames } from '@shared/grokbot'
 import { normalizePanelWidths } from '@shared/panel-widths'
 import { normalizeFontFamily, normalizeFontSize } from '@shared/appearance'
+import { normalizeToolbarButtons } from '@shared/toolbar'
 import { DEFAULT_SETTINGS, normalizeCliProvider, threadCli, type Item, type Project, type ResultItem, type Settings, type ThreadMeta } from '@shared/types'
 import { newId } from './id'
 import { pathKey, writeTextSafely } from './local-files'
@@ -83,12 +84,14 @@ export class Store {
         skills: normalizeSkills(loaded?.settings?.skills),
         grokbotBots: normalizeGrokBotNames(loaded?.settings?.grokbotBots),
         panelWidths: normalizePanelWidths(loaded?.settings?.panelWidths),
+        threadToolbarButtons: normalizeToolbarButtons(loaded?.settings?.threadToolbarButtons),
         remoteClientId,
         remotePublicSshPort
       }
     }
     if (remoteClientId !== rawClientId || remotePublicSshPort !== rawSshPort
-      || fontFamily !== loaded?.settings?.fontFamily || fontSize !== loaded?.settings?.fontSize) this.flush()
+      || fontFamily !== loaded?.settings?.fontFamily || fontSize !== loaded?.settings?.fontSize
+      || JSON.stringify(this.state.settings.threadToolbarButtons) !== JSON.stringify(loaded?.settings?.threadToolbarButtons)) this.flush()
     if (fs.existsSync(path.join(this.dir, 'attachments'))) {
       try {
         attachmentsFor(this).collectGarbage()
@@ -150,6 +153,13 @@ export class Store {
     for (const key of Object.keys(patch) as (keyof Project)[]) {
       if (patch[key] === undefined) delete p[key]
     }
+    this.scheduleSave()
+  }
+
+  collapseAllProjects(): void {
+    const expanded = this.state.projects.filter((project) => !project.collapsed)
+    if (!expanded.length) return
+    for (const project of expanded) project.collapsed = true
     this.scheduleSave()
   }
 

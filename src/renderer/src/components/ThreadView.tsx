@@ -5,14 +5,15 @@ import { displayThreadTitle } from '@shared/thread-title'
 import { isBackgroundAgentItem, mergeInterruptedAssistantMessages } from '@shared/transcript'
 import { cliTitle, threadCli, type AssistantItem, type CliProvider, type Item, type ResultItem, type ThreadMeta, type ToolItem, type UserItem } from '@shared/types'
 import { DiffFileView, collectEditedFiles } from '../lib/diff'
-import { duration, shortPath } from '../lib/format'
+import { duration } from '../lib/format'
 import { planPath, planUriOf } from '../lib/tools'
 import { defaultModelFor, favoritesFor, modelForChat, projectModelFor } from '../lib/model-prefs'
 import { chatModel, cliCommands, forkThread, prepareCommands, sendMessage, setCliProvider, useStore } from '../store'
 import { markDisplayedThreadRead } from '../store/threads'
 import { Composer, type ComposerHandle } from './Composer'
 import { FindBar } from './FindBar'
-import { IconBranch, IconChevronDown, IconChevronRight, IconCursor, IconDiff, IconFolder, Spinner } from './icons'
+import { IconBranch, IconChevronDown, IconChevronRight, Spinner } from './icons'
+import { ThreadToolbar } from './ThreadToolbar'
 import { ResultFooter, StepItem, TurnActionsProvider, UserMessage, type TurnActions } from './Items'
 import { MarkdownDirectoryContext } from './items/Markdown'
 
@@ -265,25 +266,8 @@ export function ThreadView({ thread, changesOpen, onToggleChanges }: Props) {
           <span className="badge">{cliTitle(cli)}</span>
           {thread.source === 'cli' && <span className="badge">{t('CLI 导入')}</span>}
         </div>
-        <div className="header-actions no-drag">
-          {thread.modelLabel && <span className="muted small model-label">{thread.modelLabel}</span>}
-          <button className="icon-btn" title={t('分叉对话（/fork）')} disabled={running || !items?.length} onClick={() => void forkThread(thread.id)}>
-            <IconBranch />
-          </button>
-          {!window.api.isRemote && (
-            <>
-              <button className="icon-btn" title={t('在文件管理器中打开 {path}', { path: shortPath(cwd) })} onClick={() => window.api.openPath(cwd)}>
-                <IconFolder />
-              </button>
-              <button className="icon-btn" title={t('在 Cursor 中打开')} onClick={() => window.api.openInEditor(cwd)}>
-                <IconCursor />
-              </button>
-            </>
-          )}
-          <button className={`icon-btn ${changesOpen ? 'active' : ''}`} title={t('变更面板 (Ctrl+Shift+D)')} onClick={onToggleChanges}>
-            <IconDiff />
-          </button>
-        </div>
+        <ThreadToolbar buttons={settings.threadToolbarButtons} threadId={thread.id} cwd={cwd} modelLabel={thread.modelLabel}
+          canFork={!running && !!items?.length} onFork={() => void forkThread(thread.id)} changesOpen={changesOpen} onToggleChanges={onToggleChanges} />
       </header>
 
       <FindBar scope={view} body={body} scroller={scroller} />

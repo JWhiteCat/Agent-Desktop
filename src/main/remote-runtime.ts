@@ -1,6 +1,7 @@
 import { t as translate, type LocalizedMessage } from '@shared/i18n'
 import path from 'node:path'
 import type { AppState, RemoteInfo, Settings } from '@shared/types'
+import { normalizeToolbarButtons } from '@shared/toolbar'
 import { lanAddresses, newRemoteToken, RemoteServer, type Handler } from './remote'
 import {
   newRemoteClientId,
@@ -16,7 +17,10 @@ import {
 import type { Store } from './store'
 
 export function remoteSafeSettings(s: Settings): Settings {
-  return { ...s, apiKey: '', codexApiKey: '', claudeApiKey: '', remoteToken: '' }
+  return {
+    ...s, apiKey: '', codexApiKey: '', claudeApiKey: '', remoteToken: '',
+    threadToolbarButtons: normalizeToolbarButtons(s.threadToolbarButtons).filter((button) => button.kind === 'builtin')
+  }
 }
 
 export function remoteSafeState(state: AppState): AppState {
@@ -28,6 +32,7 @@ const REMOTE_BLOCKED = new Set([
   'remote:info',
   'remote:resetToken',
   'attachment:open',
+  'shell:runToolbarCommand',
   'grokbot:attachmentSave',
   'grokbot:attachmentReveal'
 ])
@@ -42,7 +47,8 @@ const REMOTE_ONLY_DESKTOP_SETTINGS: (keyof Settings)[] = [
   'remotePublicSshPort',
   'remotePublicPort',
   // The remote web client keeps its own panel widths in its browser.
-  'panelWidths'
+  'panelWidths',
+  'threadToolbarButtons'
 ]
 
 /** What a phone browser may call: no native dialogs, no remote-control settings, no secrets. */

@@ -104,6 +104,8 @@ chmod +x release/agent-desktop-*-linux-x86_64.AppImage
 
 可用 `npm test -- test/claude.test.ts test/turn-usage.test.ts` 定向检查。这些测试将 Claude 检测与用户主目录隔离，覆盖含空格路径下的用量 preload 加载，并清理临时夹具。仅适用于 Windows 的检查在其他平台会明确标为跳过。
 
+顶部命令的测试位于 `test/toolbar-terminal.test.ts` 和 `test/toolbar-runner.test.ts`：在临时目录构建独立 runner，验证参数原文、Windows `.cmd` 启动器、启动失败、输出与退出码。Windows 下设置 `AGENT_DESKTOP_CONSOLE_SMOKE=1` 可额外开启真实新终端检查，读取控制台缓冲区并发送 Enter 正常关闭。将 `AGENT_DESKTOP_CONSOLE_EXECUTABLE` 和 `AGENT_DESKTOP_CONSOLE_RUNNER` 分别设为打包后的程序和 `resources/toolbar-runner.cjs` 路径，可对未封装构建重复该检查。普通测试不会弹出终端窗口。
+
 打包目标：Windows NSIS、macOS DMG、Linux x64 AppImage / Debian（`.deb`）。
 
 `npm test -- test/linux-launcher.test.ts test/linux-packaging.test.ts` 检查 Linux 启动、重复/离线启动、错误处理、打包元数据及图标、桌面标识和 AppImage 启动器，不下载安装包或启动代理。每个目标发行版仍需在真实图形会话内进行冒烟测试。

@@ -7,6 +7,14 @@ import type { TurnQuotaSnapshot, TurnQuotaUsage, WeeklyQuotaEstimate } from './t
 import type { CodexSessionUsage, CodexThreadUsage } from './codex-account'
 import type { PanelWidths } from './panel-widths'
 import { DEFAULT_FONT_SIZE } from './appearance'
+import { DEFAULT_THREAD_TOOLBAR_BUTTONS } from './toolbar'
+
+export type EditorId = 'cursor' | 'vscode'
+export type BuiltinToolbarAction = 'fork' | 'files' | 'vscode' | 'cursor' | 'changes'
+
+export type ToolbarButton =
+  | { id: string; visible: boolean; kind: 'builtin'; action: BuiltinToolbarAction }
+  | { id: string; visible: boolean; kind: 'command'; name: string; program: string; args: string[] }
 
 export type AgentMode = 'agent' | 'plan' | 'ask'
 
@@ -281,6 +289,8 @@ export interface Settings {
   grokbotBots: string[]
   /** Desktop widths of the resizable panels, in pixels. Missing panels use their default width. */
   panelWidths: Partial<PanelWidths>
+  /** Ordered conversation-header actions. Custom commands are desktop-only. */
+  threadToolbarButtons: ToolbarButton[]
   /** Expose the LAN server through an SSH reverse tunnel. */
   remotePublicEnabled: boolean
   /** SSH login on the public server. */
@@ -490,6 +500,7 @@ export const DEFAULT_SETTINGS: Settings = {
   remoteClientId: '',
   grokbotBots: [],
   panelWidths: {},
+  threadToolbarButtons: DEFAULT_THREAD_TOOLBAR_BUTTONS.map((button) => ({ ...button })),
   remotePublicEnabled: false,
   remotePublicUser: 'root',
   remotePublicHost: '43.167.166.239',

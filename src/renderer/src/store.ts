@@ -9,9 +9,11 @@ export { errorText, toast } from './store/feedback'
 export {
   addProjectInteractive,
   answerQuestion,
+  collapseAllProjects,
   forkThread,
   goHome,
   openGrokBot,
+  openNextUnreadThread,
   openThread,
   rememberProject,
   sendMessage,

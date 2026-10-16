@@ -155,6 +155,14 @@ export const IconCursor = (p: P) =>
     </>
   ))
 
+export const IconVSCode = (p: P) =>
+  base(p, (
+    <>
+      <path d="m16 3 5 2v14l-5 2-11-9-3 3v-6l3 3 11-9Z" />
+      <path d="M16 3v18M5 12l11-7M5 12l11 7" />
+    </>
+  ))
+
 export function Spinner({ size = 14 }: { size?: number }): React.ReactElement {
   return <span className="spinner" style={{ width: size, height: size }} />
 }

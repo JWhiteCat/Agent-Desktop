@@ -9,6 +9,8 @@ Agent Desktop runs the CLIs on your computer through the [Agent Client Protocol]
 ## Features
 
 - Manage multiple projects and search, pin, archive, and fork conversations
+- Collapse all projects and jump through unread conversations across projects
+- Open workspaces in VS Code or Cursor; customize header buttons and run saved commands in a new terminal
 - Work in Agent, Plan, or Ask mode, with question cards and one-click plan execution
 - Stream replies and tool calls, attach images and files, open local file links, and preview or copy link destinations
 - Use desktop right-click menus to copy selected text and paste into chat and other editable fields

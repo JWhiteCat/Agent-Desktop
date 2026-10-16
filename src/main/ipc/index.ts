@@ -19,7 +19,7 @@ export function createIpcHandlers(deps: IpcDeps): Record<string, Handler> {
     ...usageHandlers(deps),
     ...settingsHandlers(deps),
     ...cliHandlers(deps),
-    ...hostHandlers(),
+    ...hostHandlers(deps),
     ...localConfigHandlers(deps),
     ...grokbotHandlers(deps),
     ...remoteIpcHandlers(deps)

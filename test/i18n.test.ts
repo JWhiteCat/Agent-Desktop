@@ -11,6 +11,9 @@ import { settingsMessages } from '../src/shared/locales/settings'
 import { shellMessages } from '../src/shared/locales/shell'
 import { attachmentBackendMessages } from '../src/shared/locales/attachments-backend'
 import { attachmentsMessages } from '../src/shared/locales/attachments'
+import { toolbarMessages } from '../src/shared/locales/toolbar'
+import { navigationMessages } from '../src/shared/locales/navigation'
+import { terminalMessages } from '../src/shared/locales/terminal'
 import { displayQuotaText, parseCodexQuota, parseCursorQuota, windowLabel } from '../src/shared/quota'
 import type { ResultItem } from '../src/shared/types'
 import { ResultFooter } from '../src/renderer/src/components/items/ResultFooter'
@@ -140,7 +143,7 @@ function sourceFiles(directory: string): string[] {
 
 describe('translation catalogs', () => {
   it('preserves every named parameter in each English catalog entry', () => {
-    const catalogs = { coreMessages, messagesMessages, settingsMessages, shellMessages, attachmentBackendMessages, attachmentsMessages }
+    const catalogs = { coreMessages, messagesMessages, settingsMessages, shellMessages, attachmentBackendMessages, attachmentsMessages, toolbarMessages, navigationMessages, terminalMessages }
     const issues: string[] = []
     for (const [catalogName, catalog] of Object.entries(catalogs)) {
       for (const [source, english] of Object.entries(catalog)) {

@@ -32,6 +32,8 @@ vi.mock('electron', () => ({
   shell: { openExternal: vi.fn() }
 }))
 vi.mock('node:child_process', () => ({ spawn: mocks.spawn }))
+vi.mock('cross-spawn', () => ({ default: mocks.spawn }))
+vi.mock('../src/main/toolbar-terminal', () => ({ findTerminalExecutable: (name: string) => name }))
 vi.mock('../src/main/cli-runtime', () => ({ cliEnvironment: () => mocks.environment }))
 
 const platform = Object.getOwnPropertyDescriptor(process, 'platform')!

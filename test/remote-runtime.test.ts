@@ -18,6 +18,25 @@ function fixture() {
 }
 
 describe('remote settings', () => {
+  it('redacts custom commands, preserves builtin presentation and blocks remote changes and execution', async () => {
+    const { settings, state, update } = fixture()
+    settings.threadToolbarButtons = [
+      { id: 'custom', kind: 'command', visible: true, name: 'Private', program: '/private/program', args: ['private-argument'] },
+      ...settings.threadToolbarButtons.map((button) => ({ ...button, visible: false }))
+    ]
+    const run = vi.fn()
+    const handlers = handlersForRemote({ 'settings:update': update, 'shell:runToolbarCommand': run }, () => state)
+    expect(handlers).not.toHaveProperty('shell:runToolbarCommand')
+    for (const safe of [remoteSafeSettings(settings), remoteSafeState(state).settings, (handlers['state:get']() as AppState).settings]) {
+      expect(safe.threadToolbarButtons).toEqual(settings.threadToolbarButtons.slice(1))
+      expect(JSON.stringify(safe)).not.toContain('private-argument')
+    }
+    await handlers['settings:update']({ threadToolbarButtons: [], theme: 'dark' })
+    expect(update).toHaveBeenCalledExactlyOnceWith({ theme: 'dark' })
+    expect(run).not.toHaveBeenCalled()
+    expect(settings.threadToolbarButtons[0].kind).toBe('command')
+  })
+
   it('redacts every CLI API key from settings, snapshots and state RPC responses', () => {
     const { settings, state, handlers } = fixture()
     for (const safe of [remoteSafeSettings(settings), remoteSafeState(state).settings, (handlers['state:get']() as AppState).settings]) {

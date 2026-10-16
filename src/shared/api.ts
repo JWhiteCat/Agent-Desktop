@@ -5,6 +5,7 @@ import type {
   CliInfo,
   CliProvider,
   CliSession,
+  EditorId,
   GitDiff,
   GrokBotCachedChat,
   GrokBotHistory,
@@ -43,6 +44,7 @@ export interface DesktopApi {
   updateProject(id: string, patch: Partial<Project>): Promise<void>
   removeProject(id: string): Promise<void>
   reorderProjects(ids: string[]): Promise<void>
+  collapseAllProjects(): Promise<void>
   createThread(projectId: string, mode: AgentMode, model: string, force?: boolean, cli?: CliProvider): Promise<ThreadMeta>
   updateThread(id: string, patch: Partial<ThreadMeta>): Promise<void>
   deleteThread(id: string): Promise<void>
@@ -86,7 +88,9 @@ export interface DesktopApi {
   localSkillToggle(id: string, enabled: boolean): Promise<void>
   /** Moves the skill directory to the trash. */
   localSkillDelete(id: string): Promise<void>
-  openInEditor(path: string): Promise<boolean>
+  openInEditor(path: string, editor?: EditorId): Promise<boolean>
+  /** Desktop only: runs a saved visible command for the current conversation in a new terminal. */
+  runToolbarCommand(buttonId: string, threadId: string): Promise<void>
   openExternal(url: string): Promise<void>
   /** Bots cached by the Grok Bot desktop app on the desktop host, plus names added in Settings. */
   grokbotList(): Promise<GrokBotList>

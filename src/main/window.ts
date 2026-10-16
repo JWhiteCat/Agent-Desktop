@@ -1,10 +1,11 @@
 import { app, BrowserWindow, Menu, nativeTheme, shell, type MenuItemConstructorOptions } from 'electron'
-import { spawn } from 'node:child_process'
+import spawn from 'cross-spawn'
 import fs from 'node:fs'
 import path from 'node:path'
 import { t } from '@shared/i18n'
-import type { Settings } from '@shared/types'
+import type { EditorId, Settings } from '@shared/types'
 import { cliEnvironment } from './cli-runtime'
+import { findTerminalExecutable } from './toolbar-terminal'
 
 const isWin = process.platform === 'win32'
 const isMac = process.platform === 'darwin'
@@ -78,11 +79,15 @@ export function createMainWindow(): BrowserWindow {
   return win
 }
 
-export function openInEditor(target: string): Promise<boolean> {
+export function openInEditor(target: string, editor: EditorId = 'cursor'): Promise<boolean> {
+  if (editor !== 'cursor' && editor !== 'vscode') return Promise.resolve(false)
+  const env = cliEnvironment()
+  const executable = findTerminalExecutable(editor === 'vscode' ? 'code' : 'cursor', env)
+  if (!executable) return Promise.resolve(false)
   return new Promise((resolve) => {
-    const child = spawn('cursor', [isWin ? `"${target}"` : target], {
-      shell: isWin,
-      env: cliEnvironment(),
+    const child = spawn(executable, [target], {
+      shell: false,
+      env,
       detached: true,
       stdio: 'ignore',
       windowsHide: true

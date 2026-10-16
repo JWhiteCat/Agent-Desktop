@@ -19,6 +19,9 @@ export interface UIState {
   modelErrorByCli: Record<CliProvider, string>
   toast?: { id: number; text: string; level: 'info' | 'error' }
   lastProjectId?: string
+  unreadNavigationPending?: boolean
+  /** A navigation request, retained while its target is open so a remounted sidebar can reveal it. */
+  sidebarReveal?: { threadId: string; token: number }
 }
 
 export interface SendOptions {
@@ -52,6 +55,10 @@ export function setState(patch: Partial<UIState> | ((s: UIState) => Partial<UISt
   const prevView = state.view
   const next = typeof patch === 'function' ? patch(state) : patch
   state = { ...state, ...next }
+  if (next.view && state.sidebarReveal &&
+    (next.view.kind !== 'thread' || next.view.id !== state.sidebarReveal.threadId)) {
+    state = { ...state, sidebarReveal: undefined }
+  }
   if (next.app) setLanguage(next.app.settings.language, next.app.systemLocale ?? (typeof navigator === 'undefined' ? undefined : navigator.language))
   if (next.view) syncRemoteViewIfEnabled(prevView, state.view)
   for (const l of listeners) l()

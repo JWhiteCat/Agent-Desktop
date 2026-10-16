@@ -91,6 +91,7 @@ export function createWebApi(): DesktopApi {
     updateProject: (id, patch) => call('project:update', id, patch),
     removeProject: (id) => call('project:remove', id),
     reorderProjects: (ids) => call('project:reorder', ids),
+    collapseAllProjects: () => call('project:collapseAll'),
     createThread: (projectId, mode, model, force, cli) => call('thread:create', projectId, mode, model, force, cli),
     updateThread: (id, patch) => call('thread:update', id, patch),
     deleteThread: (id) => call('thread:delete', id),
@@ -126,7 +127,8 @@ export function createWebApi(): DesktopApi {
     localSkillSave: (req) => call('local:skillSave', req),
     localSkillToggle: (id, enabled) => call('local:skillToggle', id, enabled),
     localSkillDelete: (id) => call('local:skillDelete', id),
-    openInEditor: (p) => call('shell:openInEditor', p),
+    openInEditor: (p, editor) => editor === undefined ? call('shell:openInEditor', p) : call('shell:openInEditor', p, editor),
+    runToolbarCommand: () => Promise.reject(new Error(translate('仅桌面端可用'))),
     openExternal: async (url) => {
       window.open(url, '_blank', 'noopener')
     },

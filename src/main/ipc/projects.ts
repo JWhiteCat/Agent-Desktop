@@ -30,6 +30,10 @@ export function projectHandlers(deps: IpcDeps): Record<string, Handler> {
       store.updateProject(id, patch)
       broadcast()
     },
+    'project:collapseAll': () => {
+      store.collapseAllProjects()
+      broadcast()
+    },
     'project:remove': (id: string) => {
       const threads = store.threads.filter((t) => t.projectId === id)
       for (const t of threads) sessions.dispose(t.id)

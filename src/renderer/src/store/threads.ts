@@ -1,5 +1,6 @@
 import type { Item, QuestionAnswer, ThreadMeta } from '@shared/types'
 import { t } from '@shared/i18n'
+import { getNextUnreadThread } from '@shared/task-counts'
 import { errorText, toast } from './feedback'
 import { LAST_PROJECT_KEY } from './persistence'
 import { getState, setState, type SendOptions } from './state'
@@ -25,6 +26,39 @@ function mergeItems(current: Item[], updates: Iterable<Item>): Item[] {
 const itemLoads = new Map<string, { promise: Promise<void>; updates: Map<string, Item> }>()
 const staleItemIds = new Set<string>()
 const readRequests = new Set<string>()
+let sidebarRevealToken = 0
+
+export async function collapseAllProjects(): Promise<void> {
+  setState({ sidebarReveal: undefined })
+  try {
+    await window.api.collapseAllProjects()
+  } catch (err) {
+    toast(errorText(err), 'error')
+  }
+}
+
+/** Navigate once per click; reading remains owned by openThread's foreground guards. */
+export async function openNextUnreadThread(): Promise<void> {
+  const state = getState()
+  if (state.unreadNavigationPending) return
+  const thread = getNextUnreadThread(state.app, state.view.kind === 'thread' ? state.view.id : undefined)
+  if (!thread) return
+  setState({
+    unreadNavigationPending: true,
+    sidebarReveal: { threadId: thread.id, token: ++sidebarRevealToken }
+  })
+  try {
+    const project = state.app.projects.find((project) => project.id === thread.projectId)
+    const results = await Promise.allSettled([
+      openThread(thread.id),
+      project?.collapsed ? window.api.updateProject(project.id, { collapsed: false }) : Promise.resolve()
+    ])
+    const errors = new Set(results.flatMap((result) => result.status === 'rejected' ? [errorText(result.reason)] : []))
+    for (const error of errors) toast(error, 'error')
+  } finally {
+    setState({ unreadNavigationPending: false })
+  }
+}
 
 /** Only an ended conversation actually displayed in the foreground has been read. */
 export async function markDisplayedThreadRead(): Promise<void> {
