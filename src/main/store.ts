@@ -5,6 +5,7 @@ import { normalizeMcpServers, normalizeSkills } from '@shared/agent-config'
 import { normalizeLanguage } from '@shared/i18n'
 import { normalizeGrokBotNames } from '@shared/grokbot'
 import { normalizePanelWidths } from '@shared/panel-widths'
+import { normalizeFontFamily, normalizeFontSize } from '@shared/appearance'
 import { DEFAULT_SETTINGS, normalizeCliProvider, threadCli, type Item, type Project, type ResultItem, type Settings, type ThreadMeta } from '@shared/types'
 import { newId } from './id'
 import { pathKey, writeTextSafely } from './local-files'
@@ -52,6 +53,8 @@ export class Store {
     const remoteClientId = typeof rawClientId === 'string' && validClientId(rawClientId) ? rawClientId : newRemoteClientId()
     const rawSshPort = loaded?.settings?.remotePublicSshPort
     const remotePublicSshPort = typeof rawSshPort === 'number' && Number.isInteger(rawSshPort) && rawSshPort >= 1 && rawSshPort <= 65535 ? rawSshPort : 22
+    const fontFamily = normalizeFontFamily(loaded?.settings?.fontFamily)
+    const fontSize = normalizeFontSize(loaded?.settings?.fontSize)
     this.state = {
       version: 1,
       projects: loaded?.projects ?? [],
@@ -60,6 +63,8 @@ export class Store {
         ...DEFAULT_SETTINGS,
         ...loaded?.settings,
         language: normalizeLanguage(loaded?.settings?.language),
+        fontFamily,
+        fontSize,
         cliProvider: normalizeCliProvider(loaded?.settings?.cliProvider),
         codexPath: typeof loaded?.settings?.codexPath === 'string' ? loaded.settings.codexPath : '',
         codexApiKey: typeof loaded?.settings?.codexApiKey === 'string' ? loaded.settings.codexApiKey : '',
@@ -82,7 +87,8 @@ export class Store {
         remotePublicSshPort
       }
     }
-    if (remoteClientId !== rawClientId || remotePublicSshPort !== rawSshPort) this.flush()
+    if (remoteClientId !== rawClientId || remotePublicSshPort !== rawSshPort
+      || fontFamily !== loaded?.settings?.fontFamily || fontSize !== loaded?.settings?.fontSize) this.flush()
     if (fs.existsSync(path.join(this.dir, 'attachments'))) {
       try {
         attachmentsFor(this).collectGarbage()

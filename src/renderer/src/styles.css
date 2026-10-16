@@ -1,4 +1,5 @@
 :root {
+  --font-scale: 1;
   --font: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable Text', 'Segoe UI', 'PingFang SC', 'Microsoft YaHei UI', system-ui, sans-serif;
   --mono: 'Cascadia Code', 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --header-h: 44px;
@@ -84,7 +85,7 @@ body,
 
 body {
   font-family: var(--font);
-  font-size: 13.5px;
+  font-size: calc(13.5px * var(--font-scale));
   line-height: 1.5;
   color: var(--text);
   background: var(--bg);
@@ -139,11 +140,11 @@ select {
   color: var(--muted);
 }
 .small {
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
 }
 .mono {
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
 }
 .break {
   word-break: break-all;
@@ -246,7 +247,7 @@ select {
 }
 .nav-btn kbd {
   font-family: var(--font);
-  font-size: 11px;
+  font-size: calc(11px * var(--font-scale));
   color: var(--muted);
   opacity: 0;
   transition: opacity 0.15s;
@@ -291,7 +292,7 @@ select {
   justify-content: space-between;
   height: 30px;
   padding: 0 4px 0 10px;
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   color: var(--muted);
 }
 .section-tools {
@@ -375,12 +376,12 @@ select {
 }
 .thread-time {
   flex: none;
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--font-scale));
   color: var(--muted);
 }
 .thread-project {
   color: var(--muted);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
 }
 .unread-dot {
   width: 7px;
@@ -392,7 +393,7 @@ select {
 .show-more {
   display: block;
   padding: 4px 10px 4px 28px;
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   color: var(--muted);
 }
 .show-more:hover {
@@ -402,11 +403,11 @@ select {
 .empty-hint {
   padding: 10px;
   color: var(--muted);
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--font-scale));
 }
 .empty-hint.small {
   padding: 4px 10px 6px 28px;
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
 }
 .link-btn {
   color: var(--blue);
@@ -437,7 +438,7 @@ select {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
   padding: 4px 10px 10px;
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   color: var(--text-2);
 }
 
@@ -508,7 +509,7 @@ select {
   height: 20px;
   padding: 0 7px;
   border-radius: 6px;
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--font-scale));
   color: var(--text-2);
   background: var(--bg-hover);
   border: 1px solid var(--border);
@@ -572,7 +573,7 @@ select {
 }
 .menu-hint {
   color: var(--muted);
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--font-scale));
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -580,7 +581,7 @@ select {
 }
 .menu-check {
   color: var(--text);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
 }
 .menu-sep {
   height: 1px;
@@ -616,7 +617,7 @@ select {
 .model-scope {
   padding: 2px 8px 6px;
   color: var(--muted);
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--font-scale));
 }
 .model-list {
   max-height: 280px;
@@ -638,7 +639,7 @@ select {
 }
 .model-param-label {
   color: var(--muted);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   line-height: 24px;
 }
 .model-param-options {
@@ -652,7 +653,7 @@ select {
   border-radius: 999px;
   background: var(--bg-hover);
   color: var(--text-2);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
 }
 .model-opt:hover:not(:disabled) {
   color: var(--text);
@@ -689,7 +690,7 @@ select {
 }
 .home-title {
   margin: 0;
-  font-size: 26px;
+  font-size: calc(26px * var(--font-scale));
   font-weight: 600;
   letter-spacing: -0.01em;
 }
@@ -733,7 +734,7 @@ select {
   border: 1px solid var(--border);
   text-align: left;
   color: var(--text-2);
-  font-size: 13px;
+  font-size: calc(13px * var(--font-scale));
 }
 .suggestion:hover {
   background: var(--bg-hover);
@@ -796,7 +797,7 @@ select {
 .attachment-drop-hint {
   padding: 4px 0 10px;
   color: var(--text-2);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
 }
 .attachment-list {
   display: flex;
@@ -850,14 +851,14 @@ select {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
 }
 .attachment-meta {
   display: flex;
   align-items: center;
   gap: 4px;
   color: var(--muted);
-  font-size: 10px;
+  font-size: calc(10px * var(--font-scale));
   line-height: 1.3;
 }
 .attachment-remove,
@@ -890,7 +891,7 @@ select {
 }
 .attachment-error {
   padding: 2px 0 8px;
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   overflow-wrap: anywhere;
 }
 .message-attachments {
@@ -914,7 +915,7 @@ select {
   outline: 0;
   background: transparent;
   line-height: 1.55;
-  font-size: 14px;
+  font-size: calc(14px * var(--font-scale));
   padding: 2px 0 6px;
   user-select: text;
 }
@@ -924,7 +925,7 @@ select {
 .composer-hint {
   margin: -2px 0 6px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   line-height: 1.4;
 }
 .command-popover {
@@ -959,7 +960,7 @@ select {
   padding: 0 9px;
   border-radius: 999px;
   color: var(--text-2);
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--font-scale));
   max-width: 260px;
 }
 .pill:hover,
@@ -982,7 +983,7 @@ select {
 }
 .model-meta {
   color: var(--muted);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
 }
 .model-meta::before {
   content: '·';
@@ -1037,7 +1038,7 @@ select {
 }
 .header-title h1 {
   margin: 0;
-  font-size: 14px;
+  font-size: calc(14px * var(--font-scale));
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
@@ -1046,7 +1047,7 @@ select {
 }
 .header-project {
   color: var(--muted);
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--font-scale));
   white-space: nowrap;
 }
 .title-input {
@@ -1105,7 +1106,7 @@ select {
   background: var(--bg-bubble);
   white-space: pre-wrap;
   word-break: break-word;
-  font-size: 14px;
+  font-size: calc(14px * var(--font-scale));
 }
 .msg-actions {
   opacity: 0;
@@ -1126,7 +1127,7 @@ select {
 
 .msg-assistant {
   max-width: 100%;
-  font-size: 14px;
+  font-size: calc(14px * var(--font-scale));
   line-height: 1.65;
   overflow-wrap: break-word;
 }
@@ -1221,7 +1222,7 @@ select {
   justify-content: space-between;
   height: 30px;
   padding: 0 6px 0 12px;
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--font-scale));
   color: var(--muted);
   border-bottom: 1px solid var(--border);
 }
@@ -1230,7 +1231,7 @@ select {
   padding: 10px 14px;
   overflow-x: auto;
   font-family: var(--mono);
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--font-scale));
   line-height: 1.55;
 }
 .table-wrap {
@@ -1261,7 +1262,7 @@ select {
 .mermaid-status,
 .mermaid-source summary {
   padding: 7px 14px;
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   color: var(--muted);
 }
 .mermaid-source {
@@ -1272,7 +1273,7 @@ select {
 }
 .markdown table {
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: calc(13px * var(--font-scale));
 }
 .markdown th,
 .markdown td {
@@ -1285,7 +1286,7 @@ select {
 }
 
 .step {
-  font-size: 13px;
+  font-size: calc(13px * var(--font-scale));
 }
 
 .question-card {
@@ -1296,7 +1297,7 @@ select {
   background: var(--bg-elev);
 }
 .question-title {
-  font-size: 13px;
+  font-size: calc(13px * var(--font-scale));
   font-weight: 600;
 }
 .question-block + .question-block {
@@ -1304,7 +1305,7 @@ select {
 }
 .question-prompt {
   margin: 8px 0 6px;
-  font-size: 13.5px;
+  font-size: calc(13.5px * var(--font-scale));
   line-height: 1.5;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -1312,7 +1313,7 @@ select {
 .question-hint {
   margin-left: 8px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
 }
 .question-options {
   display: flex;
@@ -1355,7 +1356,7 @@ select {
   flex: none;
   width: 14px;
   color: var(--blue);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   line-height: 1.45;
 }
 .question-other-input {
@@ -1394,7 +1395,7 @@ select {
   border-radius: 999px;
   background: var(--accent);
   color: var(--accent-fg);
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--font-scale));
 }
 .question-submit:disabled {
   opacity: 0.35;
@@ -1404,7 +1405,7 @@ select {
   padding: 0 10px;
   border-radius: 999px;
   color: var(--muted);
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--font-scale));
 }
 .question-skip:hover:not(:disabled) {
   color: var(--text);
@@ -1413,11 +1414,11 @@ select {
 .question-status {
   margin-top: 8px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
 }
 .question-loading {
   color: var(--muted);
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--font-scale));
 }
 .plan-card {
   margin: 8px 0 12px;
@@ -1437,13 +1438,13 @@ select {
 .plan-title {
   flex: 1;
   min-width: 0;
-  font-size: 13.5px;
+  font-size: calc(13.5px * var(--font-scale));
   font-weight: 600;
 }
 .plan-overview {
   margin-top: 6px;
   color: var(--muted);
-  font-size: 13px;
+  font-size: calc(13px * var(--font-scale));
   line-height: 1.5;
 }
 .plan-todos {
@@ -1457,7 +1458,7 @@ select {
   padding: 2px 6px 2px 2px;
   border-radius: 6px;
   color: var(--muted);
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--font-scale));
 }
 .plan-toggle:hover {
   color: var(--text);
@@ -1473,7 +1474,7 @@ select {
 .plan-error {
   margin-top: 8px;
   color: var(--red, var(--muted));
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--font-scale));
 }
 .step-head {
   display: inline-flex;
@@ -1509,7 +1510,7 @@ select {
 }
 .step-meta {
   flex: none;
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
 }
 .step.failed .step-verb {
   color: var(--red);
@@ -1520,7 +1521,7 @@ select {
 .thinking-text {
   white-space: pre-wrap;
   color: var(--muted);
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--font-scale));
   border-left: 2px solid var(--border-strong);
   padding-left: 12px;
   max-height: 320px;
@@ -1538,7 +1539,7 @@ select {
   max-height: 360px;
   overflow: auto;
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-word;
@@ -1550,7 +1551,7 @@ select {
 .shell-cmd {
   padding: 8px 12px;
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   border-bottom: 1px solid var(--border);
   white-space: pre-wrap;
   word-break: break-word;
@@ -1574,7 +1575,7 @@ select {
   margin-top: 3px;
   border-radius: 4px;
   border: 1px solid var(--border-strong);
-  font-size: 10px;
+  font-size: calc(10px * var(--font-scale));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1593,7 +1594,7 @@ select {
   gap: 6px;
   padding: 3px 0;
   color: var(--muted);
-  font-size: 13px;
+  font-size: calc(13px * var(--font-scale));
 }
 .worked-toggle:hover {
   color: var(--text);
@@ -1634,7 +1635,7 @@ select {
 .notice {
   padding: 8px 12px;
   border-radius: var(--radius);
-  font-size: 13px;
+  font-size: calc(13px * var(--font-scale));
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -1646,7 +1647,7 @@ select {
   color: var(--red);
   background: var(--del-bg);
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   max-height: 260px;
   overflow: auto;
 }
@@ -1659,7 +1660,7 @@ select {
   align-items: center;
   gap: 8px;
   color: var(--muted);
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--font-scale));
   margin-bottom: 6px;
 }
 
@@ -1669,7 +1670,7 @@ select {
   flex-wrap: wrap;
   gap: 10px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   margin-top: 2px;
   opacity: 0.8;
 }
@@ -1688,7 +1689,7 @@ select {
   color: var(--text);
   border: 1px solid var(--border-strong);
   box-shadow: var(--shadow);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   line-height: 1.45;
   white-space: pre-wrap;
   word-break: break-word;
@@ -1730,7 +1731,7 @@ select {
   padding: 0 10px;
   border-radius: 7px;
   color: var(--muted);
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--font-scale));
 }
 .tab:hover {
   color: var(--text);
@@ -1744,7 +1745,7 @@ select {
   align-items: center;
   gap: 10px;
   padding: 8px 14px;
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   color: var(--muted);
   border-bottom: 1px solid var(--border);
 }
@@ -1767,7 +1768,7 @@ select {
   gap: 6px;
   height: 32px;
   padding: 0 10px;
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   cursor: pointer;
   background: var(--bg-elev);
   position: sticky;
@@ -1790,7 +1791,7 @@ select {
 }
 .diff-lines {
   font-family: var(--mono);
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--font-scale));
   line-height: 1.55;
   overflow-x: auto;
   max-height: 520px;
@@ -1903,7 +1904,7 @@ select {
 }
 .modal-head h3 {
   margin: 0;
-  font-size: 15px;
+  font-size: calc(15px * var(--font-scale));
 }
 .modal-body {
   flex: 1;
@@ -1929,7 +1930,7 @@ select {
 }
 .settings-section h4 {
   margin: 8px 0 6px;
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   color: var(--muted);
   font-weight: 500;
 }
@@ -1980,7 +1981,7 @@ select {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
 }
 .quota-row {
   display: flex;
@@ -1991,7 +1992,7 @@ select {
   display: flex;
   justify-content: space-between;
   gap: 8px;
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   flex-wrap: wrap;
 }
 .quota-bar {
@@ -2044,12 +2045,12 @@ select {
   padding: 8px 10px;
 }
 .usage-stat .label {
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   color: var(--muted);
 }
 .usage-stat .value {
   margin-top: 2px;
-  font-size: 15px;
+  font-size: calc(15px * var(--font-scale));
   font-weight: 500;
 }
 .usage-table-wrap {
@@ -2060,7 +2061,7 @@ select {
 .usage-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
 }
 .usage-table th,
 .usage-table td {
@@ -2082,7 +2083,7 @@ select {
   justify-content: flex-end;
   gap: 8px;
   margin-top: 8px;
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
 }
 .usage-table tr:last-child td {
   border-bottom: 0;
@@ -2093,7 +2094,7 @@ select {
 }
 .usage-note {
   margin: 10px 0 0;
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   line-height: 1.5;
   color: var(--muted);
 }
@@ -2150,12 +2151,12 @@ select {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--muted);
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--font-scale));
 }
 .config-group-title {
   margin: 6px 0 0;
   color: var(--text-2);
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--font-scale));
   font-weight: 600;
 }
 .config-tag {
@@ -2164,18 +2165,18 @@ select {
   border: 1px solid var(--border);
   border-radius: 5px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: calc(11px * var(--font-scale));
   font-weight: normal;
 }
 .config-error {
   color: var(--red);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   word-break: break-all;
 }
 .config-details > summary {
   cursor: pointer;
   color: var(--muted);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   padding: 4px 0;
 }
 .modal.with-nav .config-details .config-list {
@@ -2184,7 +2185,7 @@ select {
 .btn.small {
   height: 26px;
   padding: 0 8px;
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
 }
 .stack-form {
   display: flex;
@@ -2202,7 +2203,7 @@ select {
 }
 .stack-field > span {
   color: var(--muted);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
 }
 .stack-form .input,
 .stack-form .textarea {
@@ -2258,7 +2259,7 @@ select {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--muted);
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--font-scale));
   font-family: var(--mono);
 }
 .field {
@@ -2276,6 +2277,15 @@ select {
   flex: none;
   display: flex;
   justify-content: flex-end;
+}
+.font-settings-control {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+.input.font-size-input {
+  width: 96px;
 }
 .input {
   height: 32px;
@@ -2336,7 +2346,7 @@ select {
 .cli-status {
   margin: 0;
   font-family: var(--mono);
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--font-scale));
   color: var(--text-2);
   white-space: pre-wrap;
 }
@@ -2425,7 +2435,7 @@ select {
   background: var(--accent);
   color: var(--accent-fg);
   box-shadow: var(--shadow);
-  font-size: 13px;
+  font-size: calc(13px * var(--font-scale));
   white-space: pre-wrap;
   animation: fade 0.15s;
 }
@@ -2513,7 +2523,7 @@ select {
   flex: none;
   min-width: 48px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   text-align: right;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
@@ -2525,7 +2535,7 @@ select {
   padding: 0 4px;
   border-radius: 6px;
   color: var(--text-2);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
 }
 .find-toggle:hover {
   background: var(--bg-hover);
@@ -2628,7 +2638,7 @@ body.panel-resizing webview {
   align-items: center;
   justify-content: space-between;
   padding: 0 8px 0 16px;
-  font-size: 13px;
+  font-size: calc(13px * var(--font-scale));
   font-weight: 600;
 }
 .app.sidebar-hidden .grokbot-list-head {
@@ -2667,7 +2677,7 @@ body.panel-resizing webview {
   align-items: center;
   justify-content: center;
   color: #fff;
-  font-size: 13px;
+  font-size: calc(13px * var(--font-scale));
   font-weight: 600;
 }
 .grokbot-row-text {
@@ -2681,7 +2691,7 @@ body.panel-resizing webview {
   display: flex;
   align-items: baseline;
   gap: 6px;
-  font-size: 13px;
+  font-size: calc(13px * var(--font-scale));
 }
 .grokbot-row-name > span:first-child {
   flex: 1;
@@ -2693,7 +2703,7 @@ body.panel-resizing webview {
 .grokbot-row-time,
 .grokbot-row-last {
   color: var(--muted);
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--font-scale));
 }
 .grokbot-row-last {
   overflow: hidden;
@@ -2738,7 +2748,7 @@ body.panel-resizing webview {
   align-items: center;
   gap: 8px;
   color: var(--muted);
-  font-size: 13px;
+  font-size: calc(13px * var(--font-scale));
 }
 .grokbot-notice {
   margin-bottom: 16px;
@@ -2746,13 +2756,13 @@ body.panel-resizing webview {
   border-radius: 8px;
   background: var(--bg-hover);
   color: var(--orange);
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--font-scale));
   line-height: 1.5;
 }
 .grokbot-error {
   margin-top: 12px;
   color: var(--red);
-  font-size: 13px;
+  font-size: calc(13px * var(--font-scale));
 }
 .grokbot-list-actions {
   display: flex;
@@ -2807,7 +2817,7 @@ body.panel-resizing webview {
 }
 .grokbot-attachment-note {
   color: var(--muted);
-  font-size: 11px;
+  font-size: calc(11px * var(--font-scale));
   line-height: 1.4;
 }
 .grokbot-unknown {
@@ -2816,7 +2826,7 @@ body.panel-resizing webview {
 }
 .grokbot-unknown-text {
   color: var(--text-2);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   line-height: 1.5;
 }
 .grokbot-create {
@@ -2858,7 +2868,7 @@ body.panel-resizing webview {
   padding: 4px 4px 4px 8px;
   border-radius: 6px;
   background: var(--bg-hover);
-  font-size: 13px;
+  font-size: calc(13px * var(--font-scale));
 }
 .grokbot-manual-list li span {
   overflow: hidden;
@@ -2899,7 +2909,7 @@ body.panel-resizing webview {
     --traffic-w: 0px;
   }
   body {
-    font-size: 15px;
+    font-size: calc(15px * var(--font-scale));
   }
   .sidebar {
     position: fixed;
@@ -2941,7 +2951,7 @@ body.panel-resizing webview {
     padding: 0 10px calc(10px + env(safe-area-inset-bottom));
   }
   .composer textarea {
-    font-size: 16px;
+    font-size: max(16px, calc(16px * var(--font-scale)));
   }
   .modal-backdrop {
     align-items: stretch;

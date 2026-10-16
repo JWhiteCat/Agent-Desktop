@@ -10,6 +10,7 @@ import { Modal } from '../Modal'
 import { CliCard } from './CliCard'
 import { FavoriteModels } from './FavoriteModels'
 import { Field } from './Field'
+import { FontSettings } from './FontSettings'
 import { GrokBotSettings } from './GrokBotSettings'
 import { LocalMcpSettings } from './LocalMcpSettings'
 import { LocalSkillSettings } from './LocalSkillSettings'
@@ -274,6 +275,7 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
               <option value="light">{t('浅色')}</option>
             </select>
           </Field>
+          <FontSettings />
           <Field label={t('显示已归档对话')}>
             <input type="checkbox" className="toggle" checked={settings.showArchived} onChange={(e) => update({ showArchived: e.target.checked })} />
           </Field>

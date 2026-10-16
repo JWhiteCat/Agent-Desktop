@@ -2,6 +2,7 @@ import { t as translate } from '@shared/i18n'
 import { normalizeMcpServers, normalizeSkills } from '@shared/agent-config'
 import { normalizeGrokBotNames } from '@shared/grokbot'
 import { normalizePanelWidths } from '@shared/panel-widths'
+import { normalizeFontFamily, normalizeFontSize } from '@shared/appearance'
 import { normalizeLanguage, setLanguage } from '@shared/i18n'
 import { isCliProvider, type Settings } from '@shared/types'
 import { syncAllManagedSkills } from '../skills'
@@ -13,6 +14,8 @@ export function settingsHandlers(deps: IpcDeps): Record<string, Handler> {
   return {
     'settings:update': async (patch: Partial<Settings>) => {
       const next: Partial<Settings> = { ...patch }
+      if (Object.hasOwn(patch, 'fontFamily')) next.fontFamily = normalizeFontFamily(patch.fontFamily)
+      if (Object.hasOwn(patch, 'fontSize')) next.fontSize = normalizeFontSize(patch.fontSize)
       if (patch.language !== undefined) next.language = normalizeLanguage(patch.language)
       if (patch.mcpServers !== undefined) next.mcpServers = normalizeMcpServers(patch.mcpServers)
       if (patch.grokbotBots !== undefined) next.grokbotBots = normalizeGrokBotNames(patch.grokbotBots)

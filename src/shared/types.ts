@@ -6,6 +6,7 @@ import type { TokenUsage } from './model-prices'
 import type { TurnQuotaSnapshot, TurnQuotaUsage, WeeklyQuotaEstimate } from './turn-quota'
 import type { CodexSessionUsage, CodexThreadUsage } from './codex-account'
 import type { PanelWidths } from './panel-widths'
+import { DEFAULT_FONT_SIZE } from './appearance'
 
 export type AgentMode = 'agent' | 'plan' | 'ask'
 
@@ -259,6 +260,10 @@ export interface Settings {
   defaultMode: AgentMode
   force: boolean
   theme: 'system' | 'dark' | 'light'
+  /** Installed font family name. Empty uses the system font stack. */
+  fontFamily: string
+  /** Application font size in pixels, from 10 to 24 in half-pixel increments. */
+  fontSize: number
   sandbox: 'default' | 'enabled' | 'disabled'
   showArchived: boolean
   /** Send an OS notification when an agent run finishes. */
@@ -472,6 +477,8 @@ export const DEFAULT_SETTINGS: Settings = {
   defaultMode: 'agent',
   force: false,
   theme: 'system',
+  fontFamily: '',
+  fontSize: DEFAULT_FONT_SIZE,
   sandbox: 'default',
   showArchived: false,
   notifyOnComplete: true,
