@@ -5,7 +5,7 @@ import { cliTitle, threadCli } from '@shared/types'
 import { displayThreadTitle } from '@shared/thread-title'
 import { getTaskCounts } from '@shared/task-counts'
 import { relativeTime } from '../lib/format'
-import { addProjectInteractive, collapseAllProjects, forkThread, goHome, openGrokBot, openNextUnreadThread, openThread, setState, syncThreadFromCli, toast, useStore } from '../store'
+import { addProjectInteractive, collapseAllProjects, forkThread, goHome, openGrokBot, openNextRunningThread, openNextUnreadThread, openThread, setState, syncThreadFromCli, toast, useStore } from '../store'
 import {
   IconArchive,
   IconBot,
@@ -51,7 +51,7 @@ export const Sidebar = forwardRef<HTMLInputElement, Props>(function Sidebar({ on
   const showArchived = useStore((s) => s.app.settings.showArchived)
   const view = useStore((s) => s.view)
   const sidebarReveal = useStore((s) => s.sidebarReveal)
-  const unreadNavigationPending = useStore((s) => s.unreadNavigationPending)
+  const taskNavigationPending = useStore((s) => s.taskNavigationPending)
   const activeId = view.kind === 'thread' ? view.id : undefined
   const reveal = sidebarReveal?.threadId === activeId ? sidebarReveal : undefined
   const revealThread = reveal ? threads.find((thread) => thread.id === reveal.threadId) : undefined
@@ -176,7 +176,7 @@ export const Sidebar = forwardRef<HTMLInputElement, Props>(function Sidebar({ on
                   className="icon-btn tiny"
                   title={t('全部折叠')}
                   aria-label={t('全部折叠')}
-                  disabled={collapsing || unreadNavigationPending || projects.every((project) => project.collapsed)}
+                  disabled={collapsing || taskNavigationPending || projects.every((project) => project.collapsed)}
                   onClick={() => {
                     setCollapsing(true)
                     void collapseAllProjects().finally(() => setCollapsing(false))
@@ -253,7 +253,12 @@ export const Sidebar = forwardRef<HTMLInputElement, Props>(function Sidebar({ on
       </div>
 
       <div className="sidebar-bottom">
-        <TaskCounts counts={taskCounts} onOpenUnread={() => void openNextUnreadThread()} unreadPending={unreadNavigationPending || collapsing} />
+        <TaskCounts
+          counts={taskCounts}
+          onOpenRunning={() => void openNextRunningThread()}
+          onOpenUnread={() => void openNextUnreadThread()}
+          navigationPending={taskNavigationPending || collapsing}
+        />
         <button className="nav-btn" onClick={onOpenSettings}>
           <IconSettings />
           <span>{t('设置')}</span>

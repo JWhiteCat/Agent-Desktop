@@ -19,7 +19,7 @@ export interface UIState {
   modelErrorByCli: Record<CliProvider, string>
   toast?: { id: number; text: string; level: 'info' | 'error' }
   lastProjectId?: string
-  unreadNavigationPending?: boolean
+  taskNavigationPending?: boolean
   /** A navigation request, retained while its target is open so a remounted sidebar can reveal it. */
   sidebarReveal?: { threadId: string; token: number }
 }

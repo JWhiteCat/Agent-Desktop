@@ -13,6 +13,7 @@ export {
   forkThread,
   goHome,
   openGrokBot,
+  openNextRunningThread,
   openNextUnreadThread,
   openThread,
   rememberProject,

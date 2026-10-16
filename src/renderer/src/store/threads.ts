@@ -1,6 +1,6 @@
 import type { Item, QuestionAnswer, ThreadMeta } from '@shared/types'
 import { t } from '@shared/i18n'
-import { getNextUnreadThread } from '@shared/task-counts'
+import { getNextRunningThread, getNextUnreadThread } from '@shared/task-counts'
 import { errorText, toast } from './feedback'
 import { LAST_PROJECT_KEY } from './persistence'
 import { getState, setState, type SendOptions } from './state'
@@ -39,12 +39,21 @@ export async function collapseAllProjects(): Promise<void> {
 
 /** Navigate once per click; reading remains owned by openThread's foreground guards. */
 export async function openNextUnreadThread(): Promise<void> {
+  return openNextTaskThread('unread')
+}
+
+export async function openNextRunningThread(): Promise<void> {
+  return openNextTaskThread('running')
+}
+
+async function openNextTaskThread(kind: 'running' | 'unread'): Promise<void> {
   const state = getState()
-  if (state.unreadNavigationPending) return
-  const thread = getNextUnreadThread(state.app, state.view.kind === 'thread' ? state.view.id : undefined)
+  if (state.taskNavigationPending) return
+  const nextThread = kind === 'running' ? getNextRunningThread : getNextUnreadThread
+  const thread = nextThread(state.app, state.view.kind === 'thread' ? state.view.id : undefined)
   if (!thread) return
   setState({
-    unreadNavigationPending: true,
+    taskNavigationPending: true,
     sidebarReveal: { threadId: thread.id, token: ++sidebarRevealToken }
   })
   try {
@@ -56,7 +65,7 @@ export async function openNextUnreadThread(): Promise<void> {
     const errors = new Set(results.flatMap((result) => result.status === 'rejected' ? [errorText(result.reason)] : []))
     for (const error of errors) toast(error, 'error')
   } finally {
-    setState({ unreadNavigationPending: false })
+    setState({ taskNavigationPending: false })
   }
 }
 

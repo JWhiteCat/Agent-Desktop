@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { getNextUnreadThread, getTaskCounts, getUnreadThreads } from '../src/shared/task-counts'
+import { getNextRunningThread, getNextUnreadThread, getRunningThreads, getTaskCounts, getUnreadThreads } from '../src/shared/task-counts'
 import type { ThreadMeta } from '../src/shared/types'
 
 function thread(id: string, extra: Partial<ThreadMeta> = {}): ThreadMeta {
@@ -67,5 +67,36 @@ describe('global task counts', () => {
     expect(getUnreadThreads({ threads: [unread, { ...unread }], running: [] })).toEqual([unread])
     expect(getNextUnreadThread({ threads: [unread], running: [] }, unread.id)).toBe(unread)
     expect(getNextUnreadThread({ threads: [], running: [] })).toBeUndefined()
+  })
+
+  it('cycles through running conversations across projects and archives, ignoring pinning and stale IDs', () => {
+    const archived = thread('archived-new', { projectId: 'other', archived: true, updatedAt: 3 })
+    const state = {
+      threads: [
+        thread('pinned-old', { pinned: true, updatedAt: 1 }),
+        archived, { ...archived },
+        thread('waiting-for-answer', { updatedAt: 2 }),
+        thread('completed', { unread: true, updatedAt: 4 })
+      ],
+      running: ['pinned-old', 'archived-new', 'waiting-for-answer', 'deleted', 'archived-new']
+    }
+    expect(getRunningThreads(state).map((item) => item.id)).toEqual(['archived-new', 'waiting-for-answer', 'pinned-old'])
+    expect(getRunningThreads(state)).toHaveLength(getTaskCounts(state).running)
+    expect(getNextRunningThread(state)?.id).toBe('archived-new')
+    expect(getNextRunningThread(state, 'archived-new')?.id).toBe('waiting-for-answer')
+    expect(getNextRunningThread(state, 'waiting-for-answer')?.id).toBe('pinned-old')
+    expect(getNextRunningThread(state, 'pinned-old')?.id).toBe('archived-new')
+    expect(getNextRunningThread(state, 'completed')?.id).toBe('archived-new')
+    expect(state.running).toHaveLength(5)
+    expect(state.threads[0].id).toBe('pinned-old')
+  })
+
+  it('reopens a sole running target and follows completion, deletion, and new runs', () => {
+    const only = thread('only')
+    const newer = thread('newer', { updatedAt: 2 })
+    expect(getNextRunningThread({ threads: [only], running: ['only'] }, 'only')).toBe(only)
+    expect(getNextRunningThread({ threads: [only], running: [] })).toBeUndefined()
+    expect(getNextRunningThread({ threads: [], running: ['only'] })).toBeUndefined()
+    expect(getNextRunningThread({ threads: [only, newer], running: ['newer'] }, 'only')).toBe(newer)
   })
 })

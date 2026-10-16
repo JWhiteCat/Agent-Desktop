@@ -469,7 +469,7 @@ describe('renderer store', () => {
     expect(store.getState().sidebarReveal).toMatchObject({ threadId: archived.id })
     expect(api.updateProject).toHaveBeenCalledExactlyOnceWith(project.id, { collapsed: false })
     expect(api.updateThread).toHaveBeenCalledExactlyOnceWith(archived.id, { unread: false })
-    expect(store.getState().unreadNavigationPending).toBe(false)
+    expect(store.getState().taskNavigationPending).toBe(false)
   })
 
   it('guards repeated unread clicks while history loads and survives sidebar remounts in store state', async () => {
@@ -478,13 +478,13 @@ describe('renderer store', () => {
     store.setState((s) => ({ app: { ...s.app, threads: [{ ...thread, unread: true }] } }))
 
     const opening = store.openNextUnreadThread()
-    expect(store.getState().unreadNavigationPending).toBe(true)
+    expect(store.getState().taskNavigationPending).toBe(true)
     await store.openNextUnreadThread()
     expect(api.getItems).toHaveBeenCalledExactlyOnceWith(thread.id)
     request.resolve(history)
     await opening
 
-    expect(store.getState().unreadNavigationPending).toBe(false)
+    expect(store.getState().taskNavigationPending).toBe(false)
     expect(store.getState().sidebarReveal?.threadId).toBe(thread.id)
     store.goHome(project.id)
     expect(store.getState().sidebarReveal).toBeUndefined()
@@ -498,7 +498,7 @@ describe('renderer store', () => {
     for (const target of [...unread, unread[0]]) {
       await store.openNextUnreadThread()
       expect(store.getState().view).toEqual({ kind: 'thread', id: target.id })
-      expect(store.getState().unreadNavigationPending).toBe(false)
+      expect(store.getState().taskNavigationPending).toBe(false)
       expect(store.getState().toast?.text).toBe('History unavailable')
     }
     expect(api.updateThread).not.toHaveBeenCalled()
@@ -520,6 +520,108 @@ describe('renderer store', () => {
 
     expect(store.getState().view).toEqual({ kind: 'thread', id: thread.id })
     expect(api.updateThread.mock.calls).toEqual([[other.id, { unread: false }], [thread.id, { unread: false }]])
+  })
+
+  it('opens a running archived conversation in another collapsed project without marking it read', async () => {
+    focused = true
+    const otherProject = { ...project, id: 'other', collapsed: true }
+    const archived = { ...thread, id: 'archived', projectId: otherProject.id, archived: true, unread: true, updatedAt: 3 }
+    api.getItems.mockResolvedValue(history)
+    store.setState((s) => ({ app: {
+      ...s.app, projects: [project, otherProject], threads: [thread, archived], running: [thread.id, archived.id]
+    } }))
+
+    await store.openNextRunningThread()
+
+    expect(store.getState().view).toEqual({ kind: 'thread', id: archived.id })
+    expect(store.getState().sidebarReveal).toMatchObject({ threadId: archived.id })
+    expect(store.getState().lastProjectId).toBe(otherProject.id)
+    expect(api.updateProject).toHaveBeenCalledExactlyOnceWith(otherProject.id, { collapsed: false })
+    expect(api.updateThread).not.toHaveBeenCalled()
+    expect(store.getState().app.settings.showArchived).toBe(false)
+    expect(store.getState().taskNavigationPending).toBe(false)
+  })
+
+  it.each(['running', 'unread'] as const)('blocks both kinds of jump while a %s navigation is loading', async (kind) => {
+    const request = deferred<Item[]>()
+    api.getItems.mockReturnValueOnce(request.promise)
+    const running = { ...thread, id: 'running', unread: true, updatedAt: 2 }
+    store.setState((s) => ({ app: {
+      ...s.app, threads: [{ ...thread, unread: true }, running], running: [running.id]
+    } }))
+
+    const opening = kind === 'running' ? store.openNextRunningThread() : store.openNextUnreadThread()
+    expect(store.getState().taskNavigationPending).toBe(true)
+    await store.openNextRunningThread()
+    await store.openNextUnreadThread()
+    const targetId = kind === 'running' ? running.id : thread.id
+    expect(api.getItems).toHaveBeenCalledExactlyOnceWith(targetId)
+    expect(store.getState().view).toEqual({ kind: 'thread', id: targetId })
+    request.resolve(history)
+    await opening
+
+    expect(store.getState().taskNavigationPending).toBe(false)
+    expect(store.getState().sidebarReveal?.threadId).toBe(targetId)
+  })
+
+  it('cycles running targets after load failures and retries the sole remaining target', async () => {
+    const running = [3, 2, 1].map((updatedAt) => ({ ...thread, id: `running-${updatedAt}`, unread: true, updatedAt }))
+    api.getItems.mockRejectedValue(new Error('History unavailable'))
+    store.setState((s) => ({ app: { ...s.app, threads: running, running: running.map((item) => item.id) } }))
+
+    for (const target of [...running, running[0]]) {
+      await store.openNextRunningThread()
+      expect(store.getState().view).toEqual({ kind: 'thread', id: target.id })
+      expect(store.getState().taskNavigationPending).toBe(false)
+      expect(store.getState().toast?.text).toBe('History unavailable')
+    }
+    store.setState((s) => ({ app: { ...s.app, running: [running[0].id] } }))
+    api.getItems.mockResolvedValueOnce(history)
+    await store.openNextRunningThread()
+    expect(api.getItems).toHaveBeenLastCalledWith(running[0].id)
+    expect(store.getState().items[running[0].id]).toEqual(history)
+    expect(api.updateThread).not.toHaveBeenCalled()
+  })
+
+  it('releases task navigation after a project expansion fails', async () => {
+    api.getItems.mockResolvedValue(history)
+    api.updateProject.mockRejectedValueOnce(new Error('Expansion failed'))
+    store.setState((s) => ({ app: { ...s.app, projects: [{ ...project, collapsed: true }], running: [thread.id] } }))
+
+    await store.openNextRunningThread()
+
+    expect(store.getState().view).toEqual({ kind: 'thread', id: thread.id })
+    expect(store.getState().toast?.text).toBe('Expansion failed')
+    expect(store.getState().taskNavigationPending).toBe(false)
+    await store.openNextRunningThread()
+    expect(api.updateProject).toHaveBeenCalledTimes(2)
+  })
+
+  it('marks a running jump target read only after it ends and its foreground history finishes loading', async () => {
+    focused = true
+    const request = deferred<Item[]>()
+    api.getItems.mockReturnValueOnce(request.promise)
+    store.setState((s) => ({ app: { ...s.app, threads: [{ ...thread, unread: true }], running: [thread.id] } }))
+
+    const opening = store.openNextRunningThread()
+    onState({ ...store.getState().app, running: [] })
+    expect(api.updateThread).not.toHaveBeenCalled()
+    request.resolve(history)
+    await opening
+
+    expect(api.updateThread).toHaveBeenCalledExactlyOnceWith(thread.id, { unread: false })
+    expect(store.getState().taskNavigationPending).toBe(false)
+  })
+
+  it('does nothing when no existing running conversations remain', async () => {
+    store.setState((s) => ({ app: { ...s.app, running: ['deleted'] } }))
+
+    await store.openNextRunningThread()
+
+    expect(api.getItems).not.toHaveBeenCalled()
+    expect(store.getState().view.kind).toBe('home')
+    expect(store.getState().sidebarReveal).toBeUndefined()
+    expect(store.getState().taskNavigationPending).toBeFalsy()
   })
 
   it('collapses projects through one API call without navigating and clears the last reveal', async () => {
