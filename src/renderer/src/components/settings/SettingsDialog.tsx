@@ -10,13 +10,12 @@ import { Modal } from '../Modal'
 import { CliCard } from './CliCard'
 import { FavoriteModels } from './FavoriteModels'
 import { Field } from './Field'
-import { FontSettings } from './FontSettings'
+import { AppearanceSettings } from './AppearanceSettings'
 import { GrokBotSettings } from './GrokBotSettings'
 import { LocalMcpSettings } from './LocalMcpSettings'
 import { LocalSkillSettings } from './LocalSkillSettings'
 import { RemoteSettings } from './RemoteSettings'
 import { UsageSettings } from './UsageSettings'
-import { ToolbarSettings } from './ToolbarSettings'
 
 const SETTINGS_TABS = [
   { id: 'cli', label: 'CLI' },
@@ -254,46 +253,7 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
         </section>
       )}
 
-      {tab === 'appearance' && (
-        <section className="settings-section">
-          <h4>{t('外观与历史')}</h4>
-          <Field label={t('语言')} desc={t('界面语言立即生效，并保存到本机设置。')}>
-            <select
-              className="input"
-              aria-label={t('语言')}
-              value={settings.language ?? 'system'}
-              onChange={(e) => update({ language: e.target.value as Settings['language'] })}
-            >
-              <option value="system">{t('跟随系统')}</option>
-              <option value="zh-CN">简体中文</option>
-              <option value="en">English</option>
-            </select>
-          </Field>
-          <Field label={t('主题')}>
-            <select className="input" value={settings.theme} onChange={(e) => update({ theme: e.target.value as Settings['theme'] })}>
-              <option value="system">{t('跟随系统')}</option>
-              <option value="dark">{t('深色')}</option>
-              <option value="light">{t('浅色')}</option>
-            </select>
-          </Field>
-          <FontSettings />
-          {!window.api.isRemote && <ToolbarSettings />}
-          <Field label={t('显示已归档对话')}>
-            <input type="checkbox" className="toggle" checked={settings.showArchived} onChange={(e) => update({ showArchived: e.target.checked })} />
-          </Field>
-          <Field label={t('CLI 历史会话')} desc={t('从 ~/.cursor/chats、~/.codex/sessions 和 ~/.claude/projects 导入，按工作目录自动归入项目')}>
-            <button
-              className="btn"
-              onClick={() => {
-                onClose()
-                onOpenImport()
-              }}
-            >
-              {t('导入…')}
-            </button>
-          </Field>
-        </section>
-      )}
+      {tab === 'appearance' && <AppearanceSettings onOpenImport={() => { onClose(); onOpenImport() }} />}
     </Modal>
   )
 }

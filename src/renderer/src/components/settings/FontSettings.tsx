@@ -42,7 +42,7 @@ export function FontSettings() {
 
   return (
     <>
-      <Field label={t('字体')} desc={t('用于界面和聊天内容，代码保留等宽字体。未安装的字体会回退到系统字体。')}>
+      <Field label={t('字体')}>
         <div className="font-settings-control">
           <select
             className="input"
@@ -73,7 +73,7 @@ export function FontSettings() {
           )}
         </div>
       </Field>
-      <Field label={t('字号')} desc={t('界面、聊天和代码按比例调整，立即生效并自动保存。默认 {size} px。', { size: DEFAULT_FONT_SIZE })}>
+      <Field label={t('字号')}>
         <div className="font-settings-control">
           <div className="row-gap">
             <input
@@ -98,14 +98,23 @@ export function FontSettings() {
             />
             <span className="muted">px</span>
           </div>
-          <button className="btn" onClick={() => {
-            setCustom(false)
-            setFamilyDraft('')
-            setSizeDraft(String(DEFAULT_FONT_SIZE))
-            save({ fontFamily: '', fontSize: DEFAULT_FONT_SIZE })
-          }}>{t('恢复默认字体与字号')}</button>
         </div>
       </Field>
+      <p className="appearance-hint">{t('用于界面和聊天内容，代码保留等宽字体。未安装的字体会回退到系统字体。')}</p>
+      <div className="font-preview" aria-label={t('文字预览')}>
+        <span className="font-preview-label">{t('文字预览')}</span>
+        <p>{t('让每一次对话，都清晰易读。')}</p>
+        <code>const greeting = 'Hello, world!'</code>
+      </div>
+      <div className="font-settings-footer">
+        <span className="appearance-hint">{t('默认 {size} px · 更改自动保存', { size: DEFAULT_FONT_SIZE })}</span>
+        <button type="button" className="btn" onClick={() => {
+          setCustom(false)
+          setFamilyDraft('')
+          setSizeDraft(String(DEFAULT_FONT_SIZE))
+          save({ fontFamily: '', fontSize: DEFAULT_FONT_SIZE })
+        }}>{t('恢复默认字体与字号')}</button>
+      </div>
     </>
   )
 }
