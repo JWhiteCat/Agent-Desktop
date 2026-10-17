@@ -11,6 +11,7 @@ import { defaultModelFor, favoritesFor, modelForChat, projectModelFor } from '..
 import { chatModel, cliCommands, forkThread, prepareCommands, sendMessage, setCliProvider, useStore } from '../store'
 import { markDisplayedThreadRead } from '../store/threads'
 import { Composer, type ComposerHandle } from './Composer'
+import { BinaryFilesGroup } from './BinaryFilesGroup'
 import { FindBar } from './FindBar'
 import { IconBranch, IconChevronDown, IconChevronRight, Spinner } from './icons'
 import { ThreadToolbar } from './ThreadToolbar'
@@ -45,10 +46,13 @@ function groupTurns(items: Item[]): Turn[] {
 
 function TurnFiles({ steps, cwd }: { steps: Item[]; cwd: string }) {
   const t = useT()
+  const [binaryOpen, setBinaryOpen] = useState(false)
   const files = useMemo(() => collectEditedFiles(steps, cwd), [steps, cwd, t])
   if (!files.length) return null
   const added = files.reduce((n, f) => n + f.added, 0)
   const removed = files.reduce((n, f) => n + f.removed, 0)
+  const textFiles = files.filter((f) => !f.binary)
+  const binaryFiles = files.filter((f) => f.binary)
   return (
     <div className="turn-files">
       <div className="turn-files-label">
@@ -56,9 +60,14 @@ function TurnFiles({ steps, cwd }: { steps: Item[]; cwd: string }) {
         {added > 0 && <span className="add">+{added}</span>}
         {removed > 0 && <span className="del">−{removed}</span>}
       </div>
-      {files.map((f) => (
+      {textFiles.map((f) => (
         <DiffFileView key={f.path} file={f} defaultOpen={false} />
       ))}
+      <BinaryFilesGroup count={binaryFiles.length} open={binaryOpen} onToggle={() => setBinaryOpen((open) => !open)}>
+        {binaryFiles.map((f) => (
+          <DiffFileView key={f.path} file={f} defaultOpen={false} />
+        ))}
+      </BinaryFilesGroup>
     </div>
   )
 }
@@ -149,7 +158,7 @@ function TurnView({
           onFork={onFork && s.kind === 'assistant' ? () => onFork(s.id) : undefined}
         />
       ))}
-      <TurnFiles steps={turn.result ? [...turn.steps, turn.result] : turn.steps} cwd={cwd} />
+      <TurnFiles key={threadId} steps={turn.result ? [...turn.steps, turn.result] : turn.steps} cwd={cwd} />
       {turn.result && <ResultFooter item={turn.result} text={finalText} fallbackModel={fallbackModel} cli={cli} />}
     </div>
   )

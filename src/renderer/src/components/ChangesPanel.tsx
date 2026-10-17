@@ -4,7 +4,8 @@ import type { GitDiff, ThreadMeta } from '@shared/types'
 import { DiffFileView, collectEditedFiles, collectGitFiles, type DiffFile } from '../lib/diff'
 import { untrackedGitPaths } from '@shared/git-path'
 import { useStore } from '../store'
-import { IconBranch, IconChevronDown, IconChevronRight, IconRefresh, IconX, Spinner } from './icons'
+import { IconBranch, IconRefresh, IconX, Spinner } from './icons'
+import { BinaryFilesGroup } from './BinaryFilesGroup'
 import { ResizeHandle } from './ResizeHandle'
 
 type Tab = 'thread' | 'git'
@@ -25,20 +26,13 @@ function ChangesFileList({ files, tab, untracked }: { files: DiffFile[]; tab: Ta
   return (
     <>
       {textFiles.map(renderFile)}
-      {binaryFiles.length > 0 && (
-        <div className="changes-binary-group">
-          <button
-            type="button"
-            className="diff-file-head changes-binary-toggle"
-            aria-expanded={binaryOpen[tab]}
-            onClick={() => setBinaryOpen((open) => ({ ...open, [tab]: !open[tab] }))}
-          >
-            {binaryOpen[tab] ? <IconChevronDown size={12} /> : <IconChevronRight size={12} />}
-            {t('二进制文件（{count}）', { count: binaryFiles.length })}
-          </button>
-          {binaryOpen[tab] && binaryFiles.map(renderFile)}
-        </div>
-      )}
+      <BinaryFilesGroup
+        count={binaryFiles.length}
+        open={binaryOpen[tab]}
+        onToggle={() => setBinaryOpen((open) => ({ ...open, [tab]: !open[tab] }))}
+      >
+        {binaryFiles.map(renderFile)}
+      </BinaryFilesGroup>
     </>
   )
 }

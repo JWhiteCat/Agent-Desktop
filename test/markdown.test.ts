@@ -2,6 +2,7 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setLanguage } from '../src/shared/i18n'
+import { unifiedDiff } from '../src/shared/unified-diff'
 import { StreamReducer } from '../src/main/reducer'
 import { mergeInterruptedAssistantMessages } from '../src/shared/transcript'
 import { DEFAULT_SETTINGS, type AssistantItem, type Item, type ThreadMeta, type ToolItem } from '../src/shared/types'
@@ -90,6 +91,56 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllGlobals()
   setLanguage('system', 'zh-CN')
+})
+
+describe('conversation changed-file lists', () => {
+  const binary = (path: string) => ({ path, diff: `diff --git a/${path} b/${path}\nBinary files differ\n` })
+  const text = (path: string) => ({ path, diff: unifiedDiff(path, 'before\n', 'after\n').text })
+  const changes = (files: { path: string; diff: string }[]): Item => ({
+    id: 'changes', kind: 'result', isError: false, fileChanges: files
+  })
+
+  it.each([
+    ['zh-CN', '二进制文件（2）', '修改了 4 个文件'],
+    ['en', 'Binary files (2)', 'Files changed: 4']
+  ] as const)('hides binary names below the reply with correct %s counts and text order', (language, label, count) => {
+    setLanguage(language)
+    const html = renderThread([user, assistant('reply', 'Done'), changes([
+      binary('hidden.dat'), text('second.ts'), binary('hidden.png'), text('first.ts')
+    ])])
+    expect(html).toContain(label)
+    expect(html).toContain('aria-expanded="false"')
+    expect(html).not.toContain('hidden.dat')
+    expect(html).not.toContain('hidden.png')
+    expect(html).toContain(count)
+    expect(html).toContain('<span class="add">+2</span>')
+    expect(html).toContain('<span class="del">−2</span>')
+    expect(html.indexOf('second.ts')).toBeLessThan(html.indexOf('first.ts'))
+    expect(html.indexOf('first.ts')).toBeLessThan(html.indexOf(label))
+    expect(html).not.toContain('class="diff-lines"')
+  })
+
+  it('keeps binary-only turns in the summary and omits groups for text-only or empty turns', () => {
+    const binaryOnly = renderThread([changes([binary('hidden.dat')])])
+    expect(binaryOnly).toContain('修改了 1 个文件')
+    expect(binaryOnly).toContain('二进制文件（1）')
+    expect(binaryOnly).not.toContain('hidden.dat')
+    const textOnly = renderThread([changes([text('text.png')])])
+    expect(textOnly).toContain('text.png')
+    expect(textOnly).not.toContain('changes-binary-toggle')
+    expect(renderThread([changes([])])).not.toContain('class="turn-files"')
+  })
+
+  it('renders a separate collapsed binary group for each completed turn', () => {
+    const html = renderThread([
+      user, changes([binary('first.dat')]),
+      { ...user, id: 'next-user' }, { ...changes([binary('second.dat'), binary('third.dat')]), id: 'next-result' }
+    ])
+    expect(html.match(/changes-binary-toggle" aria-expanded="false"/g)).toHaveLength(2)
+    expect(html).toContain('二进制文件（1）')
+    expect(html).toContain('二进制文件（2）')
+    for (const name of ['first.dat', 'second.dat', 'third.dat']) expect(html).not.toContain(name)
+  })
 })
 
 describe('Chinese strong emphasis', () => {
