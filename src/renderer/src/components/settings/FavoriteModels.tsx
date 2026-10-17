@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
+import { modelPriceTip } from '@shared/model-prices'
 import type { CliProvider } from '@shared/types'
 import { useT } from '../../lib/i18n'
 import { groupModels } from '../../lib/models'
 import { favoritesFor } from '../../lib/model-prefs'
 import { loadModels, setFavoriteModels, useStore } from '../../store'
+import { HoverTip } from '../HoverTip'
 import { IconRefresh } from '../icons'
 
 export function FavoriteModels({ provider }: { provider: CliProvider }) {
@@ -84,11 +86,13 @@ export function FavoriteModels({ provider }: { provider: CliProvider }) {
       </div>
       <div className="favorite-list">
         {filtered.map((g) => (
-          <label key={g.base} className="favorite-item">
-            <input type="checkbox" checked={selected.has(g.base)} onChange={() => toggle(g.base)} />
-            <span className="favorite-name">{g.name}</span>
-            {g.base !== g.name && <span className="favorite-base">{g.base}</span>}
-          </label>
+          <HoverTip key={g.base} block text={modelPriceTip(g.base, provider)}>
+            <label className="favorite-item">
+              <input type="checkbox" checked={selected.has(g.base)} onChange={() => toggle(g.base)} />
+              <span className="favorite-name">{g.name}</span>
+              {g.base !== g.name && <span className="favorite-base">{g.base}</span>}
+            </label>
+          </HoverTip>
         ))}
         {filtered.length === 0 && (
           <div className="empty-hint">{groups.length ? t('无匹配模型') : loading || refreshing ? t('正在加载模型…') : modelError ? t(modelError) : t('尚未加载模型')}</div>

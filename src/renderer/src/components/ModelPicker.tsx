@@ -1,5 +1,6 @@
 import { useT } from '../lib/i18n'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { modelPriceTip } from '@shared/model-prices'
 import { normalizeCliProvider, type CliProvider } from '@shared/types'
 import { favoritesFor, pickRememberedVariant } from '../lib/model-prefs'
 import { loadModels, rememberModelVariant, useStore } from '../store'
@@ -16,6 +17,7 @@ import {
   wantFrom,
   type ModelGroup
 } from '../lib/models'
+import { HoverTip } from './HoverTip'
 import { IconChevronDown, IconRefresh } from './icons'
 import { Popover } from './Menu'
 
@@ -76,21 +78,23 @@ export function ModelPicker({ value, onChange, cli }: { value: string; onChange:
   const contexts = selectedGroup ? contextChoices(selectedGroup) : []
   const efforts = selectedGroup ? effortChoices(selectedGroup) : []
   const showSpeed = selectedGroup ? hasFastVariant(selectedGroup) : false
+  const pillCaption = [summary.name, summary.context, summary.effortLabel, summary.fast ? 'Fast' : undefined].filter(Boolean).join(' · ')
 
   return (
     <>
-      <button
-        ref={btn}
-        className={`pill model-pill ${open ? 'active' : ''}`}
-        title={[summary.name, summary.context, summary.effortLabel, summary.fast ? 'Fast' : undefined].filter(Boolean).join(' · ')}
-        onClick={() => setOpen((o) => !o)}
-      >
-        <span className="model-name">{summary.name}</span>
-        {summary.context && <span className="model-meta">{summary.context}</span>}
-        {summary.effortLabel && <span className="model-meta">{summary.effortLabel}</span>}
-        {summary.fast && <span className="model-meta">Fast</span>}
-        <IconChevronDown size={12} />
-      </button>
+      <HoverTip text={modelPriceTip(value, provider, pillCaption)}>
+        <button
+          ref={btn}
+          className={`pill model-pill ${open ? 'active' : ''}`}
+          onClick={() => setOpen((o) => !o)}
+        >
+          <span className="model-name">{summary.name}</span>
+          {summary.context && <span className="model-meta">{summary.context}</span>}
+          {summary.effortLabel && <span className="model-meta">{summary.effortLabel}</span>}
+          {summary.fast && <span className="model-meta">Fast</span>}
+          <IconChevronDown size={12} />
+        </button>
+      </HoverTip>
       <Popover anchor={btn.current} open={open} onClose={() => setOpen(false)} placement="top-start" className="model-popover">
         <div className="model-search">
           <input
@@ -117,11 +121,13 @@ export function ModelPicker({ value, onChange, cli }: { value: string; onChange:
         {favoritesApply && <div className="model-scope">{t('仅常用模型')}</div>}
         <div className="model-list" ref={list}>
           {filtered.map((g) => (
-            <button key={g.base} className={`menu-item ${g.base === selectedGroup?.base ? 'selected' : ''}`} onClick={() => chooseGroup(g)}>
-              <span className="menu-label">{g.name}</span>
-              {favoritesApply && g.base === selected?.base && !favorites.includes(g.base) && <span className="menu-hint">{t('当前')}</span>}
-              {g.base === selectedGroup?.base && <span className="menu-check">✓</span>}
-            </button>
+            <HoverTip key={g.base} block text={modelPriceTip(g.base, provider)}>
+              <button className={`menu-item ${g.base === selectedGroup?.base ? 'selected' : ''}`} onClick={() => chooseGroup(g)}>
+                <span className="menu-label">{g.name}</span>
+                {favoritesApply && g.base === selected?.base && !favorites.includes(g.base) && <span className="menu-hint">{t('当前')}</span>}
+                {g.base === selectedGroup?.base && <span className="menu-check">✓</span>}
+              </button>
+            </HoverTip>
           ))}
           {filtered.length === 0 && <div className="empty-hint">{q.trim() ? t('无匹配模型') : favoritesApply ? t('没有可用的常用模型') : t('无匹配模型')}</div>}
         </div>

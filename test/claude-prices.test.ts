@@ -13,7 +13,8 @@ describe('Claude Code Anthropic API prices', () => {
     ['claude-opus-5', 'Claude Opus 5', 0.3675],
     ['claude-opus-4-8', 'Claude Opus 4.8', 0.3675],
     ['claude-opus-4-1', 'Claude Opus 4.1', 1.1025],
-    ['claude-sonnet-5-5', 'Claude Sonnet 5.5', 0.147],
+    ['claude-sonnet-5-5', 'Claude Sonnet 5.5', 0.146],
+    ['claude-haiku-5-5', 'Claude Haiku 5.5', 0.00735],
     ['claude-sonnet-5', 'Claude Sonnet 5', 0.147],
     ['claude-sonnet-4-6', 'Claude Sonnet 4.6', 0.2205],
     ['claude-haiku-4-5-20251001', 'Claude Haiku 4.5', 0.0735],
@@ -21,6 +22,15 @@ describe('Claude Code Anthropic API prices', () => {
   ])('prices all four token categories for %s', (model, label, total) => {
     expect(quoteModel(model, usage, 'claude')).toMatchObject({ label, longContext: false })
     expect(quoteModel(model, usage, 'claude').costUsd).toBeCloseTo(total, 8)
+  })
+
+  it('bills Haiku 5.5 at 5x once input plus cache exceeds 100k', () => {
+    expect(quoteModel('claude-haiku-5-5', { inputTokens: 100_000 }, 'claude')).toMatchObject({ costUsd: 0.01, longContext: false })
+    expect(quoteModel('claude-haiku-5.5', { inputTokens: 90_000, cacheReadTokens: 10_001 }, 'claude')).toMatchObject({
+      costUsd: 0.04550005,
+      longContext: true,
+      label: 'Claude Haiku 5.5 长上下文'
+    })
   })
 
   it('bills the 1M context at standard rates and ignores the context hint', () => {

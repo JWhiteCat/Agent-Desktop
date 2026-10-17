@@ -1,10 +1,11 @@
 import type { ModelPrice } from './model-prices'
 
 /**
- * Anthropic API list prices, USD per million tokens. Verified 2026-10-01.
+ * Anthropic API list prices, USD per million tokens. Verified 2026-10-17.
  * Source: https://claude.com/pricing#api and https://platform.claude.com/docs/en/about-claude/pricing.
  * Cache writes use the 5-minute rate; the CLI reports 5m and 1h writes as one count.
- * Claude 4.6 and later bill the full 1M context at standard rates, so there is no long-context tier.
+ * Claude 4.6 and later bill the full 1M context at standard rates, except Haiku 5.5,
+ * which bills 5x when input plus cache tokens exceed 100k.
  * Fast mode, Batch and US-only inference are not distinguished in recorded usage and are not priced.
  */
 function rates(input: number, cacheRead: number, output: number, cacheWrite: number): ModelPrice['rates'] {
@@ -33,11 +34,16 @@ const CLAUDE_PRICES: ModelPrice[] = [
   model(['claude-opus-4-5'], 'Claude Opus 4.5', opus45),
   model(['claude-opus-4-1'], 'Claude Opus 4.1', opus4),
   model(['claude-opus-4', 'claude-opus-4-0'], 'Claude Opus 4', opus4),
-  model(['claude-sonnet-5-5'], 'Claude Sonnet 5.5', sonnet5),
+  model(['claude-sonnet-5-5'], 'Claude Sonnet 5.5', rates(2, 0.1, 10, 2.5)),
   model(['claude-sonnet-5'], 'Claude Sonnet 5', sonnet5),
   model(['claude-sonnet-4-6'], 'Claude Sonnet 4.6', sonnet4),
   model(['claude-sonnet-4-5'], 'Claude Sonnet 4.5', sonnet4),
   model(['claude-sonnet-4', 'claude-sonnet-4-0'], 'Claude Sonnet 4', sonnet4),
+  {
+    ...model(['claude-haiku-5-5'], 'Claude Haiku 5.5', rates(0.1, 0.01, 0.5, 0.125)),
+    longAfterTokens: 100_000,
+    long: rates(0.5, 0.05, 2.5, 0.625)
+  },
   model(['claude-haiku-4-5'], 'Claude Haiku 4.5', rates(1, 0.1, 5, 1.25)),
   model(['claude-3-5-haiku'], 'Claude Haiku 3.5', rates(0.8, 0.08, 4, 1))
 ]

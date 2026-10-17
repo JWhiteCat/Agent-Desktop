@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { quoteModel } from '../src/shared/model-prices'
+import { modelPriceTip, quoteModel } from '../src/shared/model-prices'
 import { listSessionUsage, summarizeUsage, type UsageThread } from '../src/shared/usage'
 import type { Item } from '../src/shared/types'
 
@@ -51,6 +51,37 @@ describe('model prices', () => {
     expect(codex.label).toBe('GPT-5.4 Codex 长上下文')
     expect(codex.costUsd).toBeCloseTo(5)
     expect(quoteModel('gpt-5.3-codex', { inputTokens: 1_000_000 }).label).toBe('GPT-5.3 Codex')
+  })
+
+  it('prices models added from the current Cursor list', () => {
+    const sample = { inputTokens: 10_000, cacheReadTokens: 10_000, cacheWriteTokens: 10_000, outputTokens: 10_000 }
+    expect(quoteModel('claude-sonnet-5.5', sample).costUsd).toBeCloseTo(0.146)
+    expect(quoteModel('claude-sonnet-5', sample).costUsd).toBeCloseTo(0.147)
+    expect(quoteModel('claude-haiku-5.5', { inputTokens: 100_000 }).costUsd).toBeCloseTo(0.01)
+    expect(quoteModel('claude-haiku-5-5', { inputTokens: 100_001 }).costUsd).toBeCloseTo(0.0500005)
+    expect(quoteModel('gemini-4-argon-medium', { inputTokens: 1_000_000 }).costUsd).toBe(2)
+    expect(quoteModel('gemini-3.7-flash', { outputTokens: 1_000_000 }).costUsd).toBeCloseTo(3.75)
+    expect(quoteModel('gemini-3.8-flash', { outputTokens: 1_000_000 }).costUsd).toBeCloseTo(3.75)
+    expect(quoteModel('glm-5.3', { inputTokens: 1_000_000 }).costUsd).toBeCloseTo(1.4)
+    expect(quoteModel('glm-5.3-flash', { inputTokens: 1_000_000, outputTokens: 1_000_000 })).toMatchObject({ label: 'GLM 5.3 Flash', costUsd: 0.65 })
+    expect(quoteModel('muse-wonder-1.0', { inputTokens: 1_000_000 }).costUsd).toBe(4)
+  })
+
+  it('describes published rates for the model hover tip', () => {
+    expect(modelPriceTip('grok-4.7', 'cursor', 'Grok 4.7 · 500K · High · Fast')).toBe(
+      [
+        'Grok 4.7 · 500K · High · Fast',
+        '输入 $2 · 输出 $6 · 缓存读 $0.5 / 百万 token',
+        'Fast：输入 $4 · 输出 $12 · 缓存读 $1',
+        '长上下文（输入 > 256k）：输入 $4 · 输出 $12 · 缓存读 $1',
+        'Fast 长上下文：输入 $6 · 输出 $18 · 缓存读 $1.5',
+        'Cursor 公开标价'
+      ].join('\n')
+    )
+    expect(modelPriceTip('auto')).toBe('未定价')
+    expect(modelPriceTip('gpt-5.4', 'codex')).toContain('OpenAI API 公开标价')
+    expect(modelPriceTip('claude-haiku-5-5', 'claude')).toContain('长上下文（输入 > 100k）：输入 $0.5 · 输出 $2.5 · 缓存读 $0.05 · 缓存写 $0.625')
+    expect(modelPriceTip('opus', 'claude')).toBe('未定价')
   })
 })
 

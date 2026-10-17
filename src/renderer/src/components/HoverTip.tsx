@@ -5,8 +5,8 @@ import { createPortal } from 'react-dom'
  * Hover detail that stays up while the pointer is over the trigger.
  * Native `title` tooltips are dismissed by any keydown; this one is not.
  */
-export function HoverTip({ text, children, disabled = false, interactive = false }: {
-  text?: string; children: React.ReactNode; disabled?: boolean; interactive?: boolean
+export function HoverTip({ text, children, disabled = false, interactive = false, block = false }: {
+  text?: string; children: React.ReactNode; disabled?: boolean; interactive?: boolean; block?: boolean
 }) {
   const anchor = useRef<HTMLSpanElement>(null)
   const bubble = useRef<HTMLDivElement>(null)
@@ -61,7 +61,7 @@ export function HoverTip({ text, children, disabled = false, interactive = false
 
   if (!text) return <>{children}</>
   return (
-    <span ref={anchor} className="hover-tip" onMouseEnter={show} onMouseLeave={hide}>
+    <span ref={anchor} className={`hover-tip${block ? ' block' : ''}`} onMouseEnter={show} onMouseLeave={hide}>
       <span className="hover-tip-label">{children}</span>
       <span className="hover-tip-copy">{text}</span>
       {open && !disabled &&

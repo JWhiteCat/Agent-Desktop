@@ -1830,6 +1830,21 @@ select {
   opacity: 0.8;
 }
 
+.hover-tip.block,
+.hover-tip.block > .hover-tip-label {
+  display: block;
+  min-width: 0;
+}
+.composer-left > .hover-tip {
+  display: inline-flex;
+  min-width: 0;
+  max-width: min(480px, 70vw);
+}
+.composer-left > .hover-tip > .hover-tip-label {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+}
 .hover-tip-copy {
   display: none;
 }

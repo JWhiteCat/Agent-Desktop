@@ -10,11 +10,11 @@ Codex 在同一次请求中批准计划并立即继续执行时，回复的 toke
 
 ## 本机 token 与费用估算
 
-设置里的用量汇总本机对话最近 1 天、7 天、30 天的 token，并按模型列出估算费用。模型名是短名，例如「Grok 4.7 500K High Fast」，不带完整参数串。下面的会话列表包含全部历史对话。每一行显示用过的模型、累计 token 和费用，不受上面的天数限制。超过 20 行会分页。没有 token 记录的对话仍会列出，费用留空。一轮结束时，回复下方也会显示该轮的耗时、token、模型和估算费用。Codex token 根据本机日志的累计用量差统计，包含一轮内的所有模型请求，重复快照只计一次。输入排除缓存，推理 token 已包含在输出中。Codex 逐请求计价，避免多次短请求的累计输入误触发长上下文价格。其他 CLI 使用其报告的回合用量，缓存读取和写入分开计数。Cursor 使用 [Cursor 公开标价](https://cursor.com/docs/models-and-pricing)，Codex 使用 [OpenAI API 公开标价](https://developers.openai.com/api/docs/pricing)，Claude Code 使用 [Anthropic API 公开标价](https://platform.claude.com/docs/en/about-claude/pricing)，单位均为美元 / 百万 token。同一模型在不同 CLI 中按各自的价格分别统计。估算金额不代表订阅账单或剩余额度；Cursor 估算不含 Teams Token Rate。不足一美分的金额显示到四位小数。Auto、没有记录 API 模型的 Claude 别名，以及价目表里没有的模型只显示 token，费用标为未定价。上面的汇总里，分叉复制过去的一轮只计一次。会话列表按每段对话自己的记录相加，所以同一轮会同时出现在原对话和分叉里。
+设置里的用量汇总本机对话最近 1 天、7 天、30 天的 token，并按模型列出估算费用。模型名是短名，例如「Grok 4.7 500K High Fast」，不带完整参数串。下面的会话列表包含全部历史对话。每一行显示用过的模型、累计 token 和费用，不受上面的天数限制。超过 20 行会分页。没有 token 记录的对话仍会列出，费用留空。一轮结束时，回复下方也会显示该轮的耗时、token、模型和估算费用。Codex token 根据本机日志的累计用量差统计，包含一轮内的所有模型请求，重复快照只计一次。输入排除缓存，推理 token 已包含在输出中。Codex 逐请求计价，避免多次短请求的累计输入误触发长上下文价格。其他 CLI 使用其报告的回合用量，缓存读取和写入分开计数。Cursor 使用 [Cursor 公开标价](https://cursor.com/docs/models-and-pricing)，Codex 使用 [OpenAI API 公开标价](https://developers.openai.com/api/docs/pricing)，Claude Code 使用 [Anthropic API 公开标价](https://platform.claude.com/docs/en/about-claude/pricing)，单位均为美元 / 百万 token。同一模型在不同 CLI 中按各自的价格分别统计。估算金额不代表订阅账单或剩余额度；Cursor 估算不含 Teams Token Rate。不足一美分的金额显示到四位小数。Auto、没有记录 API 模型的 Claude 别名，以及价目表里没有的模型只显示 token，费用标为未定价。模型选择器和设置里的常用模型在悬浮时显示同一套标价。Claude Haiku 5.5 在单次请求的输入（含缓存读、缓存写）超过 100,000 token 时，输入、缓存和输出都按 5 倍计费。上面的汇总里，分叉复制过去的一轮只计一次。会话列表按每段对话自己的记录相加，所以同一轮会同时出现在原对话和分叉里。
 
 Codex 费用估算支持 [GPT-6.1 Sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol) 及其推理档位和 Fast 变体。标准费率为每百万 token 输入 $2、缓存读取 $0.10、缓存写入 $2.50、输出 $10，Fast 为两倍。单次请求的输入（含缓存）超过 272,000 token 时，输入与缓存费率乘以 2，输出费率乘以 1.5；Fast 在长上下文费率上再乘以 2。`gpt-6.1-sol`、`gpt-6-1-sol` 别名和带日期的快照使用同一组价格。
 
-Claude Code 按用量更新附带的 API 模型 id 计价，并把它记在回复的 `apiModel` 上。`opus` 这类别名本身不计价，所以别名以后指向新模型时，旧回合不会被重新计价。没有记录 API 模型的回合保持未定价。带日期的快照（如 `claude-haiku-4-5-20251001`）使用去掉日期后的价格。缓存写入按 5 分钟费率计算，因为 CLI 把 5 分钟和 1 小时写入合成一个计数。Claude 4.6 及更新版本按标准费率计算完整的 1M 上下文，上下文标记不会改用长上下文价格。Fast、Batch 和仅美国推理没有单独记录，保持未定价。
+Claude Code 按用量更新附带的 API 模型 id 计价，并把它记在回复的 `apiModel` 上。`opus` 这类别名本身不计价，所以别名以后指向新模型时，旧回合不会被重新计价。没有记录 API 模型的回合保持未定价。带日期的快照（如 `claude-haiku-4-5-20251001`）使用去掉日期后的价格。缓存写入按 5 分钟费率计算，因为 CLI 把 5 分钟和 1 小时写入合成一个计数。Claude 4.6 及更新版本按标准费率计算完整的 1M 上下文，上下文标记不会改用长上下文价格；Claude Haiku 5.5 除外，超过 100,000 token 的提示按 5 倍计费。Fast、Batch 和仅美国推理没有单独记录，保持未定价。
 
 ## Codex 会话额度
 

@@ -115,6 +115,13 @@ const PRICES: ModelPrice[] = [
     longAfterTokens: 200_000,
     long: rates(6, 0.6, 22.5, 7.5)
   },
+  {
+    keys: ['claude-haiku-5.5', 'claude-haiku-5-5', 'claude-5.5-haiku'],
+    label: 'Claude Haiku 5.5',
+    rates: rates(0.1, 0.01, 0.5, 0.125),
+    longAfterTokens: 100_000,
+    long: rates(0.5, 0.05, 2.5, 0.625)
+  },
   { keys: ['claude-4.5-haiku', 'claude-haiku-4.5', 'claude-haiku-4-5'], label: 'Claude 4.5 Haiku', rates: rates(1, 0.1, 5, 1.25) },
   { keys: ['claude-4.5-opus', 'claude-opus-4.5', 'claude-opus-4-5'], label: 'Claude 4.5 Opus', rates: rates(5, 0.5, 25, 6.25) },
   { keys: ['claude-4.5-sonnet', 'claude-sonnet-4.5', 'claude-sonnet-4-5'], label: 'Claude 4.5 Sonnet', rates: rates(3, 0.3, 15, 3.75) },
@@ -136,6 +143,7 @@ const PRICES: ModelPrice[] = [
   },
   { keys: ['claude-opus-5'], label: 'Claude Opus 5', rates: rates(5, 0.5, 25, 6.25) },
   { keys: ['claude-opus-5.5', 'claude-opus-5-5'], label: 'Claude Opus 5.5', rates: rates(4, 0.2, 20, 5) },
+  { keys: ['claude-sonnet-5.5', 'claude-sonnet-5-5'], label: 'Claude Sonnet 5.5', rates: rates(2, 0.1, 10, 2.5) },
   { keys: ['claude-sonnet-5'], label: 'Claude Sonnet 5', rates: rates(2, 0.2, 10, 2.5) },
 
   { keys: ['gemini-2.5-flash', 'gemini-2-5-flash'], label: 'Gemini 2.5 Flash', rates: rates(0.3, 0.03, 2.5) },
@@ -145,9 +153,12 @@ const PRICES: ModelPrice[] = [
   { keys: ['gemini-3.1-pro', 'gemini-3-1-pro'], label: 'Gemini 3.1 Pro', rates: rates(2, 0.2, 12) },
   { keys: ['gemini-3.5-flash', 'gemini-3-5-flash'], label: 'Gemini 3.5 Flash', rates: rates(1.5, 0.15, 9) },
   { keys: ['gemini-3.6-flash', 'gemini-3-6-flash'], label: 'Gemini 3.6 Flash', rates: rates(1.5, 0.15, 7.5) },
-  { keys: ['gemini-3.7-flash', 'gemini-3-7-flash'], label: 'Gemini 3.7 Flash', rates: rates(0.75, 0.075, 3.5) },
-  { keys: ['gemini-3.8-flash', 'gemini-3-8-flash'], label: 'Gemini 3.8 Flash', rates: rates(0.75, 0.075, 3.5) },
+  { keys: ['gemini-3.7-flash', 'gemini-3-7-flash'], label: 'Gemini 3.7 Flash', rates: rates(0.75, 0.075, 3.75) },
+  { keys: ['gemini-3.8-flash', 'gemini-3-8-flash'], label: 'Gemini 3.8 Flash', rates: rates(0.75, 0.075, 3.75) },
+  { keys: ['gemini-4-argon'], label: 'Gemini 4 Argon', rates: rates(2, 0.1, 10) },
 
+  { keys: ['glm-5.3-flash', 'glm-5-3-flash'], label: 'GLM 5.3 Flash', rates: rates(0.15, 0.029, 0.5) },
+  { keys: ['glm-5.3', 'glm-5-3'], label: 'GLM 5.3', rates: rates(1.4, 0.26, 4.4) },
   { keys: ['glm-5.2', 'glm-5-2'], label: 'GLM 5.2', rates: rates(1.4, 0.26, 4.4) },
 
   { keys: ['gpt-5-mini'], label: 'GPT-5 Mini', rates: rates(0.25, 0.025, 2) },
@@ -171,7 +182,8 @@ const PRICES: ModelPrice[] = [
 
   { keys: ['kimi-k2.7-code', 'kimi-k2-7-code'], label: 'Kimi K2.7 Code', rates: rates(0.95, 0.19, 4) },
   { keys: ['kimi-k3'], label: 'Kimi K3', rates: rates(3, 0.3, 15) },
-  { keys: ['muse-spark-1.3', 'muse-spark-1-3'], label: 'Muse Spark 1.3', rates: rates(1.25, 0.15, 4.25) }
+  { keys: ['muse-spark-1.3', 'muse-spark-1-3'], label: 'Muse Spark 1.3', rates: rates(1.25, 0.15, 4.25) },
+  { keys: ['muse-wonder'], label: 'Muse Wonder', rates: rates(4, 0.2, 20) }
 ]
 
 const KEYS = PRICES.flatMap((entry) => entry.keys.map((key) => ({ key, entry }))).sort((a, b) => b.key.length - a.key.length)
@@ -246,4 +258,44 @@ export function quoteModel(modelId: string | undefined, usage: TokenUsage, cli: 
   if (parsed.fast) bits.push('Fast')
   if (long) bits.push(t('长上下文'))
   return { label: bits.join(' '), costUsd: priced ? roundUsd(cost) : null, fast: parsed.fast, longContext: long }
+}
+
+function usdRate(n: number): string {
+  return `$${n.toFixed(4).replace(/0+$/, '').replace(/\.$/, '')}`
+}
+
+function rateText(rate: TokenRates): string {
+  const parts = [
+    t('输入 {price}', { price: usdRate(rate.input) }),
+    t('输出 {price}', { price: usdRate(rate.output) }),
+    t('缓存读 {price}', { price: usdRate(rate.cacheRead) })
+  ]
+  if (rate.cacheWrite) parts.push(t('缓存写 {price}', { price: usdRate(rate.cacheWrite) }))
+  return parts.join(' · ')
+}
+
+function tokenMark(tokens: number): string {
+  return tokens % 1000 === 0 ? `${tokens / 1000}k` : String(tokens)
+}
+
+/** Published list rates for a model picker row. Auto and unknown models are unpriced. */
+export function modelPriceTip(modelId: string | undefined, cli: CliProvider = 'cursor', caption?: string): string {
+  const parsed = parseModelId(modelId ?? '')
+  const lines: string[] = []
+  const heading = caption?.trim()
+  if (heading) lines.push(heading)
+  const entry = !parsed.name || parsed.name === 'auto'
+    ? undefined
+    : cli === 'codex' ? findCodexPrice(parsed.name) : cli === 'claude' ? findClaudePrice(parsed.name) : findPrice(parsed.name)
+  if (!entry) {
+    lines.push(t('未定价'))
+    return lines.join('\n')
+  }
+  lines.push(t('{rates} / 百万 token', { rates: rateText(entry.rates) }))
+  if (entry.fast) lines.push(t('Fast：{rates}', { rates: rateText(entry.fast) }))
+  if (entry.long) lines.push(t('长上下文（输入 > {tokens}）：{rates}', { rates: rateText(entry.long), tokens: tokenMark(entry.longAfterTokens ?? 0) }))
+  if (entry.fastLong) lines.push(t('Fast 长上下文：{rates}', { rates: rateText(entry.fastLong) }))
+  const source = cli === 'codex' ? t('OpenAI API 公开标价') : cli === 'claude' ? t('Anthropic API 公开标价') : t('Cursor 公开标价')
+  lines.push(source)
+  return lines.join('\n')
 }
