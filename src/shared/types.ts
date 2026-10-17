@@ -122,6 +122,16 @@ export interface ToolItem {
   status: 'running' | 'success' | 'error'
   startedAt: number
   endedAt?: number
+  /** Operation-owned evidence. Pending previews are displayed only after success. */
+  fileChanges?: ToolFileChange[]
+}
+
+export interface ToolFileChange {
+  path: string
+  diff?: string
+  binary?: boolean
+  source: 'tool-result' | 'edit-input'
+  diffOmitted?: boolean
 }
 
 export interface FileChange {
@@ -134,7 +144,7 @@ export interface ResultItem {
   id: string
   kind: 'result'
   isError: boolean
-  /** Working-file changes during this turn, including edits made by shell scripts. */
+  /** Saved workspace snapshot delta; can include external writers. Never agent attribution. */
   fileChanges?: FileChange[]
   durationMs?: number
   /** When this turn finished. Older transcripts omit it; usage stats then use the preceding user message. */

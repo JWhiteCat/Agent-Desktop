@@ -12,7 +12,7 @@ import { spawnProvider } from '../src/main/session/provider'
 import { SessionManager } from '../src/main/sessions'
 import type { Store } from '../src/main/store'
 import { isolateGitEnvironment } from './helpers/git-environment'
-import { collectEditedFiles } from '../src/renderer/src/lib/diff'
+import { collectEditedFiles, collectSnapshotTurns } from '../src/renderer/src/lib/diff'
 
 vi.mock('../src/main/skills', () => ({ syncAllManagedSkills: vi.fn() }))
 vi.mock('../src/main/git', () => ({ createWorktree: vi.fn() }))
@@ -123,7 +123,8 @@ describe('unfinished session activity', () => {
       else ctx.manager.dispose('thread')
       await vi.waitFor(() => expect(ctx!.finished).toHaveBeenCalledOnce())
       const reloaded = JSON.parse(JSON.stringify(ctx.items)) as Item[]
-      expect(collectEditedFiles(reloaded, root)).toEqual([
+      expect(collectEditedFiles(reloaded, root)).toEqual([])
+      expect(collectSnapshotTurns(reloaded, root).at(-1)?.files).toEqual([
         { path: 'file.txt', lines: ['@@ -1,1 +1,1 @@', '-before', '+after'], added: 1, removed: 1 }
       ])
       expect(ctx.manager.active()).toEqual([])
@@ -134,6 +135,40 @@ describe('unfinished session activity', () => {
       if (path.dirname(resolved) !== path.resolve(os.tmpdir()) || !path.basename(resolved).startsWith('agent-desktop-session-files-')) throw new Error('Unexpected test directory')
       fs.rmSync(resolved, { recursive: true, force: true })
     }
+  })
+
+  it.each(['cursor', 'codex', 'claude'] as const)('separates %s tool evidence from external writes and ignores unrelated sessions', async (provider) => {
+    fs.writeFileSync(path.join(workspace, 'shared.txt'), 'before\n')
+    const ctx = setup(provider)
+    await ctx.manager.send(ctx.req)
+    await ctx.waitForPrompt()
+    const notify = (sessionId: string, update: object) => ctx.reply({ method: 'session/update', params: { sessionId, update } })
+    notify('foreign-session', { sessionUpdate: 'tool_call', toolCallId: 'foreign', kind: 'edit', status: 'completed',
+      content: [{ type: 'diff', path: 'foreign.txt', oldText: null, newText: 'foreign' }] })
+    notify('test-session', { sessionUpdate: 'tool_call', toolCallId: 'edit', kind: 'edit', status: 'pending',
+      content: [{ type: 'diff', path: 'shared.txt', oldText: 'before\n', newText: 'agent\n' }] })
+    fs.writeFileSync(path.join(workspace, 'shared.txt'), 'agent\n')
+    notify('test-session', { sessionUpdate: 'tool_call_update', toolCallId: 'edit', status: 'completed' })
+    fs.writeFileSync(path.join(workspace, 'shared.txt'), 'external final\n')
+    fs.writeFileSync(path.join(workspace, 'outside.txt'), 'external only\n')
+    ctx.complete()
+    await vi.waitFor(() => expect(ctx.finished).toHaveBeenCalledOnce())
+    const reloaded = JSON.parse(JSON.stringify(ctx.items)) as Item[]
+    expect(collectEditedFiles(reloaded, workspace)).toMatchObject([
+      { path: 'shared.txt', added: 1, removed: 1, lines: ['@@ -1,1 +1,1 @@', '-before', '+agent'] }
+    ])
+    const snapshot = collectSnapshotTurns(reloaded, workspace).at(-1)!
+    expect(snapshot.files?.map((file) => file.path).sort()).toEqual(['outside.txt', 'shared.txt'])
+    expect(snapshot.files?.find((file) => file.path === 'shared.txt')?.lines).toContain('+external final')
+  })
+
+  it('keeps an empty snapshot on an interrupted turn with no result from the CLI', async () => {
+    const ctx = setup()
+    await ctx.manager.send(ctx.req)
+    await ctx.waitForPrompt()
+    ctx.manager.dispose('thread')
+    await vi.waitFor(() => expect(ctx.finished).toHaveBeenCalledOnce())
+    expect(collectSnapshotTurns(ctx.items).at(-1)?.files).toEqual([])
   })
 
   it('counts a send immediately and throughout worktree startup and execution, then excludes the idle process', async () => {

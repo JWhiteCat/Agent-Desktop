@@ -4,7 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { changedTurnFiles, snapshotTurnFiles } from '../src/main/turn-files'
-import { collectEditedFiles } from '../src/renderer/src/lib/diff'
+import { collectSnapshotTurns } from '../src/renderer/src/lib/diff'
 import { isolateGitEnvironment } from './helpers/git-environment'
 
 describe('turn working-file snapshots', () => {
@@ -72,7 +72,7 @@ describe('turn working-file snapshots', () => {
     write('ignored.txt', 'hidden\n')
     write('large.txt', 'now small\n')
     const changes = await changedTurnFiles(before)
-    const files = collectEditedFiles([{ id: 'r', kind: 'result', isError: false, fileChanges: changes }], root)
+    const files = collectSnapshotTurns([{ id: 'r', kind: 'result', isError: false, fileChanges: changes }], root)[0].files!
     expect(files.map((file) => file.path).sort()).toEqual(['binary.dat', 'deleted.txt', 'empty.txt', 'new file.txt'])
     expect(files.find((file) => file.path === 'binary.dat')?.binary).toBe(true)
     expect(files.find((file) => file.path === 'deleted.txt')?.removed).toBe(1)
@@ -102,7 +102,7 @@ describe('turn working-file snapshots', () => {
     fs.rmSync(path.join(root, 'deleted.txt'))
     fs.renameSync(path.join(root, 'old-name.txt'), path.join(root, 'new-name.txt'))
     const changes = await changedTurnFiles(before)
-    const files = collectEditedFiles([{ id: 'r', kind: 'result', isError: false, fileChanges: changes }], root)
+    const files = collectSnapshotTurns([{ id: 'r', kind: 'result', isError: false, fileChanges: changes }], root)[0].files!
     expect(files.map((file) => file.path).sort()).toEqual(['binary.dat', 'deleted.txt', 'empty.txt', 'new-name.txt', 'old-name.txt', 'src/edited.txt', 'src/new.txt'])
     expect(files.find((file) => file.path === 'src/edited.txt')).toMatchObject({ added: 1, removed: 1 })
     expect(fs.existsSync(path.join(root, '.git'))).toBe(false)

@@ -3,6 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import type { CliSession, Item, ToolItem } from '@shared/types'
 import { parseAttachmentPrompt } from '@shared/attachment-message'
+import { ToolFileRecorder } from './tool-file-changes'
 import { newId } from './id'
 import { UNTITLED } from './history'
 import { compact } from './reducer'
@@ -64,15 +65,26 @@ export function claudeTranscriptItems(text: string): Item[] {
   const items: Item[] = []
   const tools = new Map<string, ToolItem>()
   const readForkPrompt = createForkPromptReader()
+  let fileRecorder = new ToolFileRecorder()
+  let cwd = ''
   for (const row of parseLines(text)) {
     if (row?.isSidechain) continue
     const type = String(row?.type ?? '')
     if (type !== 'user' && type !== 'assistant') continue
+    if (typeof row.cwd === 'string') cwd = row.cwd
     const createdAt = timeOf(row) ?? 0
     const blocks = messageBlocks(row?.message)
     if (type === 'user') pushUser(items, tools, blocks, createdAt, readForkPrompt)
     else pushAssistant(items, tools, blocks, createdAt)
+    // Completion is explicit in tool_result; pending calls retain only candidates.
+    for (const block of blocks) {
+      const callId = block?.type === 'tool_use' ? block.id : block?.tool_use_id ?? block?.toolUseId
+      const tool = tools.get(callId)
+      if (tool) fileRecorder.record(tool, cwd, block?.type === 'tool_use' ? block.input : tool.args, tool.result)
+    }
+    if (type === 'user' && blocks.some((block: any) => block?.type === 'text')) fileRecorder = new ToolFileRecorder()
   }
+  for (const item of items) if (item.kind === 'tool' && item.status === 'running') { item.status = 'error'; item.fileChanges = [] }
   return items
 }
 
@@ -113,7 +125,7 @@ function pushAssistant(items: Item[], tools: Map<string, ToolItem>, blocks: any[
         callId,
         tool: String(block.name ?? 'tool'),
         args: compact(block.input ?? {}),
-        status: 'error',
+        status: 'running',
         startedAt: createdAt
       }
       tools.set(callId, tool)

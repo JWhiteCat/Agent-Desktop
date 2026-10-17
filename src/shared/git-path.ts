@@ -24,3 +24,9 @@ export function quoteGitPath(value: string): string {
 export function untrackedGitPaths(status: string): string[] {
   return status.split(/\r?\n/).filter((line) => line.startsWith('?? ')).map((line) => decodeGitPath(line.slice(3)))
 }
+
+/** Windows paths are case-insensitive; POSIX paths retain their case. No disk reads. */
+export function fileChangePathKey(path: string): string {
+  const normalized = path.replace(/\\/g, '/')
+  return /^(?:[A-Za-z]:\/|\/\/)/.test(normalized) ? normalized.toLowerCase() : normalized
+}

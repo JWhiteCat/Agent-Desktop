@@ -437,7 +437,6 @@ export class SessionManager {
         const run = this.runs.get(threadId)
         if (!run || run.proc !== proc || method !== 'session/update' || !run.acceptUpdates) return
         if (
-          params?.update?.sessionUpdate === 'usage_update' &&
           params.sessionId &&
           proc.sessionId &&
           params.sessionId !== proc.sessionId
@@ -814,7 +813,7 @@ export class SessionManager {
     }
     if (fileChanges !== undefined) {
       let result = items.find((item) => item.kind === 'result' && item.id === run.resultId)
-      if (!result && fileChanges.length) {
+      if (!result) {
         run.resultId = newId()
         result = r.push({ id: run.resultId, kind: 'result', isError: !r.gotResult && !run.stopped,
           cli: run.proc.provider, model: r.init.model, createdAt: Date.now() })

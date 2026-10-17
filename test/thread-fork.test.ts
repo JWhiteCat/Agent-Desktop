@@ -174,6 +174,23 @@ describe('conversation forks', () => {
       expect(imported[3].id).toBe(transcript[3].id)
     })
 
+    it('preserves operation-owned evidence independently through sync, reload, and fork', async () => {
+      const original = source('cursor')
+      const tool: Item = { id: 'old', kind: 'tool', callId: 'edit-call', tool: 'edit', args: { path: 'file.txt' },
+        startedAt: 0, status: 'success', fileChanges: [{ path: 'C:/repo/file.txt', source: 'tool-result',
+          diff: 'diff --git a/file.txt b/file.txt\n@@ -1 +1 @@\n-before\n+agent' }] }
+      store.setItems(original.id, [transcript[0], tool, { id: 'result', kind: 'result', cli: 'cursor', isError: false,
+        fileChanges: [{ path: 'C:/repo/outside.txt', diff: 'diff --git a/outside.txt b/outside.txt\n' }] }])
+      const imported: Item[] = [transcript[0], { ...tool, id: 'new', fileChanges: undefined, status: 'error' }]
+      vi.mocked(readCliTranscript).mockReturnValue(imported)
+      syncFromCli(deps, original.id)
+      expect(imported[1]).toMatchObject({ status: 'success', fileChanges: tool.fileChanges })
+      expect((imported[1] as typeof tool).fileChanges).not.toBe(tool.fileChanges)
+      store.flush()
+      expect(new Store().items(original.id)[1]).toMatchObject({ fileChanges: tool.fileChanges })
+      expect((await forkThread(deps, original.id)).items[1]).toMatchObject({ fileChanges: tool.fileChanges })
+    })
+
     it('does not move snapshots onto an unrelated turn', () => {
       const original = source('codex')
       const saved = store.items(original.id)[2] as ResultItem

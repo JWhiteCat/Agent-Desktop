@@ -4,6 +4,7 @@ import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import type { CliSession, Item, ToolItem } from '@shared/types'
 import { parseAttachmentPrompt } from '@shared/attachment-message'
+import { ToolFileRecorder } from './tool-file-changes'
 import { newId } from './id'
 import { compact } from './reducer'
 import { createForkPromptReader, untrustedForkItems } from './fork-context'
@@ -154,6 +155,8 @@ export function readCliTranscript(chatId: string): Item[] | undefined {
     if (!root) return undefined
 
     const items: Item[] = []
+    let fileRecorder = new ToolFileRecorder()
+    const cwd = readMetaFile(dir)?.cwd ?? ''
     const tools = new Map<string, ToolItem>()
     const readForkPrompt = createForkPromptReader()
     const createdAt = readMetaFile(dir)?.createdAtMs ?? 0
@@ -168,6 +171,7 @@ export function readCliTranscript(chatId: string): Item[] | undefined {
         continue
       }
       if (msg.role === 'user') {
+        fileRecorder = new ToolFileRecorder()
         const replay = readForkPrompt(contentText(msg.content))
         if (replay) items.push(...untrustedForkItems(replay.items))
         const managed = parseAttachmentPrompt(replay ? replay.prompt : contentText(msg.content))
@@ -192,9 +196,10 @@ export function readCliTranscript(chatId: string): Item[] | undefined {
               callId: part.toolCallId,
               tool: String(part.toolName ?? 'tool'),
               args: compact(part.args ?? {}),
-              status: 'error',
+              status: 'running',
               startedAt: 0
             }
+            fileRecorder.record(tool, cwd, part.args)
             tools.set(part.toolCallId, tool)
             items.push(tool)
           }
@@ -207,10 +212,12 @@ export function readCliTranscript(chatId: string): Item[] | undefined {
           const high = msg.providerOptions?.cursor?.highLevelToolCallResult
           const output = high?.output ?? { success: { result: part.result } }
           tool.result = compact(output)
-          tool.status = high?.isError || output.error !== undefined ? 'error' : 'success'
+          tool.status = high?.isError || output.error !== undefined || output.failure !== undefined || output.rejected !== undefined ? 'error' : 'success'
+          fileRecorder.record(tool, cwd, tool.args, output)
         }
       }
     }
+    for (const item of items) if (item.kind === 'tool' && item.status === 'running') { item.status = 'error'; item.fileChanges = [] }
     return items
   } finally {
     db.close()

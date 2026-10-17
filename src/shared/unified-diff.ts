@@ -1,3 +1,5 @@
+import { quoteGitPath } from './git-path'
+
 export interface UnifiedDiff {
   text: string
   added: number
@@ -122,7 +124,9 @@ function hunks(rows: Numbered[]): string[] {
 
 /** Build a unified diff from the before/after text Cursor ACP sends on an edit. */
 export function unifiedDiff(filePath: string, oldText: string | null, newText: string): UnifiedDiff {
-  const path = filePath.replace(/\r?\n/g, '') || 'file'
+  const path = filePath || 'file'
+  const a = quoteGitPath(`a/${path}`)
+  const b = quoteGitPath(`b/${path}`)
   const oldLines = splitLines(oldText ?? '')
   const newLines = splitLines(newText)
   const body = hunks(numberRows(diffLines(oldLines, newLines)))
@@ -133,9 +137,9 @@ export function unifiedDiff(filePath: string, oldText: string | null, newText: s
     if (line.startsWith('+')) added++
     else if (line.startsWith('-')) removed++
   }
-  const header = [`diff --git a/${path} b/${path}`]
-  if (oldText == null) header.push('new file mode 100644', '--- /dev/null', `+++ b/${path}`)
-  else if (!newText) header.push('deleted file mode 100644', `--- a/${path}`, '+++ /dev/null')
-  else header.push(`--- a/${path}`, `+++ b/${path}`)
+  const header = [`diff --git ${a} ${b}`]
+  if (oldText == null) header.push('new file mode 100644', '--- /dev/null', `+++ ${b}`)
+  else if (!newText) header.push('deleted file mode 100644', `--- ${a}`, '+++ /dev/null')
+  else header.push(`--- ${a}`, `+++ ${b}`)
   return { text: [...header, ...body].join('\n'), added, removed }
 }

@@ -8,8 +8,13 @@ import { ChangesPanel } from '../src/renderer/src/components/ChangesPanel'
 
 const { state } = vi.hoisted(() => ({ state: {
   app: { projects: [], running: [] },
-  items: {} as Record<string, Item[]>
+  items: {} as Record<string, Item[]>,
+  tab: 'thread' as 'thread' | 'snapshot'
 } }))
+vi.mock('react', async (original) => {
+  const react = await original<typeof import('react')>()
+  return { ...react, useState: (initial: unknown) => react.useState(initial === 'thread' ? state.tab : initial) }
+})
 vi.mock('../src/renderer/src/store', () => ({
   useStore: (selector: (value: typeof state) => unknown) => selector(state)
 }))
@@ -22,13 +27,15 @@ const thread: ThreadMeta = {
 const binary = (path: string) => ({ path, diff: `diff --git a/${path} b/${path}\nBinary files differ\n` })
 const text = (path: string) => ({ path, diff: unifiedDiff(path, 'before\n', 'after\n').text })
 const render = (files: { path: string; diff: string }[]) => {
-  state.items[thread.id] = [{ id: 'result', kind: 'result', isError: false, fileChanges: files }]
+  state.items[thread.id] = [{ id: 'tool', kind: 'tool', callId: 'edit', tool: 'edit', args: {}, status: 'success', startedAt: 0,
+    fileChanges: files.map((file) => ({ ...file, source: 'tool-result' })) }]
   return renderToStaticMarkup(createElement(ChangesPanel, { thread, onClose: vi.fn() }))
 }
 
 beforeEach(() => {
   setLanguage('zh-CN')
   state.items = {}
+  state.tab = 'thread'
 })
 afterEach(() => setLanguage('system', 'zh-CN'))
 
@@ -75,5 +82,38 @@ describe('changes panel binary group', () => {
     expect(html.includes('class="diff-lines"')).toBe(count <= 8)
     expect(html).toContain(`二进制文件（${count - 1}）`)
     expect(html).not.toContain('hidden-0.dat')
+  })
+})
+
+
+describe('snapshot tab', () => {
+  it('shows only the latest saved workspace diff, with older turns available and no refresh action', () => {
+    state.tab = 'snapshot'
+    state.items[thread.id] = [
+      { id: 'u1', kind: 'user', text: 'first', createdAt: 1 },
+      { id: 'r1', kind: 'result', isError: false, fileChanges: [text('first.ts')] },
+      { id: 'u2', kind: 'user', text: 'second', createdAt: 2 },
+      { id: 'tool', kind: 'tool', callId: 'edit', tool: 'edit', args: {}, status: 'success', startedAt: 0,
+        fileChanges: [{ path: '/project/agent.ts', source: 'edit-input' }] },
+      { id: 'r2', kind: 'result', isError: false, fileChanges: [text('external.ts'), binary('hidden.dat')] }
+    ]
+    const html = renderToStaticMarkup(createElement(ChangesPanel, { thread, onClose: vi.fn() }))
+    expect(html).toContain('external.ts')
+    expect(html).not.toContain('agent.ts')
+    expect(html).not.toContain('first.ts')
+    expect(html).toContain('第 1 轮 · first')
+    expect(html).toContain('第 2 轮 · second')
+    expect(html).toContain('可能包含其他软件的修改')
+    expect(html).toContain('二进制文件（1）')
+    expect(html).not.toContain('hidden.dat')
+    expect(html).not.toContain('title="刷新"')
+  })
+
+  it.each([true, false])('distinguishes an empty snapshot from no recorded snapshot (recorded: %s)', (recorded) => {
+    state.tab = 'snapshot'
+    state.items[thread.id] = [{ id: 'u', kind: 'user', text: 'latest', createdAt: 1 },
+      { id: 'result', kind: 'result', isError: false, ...(recorded ? { fileChanges: [] } : {}) }]
+    const html = renderToStaticMarkup(createElement(ChangesPanel, { thread, onClose: vi.fn() }))
+    expect(html).toContain(recorded ? '本轮没有快照差异' : '本轮未记录快照')
   })
 })

@@ -1,106 +1,12 @@
 import { useMemo, useState } from 'react'
 import type { GitDiff, Item } from '@shared/types'
-import { decodeGitPath, untrackedGitPaths } from '@shared/git-path'
-import { t } from '@shared/i18n'
+import { untrackedGitPaths, fileChangePathKey } from '@shared/git-path'
 import { useT } from './i18n'
 import { IconChevronDown, IconChevronRight } from '../components/icons'
 import { relativePath } from './format'
-import { shellDiff, toolDiff, toolPath } from './tools'
 
-export interface DiffFile {
-  path: string
-  lines: string[]
-  added: number
-  removed: number
-  binary?: boolean
-}
-
-function diffHeaderPath(paths: string): string {
-  const quotedFrom = /^"(?:\\.|[^"\\])*" /.exec(paths)
-  if (quotedFrom) return decodeGitPath(paths.slice(quotedFrom[0].length)).replace(/^b\//, '')
-  const quotedTo = / ("(?:\\.|[^"\\])*")$/.exec(paths)
-  if (quotedTo) return decodeGitPath(quotedTo[1]).replace(/^b\//, '')
-  // Spaces are unquoted in native Git diff headers. Match repeated paths before
-  // falling back to the separator, which can itself occur inside a filename.
-  for (let i = paths.indexOf(' b/'); i !== -1; i = paths.indexOf(' b/', i + 1)) {
-    const to = paths.slice(i + 3)
-    if (paths.slice(0, i).replace(/^a\//, '') === to) return to
-  }
-  return / b\/(.+)$/.exec(paths)?.[1] ?? paths
-}
-
-export function parseUnifiedDiff(text: string): DiffFile[] {
-  const files: DiffFile[] = []
-  if (!text.trim()) return files
-  let cur: DiffFile | undefined
-  let oldRemaining = 0
-  let newRemaining = 0
-  const start = (path: string) => {
-    cur = { path, lines: [], added: 0, removed: 0 }
-    oldRemaining = newRemaining = 0
-    files.push(cur)
-  }
-  for (const line of text.split(/\r?\n/)) {
-    if (line.startsWith('diff --git ')) {
-      start(diffHeaderPath(line.slice(11)))
-      continue
-    }
-    const hunk = /^@@ -\d+(?:,(\d+))? \+\d+(?:,(\d+))? @@/.exec(line)
-    if (hunk) {
-      if (!cur) start('')
-      oldRemaining = Number(hunk[1] ?? 1)
-      newRemaining = Number(hunk[2] ?? 1)
-      cur!.lines.push(line)
-      continue
-    }
-    // Header-like content inside a hunk is still a changed line (e.g. SQL comments).
-    if (cur && (oldRemaining > 0 || newRemaining > 0)) {
-      if (line.startsWith('-')) {
-        oldRemaining--
-        cur.removed++
-      } else if (line.startsWith('+')) {
-        newRemaining--
-        cur.added++
-      } else if (line.startsWith(' ')) {
-        oldRemaining--
-        newRemaining--
-      }
-      cur.lines.push(line)
-      continue
-    }
-    if (line.startsWith('--- ') && (!cur || cur.lines.some((l) => l.startsWith('@@')))) {
-      start('')
-    }
-    if (!cur) start('')
-    const c = cur!
-    if (line.startsWith('+++ ')) {
-      const p = decodeGitPath(line.slice(4).split('\t')[0]).replace(/^b\//, '')
-      if (p !== '/dev/null') c.path = p
-      continue
-    }
-    if (line.startsWith('--- ')) {
-      if (!c.path) {
-        const p = decodeGitPath(line.slice(4).split('\t')[0]).replace(/^a\//, '')
-        if (p !== '/dev/null') c.path = p
-      }
-      continue
-    }
-    if (/^(rename to |copy to )/.test(line)) {
-      c.path = decodeGitPath(line.replace(/^(rename to |copy to )/, ''))
-      continue
-    }
-    if (/^(index |new file mode|deleted file mode|similarity index|rename from|copy from|old mode|new mode)/.test(line)) continue
-    if (line.startsWith('Binary files')) {
-      c.binary = true
-      continue
-    }
-    if (line.startsWith('+')) c.added++
-    else if (line.startsWith('-')) c.removed++
-    c.lines.push(line)
-  }
-  for (const f of files) while (f.lines.length && !f.lines[f.lines.length - 1]) f.lines.pop()
-  return files.filter((f) => f.path || f.lines.length)
-}
+export { parseUnifiedDiff, type DiffFile } from '@shared/parsed-diff'
+import { parseUnifiedDiff, type DiffFile } from '@shared/parsed-diff'
 
 /** Include status-only files (e.g. beyond the untracked diff limit) without duplicates. */
 export function collectGitFiles(git: Pick<GitDiff, 'diff' | 'status'>): DiffFile[] {
@@ -114,60 +20,63 @@ export function collectGitFiles(git: Pick<GitDiff, 'diff' | 'status'>): DiffFile
   return files
 }
 
-/** Edits in one turn, grouped by path. Later edits of the same file append. */
+/** Only operation-owned records belong in the agent's edited-file list. */
 export function collectEditedFiles(items: Item[], cwd?: string): DiffFile[] {
   const byPath = new Map<string, DiffFile>()
-  let turn = new Map<string, DiffFile>()
-  let shell = new Map<string, DiffFile>()
-  let hasSnapshot = false
-  const key = (p: string) => relativePath(p, cwd).replace(/\\/g, '/')
-  const append = (map: Map<string, DiffFile>, file: DiffFile) => {
-    const prev = map.get(file.path)
-    if (!prev) map.set(file.path, file)
-    else {
-      prev.lines.push(...file.lines)
-      prev.added += file.added
-      prev.removed += file.removed
-      prev.binary = prev.binary || file.binary
-    }
-  }
-  const flush = () => {
-    if (!hasSnapshot) for (const [p, file] of shell) if (!turn.has(p)) turn.set(p, file)
-    for (const file of turn.values()) append(byPath, file)
-    turn = new Map()
-    shell = new Map()
-    hasSnapshot = false
-  }
-  for (const it of items) {
-    if (it.kind === 'user') { flush(); continue }
-    if (it.kind === 'result') {
-      hasSnapshot ||= it.fileChanges !== undefined
-      for (const change of it.fileChanges ?? []) {
-        const file = parseUnifiedDiff(change.diff)[0]
-        if (file) turn.set(key(change.path), { ...file, path: key(change.path) })
-      }
-      continue
-    }
-    if (it.kind !== 'tool') continue
-    const diff = toolDiff(it)
-    if (diff) {
-      for (const file of parseUnifiedDiff(diff)) {
-        const p = key(file.path || toolPath(it) || t('(未知文件)'))
-        append(turn, { ...file, path: p })
-      }
-    } else {
-      const saved = shellDiff(it)
-      if (!saved) continue
-      for (const file of parseUnifiedDiff(saved)) {
-        const root = typeof it.args?.cwd === 'string' ? it.args.cwd : cwd
-        const p = key(root ? `${root}/${file.path}` : file.path)
-        // Repeated git diff commands observe the same edit; do not add it twice.
-        shell.set(p, { ...file, path: p })
+  let seen = new Set<string>()
+  for (const item of items) {
+    if (item.kind === 'user') { seen = new Set(); continue }
+    if (item.kind !== 'tool' || item.status !== 'success' || seen.has(item.callId)) continue
+    seen.add(item.callId)
+    for (const change of item.fileChanges ?? []) {
+      const p = relativePath(change.path, cwd).replace(/\\/g, '/')
+      const parsed = change.diff ? parseUnifiedDiff(change.diff)[0] : undefined
+      const file: DiffFile = { path: p, lines: parsed?.lines ?? [], added: parsed?.added ?? 0,
+        removed: parsed?.removed ?? 0, binary: change.binary || parsed?.binary,
+        unavailable: !change.diff }
+      const key = fileChangePathKey(change.path)
+      const previous = byPath.get(key)
+      if (!previous) byPath.set(key, file)
+      else {
+        previous.lines.push(...file.lines)
+        previous.added += file.added
+        previous.removed += file.removed
+        previous.binary ||= file.binary
+        previous.unavailable ||= file.unavailable
       }
     }
   }
-  flush()
   return [...byPath.values()]
+}
+
+export interface SnapshotTurn {
+  id: string
+  number: number
+  summary: string
+  files?: DiffFile[]
+}
+
+/** Saved end-of-turn workspace observations, never tool attribution. */
+export function collectSnapshotTurns(items: Item[], cwd?: string, running = false): SnapshotTurn[] {
+  const turns: SnapshotTurn[] = []
+  let user: Extract<Item, { kind: 'user' }> | undefined
+  let result: Extract<Item, { kind: 'result' }> | undefined
+  let number = 0
+  const flush = () => {
+    if (!user && !result) return
+    turns.push({ id: user?.id ?? result!.id, number: number || 1,
+      summary: user?.text.split(/\r?\n/)[0].slice(0, 80) ?? '',
+      files: result?.fileChanges?.map((change) => ({
+        ...(parseUnifiedDiff(change.diff)[0] ?? { lines: [], added: 0, removed: 0 }),
+        path: relativePath(change.path, cwd).replace(/\\/g, '/')
+      })) })
+  }
+  for (const item of items) {
+    if (item.kind === 'user') { flush(); user = item; number++; result = undefined }
+    else if (item.kind === 'result') result = item
+  }
+  if (!running) flush()
+  return turns
 }
 
 export function DiffLines({ lines }: { lines: string[] }) {
@@ -207,6 +116,7 @@ export function DiffFileView({ file, defaultOpen = true, onOpen }: { file: DiffF
           {file.binary && <span className="muted">{t('二进制')}</span>}
         </span>
       </div>
+      {open && file.unavailable && <div className="notice">{t('差异不可用')}</div>}
       {open && file.lines.length > 0 && <DiffLines lines={file.lines} />}
     </div>
   )

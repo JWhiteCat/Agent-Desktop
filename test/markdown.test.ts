@@ -97,7 +97,8 @@ describe('conversation changed-file lists', () => {
   const binary = (path: string) => ({ path, diff: `diff --git a/${path} b/${path}\nBinary files differ\n` })
   const text = (path: string) => ({ path, diff: unifiedDiff(path, 'before\n', 'after\n').text })
   const changes = (files: { path: string; diff: string }[]): Item => ({
-    id: 'changes', kind: 'result', isError: false, fileChanges: files
+    id: 'changes', kind: 'tool', callId: 'edit', tool: 'edit', args: {}, status: 'success', startedAt: 0,
+    fileChanges: files.map((file) => ({ ...file, source: 'tool-result' }))
   })
 
   it.each([

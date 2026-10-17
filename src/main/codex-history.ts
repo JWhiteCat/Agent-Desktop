@@ -3,6 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import type { AssistantItem, CliSession, Item, ToolItem } from '@shared/types'
 import { parseAttachmentPrompt } from '@shared/attachment-message'
+import { ToolFileRecorder } from './tool-file-changes'
 import { newId } from './id'
 import { compact } from './reducer'
 import { UNTITLED } from './history'
@@ -327,6 +328,8 @@ function itemsFrom(rows: TranscriptRow[], events: boolean, usage: CodexUsageTurn
   const items: Item[] = []
   const tools = new Map<string, ToolItem>()
   const readForkPrompt = createForkPromptReader()
+  let fileRecorder = new ToolFileRecorder()
+  let cwd = ''
   let usageIndex = 0
   function appendUsageBefore(line: number): void {
     while (usageIndex < usage.length && usage[usageIndex].endLine < line) {
@@ -352,7 +355,10 @@ function itemsFrom(rows: TranscriptRow[], events: boolean, usage: CodexUsageTurn
     appendUsageBefore(line)
     const payload = row?.payload ?? row
     const kind = String(row?.type ?? '')
-    if (kind === 'session_meta') continue
+    if (kind === 'session_meta') {
+      if (typeof payload.cwd === 'string') cwd = payload.cwd
+      continue
+    }
     if (kind === 'event_msg') {
       if (events) pushEvent(items, payload, readForkPrompt, timeOf(row))
       continue
@@ -360,34 +366,42 @@ function itemsFrom(rows: TranscriptRow[], events: boolean, usage: CodexUsageTurn
     if (events) continue
     const itemType = String(payload?.type ?? '')
     if (itemType === 'message') {
+      if (payload.role === 'user') fileRecorder = new ToolFileRecorder()
       pushMessage(items, payload, readForkPrompt, timeOf(row))
       continue
     }
-    if (itemType === 'function_call') {
+    if (itemType === 'function_call' || itemType === 'custom_tool_call') {
       const callId = String(payload.call_id ?? payload.callId ?? newId())
       const tool: ToolItem = {
         id: newId(),
         kind: 'tool',
         callId,
         tool: String(payload.name ?? 'tool'),
-        args: compact(parseArgs(payload.arguments)),
-        status: 'success',
+        args: compact(itemType === 'custom_tool_call' ? payload.input : parseArgs(payload.arguments)),
+        status: 'running',
         startedAt: timeOf(row) ?? 0
       }
+      fileRecorder.record(tool, cwd, itemType === 'custom_tool_call' ? payload.input : parseArgs(payload.arguments))
       tools.set(callId, tool)
       items.push(tool)
       continue
     }
-    if (itemType === 'function_call_output') {
+    if (itemType === 'function_call_output' || itemType === 'custom_tool_call_output') {
       const callId = String(payload.call_id ?? payload.callId ?? '')
       const tool = tools.get(callId)
       if (!tool) continue
       const output = typeof payload.output === 'string' ? payload.output : JSON.stringify(payload.output ?? '')
       tool.result = compact({ success: { stdout: output } })
-      tool.status = 'success'
+      const failed = payload.is_error === true || /^(?:Error:|error:|Failed|Exit code: [1-9])/.test(output)
+      tool.status = failed ? 'error' : 'success'
+      const patch = tool.tool.toLowerCase().replace(/[^a-z]/g, '') === 'applypatch'
+      if (!patch || /^Success\. Updated the following files:/m.test(output)) fileRecorder.record(tool, cwd, tool.args,
+        typeof payload.output === 'object' ? payload.output : tool.result)
+      else tool.fileChanges = []
     }
   }
   appendUsageBefore(Infinity)
+  for (const item of items) if (item.kind === 'tool' && item.status === 'running') { item.status = 'error'; item.fileChanges = [] }
   return items
 }
 

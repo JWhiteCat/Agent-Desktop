@@ -1,11 +1,12 @@
 import { localizedMessage, t as translate } from '@shared/i18n'
-import type { Item, ResultItem, ThreadMeta, UserItem } from '@shared/types'
+import type { Item, ResultItem, ThreadMeta, ToolItem, UserItem } from '@shared/types'
 import { isManagedMessageId } from '@shared/attachment-message'
 import { threadCli } from '@shared/types'
 import { materializeCliFork, planCliFork } from './fork'
 import { readClaudeTranscript } from './claude-history'
 import { findChatDir, readCliTranscript } from './history'
 import { readCodexTranscript } from './codex-history'
+import { restoreToolFileChanges } from './tool-file-changes'
 import { newId } from './id'
 import { titleFrom } from './sessions'
 import type { Store } from './store'
@@ -67,29 +68,29 @@ function preserveQuotaEstimates(previous: Item[], imported: Item[]): void {
 /** Tool call IDs survive CLI reloads even for providers without a native result item. */
 function preserveTurnFiles(previous: Item[], imported: Item[], cli: ThreadMeta['cli']): void {
   const turns = (items: Item[]) => {
-    const groups: Array<{ keys: string[]; result?: ResultItem; end: number }> = []
-    let calls: string[] = []
+    const groups: Array<{ keys: string[]; result?: ResultItem; tools: ToolItem[]; end: number }> = []
+    let tools: ToolItem[] = []
     let result: ResultItem | undefined
     const finish = (end: number) => {
       const keys: string[] = []
       if (result?.usageId && result.cli === 'codex') keys.push(`usage:${result.usageId}`)
-      if (calls.length) keys.push(`calls:${JSON.stringify(calls)}`)
-      groups.push({ keys, result, end })
-      calls = []
+      if (tools.length) keys.push(`calls:${JSON.stringify(tools.map((tool) => tool.callId))}`)
+      groups.push({ keys, result, tools, end })
+      tools = []
       result = undefined
     }
     items.forEach((item, index) => {
       if (item.kind === 'user') finish(index)
-      else if (item.kind === 'tool') calls.push(item.callId)
+      else if (item.kind === 'tool') tools.push(item)
       else if (item.kind === 'result') result = item
     })
     finish(items.length)
     return groups
   }
-  const saved = new Map<string, ResultItem | undefined>()
+  const saved = new Map<string, ReturnType<typeof turns>[number] | undefined>()
   for (const turn of turns(previous)) {
-    if (turn.result?.fileChanges === undefined || (turn.result.cli && turn.result.cli !== cli)) continue
-    for (const key of turn.keys) saved.set(key, saved.has(key) ? undefined : turn.result)
+    if (turn.result?.cli && turn.result.cli !== cli) continue
+    for (const key of turn.keys) saved.set(key, saved.has(key) ? undefined : turn)
   }
   const incoming = turns(imported)
   const counts = new Map<string, number>()
@@ -98,10 +99,21 @@ function preserveTurnFiles(previous: Item[], imported: Item[], cli: ThreadMeta['
     const matches = new Set(turn.keys.flatMap((key) => counts.get(key) === 1 && saved.get(key) ? [saved.get(key)!] : []))
     if (matches.size !== 1) continue
     const original = [...matches][0]
-    const fileChanges = structuredClone(original.fileChanges!)
+    for (const tool of turn.tools) {
+      const candidates = original.tools.filter((savedTool) => savedTool.callId === tool.callId)
+      if (candidates.length !== 1 || turn.tools.filter((other) => other.callId === tool.callId).length !== 1) continue
+      const savedTool = candidates[0]
+      if (savedTool.fileChanges !== undefined) {
+        tool.fileChanges = structuredClone(savedTool.fileChanges)
+        // Native imports may not retain the explicit completion status.
+        tool.status = savedTool.status
+      }
+    }
+    if (original.result?.fileChanges === undefined) continue
+    const fileChanges = structuredClone(original.result.fileChanges)
     if (turn.result) turn.result.fileChanges = fileChanges
-    else imported.splice(turn.end, 0, { id: newId(), kind: 'result', isError: original.isError,
-      cli: original.cli, createdAt: original.createdAt, fileChanges })
+    else imported.splice(turn.end, 0, { id: newId(), kind: 'result', isError: original.result.isError,
+      cli: original.result.cli, createdAt: original.result.createdAt, fileChanges })
   }
 }
 
@@ -218,6 +230,7 @@ export function syncFromCli(deps: Pick<HistoryDeps, 'store' | 'isRunning'>, thre
   preserveManagedAttachments(previous, items)
   preserveTurnFiles(previous, items, cli)
   if (cli === 'codex') preserveQuotaEstimates(previous, items)
+  restoreToolFileChanges(items, t.cwd ?? deps.store.project(t.projectId)?.path ?? '')
   deps.store.setItems(threadId, items)
   const firstUser = items.find((i) => i.kind === 'user')
   deps.store.updateThread(threadId, {

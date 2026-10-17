@@ -4,6 +4,7 @@ import { isBackgroundAgentActivity } from '@shared/transcript'
 import { normalizeTurnUsage } from '@shared/turn-usage'
 import { unifiedDiff } from '@shared/unified-diff'
 import { newId } from './id'
+import { ToolFileRecorder } from './tool-file-changes'
 
 export interface InitInfo {
   sessionId?: string
@@ -60,6 +61,7 @@ export class StreamReducer {
   private assistant?: AssistantItem
   private thinking?: ThinkingItem
   private tools = new Map<string, ToolItem>()
+  private fileRecorder = new ToolFileRecorder()
   /** One Codex plan card per turn, updated by `plan` and `plan_update`. */
   private planCallId?: string
   private sawDelta = false
@@ -271,6 +273,12 @@ export class StreamReducer {
     const payload = tc[key] ?? {}
     const tool = key.replace(/ToolCall$/, '')
 
+    if (ev.subtype === 'started' && this.tools.has(callId)) {
+      const item = this.tools.get(callId)!
+      if (payload.args !== undefined) item.args = compact(payload.args)
+      this.fileRecorder.record(item, this.init.cwd ?? '', payload.args, payload.result)
+      return [item]
+    }
     if (ev.subtype === 'started') {
       const changed = this.closeSegments()
       const item: ToolItem = {
@@ -282,6 +290,7 @@ export class StreamReducer {
         status: 'running',
         startedAt: Number(tc.startedAtMs) || Date.now()
       }
+      this.fileRecorder.record(item, this.init.cwd ?? '', payload.args, payload.result)
       this.tools.set(callId, item)
       this.items.push(item)
       return [...changed, item]
@@ -297,6 +306,7 @@ export class StreamReducer {
     item.result = compact(payload.result)
     item.status = toolStatus(payload.result)
     item.endedAt = Number(tc.completedAtMs) || Date.now()
+    this.fileRecorder.record(item, this.init.cwd ?? '', payload.args ?? item.args, payload.result)
     return [item]
   }
 
@@ -315,7 +325,7 @@ export class StreamReducer {
     const result = attachContentDiffs(asToolResult(update.rawOutput, outputText), update.content)
     const status = acpToolStatus(update.status, result)
 
-    if (update.sessionUpdate === 'tool_call' || !this.tools.has(callId)) {
+    if (!this.tools.has(callId)) {
       // Subagent completion can arrive while the parent is still streaming one
       // message. Keep its Markdown together across these background notices.
       const changed = isBackgroundAgentActivity(args) ? [] : this.closeSegments()
@@ -328,6 +338,7 @@ export class StreamReducer {
         status,
         startedAt: Date.now()
       }
+      this.fileRecorder.record(item, this.init.cwd ?? '', rawInput ?? args, update.rawOutput ?? result, update.content)
       if (result !== undefined) item.result = compact(result)
       if (status !== 'running') item.endedAt = Date.now()
       this.tools.set(callId, item)
@@ -336,14 +347,15 @@ export class StreamReducer {
     }
 
     const item = this.tools.get(callId)!
-    if (update.title && !item.tool) item.tool = toolNameFrom(update, args)
+    if (!item.tool || item.tool === 'tool') item.tool = toolNameFrom(update, args)
     if (rawInput && typeof rawInput === 'object') item.args = compact(args)
     if (result !== undefined) item.result = compact(result)
     // ACP updates omit unchanged fields; a missing status must not reopen a finished call.
-    if (update.status !== undefined || status === 'error') {
+    if ((update.status !== undefined && (status !== 'running' || item.status === 'running')) || status === 'error') {
       item.status = status
       if (status !== 'running') item.endedAt = Date.now()
     }
+    this.fileRecorder.record(item, this.init.cwd ?? '', rawInput ?? item.args, update.rawOutput ?? result, update.content)
     return [item]
   }
 }
