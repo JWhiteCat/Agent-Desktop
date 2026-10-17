@@ -1944,6 +1944,20 @@ select {
   position: sticky;
   top: 0;
 }
+.changes-binary-toggle {
+  width: 100%;
+  margin-bottom: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  text-align: left;
+}
+.changes-binary-toggle:hover {
+  background: var(--bg-hover);
+}
+.changes-binary-toggle:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: -2px;
+}
 .diff-path {
   flex: 1;
   min-width: 0;

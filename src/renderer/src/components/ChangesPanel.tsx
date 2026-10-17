@@ -4,10 +4,44 @@ import type { GitDiff, ThreadMeta } from '@shared/types'
 import { DiffFileView, collectEditedFiles, collectGitFiles, type DiffFile } from '../lib/diff'
 import { untrackedGitPaths } from '@shared/git-path'
 import { useStore } from '../store'
-import { IconBranch, IconRefresh, IconX, Spinner } from './icons'
+import { IconBranch, IconChevronDown, IconChevronRight, IconRefresh, IconX, Spinner } from './icons'
 import { ResizeHandle } from './ResizeHandle'
 
 type Tab = 'thread' | 'git'
+
+function ChangesFileList({ files, tab, untracked }: { files: DiffFile[]; tab: Tab; untracked: Set<string> }) {
+  const t = useT()
+  const [binaryOpen, setBinaryOpen] = useState<Record<Tab, boolean>>({ thread: false, git: false })
+  const textFiles = files.filter((file) => !file.binary)
+  const binaryFiles = files.filter((file) => file.binary)
+  const renderFile = (file: DiffFile) => (
+    <DiffFileView
+      key={file.path}
+      file={tab === 'git' && untracked.has(file.path) ? { ...file, path: t('{path}（未跟踪）', { path: file.path }) } : file}
+      defaultOpen={files.length <= 8}
+    />
+  )
+
+  return (
+    <>
+      {textFiles.map(renderFile)}
+      {binaryFiles.length > 0 && (
+        <div className="changes-binary-group">
+          <button
+            type="button"
+            className="diff-file-head changes-binary-toggle"
+            aria-expanded={binaryOpen[tab]}
+            onClick={() => setBinaryOpen((open) => ({ ...open, [tab]: !open[tab] }))}
+          >
+            {binaryOpen[tab] ? <IconChevronDown size={12} /> : <IconChevronRight size={12} />}
+            {t('二进制文件（{count}）', { count: binaryFiles.length })}
+          </button>
+          {binaryOpen[tab] && binaryFiles.map(renderFile)}
+        </div>
+      )}
+    </>
+  )
+}
 
 export function ChangesPanel({ thread, onClose }: { thread: ThreadMeta; onClose: () => void }) {
   const t = useT()
@@ -92,13 +126,7 @@ export function ChangesPanel({ thread, onClose }: { thread: ThreadMeta; onClose:
         {files.length === 0 && (tab === 'thread' || git?.isRepo) && (
           <div className="empty-hint">{tab === 'thread' ? t('本对话还没有编辑文件') : t('工作区没有未提交的改动')}</div>
         )}
-        {files.map((f) => (
-          <DiffFileView
-            key={f.path}
-            file={untracked.has(f.path) && tab === 'git' ? { ...f, path: t('{path}（未跟踪）', { path: f.path }) } : f}
-            defaultOpen={files.length <= 8}
-          />
-        ))}
+        <ChangesFileList key={thread.id} files={files} tab={tab} untracked={untracked} />
       </div>
       {/* After the draggable header, so the handle stays clickable in the title-bar area. */}
       <ResizeHandle panel="changes" label={t('调整变更面板宽度')} />

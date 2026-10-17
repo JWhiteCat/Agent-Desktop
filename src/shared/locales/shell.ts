@@ -96,6 +96,7 @@ export const shellMessages: Record<string, string> = {
   '刷新': 'Refresh',
   '关闭': 'Close',
   '{count} 个文件': 'Files: {count}',
+  '二进制文件（{count}）': 'Binary files ({count})',
   '当前目录不是 git 仓库': 'The current directory is not a Git repository',
   '本对话还没有编辑文件': 'No files edited in this conversation yet',
   '工作区没有未提交的改动': 'No uncommitted changes in the working directory',
