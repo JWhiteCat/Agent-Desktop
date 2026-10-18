@@ -48,6 +48,7 @@ export async function initStore(): Promise<void> {
   window.api.onEvent((ev) => {
     if (ev.type === 'items') {
       receiveItems(ev.threadId, ev.items)
+      void markDisplayedThreadRead()
     } else if (ev.type === 'commands') {
       receiveCommands(ev.threadId, ev.commands)
     } else if (ev.type === 'running' && !ev.running) {

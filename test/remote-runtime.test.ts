@@ -18,6 +18,14 @@ function fixture() {
 }
 
 describe('remote settings', () => {
+  it('preserves waiting input state in remote snapshots and state RPC responses', () => {
+    const { state, handlers } = fixture()
+    state.running = ['waiting']
+    state.waitingForInput = ['waiting']
+    expect(remoteSafeState(state).waitingForInput).toEqual(['waiting'])
+    expect((handlers['state:get']() as AppState).waitingForInput).toEqual(['waiting'])
+  })
+
   it('redacts custom commands, preserves builtin presentation and blocks remote changes and execution', async () => {
     const { settings, state, update } = fixture()
     settings.threadToolbarButtons = [

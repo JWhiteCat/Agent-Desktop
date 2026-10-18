@@ -345,6 +345,8 @@ export interface AppState {
   threads: ThreadMeta[]
   settings: Settings
   running: string[]
+  /** Running conversations with a live question or permission decision awaiting input. */
+  waitingForInput?: string[]
 }
 
 export interface SendRequest {

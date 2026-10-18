@@ -38,7 +38,8 @@ function snapshot(): AppState {
     projects: store.projects,
     threads: store.threads,
     settings: store.settings,
-    running: sessions.running()
+    running: sessions.running(),
+    waitingForInput: sessions.waitingForInput()
   }
 }
 

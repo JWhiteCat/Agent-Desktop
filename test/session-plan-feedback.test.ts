@@ -191,6 +191,8 @@ describe('Codex plan revision lifecycle', () => {
   it('sends No feedback once in the same Plan session after saving the original result', async () => {
     const ctx = setup()
     const question = await ctx.start()
+    expect(ctx.manager.waitingForInput()).toEqual([ctx.thread.id])
+    expect(ctx.thread.unread).toBe(true)
     expect(question).toMatchObject({
       purpose: 'codex-plan-review',
       questions: [{ options: [{ id: 'implement_plan' }, { id: 'revise_plan', requiresText: true }] }]

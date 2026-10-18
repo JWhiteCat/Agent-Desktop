@@ -290,6 +290,67 @@ describe('renderer store', () => {
     expect(api.updateThread).not.toHaveBeenCalled()
   })
 
+  it('opens a waiting conversation from unread and marks it read after loading without answering', async () => {
+    focused = true
+    const request = deferred<Item[]>()
+    api.getItems.mockReturnValueOnce(request.promise)
+    store.setState((s) => ({ app: {
+      ...s.app, threads: [{ ...thread, unread: true, archived: true }],
+      running: [thread.id], waitingForInput: [thread.id]
+    } }))
+    const opening = store.openNextUnreadThread()
+    expect(api.updateThread).not.toHaveBeenCalled()
+    request.resolve([...history, { id: 'question', kind: 'question', toolCallId: 'ask', status: 'pending', questions: [] }])
+    await opening
+    expect(store.getState().view).toEqual({ kind: 'thread', id: thread.id })
+    expect(api.updateThread).toHaveBeenCalledExactlyOnceWith(thread.id, { unread: false })
+    expect(store.getState().app.running).toEqual([thread.id])
+    expect(store.getState().items[thread.id]!.at(-1)).toMatchObject({ status: 'pending' })
+  })
+
+  it.each(['unfocused', 'hidden', 'failed-load'] as const)('preserves waiting question unread on %s', async (condition) => {
+    focused = condition !== 'unfocused'
+    visible = condition !== 'hidden'
+    store.setState((s) => ({ app: {
+      ...s.app, threads: [{ ...thread, unread: true }], running: [thread.id], waitingForInput: [thread.id]
+    } }))
+    if (condition === 'failed-load') api.getItems.mockRejectedValueOnce(new Error('offline'))
+    else api.getItems.mockResolvedValueOnce([...history, { id: 'question', kind: 'question', toolCallId: 'ask', status: 'pending', questions: [] }])
+    await store.openThread(thread.id).catch(() => {})
+    windowEvents.dispatchEvent(new Event('focus'))
+    expect(api.updateThread).not.toHaveBeenCalled()
+  })
+
+  it('keeps waiting unread until its card arrives when state precedes content', async () => {
+    focused = true
+    api.getItems.mockResolvedValueOnce(history)
+    await store.openThread(thread.id)
+    onState({ ...store.getState().app, running: [thread.id], waitingForInput: [thread.id], threads: [{ ...thread, unread: true }] })
+    expect(api.updateThread).not.toHaveBeenCalled()
+    onEvent({ type: 'items', threadId: thread.id, items: [{ id: 'question', kind: 'question', toolCallId: 'ask', status: 'pending', questions: [] }] })
+    await vi.waitFor(() => expect(api.updateThread).toHaveBeenCalledExactlyOnceWith(thread.id, { unread: false }))
+  })
+
+  it('reads waiting question state received remotely and clears again when a new question arrives', async () => {
+    focused = true
+    api.getItems.mockResolvedValueOnce(history)
+    await store.openThread(thread.id)
+    const waiting = { ...store.getState().app, running: [thread.id], waitingForInput: [thread.id], threads: [{ ...thread, unread: true }] }
+    onEvent({ type: 'items', threadId: thread.id, items: [{ id: 'q1', kind: 'question', toolCallId: 'ask', status: 'pending', questions: [] }] })
+    onState(waiting)
+    await vi.waitFor(() => expect(api.updateThread).toHaveBeenCalledTimes(1))
+    onState({ ...waiting, threads: [{ ...thread, unread: false }] })
+    documentEvents.dispatchEvent(new Event('visibilitychange'))
+    expect(api.updateThread).toHaveBeenCalledTimes(1)
+    focused = false
+    onEvent({ type: 'items', threadId: thread.id, items: [{ id: 'q2', kind: 'question', toolCallId: 'ask2', status: 'pending', questions: [] }] })
+    onState(waiting)
+    expect(api.updateThread).toHaveBeenCalledTimes(1)
+    focused = true
+    windowEvents.dispatchEvent(new Event('focus'))
+    await vi.waitFor(() => expect(api.updateThread).toHaveBeenCalledTimes(2))
+  })
+
   it('does not mark an unread conversation after its delayed opening has been replaced', async () => {
     focused = true
     const request = deferred<Item[]>()

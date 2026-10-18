@@ -1,6 +1,6 @@
 import type { Item, QuestionAnswer, ThreadMeta } from '@shared/types'
 import { t } from '@shared/i18n'
-import { getNextRunningThread, getNextUnreadThread } from '@shared/task-counts'
+import { getNextRunningThread, getNextUnreadThread, isThreadUnread } from '@shared/task-counts'
 import { errorText, toast } from './feedback'
 import { LAST_PROJECT_KEY } from './persistence'
 import { getState, setState, type SendOptions } from './state'
@@ -69,14 +69,15 @@ async function openNextTaskThread(kind: 'running' | 'unread'): Promise<void> {
   }
 }
 
-/** Only an ended conversation actually displayed in the foreground has been read. */
+/** Ended conversations and waiting questions are read only when displayed in the foreground. */
 export async function markDisplayedThreadRead(): Promise<void> {
   const state = getState()
   if (state.view.kind !== 'thread' || !document.hasFocus() || document.visibilityState !== 'visible') return
   const id = state.view.id
   const thread = state.app.threads.find((thread) => thread.id === id)
-  if (!thread?.unread || state.app.running.includes(id) || !state.items[id] ||
+  if (!thread || !isThreadUnread(thread, state.app) || !state.items[id] ||
     itemLoads.has(id) || staleItemIds.has(id) || readRequests.has(id)) return
+  if (state.app.running.includes(id) && !state.items[id]?.some((item) => item.kind === 'question' && item.status === 'pending')) return
 
   readRequests.add(id)
   try {

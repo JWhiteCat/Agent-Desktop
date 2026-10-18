@@ -2,6 +2,8 @@ import { EventEmitter } from 'node:events'
 import type { BrowserWindow, NativeImage } from 'electron'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setLanguage } from '../src/shared/i18n'
+import { getTaskCounts } from '../src/shared/task-counts'
+import type { ThreadMeta } from '../src/shared/types'
 import { UnreadTaskbarBadge } from '../src/main/taskbar-badge'
 
 const mocks = vi.hoisted(() => ({ createFromBitmap: vi.fn() }))
@@ -56,6 +58,18 @@ describe('unread taskbar badge controller', () => {
     expect(options).toEqual({ width: 32, height: 32, scaleFactor: 1 })
     expect(win.setOverlayIcon).toHaveBeenCalledExactlyOnceWith(mocks.createFromBitmap.mock.results[0].value, '12 Unread')
     expect(errors).not.toHaveBeenCalled()
+  })
+
+  it('shows a waiting question count and clears the overlay when viewed before answering', () => {
+    const { badge, win } = fixture()
+    const thread = { id: 'waiting', unread: true } as ThreadMeta
+    const state = { threads: [thread], running: [thread.id], waitingForInput: [thread.id] }
+    badge.sync(getTaskCounts(state).unread)
+    expect(win.setOverlayIcon).toHaveBeenLastCalledWith(expect.anything(), '1 Unread')
+    thread.unread = false
+    badge.sync(getTaskCounts(state).unread)
+    expect(win.setOverlayIcon).toHaveBeenLastCalledWith(null, '')
+    expect(state.waitingForInput).toEqual(['waiting'])
   })
 
   it('caps the displayed count and reuses cached overlays after a count changes back', () => {

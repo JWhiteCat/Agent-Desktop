@@ -28,6 +28,21 @@ describe('global task counts', () => {
     expect(state.threads[0].unread).toBe(true)
   })
 
+  it('includes unread waiting conversations in both counts and navigation until viewed', () => {
+    const waiting = thread('waiting', { unread: true, archived: true, updatedAt: 3 })
+    const state = {
+      threads: [waiting, { ...waiting }, thread('busy', { unread: true, updatedAt: 4 }), thread('done', { unread: true })],
+      running: ['waiting', 'busy'], waitingForInput: ['waiting', 'waiting', 'deleted']
+    }
+    expect(getTaskCounts(state)).toEqual({ running: 2, unread: 2 })
+    expect(getUnreadThreads(state).map((item) => item.id)).toEqual(['waiting', 'done'])
+    expect(getNextUnreadThread(state)?.id).toBe('waiting')
+    expect(getNextUnreadThread(state, 'waiting')?.id).toBe('done')
+    expect(getTaskCounts({ ...state, threads: state.threads.map((item) => item.id === 'waiting' ? { ...item, unread: false } : item) }))
+      .toEqual({ running: 2, unread: 1 })
+    expect(getTaskCounts({ ...state, waitingForInput: [] })).toEqual({ running: 2, unread: 1 })
+  })
+
   it('counts each conversation once even if duplicate IDs are supplied', () => {
     const duplicate = thread('completed', { unread: true })
     expect(getTaskCounts({ threads: [duplicate, { ...duplicate }, thread('running')], running: ['running', 'running'] }))

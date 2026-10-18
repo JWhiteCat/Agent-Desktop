@@ -63,6 +63,26 @@ describe('task count display', () => {
     expect(render(2, true).match(/aria-busy="true"/g)).toHaveLength(2)
   })
 
+  it('shows a waiting unread dot before the running spinner and clears it after viewing', () => {
+    setLanguage('en')
+    vi.stubGlobal('window', { api: { platform: 'win32' } })
+    mockState.app = {
+      projects: [{ id: 'project', name: 'Example', path: '/example', createdAt: 1 }],
+      threads: [{ id: 'waiting', projectId: 'project', title: 'Waiting task', mode: 'agent', source: 'app', createdAt: 1, updatedAt: 1, unread: true }],
+      settings: { ...DEFAULT_SETTINGS }, running: ['waiting'], waitingForInput: ['waiting']
+    }
+    const render = () => renderToStaticMarkup(createElement(Sidebar, { onOpenSettings: vi.fn(), onOpenImport: vi.fn() }))
+    const unread = render()
+    expect(unread).toContain('<span class="thread-status"><span class="unread-dot"')
+    expect(unread).toContain('<span>In progress</span><strong>1</strong>')
+    expect(unread).toContain('<span>Unread</span><strong>1</strong>')
+    mockState.app.threads[0] = { ...mockState.app.threads[0], unread: false }
+    const read = render()
+    expect(read).not.toContain('unread-dot')
+    expect(read).toContain('<span>Unread</span><strong>0</strong>')
+    expect(read).toContain('<span>In progress</span><strong>1</strong>')
+  })
+
   it('shows global counts above Settings while archived and collapsed conversations are hidden', () => {
     setLanguage('en')
     vi.stubGlobal('window', { api: { platform: 'win32' } })

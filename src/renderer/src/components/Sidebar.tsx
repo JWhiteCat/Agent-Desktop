@@ -3,7 +3,7 @@ import { forwardRef, useEffect, useMemo, useRef, useState, type Ref } from 'reac
 import type { Project, ThreadMeta } from '@shared/types'
 import { cliTitle, threadCli } from '@shared/types'
 import { displayThreadTitle } from '@shared/thread-title'
-import { getTaskCounts } from '@shared/task-counts'
+import { getTaskCounts, isThreadUnread } from '@shared/task-counts'
 import { relativeTime } from '../lib/format'
 import { addProjectInteractive, collapseAllProjects, forkThread, goHome, openGrokBot, openNextRunningThread, openNextUnreadThread, openThread, setState, syncThreadFromCli, toast, useStore } from '../store'
 import {
@@ -48,6 +48,7 @@ export const Sidebar = forwardRef<HTMLInputElement, Props>(function Sidebar({ on
   const projects = useStore((s) => s.app.projects)
   const threads = useStore((s) => s.app.threads)
   const running = useStore((s) => s.app.running)
+  const waitingForInput = useStore((s) => s.app.waitingForInput)
   const showArchived = useStore((s) => s.app.settings.showArchived)
   const view = useStore((s) => s.view)
   const sidebarReveal = useStore((s) => s.sidebarReveal)
@@ -82,7 +83,7 @@ export const Sidebar = forwardRef<HTMLInputElement, Props>(function Sidebar({ on
   }, [reveal?.token, revealProject?.collapsed, expanded, query])
 
   const runningSet = useMemo(() => new Set(running), [running])
-  const taskCounts = useMemo(() => getTaskCounts({ threads, running }), [threads, running])
+  const taskCounts = useMemo(() => getTaskCounts({ threads, running, waitingForInput }), [threads, running, waitingForInput])
   const visible = useMemo(
     () => threads.filter((thread) => showArchived || !thread.archived || thread.id === revealThread?.id),
     [threads, showArchived, revealThread?.id]
@@ -383,6 +384,7 @@ function ThreadRow(props: {
 }) {
   const t = useT()
   const { thread, active, running, editing } = props
+  const unread = useStore((s) => isThreadUnread(thread, s.app))
   const title = displayThreadTitle(thread, t)
   const menu: MenuEntry[] = [
     { label: t('重命名'), icon: <IconEdit size={14} />, onSelect: props.onEdit },
@@ -442,7 +444,7 @@ function ThreadRow(props: {
       title={thread.preview ? `${title}\n\n${thread.preview}` : title}
     >
       <span className="thread-status">
-        {running ? <Spinner size={11} /> : thread.unread ? <span className="unread-dot" /> : thread.pinned ? <IconPin size={11} /> : null}
+        {unread ? <span className="unread-dot" /> : running ? <Spinner size={11} /> : thread.pinned ? <IconPin size={11} /> : null}
       </span>
       {editing ? (
         <InlineRename

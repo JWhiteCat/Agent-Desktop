@@ -57,6 +57,7 @@ interface Run extends InteractionRun {
   reducer: StreamReducer
   stopped: boolean
   pending: Map<string, Item>
+  announcedQuestions: Set<string>
   flushTimer?: NodeJS.Timeout
   /** SwitchMode tool calls seen this turn; their completion carries no kind. */
   switchCalls: Set<string>
@@ -126,6 +127,10 @@ export class SessionManager {
 
   running(): string[] {
     return [...this.runs.keys()]
+  }
+
+  waitingForInput(): string[] {
+    return [...this.runs].filter(([, run]) => !run.settled && !!run.pendingQuestions?.size).map(([id]) => id)
   }
 
   /** All unfinished sends, including startup and turns waiting for user input. */
@@ -297,6 +302,7 @@ export class SessionManager {
       reducer: new StreamReducer(items),
       stopped: false,
       pending: new Map(),
+      announcedQuestions: new Set(),
       acceptUpdates: false,
       force: req.force,
       mode: req.mode,
@@ -888,8 +894,20 @@ export class SessionManager {
 
   private queue(threadId: string, run: Run, items: Item[]): void {
     for (const it of items) run.pending.set(it.id, it)
-    if (!run.flushTimer) run.flushTimer = setTimeout(() => this.flushPending(threadId, run), 40)
+    const questions = items.filter((item) => item.kind === 'question')
+    const freshQuestions = questions.filter((item) => item.status === 'pending' && !run.announcedQuestions.has(item.id))
+    for (const item of freshQuestions) run.announcedQuestions.add(item.id)
+    if (freshQuestions.length && this.store.thread(threadId)) {
+      this.store.updateThread(threadId, { unread: true, updatedAt: Date.now() })
+    }
     this.store.markItemsDirty(threadId)
+    if (questions.length) {
+      // Publish cards before the state that allows a focused renderer to mark them read.
+      this.flushPending(threadId, run)
+      this.onStateChange()
+      return
+    }
+    if (!run.flushTimer) run.flushTimer = setTimeout(() => this.flushPending(threadId, run), 40)
   }
 
   private flushPending(threadId: string, run: Run): void {

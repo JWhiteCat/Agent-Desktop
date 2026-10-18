@@ -81,11 +81,13 @@ function setup(provider: CliProvider = 'cursor', initialization?: Promise<void>,
     updateThread: vi.fn((_id: string, patch: Partial<ThreadMeta>) => Object.assign(thread, patch))
   }
   const finished = vi.fn()
-  const manager = new SessionManager(store as unknown as Store, vi.fn(), vi.fn(), finished)
+  const emit = vi.fn()
+  const stateChanged = vi.fn()
+  const manager = new SessionManager(store as unknown as Store, emit, stateChanged, finished)
   managers.push(manager)
   const req: SendRequest = { threadId: thread.id, prompt: 'Continue', model: 'auto', mode: 'agent', force: false }
   return {
-    manager, req, thread, store, items, calls, reply, finished,
+    manager, req, thread, store, items, calls, reply, finished, emit, stateChanged,
     waitForPrompt: () => vi.waitFor(() => expect(promptId).toBeDefined()),
     complete: () => reply({ id: promptId, result: { stopReason: 'end_turn' } })
   }
@@ -208,6 +210,64 @@ describe('unfinished session activity', () => {
     expect(ctx.calls.some((call) => call.id === 'permission' || call.id === 'question')).toBe(false)
     ctx.manager.stopAll()
     await vi.waitFor(() => expect(ctx.manager.active()).toEqual([]))
+  })
+
+  it.each(['cursor', 'codex', 'claude'] as const)('marks new %s questions unread and publishes cards before state', async (provider) => {
+    const ctx = setup(provider)
+    await ctx.manager.send({ ...ctx.req, model: 'composer-2.5[fast=true]' })
+    await ctx.waitForPrompt()
+    expect(ctx.manager.waitingForInput()).toEqual([])
+    const ask = (id: string) => ctx.reply({ id, method: 'cursor/ask_question', params: {
+      toolCallId: id, questions: [{ id: 'choice', prompt: 'Which approach?', options: ['Small', 'Large'] }]
+    } })
+    ask('first')
+    await vi.waitFor(() => expect(ctx.manager.waitingForInput()).toEqual(['thread']))
+    expect(ctx.thread.unread).toBe(true)
+    expect(ctx.thread.updatedAt).toBeGreaterThan(0)
+    const emitted = ctx.emit.mock.calls.at(-1)![0]
+    expect(emitted).toMatchObject({ type: 'items', items: expect.arrayContaining([expect.objectContaining({ kind: 'question', status: 'pending' })]) })
+    expect(ctx.emit.mock.invocationCallOrder.at(-1)!).toBeLessThan(ctx.stateChanged.mock.invocationCallOrder.at(-1)!)
+    const first = ctx.items.find((item) => item.kind === 'question')!
+
+    // Viewing clears unread even while the question is still pending.
+    ctx.thread.unread = false
+    ;(ctx.manager as any).queue('thread', (ctx.manager as any).runs.get('thread'), [first])
+    expect(ctx.thread.unread).toBe(false)
+    expect(ctx.manager.waitingForInput()).toEqual(['thread'])
+    ask('second')
+    await vi.waitFor(() => expect(ctx.items.filter((item) => item.kind === 'question')).toHaveLength(2))
+    expect(ctx.thread.unread).toBe(true)
+    expect(ctx.manager.waitingForInput()).toEqual(['thread'])
+    ctx.thread.unread = false
+    ctx.manager.answerQuestion('thread', first.id, [{ questionId: 'choice', selectedOptionIds: ['o0'] }])
+    expect(ctx.manager.waitingForInput()).toEqual(['thread'])
+    expect(ctx.thread.unread).toBe(false)
+    const second = ctx.items.find((item) => item.kind === 'question' && item.id !== first.id)!
+    ctx.manager.answerQuestion('thread', second.id, null)
+    expect(ctx.manager.waitingForInput()).toEqual([])
+    expect(ctx.manager.running()).toEqual(['thread'])
+    expect(ctx.thread.unread).toBe(false)
+    ctx.complete()
+    await vi.waitFor(() => expect(ctx.manager.running()).toEqual([]))
+    expect(ctx.thread.unread).toBe(true)
+  })
+
+  it.each(['stop', 'dispose', 'complete'] as const)('clears waiting input when a pending permission ends by %s', async (ending) => {
+    const ctx = setup()
+    await ctx.manager.send(ctx.req)
+    await ctx.waitForPrompt()
+    ctx.reply({ id: 'permission', method: 'session/request_permission', params: {
+      toolCall: { toolCallId: 'shell', title: 'Run command', kind: 'execute' },
+      options: [{ optionId: 'allow', kind: 'allow_once', name: 'Allow' }]
+    } })
+    await vi.waitFor(() => expect(ctx.manager.waitingForInput()).toEqual(['thread']))
+    expect(ctx.thread.unread).toBe(true)
+    if (ending === 'complete') ctx.complete()
+    else ctx.manager[ending]('thread')
+    await vi.waitFor(() => expect(ctx.manager.waitingForInput()).toEqual([]))
+    expect(ctx.items.find((item) => item.kind === 'question')).toMatchObject({ status: 'skipped' })
+    if (ending === 'stop') ctx.complete()
+    await vi.waitFor(() => expect(ctx.manager.running()).toEqual([]))
   })
 
   it('does not count prepare alone, but includes sends queued behind it', async () => {
