@@ -7,6 +7,7 @@ import type { TurnQuotaSnapshot, TurnQuotaUsage, WeeklyQuotaEstimate } from './t
 import type { CodexSessionUsage, CodexThreadUsage } from './codex-account'
 import type { PanelWidths } from './panel-widths'
 import { DEFAULT_FONT_SIZE } from './appearance'
+import { DEFAULT_SKIN, type SkinConfig } from './skins'
 import { DEFAULT_THREAD_TOOLBAR_BUTTONS } from './toolbar'
 
 export type EditorId = 'cursor' | 'vscode'
@@ -286,6 +287,8 @@ export interface Settings {
   defaultMode: AgentMode
   force: boolean
   theme: 'system' | 'dark' | 'light'
+  skin: SkinConfig
+  skins: SkinConfig[]
   /** Installed font family name. Empty uses the system font stack. */
   fontFamily: string
   /** Application font size in pixels, from 10 to 24 in half-pixel increments. */
@@ -507,6 +510,8 @@ export const DEFAULT_SETTINGS: Settings = {
   defaultMode: 'agent',
   force: false,
   theme: 'system',
+  skin: DEFAULT_SKIN,
+  skins: [],
   fontFamily: '',
   fontSize: DEFAULT_FONT_SIZE,
   sandbox: 'default',

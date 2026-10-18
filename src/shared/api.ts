@@ -24,6 +24,7 @@ import type {
   ThreadMeta
 } from './types'
 import type { SlashCommand } from './commands'
+import type { SkinConfig, SkinSource, WallpaperEntry } from './skins'
 import type { LocalMcpReport, LocalMcpSaveRequest, LocalSkillContent, LocalSkillReport, LocalSkillSaveRequest } from './local-config'
 import type { QuotaReport } from './quota'
 import type { UsageReport, UsageWindow } from './usage'
@@ -63,6 +64,11 @@ export interface DesktopApi {
   /** `null` skips the question. */
   answerQuestion(threadId: string, questionId: string, answers: QuestionAnswer[] | null): Promise<void>
   updateSettings(patch: Partial<Settings>): Promise<Settings>
+  skinPickSource(directory?: boolean): Promise<SkinSource | null>
+  skinScanWallpapers(manual?: boolean): Promise<WallpaperEntry[] | null>
+  skinSource(id: string): Promise<SkinSource>
+  skinSave(skin: SkinConfig): Promise<SkinConfig>
+  skinDelete(id: string): Promise<void>
   usageSummary(period: UsageWindow): Promise<UsageReport>
   usageQuotas(): Promise<QuotaReport>
   /** Redeems one Codex reset card. The caller must already have confirmed. */

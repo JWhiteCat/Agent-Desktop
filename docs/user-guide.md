@@ -82,6 +82,18 @@ Question replies and Run plan send only their own text, leaving draft attachment
 
 Open **Settings → Appearance and history** and switch between **Appearance / Toolbar buttons / History**. Appearance groups interface and typography settings, with visual theme choices and a live text preview. Toolbar buttons has its own page for ordering actions and editing custom commands. History contains archived chat visibility and CLI session import. Remote pages show only Appearance and History.
 
+## Skins and animated backgrounds
+
+Open **Settings → Appearance and history → Appearance → Skins**. Choose Default, Frost or Aurora, or adjust background/panel/text/accent colors, panel opacity (0–100%), blur (0–40 px), background dimming, and image/video scaling. Colors inherit the light/dark/system theme until overridden. Edits preview immediately; **Apply skin** persists them, **Cancel preview** or leaving the appearance page restores unapplied changes. **Save as new skin** creates a named preset; applying changes to an existing custom skin updates it. Built-in skins cannot be deleted. Restore default previews the original appearance; apply it to keep the change.
+
+On desktop, select an image (PNG/JPEG/WebP/GIF/BMP/SVG), MP4/WebM video, Web project folder, HTML entry, or Wallpaper Engine `project.json`. Videos loop silently; codec compatibility depends on Electron. Use **Refresh Wallpaper library** to discover Steam libraries on Windows, including downloaded Workshop items and local/default projects. Add a library/project folder manually on any desktop platform. Search/filter the results and select an available video or Web wallpaper. Scene, application, malformed and missing projects show a reason and cannot be selected.
+
+Wallpaper Engine does not need to keep running. Assets reference their original files: moving/deleting files or unsubscribing from a Workshop item may break the reference. **Choose file / Relocate** or **Choose Web project** selects a replacement. Removing a reference or deleting a skin never deletes the original files. Failed backgrounds fall back to the theme color, with a reload button and a settings hint.
+
+Web wallpapers run in an isolated frame without the app API, network access, child frames or workers. Ordinary local HTML/CSS/JS/WebGL is supported, with default and editable boolean/slider/color/combo/text properties, a 30 FPS hint and pause notifications. Color properties use Wallpaper Engine's space-separated RGB values between 0 and 1. Live audio capture/response, desktop media metadata, hardware APIs and external file/directory properties are not implemented; wallpapers requiring them may not work. When hidden/minimized the app pauses video and unloads Web backgrounds; returning reloads the Web project. Reduced-motion mode uses a preview image when available, otherwise the theme color; Aurora becomes static.
+
+Remote browsers sync only colors, opacity and blur. They cannot manage, download or play desktop background assets. Skin configuration is stored in `data/state.json`; desktop-only file references and manually added library folders are stored in `data/skin-sources.json`. See [data storage](data-storage.md).
+
 ## Interface language
 
 Open **Settings → Appearance and history → Appearance → Language** and choose **System**, **Simplified Chinese**, or **English**. The default is System: Chinese desktop OS locales use Simplified Chinese, and other locales use English. The preference is saved in `state.json`; desktop and remote pages share it, including the desktop OS language when System is selected. Changing the language updates the interface without restarting the app or an agent session.

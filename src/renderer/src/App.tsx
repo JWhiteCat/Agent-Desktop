@@ -11,6 +11,7 @@ import { goHome, useStore } from './store'
 import { useT } from './lib/i18n'
 import { isWebClient, panelLayout, readStoredPanelWidths } from './lib/panel-layout'
 import { applyTypography } from './lib/appearance'
+import { SkinBackground } from './components/SkinBackground'
 
 const NARROW = '(max-width: 720px)'
 const isNarrow = (): boolean => window.matchMedia(NARROW).matches
@@ -100,6 +101,7 @@ export default function App() {
 
   return (
     <div className={`app ${sidebarOpen ? '' : 'sidebar-hidden'} ${showChanges ? 'changes-open' : ''}`}>
+      <SkinBackground />
       {sidebarOpen && <Sidebar ref={search} onOpenSettings={() => setDialog('settings')} onOpenImport={() => setDialog('import')} />}
       {sidebarOpen && <div className="sidebar-scrim" onClick={() => setSidebarOpen(false)} />}
       <main className="main">

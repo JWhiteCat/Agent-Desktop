@@ -7,6 +7,7 @@ import { normalizeGrokBotNames } from '@shared/grokbot'
 import { normalizePanelWidths } from '@shared/panel-widths'
 import { normalizeFontFamily, normalizeFontSize } from '@shared/appearance'
 import { normalizeToolbarButtons } from '@shared/toolbar'
+import { normalizeSkin, normalizeSkins } from '@shared/skins'
 import { DEFAULT_SETTINGS, normalizeCliProvider, threadCli, type Item, type Project, type ResultItem, type Settings, type ThreadMeta } from '@shared/types'
 import { restoreToolFileChanges } from './tool-file-changes'
 import { newId } from './id'
@@ -67,6 +68,8 @@ export class Store {
         language: normalizeLanguage(loaded?.settings?.language),
         fontFamily,
         fontSize,
+        skin: normalizeSkin(loaded?.settings?.skin),
+        skins: normalizeSkins(loaded?.settings?.skins),
         cliProvider: normalizeCliProvider(loaded?.settings?.cliProvider),
         codexPath: typeof loaded?.settings?.codexPath === 'string' ? loaded.settings.codexPath : '',
         codexApiKey: typeof loaded?.settings?.codexApiKey === 'string' ? loaded.settings.codexApiKey : '',
@@ -92,6 +95,7 @@ export class Store {
     }
     if (remoteClientId !== rawClientId || remotePublicSshPort !== rawSshPort
       || fontFamily !== loaded?.settings?.fontFamily || fontSize !== loaded?.settings?.fontSize
+      || JSON.stringify(this.state.settings.skin) !== JSON.stringify(loaded?.settings?.skin)
       || JSON.stringify(this.state.settings.threadToolbarButtons) !== JSON.stringify(loaded?.settings?.threadToolbarButtons)) this.flush()
     if (fs.existsSync(path.join(this.dir, 'attachments'))) {
       try {

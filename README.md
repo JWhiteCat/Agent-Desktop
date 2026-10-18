@@ -8,6 +8,7 @@ Agent Desktop runs the CLIs on your computer through the [Agent Client Protocol]
 
 ## Features
 
+- Skins with custom colors, panel opacity and blur, images, videos, and Web backgrounds; use local Wallpaper Engine video/Web wallpapers without keeping Wallpaper Engine running
 - Manage multiple projects and search, pin, archive, and fork conversations
 - Collapse all projects and jump through unread conversations across projects
 - Open workspaces in VS Code or Cursor; customize header buttons and run saved commands in a new terminal

@@ -4,6 +4,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { t } from '@shared/i18n'
 import type { EditorId, Settings } from '@shared/types'
+import { SKIN_SCHEME } from '@shared/skins'
 import { cliEnvironment } from './cli-runtime'
 import { findTerminalExecutable } from './toolbar-terminal'
 
@@ -48,7 +49,8 @@ export function createMainWindow(): BrowserWindow {
   if (!isMac) win.setMenu(null)
 
   win.once('ready-to-show', () => win.show())
-  win.webContents.setWindowOpenHandler(({ url }) => {
+  win.webContents.setWindowOpenHandler(({ url, referrer }) => {
+    if (referrer?.url.startsWith(`${SKIN_SCHEME}:`)) return { action: 'deny' }
     if (/^https?:/.test(url)) shell.openExternal(url)
     return { action: 'deny' }
   })
@@ -57,6 +59,15 @@ export function createMainWindow(): BrowserWindow {
       e.preventDefault()
       if (/^https?:/.test(url)) shell.openExternal(url)
     }
+  })
+  win.webContents.on('will-frame-navigate', (event) => {
+    if (event.isMainFrame) return
+    try {
+      const destination = new URL(event.url)
+      if (destination.protocol !== `${SKIN_SCHEME}:`) { event.preventDefault(); return }
+      const origin = event.frame?.url
+      if (origin?.startsWith(`${SKIN_SCHEME}:`) && new URL(origin).host !== destination.host) event.preventDefault()
+    } catch { event.preventDefault() }
   })
   win.webContents.on('before-input-event', (_e, input) => {
     if (input.type === 'keyDown' && input.key === 'F12') win.webContents.toggleDevTools()

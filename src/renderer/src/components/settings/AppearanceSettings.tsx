@@ -5,6 +5,7 @@ import { errorText, toast, useStore } from '../../store'
 import { Field } from './Field'
 import { FontSettings } from './FontSettings'
 import { ToolbarSettings } from './ToolbarSettings'
+import { SkinSettings } from './SkinSettings'
 
 const PANELS = [
   { id: 'appearance', label: '外观' },
@@ -41,6 +42,7 @@ export function AppearanceSettings({ onOpenImport }: { onOpenImport: () => void 
       </nav>
 
       {panel === 'appearance' && <div className="appearance-panel">
+        <SkinSettings />
         <section className="appearance-group" aria-labelledby="appearance-interface">
           <h3 id="appearance-interface">{t('界面')}</h3>
           <fieldset className="theme-setting">

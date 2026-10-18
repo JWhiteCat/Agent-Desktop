@@ -11,6 +11,7 @@ vi.mock('electron', () => ({
 describe('toolbar and project API transports', () => {
   const fetch = vi.fn()
   beforeEach(() => {
+    Object.defineProperty(process, 'isMainFrame', { configurable: true, value: true })
     vi.stubGlobal('location', new URL('https://example.com/'))
     vi.stubGlobal('localStorage', { getItem: () => 'remote-token' })
     vi.stubGlobal('EventSource', class {})
@@ -18,7 +19,7 @@ describe('toolbar and project API transports', () => {
     fetch.mockReset().mockResolvedValue({ json: async () => ({ ok: true, result: true }) })
     ipc.invoke.mockReset().mockResolvedValue(undefined)
   })
-  afterEach(() => vi.unstubAllGlobals())
+  afterEach(() => { vi.unstubAllGlobals(); Reflect.deleteProperty(process, 'isMainFrame') })
 
   it('forwards desktop editor selection and saved command identities', async () => {
     await import('../src/preload/index')
@@ -41,5 +42,22 @@ describe('toolbar and project API transports', () => {
     expect(fetch.mock.calls[0][1].body).toBe('[]')
     await expect(api.runToolbarCommand('custom', 'thread')).rejects.toThrow()
     expect(fetch).toHaveBeenCalledOnce()
+  })
+
+  it('never exposes the application bridge inside wallpaper subframes', async () => {
+    vi.resetModules()
+    ipc.api = undefined
+    Object.defineProperty(process, 'isMainFrame', { configurable: true, value: false })
+    await import('../src/preload/index')
+    expect(ipc.api).toBeUndefined()
+  })
+
+  it('rejects all remote wallpaper operations without making a request', async () => {
+    const api = createWebApi()
+    await expect(api.skinPickSource()).rejects.toThrow()
+    await expect(api.skinScanWallpapers()).rejects.toThrow()
+    await expect(api.skinSource('id')).rejects.toThrow()
+    await expect(api.skinDelete('id')).rejects.toThrow()
+    expect(fetch).not.toHaveBeenCalled()
   })
 })

@@ -80,6 +80,11 @@ export function createWebApi(): DesktopApi {
   }
 
   return {
+    skinPickSource: () => Promise.reject(new Error(translate('壁纸素材仅在桌面端可用。'))),
+    skinScanWallpapers: () => Promise.reject(new Error(translate('壁纸素材仅在桌面端可用。'))),
+    skinSource: () => Promise.reject(new Error(translate('壁纸素材仅在桌面端可用。'))),
+    skinSave: () => Promise.reject(new Error(translate('壁纸素材仅在桌面端可用。'))),
+    skinDelete: () => Promise.reject(new Error(translate('壁纸素材仅在桌面端可用。'))),
     platform: 'web',
     isRemote: true,
     getState: () => call('state:get'),

@@ -7,6 +7,7 @@ import { hostHandlers } from './host'
 import { localConfigHandlers } from './local-config'
 import { projectHandlers } from './projects'
 import { settingsHandlers } from './settings'
+import { skinHandlers } from './skins'
 import { threadHandlers } from './threads'
 import { remoteIpcHandlers, usageHandlers } from './usage'
 
@@ -18,6 +19,7 @@ export function createIpcHandlers(deps: IpcDeps): Record<string, Handler> {
     ...attachmentHandlers(deps),
     ...usageHandlers(deps),
     ...settingsHandlers(deps),
+    ...skinHandlers(deps),
     ...cliHandlers(deps),
     ...hostHandlers(deps),
     ...localConfigHandlers(deps),

@@ -2,6 +2,7 @@ import { t as translate, type LocalizedMessage } from '@shared/i18n'
 import path from 'node:path'
 import type { AppState, RemoteInfo, Settings } from '@shared/types'
 import { normalizeToolbarButtons } from '@shared/toolbar'
+import { remoteSkin } from '@shared/skins'
 import { lanAddresses, newRemoteToken, RemoteServer, type Handler } from './remote'
 import {
   newRemoteClientId,
@@ -19,6 +20,7 @@ import type { Store } from './store'
 export function remoteSafeSettings(s: Settings): Settings {
   return {
     ...s, apiKey: '', codexApiKey: '', claudeApiKey: '', remoteToken: '',
+    skin: remoteSkin(s.skin), skins: [],
     threadToolbarButtons: normalizeToolbarButtons(s.threadToolbarButtons).filter((button) => button.kind === 'builtin')
   }
 }
@@ -28,6 +30,7 @@ export function remoteSafeState(state: AppState): AppState {
 }
 
 const REMOTE_BLOCKED = new Set([
+  'skin:pick', 'skin:scan', 'skin:source', 'skin:save', 'skin:delete',
   'project:pick',
   'remote:info',
   'remote:resetToken',
@@ -48,7 +51,8 @@ const REMOTE_ONLY_DESKTOP_SETTINGS: (keyof Settings)[] = [
   'remotePublicPort',
   // The remote web client keeps its own panel widths in its browser.
   'panelWidths',
-  'threadToolbarButtons'
+  'threadToolbarButtons',
+  'skins'
 ]
 
 /** What a phone browser may call: no native dialogs, no remote-control settings, no secrets. */
@@ -59,6 +63,11 @@ export function handlersForRemote(handlers: Record<string, Handler>, snapshot: (
   out['settings:update'] = async (patch: Partial<Settings>) => {
     const safe: Partial<Settings> = { ...patch }
     for (const key of REMOTE_ONLY_DESKTOP_SETTINGS) delete safe[key]
+    if (safe.skin !== undefined) {
+      const styles = remoteSkin(safe.skin)
+      const current = snapshot().settings.skin
+      safe.skin = { ...current, colors: styles.colors, opacity: styles.opacity, blur: styles.blur, overlay: styles.overlay }
+    }
     if (!safe.apiKey) delete safe.apiKey
     if (!safe.codexApiKey) delete safe.codexApiKey
     if (!safe.claudeApiKey) delete safe.claudeApiKey

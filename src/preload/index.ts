@@ -31,6 +31,11 @@ const api: DesktopApi = {
   stop: (id) => ipcRenderer.invoke('agent:stop', id),
   answerQuestion: (threadId, questionId, answers) => ipcRenderer.invoke('agent:answerQuestion', threadId, questionId, answers),
   updateSettings: (patch) => ipcRenderer.invoke('settings:update', patch),
+  skinPickSource: (directory) => ipcRenderer.invoke('skin:pick', directory),
+  skinScanWallpapers: (manual) => ipcRenderer.invoke('skin:scan', manual),
+  skinSource: (id) => ipcRenderer.invoke('skin:source', id),
+  skinSave: (skin) => ipcRenderer.invoke('skin:save', skin),
+  skinDelete: (id) => ipcRenderer.invoke('skin:delete', id),
   usageSummary: (period) => ipcRenderer.invoke('usage:summary', period),
   usageQuotas: () => ipcRenderer.invoke('usage:quotas'),
   consumeCodexReset: (creditId) => ipcRenderer.invoke('usage:consumeCodexReset', creditId),
@@ -73,4 +78,4 @@ const api: DesktopApi = {
   onFocusThread: (cb) => subscribe('thread:focus', cb)
 }
 
-contextBridge.exposeInMainWorld('api', api)
+if (process.isMainFrame) contextBridge.exposeInMainWorld('api', api)

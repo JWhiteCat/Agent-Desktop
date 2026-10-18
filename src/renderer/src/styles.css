@@ -166,6 +166,46 @@ select {
 
 /* ---------- layout ---------- */
 
+/* The background stays in the same compositing tree so backdrop-filter can sample it. */
+.app { position: relative; isolation: isolate; }
+.skin-background { position: absolute; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; background: var(--bg); }
+.skin-background > img, .skin-background > video, .skin-background > iframe, .skin-gradient, .skin-overlay { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+.skin-gradient { background: linear-gradient(125deg, #799be7, #a085d7, #67c7c2, #e5b8c7); background-size: 350% 350%; animation: skin-flow 22s ease infinite paused; }
+.skin-gradient.playing { animation-play-state: running; }
+@keyframes skin-flow { 0%, 100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } }
+:root[data-skin='custom'] { --bg-sidebar: color-mix(in srgb, var(--skin-panel, var(--bg)) var(--skin-opacity), transparent); }
+:root[data-skin='custom'] .main,
+:root[data-skin='custom'] .sidebar,
+:root[data-skin='custom'] .changes,
+:root[data-skin='custom'] .grokbot-list {
+  background: color-mix(in srgb, var(--skin-panel, var(--bg)) var(--skin-opacity), transparent);
+  backdrop-filter: blur(var(--skin-blur));
+}
+.skin-settings > p { margin: 8px 0 12px; }
+.skin-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.skin-actions .input { flex: 1; min-width: 120px; width: auto; }
+.skin-palette { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 16px 0; }
+.skin-palette label { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: calc(12px * var(--font-scale)); }
+.skin-palette input { width: 32px; height: 28px; padding: 1px; border: 1px solid var(--border); border-radius: 4px; background: transparent; }
+.skin-palette .link-btn { color: var(--blue); font-size: calc(11px * var(--font-scale)); }
+.skin-range { display: flex; align-items: center; gap: 10px; }
+.skin-range output { width: 48px; text-align: right; }
+.skin-source { overflow-wrap: anywhere; }
+.skin-properties { margin: 14px 0; }
+.skin-properties summary { cursor: pointer; }
+.skin-library { border-top: 1px solid var(--border); }
+.skin-library-list { max-height: 300px; overflow: auto; display: grid; gap: 6px; }
+.skin-library-entry { display: flex; align-items: center; gap: 12px; padding: 8px; text-align: left; border: 1px solid var(--border); border-radius: 8px; width: 100%; }
+.skin-library-entry:hover:enabled { background: var(--bg-hover); }
+.skin-library-entry img { width: 70px; height: 44px; object-fit: cover; border-radius: 4px; flex: none; }
+.skin-library-entry span { min-width: 0; }
+.skin-library-entry strong, .skin-library-entry small { display: block; overflow-wrap: anywhere; }
+.skin-library-entry small { color: var(--text-2); margin-top: 3px; }
+.skin-error { position: absolute; bottom: 8px; right: 12px; z-index: 15; max-width: min(500px, 90%); padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-elev); color: var(--text-2); font-size: calc(11px * var(--font-scale)); }
+.skin-error .link-btn { color: var(--blue); }
+.skin-settings > .skin-actions:last-child { position: sticky; bottom: -24px; z-index: 1; background: var(--bg-elev); padding: 10px 0; border-top: 1px solid var(--border); }
+@media (prefers-reduced-motion: reduce) { .skin-gradient { animation: none; } }
+
 .app {
   display: flex;
   height: 100%;
