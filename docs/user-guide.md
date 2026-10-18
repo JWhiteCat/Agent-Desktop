@@ -21,6 +21,8 @@ Click **In progress** beside Unread to cycle through running conversations acros
 
 ### Header buttons and commands
 
+On the desktop, drag the blank space, project name, or non-interactive badges in the conversation header to move the window. Double-click the conversation title to rename it. The title, editing field, and toolbar buttons remain interactive and do not drag the window.
+
 On the desktop, **Settings → Appearance and history → Toolbar buttons** controls the visibility and order of Fork, File manager, VS Code, Cursor, Changes, and your custom commands. Use the up/down buttons to reorder them. Actions that do not fit in the header appear in its More menu. Configuration is saved globally and restored after restart.
 
 Add a command by entering its name, executable path or command name on PATH, and one argument per nonempty line. Arguments are literal values: do not add surrounding quotes to paths containing spaces. `{cwd}` expands to the conversation's actual working directory, and `{projectPath}` to the original project folder. Both placeholders work in the program and its arguments. For example, use program `git` and argument `status` to inspect the active worktree. To run a script, enter its interpreter as the program and the script path as an argument.

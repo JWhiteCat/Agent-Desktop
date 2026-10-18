@@ -243,7 +243,7 @@ export function ThreadView({ thread, changesOpen, onToggleChanges }: Props) {
   return (
     <div className="thread-view" ref={view}>
       <header className="main-header drag">
-        <div className="header-title no-drag">
+        <div className="header-title">
           {editingTitle ? (
             <input
               autoFocus
@@ -260,7 +260,7 @@ export function ThreadView({ thread, changesOpen, onToggleChanges }: Props) {
               }}
             />
           ) : (
-            <h1 onDoubleClick={() => setEditingTitle(true)} title={t('双击重命名')}>
+            <h1 className="no-drag" onDoubleClick={() => setEditingTitle(true)} title={t('双击重命名')}>
               {title}
             </h1>
           )}
