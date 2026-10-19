@@ -1,11 +1,12 @@
 import { useState } from 'react'
-import type { QueuedMessage } from '@shared/types'
+import type { AgentMode, QueuedMessage } from '@shared/types'
 import { useT } from '../lib/i18n'
 import { moveQueued } from '../lib/queue'
 import { removeQueued, reorderQueued, sendQueuedNow, toast, useStore } from '../store'
 import { IconArrowUp, IconEdit, IconGrip, IconTrash } from './icons'
 
 const DRAG_TYPE = 'application/x-agent-desktop-queued'
+const MODE_LABELS: Record<AgentMode, string> = { agent: 'Agent', plan: 'Plan', ask: 'Ask' }
 
 function summary(item: QueuedMessage): string {
   return item.prompt.replace(/\s+/g, ' ').trim()
@@ -86,6 +87,9 @@ export function QueuedMessages({ threadId, running, onEdit }: {
               }}
             >
               <IconGrip size={14} />
+            </span>
+            <span className={`queued-mode mode-${item.mode}`} title={t('以 {mode} 模式发送', { mode: MODE_LABELS[item.mode] ?? item.mode })}>
+              {MODE_LABELS[item.mode] ?? item.mode}
             </span>
             <span className="queued-text" title={item.prompt}>
               {summary(item) || t('（仅附件）')}

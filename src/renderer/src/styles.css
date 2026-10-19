@@ -1146,6 +1146,21 @@ select {
   color: var(--muted);
   cursor: grab;
 }
+.queued-mode {
+  flex: none;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--bg-hover);
+  color: var(--text-2);
+  font-size: calc(11px * var(--font-scale));
+  line-height: 18px;
+}
+.queued-mode.mode-plan {
+  color: var(--blue);
+}
+.queued-mode.mode-ask {
+  color: var(--orange);
+}
 .queued-text {
   flex: 1;
   min-width: 0;

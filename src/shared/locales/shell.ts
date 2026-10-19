@@ -79,6 +79,7 @@ export const shellMessages: Record<string, string> = {
   '（仅附件）': '(Attachments only)',
   '{count} 个附件': 'Attachments: {count}',
   '即将发送': 'Sending next',
+  '以 {mode} 模式发送': 'Sends in {mode} mode',
   '停止当前任务并立即发送': 'Stop the current task and send now',
   '立即发送': 'Send now',
   '修改了 {count} 个文件': 'Files changed: {count}',
