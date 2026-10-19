@@ -2137,6 +2137,13 @@ select {
   outline: 2px solid var(--blue);
   outline-offset: -2px;
 }
+.diff-file-head > .hover-tip {
+  flex: 1;
+  min-width: 0;
+}
+.diff-file-head > .hover-tip > .hover-tip-label > .diff-path {
+  display: block;
+}
 .diff-path {
   flex: 1;
   min-width: 0;

@@ -23,7 +23,8 @@ function ChangesFileList({ files, tab, untracked, snapshotId }: { files: DiffFil
   const renderFile = (file: DiffFile) => (
     <DiffFileView
       key={file.path}
-      file={tab === 'git' && untracked.has(file.path) ? { ...file, path: t('{path}（未跟踪）', { path: file.path }) } : file}
+      file={file}
+      label={tab === 'git' && untracked.has(file.path) ? t('{path}（未跟踪）', { path: file.path }) : undefined}
       defaultOpen={files.length <= 8}
     />
   )
