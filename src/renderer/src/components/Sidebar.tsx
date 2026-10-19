@@ -59,7 +59,7 @@ export const Sidebar = forwardRef<HTMLInputElement, Props>(function Sidebar({ on
   const revealProject = projects.find((project) => project.id === revealThread?.projectId)
   const [query, setQuery] = useState('')
   const [editing, setEditing] = useState<string | null>(null)
-  const [expanded, setExpanded] = useState<Record<string, boolean>>(() => revealThread ? { [revealThread.projectId]: true } : {})
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const [collapsing, setCollapsing] = useState(false)
   const revealedRow = useRef<HTMLDivElement>(null)
   const scrolledReveal = useRef<number | undefined>(undefined)
@@ -73,7 +73,6 @@ export const Sidebar = forwardRef<HTMLInputElement, Props>(function Sidebar({ on
   useEffect(() => {
     if (!revealThread || !reveal) return
     setQuery('')
-    setExpanded((current) => ({ ...current, [revealThread.projectId]: true }))
   }, [reveal?.token, revealThread?.projectId])
 
   useEffect(() => {
@@ -222,6 +221,7 @@ export const Sidebar = forwardRef<HTMLInputElement, Props>(function Sidebar({ on
               const list = byProject.get(p.id) ?? []
               const isExpanded = expanded[p.id]
               const shown = isExpanded ? list : list.slice(0, COLLAPSED_LIMIT)
+              if (!isExpanded && revealThread?.projectId === p.id && !shown.includes(revealThread)) shown.push(revealThread)
               const anyRunning = list.some((t) => runningSet.has(t.id))
               return (
                 <div key={p.id} className="project">
@@ -239,9 +239,9 @@ export const Sidebar = forwardRef<HTMLInputElement, Props>(function Sidebar({ on
                     <div className="project-threads">
                       {list.length === 0 && <div className="empty-hint small">{t('暂无对话')}</div>}
                       {shown.map((t) => renderThread(t))}
-                      {list.length > COLLAPSED_LIMIT && (
+                      {(isExpanded ? list.length > COLLAPSED_LIMIT : list.length > shown.length) && (
                         <button className="show-more" onClick={() => setExpanded((e) => ({ ...e, [p.id]: !isExpanded }))}>
-                          {isExpanded ? t('收起') : t('显示更多（{count}）', { count: list.length - COLLAPSED_LIMIT })}
+                          {isExpanded ? t('收起') : t('显示更多（{count}）', { count: list.length - shown.length })}
                         </button>
                       )}
                     </div>

@@ -129,8 +129,10 @@ describe('task count display', () => {
 
     expect(html).toContain('Archived unread target')
     expect(html).not.toContain('Other archived target')
-    expect(html).toContain('Newer 0')
+    expect(html).not.toContain('Newer 0')
+    expect(html).toContain('Newer 1')
     expect(html).toContain('Newer 6')
+    expect(html).toContain('显示更多（1）')
     expect(html).toContain('aria-label="全部折叠"')
 
     mockState.app = { ...mockState.app, projects: [{ ...mockState.app.projects[0], collapsed: true }] }
