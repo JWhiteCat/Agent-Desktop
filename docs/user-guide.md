@@ -50,7 +50,8 @@ Shortcuts (on macOS, Ctrl is ⌘):
 | Enter / Shift+Enter, F3 / Shift+F3 | Next / previous match (⌘G / ⌘⇧G also work on macOS) |
 | Ctrl+Shift+D | Show or hide the changes panel |
 | Ctrl+, | Open Settings |
-| Enter | Send |
+| Enter | Send; while the agent works, add the message to the queue |
+| Ctrl+Enter | While the agent works, stop the current turn and send now |
 | Shift+Enter | New line |
 | Esc | Stop the current run |
 
@@ -59,6 +60,8 @@ Throughout the desktop app, select text and right-click to choose **Copy**, or r
 The composer picks the CLI, the mode, and the model, and can turn on full access (`--force`). On the home screen the CLI applies to the new conversation. Inside a conversation, switching CLI keeps the transcript already shown and starts the next message as a new session on that CLI. The same choice is saved as the default under Settings → CLI. Full access lets the CLI run commands without confirming each one. For Claude, full access is `bypassPermissions`; Agent without it is `acceptEdits`, so file edits are accepted and commands still ask. Ask mode stays on Claude's default permission mode and the app rejects edit and command prompts. Sandbox (`--sandbox`) is a default under Settings → Defaults: follow the CLI, enabled, or disabled. It applies to Cursor. It is not a composer toggle, and Claude does not use it. On the home screen, a new conversation can also switch between the project directory and an isolated git worktree. Cursor uses `--worktree`, then continues in the directory the CLI reports. For Codex and Claude the app creates the worktree itself, so the project must be a git repository with at least one commit.
 
 In a conversation, typing `/` opens a command menu. Arrow keys move through it, Enter or Tab selects, and Esc closes the menu without stopping a run. `/fork` forks locally. A command that takes input is inserted as `/name ` with its hint under the box; Enter then sends it. Commands with no input run immediately. The list also includes whatever the CLI sends in ACP `available_commands_update`. The first `/` in a conversation that already has a CLI session loads that session so those commands can appear. A new conversation and the home screen do not start the CLI. They reuse the last command list that CLI announced, kept on this machine, and the menu stays hidden until a list exists. The next real session refreshes that list. Text that starts with `/` and matches nothing is still sent as a normal message.
+
+While the agent works, you can keep typing follow-ups. Enter adds the draft, with its attachments, to the conversation's queue above the composer; you can queue several. Drag a row by its handle to reorder it. Each row can be edited (it moves back into an empty composer), sent now, or deleted. When a turn ends normally, the next queued message is sent automatically, in order. Ctrl+Enter (⌘+Enter on macOS), or **Send now** on a row, stops the current turn and sends that message first; the rest of the queue continues after it. Stopping a run, a failed turn, or a queued message that cannot be sent pauses the queue. A failed message returns to the front of the queue with the error. Click **Send now** on any row to continue. `/fork` cannot be queued. The queue is kept by the desktop app, so other windows and remote pages show the same queue. It is not saved when the app quits.
 
 With full access off, tool permission requests show a choice card and wait for an explicit allow or reject decision. Skipping or stopping does not grant permission. Claude can also require explicit confirmation for operations that its adapter excludes from full access; these requests still show a card.
 

@@ -7,7 +7,7 @@ import { enabledSkillFingerprint, toAcpMcpServers } from '@shared/agent-config'
 import { parseAvailableCommands, type SlashCommand } from '@shared/commands'
 import { attachmentPrompt } from '@shared/attachment-message'
 import { isImageAttachment, MAX_ATTACHMENTS, MAX_MESSAGE_ATTACHMENT_BYTES, type AttachmentRef } from '@shared/attachments'
-import type { AgentEvent, CliProvider, Item, PrepareRequest, QuestionAnswer, SendRequest } from '@shared/types'
+import type { AgentEvent, CliProvider, Item, MessageQueue, PrepareRequest, QuestionAnswer, QueuedMessage, SendRequest } from '@shared/types'
 import { isCliProvider, threadCli } from '@shared/types'
 import { normalizeTurnUsage } from '@shared/turn-usage'
 import type { WeeklyQuotaEstimate } from '@shared/turn-quota'
@@ -111,6 +111,8 @@ export class SessionManager {
   private commandWaiters = new Map<string, Array<() => void>>()
   /** Serializes prepare and send so one thread cannot start two CLI processes. */
   private tails = new Map<string, Promise<void>>()
+  /** Follow-ups sent while a thread was active. Kept in memory only. */
+  private queues = new Map<string, MessageQueue>()
   private readonly usage: SessionUsage
   private shuttingDown = false
 
@@ -149,11 +151,133 @@ export class SessionManager {
 
   send(req: SendRequest): Promise<void> {
     const id = req.threadId
+    if (req.delivery && this.active().includes(id)) {
+      try {
+        this.enqueueMessage(req)
+        return Promise.resolve()
+      } catch (err) {
+        return Promise.reject(err)
+      }
+    }
     this.pendingSends.set(id, (this.pendingSends.get(id) ?? 0) + 1)
     return this.enqueue(id, () => this.beginSend(req)).finally(() => {
       const remaining = this.pendingSends.get(id)! - 1
       if (remaining === 0) this.pendingSends.delete(id)
       else this.pendingSends.set(id, remaining)
+    }).catch((err) => {
+      // A send that never started a turn has no endRun to resume the queue.
+      const queue = this.queues.get(id)
+      if (queue && !this.active().includes(id) && !queue.paused) {
+        queue.paused = true
+        this.onStateChange()
+      }
+      throw err
+    })
+  }
+
+  queued(): Record<string, MessageQueue> {
+    const out: Record<string, MessageQueue> = {}
+    for (const [id, queue] of this.queues) out[id] = { ...queue, items: [...queue.items] }
+    return out
+  }
+
+  removeQueued(threadId: string, messageId: string): void {
+    const queue = this.queues.get(threadId)
+    if (!queue) return
+    const next = queue.items.filter((item) => item.id !== messageId)
+    if (next.length === queue.items.length) return
+    this.setQueue(threadId, { items: next, paused: queue.paused })
+  }
+
+  /** Drops the queue of a conversation that is being deleted. */
+  clearQueue(threadId: string): void {
+    if (this.queues.delete(threadId)) this.onStateChange()
+  }
+
+  reorderQueued(threadId: string, ids: string[]): void {
+    const queue = this.queues.get(threadId)
+    if (!queue || !Array.isArray(ids)) return
+    const byId = new Map(queue.items.map((item) => [item.id, item]))
+    const ordered = ids.map((id) => byId.get(id)).filter((item): item is QueuedMessage => !!item)
+    const rest = queue.items.filter((item) => !ids.includes(item.id))
+    this.setQueue(threadId, { ...queue, items: [...ordered, ...rest] })
+  }
+
+  /** Moves a queued message to the front; a running turn is stopped so it goes next. */
+  sendQueuedNow(threadId: string, messageId: string): void {
+    const queue = this.queues.get(threadId)
+    const item = queue?.items.find((it) => it.id === messageId)
+    if (!queue || !item) throw new Error(translate('排队消息不存在'))
+    const rest = queue.items.filter((it) => it.id !== messageId)
+    this.setQueue(threadId, { items: [{ ...item, immediate: true }, ...rest], paused: queue.paused })
+    if (this.runs.has(threadId)) this.stop(threadId)
+    else if (!this.active().includes(threadId)) this.dispatchQueued(threadId)
+  }
+
+  private enqueueMessage(req: SendRequest): void {
+    const thread = this.store.thread(req.threadId)
+    if (!thread) throw new Error(translate('对话不存在'))
+    if (req.attachmentIds !== undefined && !Array.isArray(req.attachmentIds)) throw new Error(translate('附件参数无效'))
+    const attachments = req.attachmentIds?.length ? attachmentsFor(this.store).resolveMany(req.attachmentIds) : []
+    if (typeof req.prompt !== 'string' || (!req.prompt.trim() && !attachments.length)) throw new Error(translate('请输入消息或添加附件'))
+    const immediate = req.delivery === 'now'
+    const item: QueuedMessage = {
+      id: newId(), prompt: req.prompt, attachments, model: req.model, mode: req.mode, force: req.force,
+      ...(isCliProvider(req.cli) ? { cli: req.cli } : {}),
+      ...(immediate ? { immediate } : {}),
+      createdAt: Date.now()
+    }
+    const queue = this.queues.get(req.threadId) ?? { items: [] }
+    const items = [...queue.items]
+    if (immediate) {
+      const at = items.findIndex((it) => !it.immediate)
+      items.splice(at < 0 ? items.length : at, 0, item)
+    } else {
+      items.push(item)
+    }
+    this.setQueue(req.threadId, { ...queue, items })
+    if (immediate) this.stop(req.threadId)
+  }
+
+  private setQueue(threadId: string, queue: MessageQueue): void {
+    if (queue.items.length) this.queues.set(threadId, queue)
+    else this.queues.delete(threadId)
+    this.onStateChange()
+  }
+
+  /** Called after a turn ends. Stopped or failed turns pause the queue unless the head was sent with "now". */
+  private drainQueue(threadId: string, interrupted: boolean): void {
+    const queue = this.queues.get(threadId)
+    if (!queue || this.shuttingDown || this.runs.has(threadId)) return
+    if (!this.store.thread(threadId)) {
+      this.queues.delete(threadId)
+      return
+    }
+    if (!queue.items[0].immediate && interrupted) {
+      if (!queue.paused) this.setQueue(threadId, { ...queue, paused: true })
+      return
+    }
+    this.dispatchQueued(threadId)
+  }
+
+  private dispatchQueued(threadId: string): void {
+    const queue = this.queues.get(threadId)
+    const head = queue?.items[0]
+    if (!queue || !head) return
+    this.setQueue(threadId, { items: queue.items.slice(1) })
+    const req: SendRequest = {
+      threadId, prompt: head.prompt, model: head.model, mode: head.mode, force: head.force,
+      ...(head.attachments.length ? { attachmentIds: head.attachments.map((a) => a.id) } : {}),
+      ...(head.cli ? { cli: head.cli } : {})
+    }
+    void this.send(req).catch((err) => {
+      if (!this.store.thread(threadId)) return
+      const current = this.queues.get(threadId) ?? { items: [] }
+      this.setQueue(threadId, {
+        items: [{ ...head, immediate: undefined }, ...current.items],
+        paused: true,
+        error: err instanceof Error ? err.message : String(err)
+      })
     })
   }
 
@@ -381,6 +505,7 @@ export class SessionManager {
 
   stopAll(): void {
     this.shuttingDown = true
+    this.queues.clear()
     this.usage.stop()
     for (const id of [...this.runs.keys()]) this.dispose(id)
     for (const id of [...this.agents.keys()]) this.discard(id)
@@ -887,6 +1012,11 @@ export class SessionManager {
       failed,
       preview: summary
     })
+    // Deferred so a follow-up turn that drive() starts right after endRun (Codex plan feedback) goes first.
+    if (this.queues.has(threadId)) {
+      const interrupted = run.stopped || failed
+      setImmediate(() => this.drainQueue(threadId, interrupted))
+    }
     if (run.resultId && run.codexAccountPath !== undefined) {
       void this.usage.saveAccountUsage(threadId, run.resultId, run.proc.sessionId, run.codexAccountPath)
     }

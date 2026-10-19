@@ -61,6 +61,11 @@ export interface DesktopApi {
   /** Loads slash commands for a thread that already has a CLI session. */
   prepareCommands(threadId: string, opts: PrepareRequest): Promise<SlashCommand[]>
   stop(threadId: string): Promise<void>
+  removeQueued(threadId: string, messageId: string): Promise<void>
+  /** `ids` is the full new order; ids no longer queued are ignored. */
+  reorderQueued(threadId: string, ids: string[]): Promise<void>
+  /** Stops the current turn when one is running and sends this queued message next. */
+  sendQueuedNow(threadId: string, messageId: string): Promise<void>
   /** `null` skips the question. */
   answerQuestion(threadId: string, questionId: string, answers: QuestionAnswer[] | null): Promise<void>
   updateSettings(patch: Partial<Settings>): Promise<Settings>

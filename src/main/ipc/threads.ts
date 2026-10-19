@@ -48,6 +48,7 @@ export function threadHandlers(deps: IpcDeps): Record<string, Handler> {
     'thread:delete': (id: string) => {
       const thread = store.thread(id)
       sessions.dispose(id)
+      sessions.clearQueue(id)
       store.deleteThread(id)
       if (thread) void releaseWorktrees([thread], [...store.threads, ...store.projects.map((p) => ({ cwd: p.path }))], worktreeRoot(store))
       broadcast()
@@ -80,6 +81,9 @@ export function threadHandlers(deps: IpcDeps): Record<string, Handler> {
     'agent:send': (req) => sessions.send(req),
     'agent:prepare': (threadId: string, opts: PrepareRequest) => sessions.prepare(threadId, opts),
     'agent:stop': (id: string) => sessions.stop(id),
+    'agent:queueRemove': (threadId: string, messageId: string) => sessions.removeQueued(threadId, messageId),
+    'agent:queueReorder': (threadId: string, ids: string[]) => sessions.reorderQueued(threadId, ids),
+    'agent:queueSendNow': (threadId: string, messageId: string) => sessions.sendQueuedNow(threadId, messageId),
     'agent:answerQuestion': (threadId: string, questionId: string, answers: QuestionAnswer[] | null) => {
       sessions.answerQuestion(threadId, questionId, answers)
     }

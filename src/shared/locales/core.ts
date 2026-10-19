@@ -113,6 +113,7 @@ export const coreMessages: Record<string, string> = {
   '停止会话并退出': 'Stop conversations and quit',
   '应用正在关闭': 'The app is shutting down',
   '该对话正在运行中': 'This conversation is already running',
+  '排队消息不存在': 'The queued message no longer exists',
   '{label} 没有返回会话 id': '{label} did not return a session ID',
   '分叉历史缺失，无法恢复上下文': 'Fork history is missing; unable to restore context',
   '已停止': 'Stopped',

@@ -13,6 +13,7 @@ Agent Desktop runs the CLIs on your computer through the [Agent Client Protocol]
 - Collapse all projects and jump through unread conversations across projects
 - Open workspaces in VS Code or Cursor; customize header buttons and run saved commands in a new terminal
 - Work in Agent, Plan, or Ask mode, with question cards and one-click plan execution
+- Queue follow-ups while the agent works: Enter adds a message to the queue, rows can be dragged to reorder, and queued messages are sent in order when each turn ends; Ctrl+Enter stops the current turn and sends now
 - Stream replies and tool calls, attach images and files, open local file links, and preview or copy link destinations
 - Use desktop right-click menus to copy selected text and paste into chat and other editable fields
 - Choose models with saved favorites, context length, reasoning effort, and Fast settings

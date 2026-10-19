@@ -42,7 +42,8 @@ function snapshot(): AppState {
     threads: store.threads,
     settings: store.settings,
     running: sessions.running(),
-    waitingForInput: sessions.waitingForInput()
+    waitingForInput: sessions.waitingForInput(),
+    queued: sessions.queued()
   }
 }
 

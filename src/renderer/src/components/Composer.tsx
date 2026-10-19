@@ -1,10 +1,10 @@
 import { useT } from '../lib/i18n'
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import { argumentHint, filterCommands, slashQuery, type SlashCommand } from '@shared/commands'
-import { cliTitle, type AgentMode, type CliProvider } from '@shared/types'
+import { cliTitle, type AgentMode, type AttachmentRef, type CliProvider, type SendDelivery } from '@shared/types'
 import { rememberModel, type SendOptions } from '../store'
 import { errorText, toast } from '../store/feedback'
-import { appendDraftAttachments, textSendOptions, uploadDraftAttachments, type DraftAttachment } from '../lib/attachments'
+import { appendDraftAttachments, restoreDraftAttachments, textSendOptions, uploadDraftAttachments, type DraftAttachment } from '../lib/attachments'
 import { IconArrowUp, IconBranch, IconChevronDown, IconFolder, IconList, IconPlus, IconShield, IconSparkle, IconStop } from './icons'
 import { MenuList, Popover } from './Menu'
 import { ModelPicker } from './ModelPicker'
@@ -22,11 +22,19 @@ const CLIS: { id: CliProvider; label: string; desc: string }[] = [
   { id: 'claude', label: 'Claude', desc: 'Claude Code' }
 ]
 
+/** Label of the shortcut that sends past the queue while the agent works. */
+export function sendNowShortcut(): string {
+  const mac = window.api.platform === 'darwin' || (window.api.platform === 'web' && /Mac|iPhone|iPad/.test(navigator.userAgent))
+  return mac ? '⌘+Enter' : 'Ctrl+Enter'
+}
+
 export interface ComposerHandle {
   focus: () => void
   setText: (t: string) => void
   /** Sends `text` without touching the draft. `patch` also becomes the composer's new selection. */
   send: (text: string, patch?: Partial<SendOptions>) => Promise<void>
+  /** Puts a queued message back into an empty draft. Resolves to false when the draft is not empty. */
+  restore: (text: string, attachments: AttachmentRef[]) => Promise<boolean>
 }
 
 interface Props {
@@ -110,6 +118,16 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
       } finally {
         setSending(false)
       }
+    },
+    restore: async (value, refs) => {
+      if (text.trim() || attachmentsRef.current.length || sending) return false
+      const drafts = refs.length ? await restoreDraftAttachments(refs, window.api.readAttachment) : []
+      attachmentsRef.current = drafts
+      setAttachments(drafts)
+      setText(value)
+      setSendError('')
+      requestAnimationFrame(() => ta.current?.focus())
+      return true
     }
   }))
 
@@ -137,7 +155,8 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
     slashArmed.current = armed
   }, [query, opts, props.onPrepare])
 
-  const canSend = (!!text.trim() || attachments.length > 0) && !running && !disabled && !sending
+  const canSend = (!!text.trim() || attachments.length > 0) && !disabled && !sending
+  const nowShortcut = sendNowShortcut()
   const activeCli = opts.cli ?? props.cli
 
   const chooseCli = (next: CliProvider) => {
@@ -150,7 +169,8 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
     }))
   }
 
-  const submit = async () => {
+  /** `delivery` only applies while running; an idle conversation always sends right away. */
+  const submit = async (delivery: SendDelivery = 'queue') => {
     if (!canSend) return
     const value = text
     const drafts = attachmentsRef.current
@@ -162,7 +182,11 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
     setSendError('')
     try {
       const attachmentIds = await uploadDraftAttachments(drafts, window.api.uploadAttachment, () => setAttachments([...drafts]))
-      await props.onSend(value, { ...textSendOptions(opts), ...(attachmentIds.length ? { attachmentIds } : {}) })
+      await props.onSend(value, {
+        ...textSendOptions(opts),
+        ...(attachmentIds.length ? { attachmentIds } : {}),
+        ...(running ? { delivery } : {})
+      })
       setText('')
       attachmentsRef.current = []
       setAttachments([])
@@ -180,12 +204,12 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
       requestAnimationFrame(() => ta.current?.focus())
       return
     }
-    if (running || disabled || sending) return
+    if (disabled || sending) return
     const value = `/${command.name}`
     setSending(true)
     setText('')
     try {
-      await props.onSend(value, textSendOptions(opts))
+      await props.onSend(value, { ...textSendOptions(opts), ...(running ? { delivery: 'queue' as const } : {}) })
     } catch {
       setDismissed(false)
       setText(value)
@@ -310,7 +334,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
           }
           if (e.key === 'Enter' && !e.shiftKey && !composing) {
             e.preventDefault()
-            void submit()
+            void submit(e.ctrlKey || e.metaKey ? 'now' : 'queue')
           } else if (e.key === 'Escape' && running) {
             props.onStop?.()
           }
@@ -387,11 +411,22 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
           {props.footerLeft}
         </div>
         {running ? (
-          <button className="send-btn stop" title={t('停止 (Esc)')} onClick={props.onStop}>
-            <IconStop size={14} />
-          </button>
+          <div className="composer-actions">
+            {canSend && (
+              <button
+                className="send-btn queue"
+                title={t('加入队列 (Enter)，{shortcut} 立即发送', { shortcut: nowShortcut })}
+                onClick={(e) => void submit(e.ctrlKey || e.metaKey ? 'now' : 'queue')}
+              >
+                <IconArrowUp size={16} />
+              </button>
+            )}
+            <button className="send-btn stop" title={t('停止 (Esc)')} onClick={props.onStop}>
+              <IconStop size={14} />
+            </button>
+          </div>
         ) : (
-          <button className="send-btn" title={t('发送 (Enter)')} disabled={!canSend} onClick={submit}>
+          <button className="send-btn" title={t('发送 (Enter)')} disabled={!canSend} onClick={() => void submit()}>
             <IconArrowUp size={16} />
           </button>
         )}

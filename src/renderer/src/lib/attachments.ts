@@ -76,8 +76,19 @@ export async function uploadDraftAttachments(
 
 /** Plan execution and question replies never pick up files from the composer draft. */
 export function textSendOptions(opts: SendOptions, patch?: Partial<SendOptions>): SendOptions {
-  const { attachmentIds: _attachments, ...next } = { ...opts, ...patch }
+  const { attachmentIds: _attachments, delivery: _delivery, ...next } = { ...opts, ...patch }
   return next
+}
+
+/** Rebuilds drafts for files that were already uploaded, so sending again does not upload them twice. */
+export async function restoreDraftAttachments(
+  refs: AttachmentRef[],
+  read: (id: string) => Promise<AttachmentData>
+): Promise<DraftAttachment[]> {
+  return Promise.all(refs.map(async (ref) => {
+    const file = new File([attachmentBlob(await read(ref.id))], ref.name, { type: ref.mimeType })
+    return { key: randomId(), file, uploaded: ref, status: 'ready' as const }
+  }))
 }
 
 export function attachmentBlob(value: AttachmentData): Blob {

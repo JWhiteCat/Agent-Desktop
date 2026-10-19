@@ -350,7 +350,15 @@ export interface AppState {
   running: string[]
   /** Running conversations with a live question or permission decision awaiting input. */
   waitingForInput?: string[]
+  /** Follow-up messages waiting for the current turn, keyed by thread id. Threads with an empty queue are omitted. */
+  queued?: Record<string, MessageQueue>
 }
+
+/**
+ * How a send behaves while the conversation is active. `queue` waits for the current turn;
+ * `now` stops the current turn and sends ahead of the queue. Idle conversations send right away.
+ */
+export type SendDelivery = 'queue' | 'now'
 
 export interface SendRequest {
   threadId: string
@@ -362,6 +370,27 @@ export interface SendRequest {
   worktree?: boolean
   /** CLI chosen in the composer. When it differs from the thread, the next message starts a new session. */
   cli?: CliProvider
+  delivery?: SendDelivery
+}
+
+export interface QueuedMessage {
+  id: string
+  prompt: string
+  attachments: AttachmentRef[]
+  model: string
+  mode: AgentMode
+  force: boolean
+  cli?: CliProvider
+  /** Sent as soon as the stopped turn ends, even though stopping pauses the rest of the queue. */
+  immediate?: boolean
+  createdAt: number
+}
+
+export interface MessageQueue {
+  items: QueuedMessage[]
+  /** Set after a stop, a failed turn, or a failed dispatch; the queue waits for the user. */
+  paused?: boolean
+  error?: string
 }
 
 /** Options used to resume a session so its slash commands can be listed. */

@@ -10,7 +10,8 @@ import { planPath, planUriOf } from '../lib/tools'
 import { defaultModelFor, favoritesFor, modelForChat, projectModelFor } from '../lib/model-prefs'
 import { chatModel, cliCommands, forkThread, prepareCommands, sendMessage, setCliProvider, useStore } from '../store'
 import { markDisplayedThreadRead } from '../store/threads'
-import { Composer, type ComposerHandle } from './Composer'
+import { Composer, sendNowShortcut, type ComposerHandle } from './Composer'
+import { QueuedMessages } from './QueuedMessages'
 import { BinaryFilesGroup } from './BinaryFilesGroup'
 import { FindBar } from './FindBar'
 import { IconBranch, IconChevronDown, IconChevronRight, Spinner } from './icons'
@@ -318,6 +319,11 @@ export function ThreadView({ thread, changesOpen, onToggleChanges }: Props) {
       </div>
 
       <div className="composer-dock">
+        <QueuedMessages
+          threadId={thread.id}
+          running={running}
+          onEdit={async (item) => !!(await composer.current?.restore(item.prompt, item.attachments))}
+        />
         <Composer
           key={thread.id}
           ref={composer}
@@ -340,7 +346,9 @@ export function ThreadView({ thread, changesOpen, onToggleChanges }: Props) {
             cli
           }}
           placeholder={
-            thread.chatId
+            running
+              ? t('Agent 运行中：Enter 加入队列，{shortcut} 立即发送', { shortcut: sendNowShortcut() })
+              : thread.chatId
               ? t('继续对话… 输入 / 查看命令')
               : commands.length
                 ? t('描述任务，输入 / 查看命令，Enter 发送')
@@ -352,6 +360,7 @@ export function ThreadView({ thread, changesOpen, onToggleChanges }: Props) {
           onSend={(text, opts) => {
             if (text.trim() === '/fork') {
               if (opts.attachmentIds?.length) throw new Error(t('请先移除附件，再分叉对话'))
+              if (running) throw new Error(t('对话正在运行，请稍后再分叉'))
               void forkThread(thread.id)
               return
             }

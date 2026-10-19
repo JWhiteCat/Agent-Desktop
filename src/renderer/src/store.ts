@@ -17,7 +17,10 @@ export {
   openNextUnreadThread,
   openThread,
   rememberProject,
+  removeQueued,
+  reorderQueued,
   sendMessage,
+  sendQueuedNow,
   startThread,
   syncThreadFromCli
 } from './store/threads'

@@ -26,7 +26,7 @@ vi.mock('../src/renderer/src/store', () => ({
   setCliProvider: vi.fn(),
   answerQuestion: vi.fn()
 }))
-vi.mock('../src/renderer/src/components/Composer', () => ({ Composer: () => null }))
+vi.mock('../src/renderer/src/components/Composer', () => ({ Composer: () => null, sendNowShortcut: () => 'Ctrl+Enter' }))
 vi.mock('../src/renderer/src/components/items/primitives', async (importOriginal) => {
   const original = await importOriginal<typeof import('../src/renderer/src/components/items/primitives')>()
   return {

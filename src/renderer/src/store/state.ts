@@ -2,7 +2,7 @@ import { useSyncExternalStore } from 'react'
 import { setLanguage } from '@shared/i18n'
 import type { CommandCache, SlashCommand } from '@shared/commands'
 import type { SkinConfig } from '@shared/skins'
-import type { AgentMode, AppState, CliProvider, Item, ModelInfo } from '@shared/types'
+import type { AgentMode, AppState, CliProvider, Item, ModelInfo, SendDelivery } from '@shared/types'
 import { syncRemoteViewIfEnabled } from '../lib/view-route'
 import { readCommandCache } from './persistence'
 
@@ -33,6 +33,8 @@ export interface SendOptions {
   worktree?: boolean
   cli?: CliProvider
   attachmentIds?: string[]
+  /** Set only while the conversation is running. */
+  delivery?: SendDelivery
 }
 
 type Listener = () => void

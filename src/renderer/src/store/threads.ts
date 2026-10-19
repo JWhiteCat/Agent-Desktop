@@ -203,6 +203,27 @@ export async function sendMessage(threadId: string, prompt: string, opts: SendOp
   }
 }
 
+async function queueAction(action: () => Promise<void>): Promise<void> {
+  try {
+    await action()
+  } catch (err) {
+    toast(errorText(err), 'error')
+    throw err
+  }
+}
+
+export function removeQueued(threadId: string, messageId: string): Promise<void> {
+  return queueAction(() => window.api.removeQueued(threadId, messageId))
+}
+
+export function reorderQueued(threadId: string, ids: string[]): Promise<void> {
+  return queueAction(() => window.api.reorderQueued(threadId, ids))
+}
+
+export function sendQueuedNow(threadId: string, messageId: string): Promise<void> {
+  return queueAction(() => window.api.sendQueuedNow(threadId, messageId))
+}
+
 export async function startThread(projectId: string, prompt: string, opts: SendOptions): Promise<ThreadMeta> {
   const thread = await window.api.createThread(projectId, opts.mode, opts.model, opts.force, opts.cli)
   setState((s) => ({
