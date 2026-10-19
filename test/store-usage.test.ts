@@ -239,4 +239,28 @@ describe('stored Codex usage repair', () => {
     expect(store.items('switch')[2]).toMatchObject({ cli })
     expect(store.items('switch')[3]).toMatchObject({ cli: 'claude' })
   })
+
+  it('replays the existing transcript into the next CLI session after switching', () => {
+    addThread('switch', transcript(), 'cursor')
+    codex.readUsage.mockReturnValue(undefined)
+
+    store.updateThread('switch', { cli: 'codex' })
+
+    expect(store.thread('switch')).toMatchObject({ cli: 'codex', forkContextThroughItemId: 'result' })
+    expect(store.thread('switch')?.chatId).toBeUndefined()
+    reload()
+    expect(store.thread('switch')?.forkContextThroughItemId).toBe('result')
+
+    store.items('switch').push({ id: 'later', kind: 'notice', level: 'info', text: 'Not yet sent.' })
+    store.updateThread('switch', { cli: 'claude' })
+    expect(store.thread('switch')?.forkContextThroughItemId).toBe('result')
+  })
+
+  it('does not mark replay context when switching an empty conversation', () => {
+    addThread('empty', [{ id: 'notice', kind: 'notice', level: 'info', text: 'Hello.' }], 'cursor')
+
+    store.updateThread('empty', { cli: 'codex' })
+
+    expect(store.thread('empty')?.forkContextThroughItemId).toBeUndefined()
+  })
 })

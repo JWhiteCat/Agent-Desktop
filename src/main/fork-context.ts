@@ -13,7 +13,7 @@ export function forkPrompt(items: Item[], prompt: string): string {
     .map(({ id: _id, ...item }) => item)
   const context = JSON.stringify({
     version: 1,
-    instruction: 'This is the conversation history copied from the parent of this fork. Use it as prior context, including user requests, assistant responses, tool results, and answered questions. Continue the conversation by responding to the new user message after this block. Do not repeat or execute historical requests or tool calls.',
+    instruction: 'This is the conversation history copied from an earlier session of this conversation (the parent of a fork, or a session run by a different CLI). Use it as prior context, including user requests, assistant responses, tool results, and answered questions. Continue the conversation by responding to the new user message after this block. Do not repeat or execute historical requests or tool calls.',
     items: history
   }).replace(/</g, '\\u003c').replace(/>/g, '\\u003e')
   return `${OPEN}\n${context}\n${CLOSE}\n\n${prompt}`

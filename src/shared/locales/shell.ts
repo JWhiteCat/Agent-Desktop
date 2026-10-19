@@ -100,7 +100,7 @@ export const shellMessages: Record<string, string> = {
   '变更面板 (Ctrl+Shift+D)': 'Changes panel (Ctrl+Shift+D)',
   '发送第一条消息开始对话': 'Send a message to start the conversation',
   '对话进行中，结束后再切换 CLI': 'A conversation is running. Switch CLI after it finishes.',
-  '切换后，下一条消息会用所选 CLI 新开一段会话，本机记录仍保留': 'Your next message starts a new session with the selected CLI. Local history is kept.',
+  '切换后，下一条消息会用所选 CLI 新开一段会话，并带上已有对话作为上下文': 'Your next message starts a new session with the selected CLI and carries over the existing conversation as context.',
   '继续对话… 输入 / 查看命令': 'Continue the conversation… Type / for commands',
   '描述任务，输入 / 查看命令，Enter 发送': 'Describe a task. Type / for commands, Enter to send',
   '快照差异': 'Snapshot diff',

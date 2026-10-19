@@ -207,7 +207,12 @@ export class Store {
       }
       this.markItemsDirty(id)
     }
-    const nextPatch = nextCli !== undefined ? { ...patch, cli: nextCli } : patch
+    const nextPatch: Partial<ThreadMeta> = nextCli !== undefined ? { ...patch, cli: nextCli } : { ...patch }
+    if (cliChanged && !t.forkContextThroughItemId) {
+      // The new CLI session starts empty; replay the local transcript into its first prompt.
+      const items = this.items(id)
+      if (items.some((item) => item.kind === 'user' || item.kind === 'assistant')) nextPatch.forkContextThroughItemId = items.at(-1)?.id
+    }
     Object.assign(t, nextPatch, { id: t.id })
     // A title supplied without an explicit placeholder marker is a literal name.
     if (typeof patch.title === 'string' && !Object.hasOwn(patch, 'titleKind')) delete t.titleKind

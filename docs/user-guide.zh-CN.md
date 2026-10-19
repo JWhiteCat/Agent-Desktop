@@ -4,7 +4,7 @@
 
 ## CLI 与会话
 
-应用本身不调用模型。主进程在本机启动 Cursor CLI、Codex CLI 或 Claude Code 适配器，通过 [Agent Client Protocol](https://agentclientprotocol.com)（ACP）与之通信。输入框可以直接选择 Cursor、Codex 或 Claude。新建对话使用这个选择，并把它记住。已有对话里切换 CLI 时，屏幕上已有的消息保留，下一条消息会用所选 CLI 新开一段会话。侧边栏会标出每一段是 Cursor、Codex 还是 Claude。
+应用本身不调用模型。主进程在本机启动 Cursor CLI、Codex CLI 或 Claude Code 适配器，通过 [Agent Client Protocol](https://agentclientprotocol.com)（ACP）与之通信。输入框可以直接选择 Cursor、Codex 或 Claude。新建对话使用这个选择，并把它记住。已有对话里切换 CLI 时，屏幕上已有的消息保留，下一条消息会用所选 CLI 新开一段会话，并把已有对话作为上下文一并发送；新会话第一轮成功结束后才不再重复附带。侧边栏会标出每一段是 Cursor、Codex 还是 Claude。
 
 ## 使用
 
@@ -57,7 +57,7 @@ Cursor、Codex、Claude 均通过原生图片输入接收 PNG、JPEG、WebP、GI
 
 在整个桌面应用中，选中文字后右键选择 **复制**，或在聊天和其他可编辑输入框中右键选择 **粘贴**。文字会插入光标位置或替换选区；在聊天输入框中粘贴截图会添加附件，不会自动发送消息。这些应用右键菜单仅用于桌面端，远程页面沿用现有浏览器行为。
 
-输入框用来选 CLI、模式和模型，也可以打开完全访问（`--force`）。首页上的 CLI 用于新建对话。对话里切换 CLI 时，已经显示的记录保留，下一条消息会用所选 CLI 新开一段会话。这个选择会记成设置里 CLI 页的默认值。完全访问会让 CLI 在不逐条确认的情况下执行命令。对 Claude 来说，完全访问是 `bypassPermissions`；不开完全访问的 Agent 是 `acceptEdits`，改文件会自动通过，命令仍会询问。Ask 保持 Claude 的默认权限模式，应用会拒绝改文件和执行命令的请求。沙箱（`--sandbox`）在设置的「默认值」里：遵循 CLI、启用或禁用，只作用于 Cursor，不是输入框上的开关，Claude 不使用它。首页上，新建的对话还可以在项目目录和隔离的 git worktree 之间切换。Cursor 用 `--worktree`，随后在 CLI 报告的目录里继续；Codex 和 Claude 的 worktree 由本应用创建，项目必须是有提交的 git 仓库。
+输入框用来选 CLI、模式和模型，也可以打开完全访问（`--force`）。首页上的 CLI 用于新建对话。对话里切换 CLI 时，已经显示的记录保留，下一条消息会用所选 CLI 新开一段会话，并带上已有对话作为上下文。这个选择会记成设置里 CLI 页的默认值。完全访问会让 CLI 在不逐条确认的情况下执行命令。对 Claude 来说，完全访问是 `bypassPermissions`；不开完全访问的 Agent 是 `acceptEdits`，改文件会自动通过，命令仍会询问。Ask 保持 Claude 的默认权限模式，应用会拒绝改文件和执行命令的请求。沙箱（`--sandbox`）在设置的「默认值」里：遵循 CLI、启用或禁用，只作用于 Cursor，不是输入框上的开关，Claude 不使用它。首页上，新建的对话还可以在项目目录和隔离的 git worktree 之间切换。Cursor 用 `--worktree`，随后在 CLI 报告的目录里继续；Codex 和 Claude 的 worktree 由本应用创建，项目必须是有提交的 git 仓库。
 
 在一段对话里输入 `/` 会打开命令菜单。方向键移动，Enter 或 Tab 选中，Esc 只关闭菜单，不会停止正在运行的回合。`/fork` 在本地分叉。需要参数的命令会填成 `/名称 `，并在输入框下方显示提示，再按 Enter 发送。没有参数的命令会立刻执行。列表里还有 CLI 通过 ACP `available_commands_update` 宣告的命令。已有 CLI 会话的对话，第一次输入 `/` 会加载该会话，以便列出这些命令。新对话和首页不启动 CLI，而是复用这个 CLI 上一次宣告的命令列表，并记在本机；还没有任何列表时不显示菜单。下一次真实会话会刷新这份列表。以 `/` 开头但没有匹配项的文本仍按普通消息发送。
 

@@ -331,7 +331,7 @@ export function ThreadView({ thread, changesOpen, onToggleChanges }: Props) {
           running={running}
           cli={cli}
           cliDisabled={running}
-          cliNote={running ? t('对话进行中，结束后再切换 CLI') : t('切换后，下一条消息会用所选 CLI 新开一段会话，本机记录仍保留')}
+          cliNote={running ? t('对话进行中，结束后再切换 CLI') : t('切换后，下一条消息会用所选 CLI 新开一段会话，并带上已有对话作为上下文')}
           onCliChange={(next) => {
             if (running) return
             setCliProvider(next)
