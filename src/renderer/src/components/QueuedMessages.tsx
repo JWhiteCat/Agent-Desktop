@@ -41,7 +41,13 @@ export function QueuedMessages({ threadId, running, onEdit }: {
     <div className="queued-messages" aria-label={t('排队消息')}>
       <div className="queued-header">
         <span>{t('排队中 · {count} 条', { count: queue.items.length })}</span>
-        {queue.paused && !running && <span className="queued-paused">{t('队列已暂停，点击“立即发送”继续')}</span>}
+        {queue.paused && !running ? (
+          <span className="queued-paused">{t('队列已暂停，点击“立即发送”继续')}</span>
+        ) : queue.waitingForPlan && (
+          <span className="queued-paused">
+            {running ? t('方案执行完成后继续发送') : t('等待执行方案：点击“执行计划”，执行完成后继续；或点击“立即发送”跳过')}
+          </span>
+        )}
       </div>
       {queue.error && <div className="queued-error" role="alert">{queue.error}</div>}
       <ol className="queued-list">

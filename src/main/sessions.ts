@@ -186,7 +186,7 @@ export class SessionManager {
     if (!queue) return
     const next = queue.items.filter((item) => item.id !== messageId)
     if (next.length === queue.items.length) return
-    this.setQueue(threadId, { items: next, paused: queue.paused })
+    this.setQueue(threadId, { items: next, paused: queue.paused, waitingForPlan: queue.waitingForPlan })
   }
 
   /** Drops the queue of a conversation that is being deleted. */
@@ -209,7 +209,7 @@ export class SessionManager {
     const item = queue?.items.find((it) => it.id === messageId)
     if (!queue || !item) throw new Error(translate('排队消息不存在'))
     const rest = queue.items.filter((it) => it.id !== messageId)
-    this.setQueue(threadId, { items: [{ ...item, immediate: true }, ...rest], paused: queue.paused })
+    this.setQueue(threadId, { items: [{ ...item, immediate: true }, ...rest], paused: queue.paused, waitingForPlan: queue.waitingForPlan })
     if (this.runs.has(threadId)) this.stop(threadId)
     else if (!this.active().includes(threadId)) this.dispatchQueued(threadId)
   }
@@ -245,17 +245,27 @@ export class SessionManager {
     this.onStateChange()
   }
 
-  /** Called after a turn ends. Stopped or failed turns pause the queue unless the head was sent with "now". */
-  private drainQueue(threadId: string, interrupted: boolean): void {
+  /**
+   * Called after a turn ends. A head sent with "now" always goes next. Otherwise stopped or failed turns
+   * pause the queue, and a turn that ends in Plan mode with a plan holds it until an Agent turn completes.
+   */
+  private drainQueue(threadId: string, turn: { interrupted: boolean; planned: boolean; agent: boolean }): void {
     const queue = this.queues.get(threadId)
     if (!queue || this.shuttingDown || this.runs.has(threadId)) return
     if (!this.store.thread(threadId)) {
       this.queues.delete(threadId)
       return
     }
-    if (!queue.items[0].immediate && interrupted) {
-      if (!queue.paused) this.setQueue(threadId, { ...queue, paused: true })
-      return
+    if (!queue.items[0].immediate) {
+      if (turn.interrupted) {
+        if (!queue.paused) this.setQueue(threadId, { ...queue, paused: true })
+        return
+      }
+      if (turn.planned) {
+        if (!queue.waitingForPlan || queue.paused) this.setQueue(threadId, { ...queue, paused: undefined, waitingForPlan: true })
+        return
+      }
+      if (queue.waitingForPlan && !turn.agent) return
     }
     this.dispatchQueued(threadId)
   }
@@ -1014,8 +1024,13 @@ export class SessionManager {
     })
     // Deferred so a follow-up turn that drive() starts right after endRun (Codex plan feedback) goes first.
     if (this.queues.has(threadId)) {
-      const interrupted = run.stopped || failed
-      setImmediate(() => this.drainQueue(threadId, interrupted))
+      const userIndex = items.findIndex((it) => it.id === run.userItemId)
+      const turn = {
+        interrupted: run.stopped || failed,
+        planned: run.mode === 'plan' && userIndex >= 0 && items.slice(userIndex + 1).some((it) => it.kind === 'tool' && it.tool === 'createPlan'),
+        agent: run.mode === 'agent'
+      }
+      setImmediate(() => this.drainQueue(threadId, turn))
     }
     if (run.resultId && run.codexAccountPath !== undefined) {
       void this.usage.saveAccountUsage(threadId, run.resultId, run.proc.sessionId, run.codexAccountPath)

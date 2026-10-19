@@ -80,6 +80,7 @@ function setup() {
   return {
     manager, req, thread, calls, prompts, finished, stateChanged, queuedPrompts,
     remove: () => { exists = false },
+    notify: (update: object) => reply({ method: 'session/update', params: { sessionId: 'test-session', update } }),
     waitForPrompts: (count: number) => vi.waitFor(() => expect(prompts).toHaveLength(count)),
     complete: () => {
       const id = open
@@ -192,6 +193,76 @@ describe('message queue', () => {
     await vi.waitFor(() => expect(ctx.manager.queued().thread?.error).toBeTruthy())
     expect(ctx.manager.queued().thread).toMatchObject({ paused: true, items: [expect.objectContaining({ prompt: 'second' })] })
     expect(ctx.prompts).toHaveLength(1)
+  })
+
+  const planTurn = async (ctx: ReturnType<typeof setup>, count: number) => {
+    await ctx.waitForPrompts(count)
+    ctx.notify({ sessionUpdate: 'plan_update', plan: { type: 'markdown', planId: `p${count}`, content: '# Plan\n\nSteps' } })
+    await vi.waitFor(() => expect(ctx.manager.queued().thread).toBeDefined())
+    ctx.complete()
+    await vi.waitFor(() => expect(ctx.manager.queued().thread?.waitingForPlan).toBe(true))
+    expect(ctx.manager.active()).toEqual([])
+  }
+
+  it('holds the queue after a Plan turn produces a plan until an Agent turn carries it out', async () => {
+    const ctx = setup()
+    await ctx.manager.send(ctx.req('design', { mode: 'plan' }))
+    await ctx.waitForPrompts(1)
+    await ctx.manager.send(ctx.req('next', { delivery: 'queue' }))
+    await planTurn(ctx, 1)
+    expect(ctx.prompts).toHaveLength(1)
+
+    await ctx.manager.send(ctx.req('why step 2?', { mode: 'ask' }))
+    await ctx.waitForPrompts(2)
+    ctx.complete()
+    await vi.waitFor(() => expect(ctx.manager.active()).toEqual([]))
+    await new Promise((resolve) => setImmediate(resolve))
+    expect(ctx.prompts).toHaveLength(2)
+    expect(ctx.manager.queued().thread).toMatchObject({ waitingForPlan: true })
+
+    await ctx.manager.send(ctx.req('execute the plan'))
+    await ctx.waitForPrompts(3)
+    ctx.complete()
+    await ctx.waitForPrompts(4)
+    expect(ctx.prompts[3].text).toContain('next')
+    expect(ctx.manager.queued()).toEqual({})
+  })
+
+  it('pauses instead of continuing when the plan execution is stopped', async () => {
+    const ctx = setup()
+    await ctx.manager.send(ctx.req('design', { mode: 'plan' }))
+    await ctx.waitForPrompts(1)
+    await ctx.manager.send(ctx.req('next', { delivery: 'queue' }))
+    await planTurn(ctx, 1)
+    await ctx.manager.send(ctx.req('execute the plan'))
+    await ctx.waitForPrompts(2)
+    ctx.manager.stop('thread')
+    await vi.waitFor(() => expect(ctx.manager.queued().thread?.paused).toBe(true))
+    expect(ctx.prompts).toHaveLength(2)
+  })
+
+  it('skips the plan wait with send now', async () => {
+    const ctx = setup()
+    await ctx.manager.send(ctx.req('design', { mode: 'plan' }))
+    await ctx.waitForPrompts(1)
+    await ctx.manager.send(ctx.req('next', { delivery: 'queue' }))
+    await ctx.manager.send(ctx.req('after', { delivery: 'queue' }))
+    await planTurn(ctx, 1)
+    ctx.manager.sendQueuedNow('thread', ctx.manager.queued().thread.items[0].id)
+    await ctx.waitForPrompts(2)
+    expect(ctx.manager.queued().thread).toEqual({ items: [expect.objectContaining({ prompt: 'after' })] })
+    ctx.complete()
+    await ctx.waitForPrompts(3)
+  })
+
+  it('does not hold the queue for an Agent turn that only reports a todo list', async () => {
+    const ctx = setup()
+    await ctx.manager.send(ctx.req('first'))
+    await ctx.waitForPrompts(1)
+    await ctx.manager.send(ctx.req('next', { delivery: 'queue' }))
+    ctx.notify({ sessionUpdate: 'plan', entries: [{ content: 'Read code', status: 'pending' }] })
+    ctx.complete()
+    await ctx.waitForPrompts(2)
   })
 
   it('rejects an empty queued message and clears the queue of a deleted conversation', async () => {

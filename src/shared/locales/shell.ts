@@ -74,6 +74,8 @@ export const shellMessages: Record<string, string> = {
   '排队消息': 'Queued messages',
   '排队中 · {count} 条': 'Queued · {count}',
   '队列已暂停，点击“立即发送”继续': 'Queue paused. Click “Send now” to continue',
+  '方案执行完成后继续发送': 'Continues after the plan is carried out',
+  '等待执行方案：点击“执行计划”，执行完成后继续；或点击“立即发送”跳过': 'Waiting for the plan: click “Execute plan” and the queue continues when it finishes, or click “Send now” to skip',
   '请先清空输入框，再编辑排队消息': 'Clear the composer before editing a queued message',
   '拖动调整顺序': 'Drag to reorder',
   '（仅附件）': '(Attachments only)',

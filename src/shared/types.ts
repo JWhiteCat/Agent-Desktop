@@ -390,6 +390,8 @@ export interface MessageQueue {
   items: QueuedMessage[]
   /** Set after a stop, a failed turn, or a failed dispatch; the queue waits for the user. */
   paused?: boolean
+  /** A Plan turn produced a plan; the queue resumes after the next Agent turn finishes normally. */
+  waitingForPlan?: boolean
   error?: string
 }
 
