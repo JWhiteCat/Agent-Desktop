@@ -46,7 +46,10 @@ export type LocalSkillOrigin = 'user' | 'project' | 'builtin' | 'plugin' | 'app'
 
 export interface LocalSkillEntry {
   id: string
+  /** CLI that owns the directory; new skills for this CLI are written there. */
   cli: CliProvider
+  /** Every CLI that loads the directory, starting with `cli`. Cursor also reads the Codex and Claude folders. */
+  usedBy: CliProvider[]
   origin: LocalSkillOrigin
   projectPath?: string
   name: string

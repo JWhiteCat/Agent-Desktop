@@ -27,6 +27,8 @@ interface SkillRoot {
   origin: 'user' | 'project' | 'builtin' | 'plugin'
   dir: string
   projectPath?: string
+  /** Other CLIs that load this directory too. */
+  sharedWith?: CliProvider[]
   /** Plugin caches nest skills at varying depths. */
   walk?: boolean
   skip?: string[]
@@ -47,13 +49,16 @@ interface Found {
   stashed: boolean
 }
 
+/** Cursor loads the `.agents`, `.codex`, and `.claude` skill folders as well as its own. */
+const CURSOR: CliProvider[] = ['cursor']
+
 export function skillRoots(env: LocalEnv, projects: string[]): SkillRoot[] {
   const h = env.home
   const roots: SkillRoot[] = [
     { cli: 'cursor', origin: 'user', dir: path.join(h, '.cursor', 'skills') },
-    { cli: 'codex', origin: 'user', dir: path.join(h, '.agents', 'skills') },
-    { cli: 'codex', origin: 'user', dir: path.join(h, '.codex', 'skills'), skip: ['.system'] },
-    { cli: 'claude', origin: 'user', dir: path.join(h, '.claude', 'skills') },
+    { cli: 'codex', origin: 'user', dir: path.join(h, '.agents', 'skills'), sharedWith: CURSOR },
+    { cli: 'codex', origin: 'user', dir: path.join(h, '.codex', 'skills'), skip: ['.system'], sharedWith: CURSOR },
+    { cli: 'claude', origin: 'user', dir: path.join(h, '.claude', 'skills'), sharedWith: CURSOR },
     { cli: 'cursor', origin: 'builtin', dir: path.join(h, '.cursor', 'skills-cursor') },
     { cli: 'codex', origin: 'builtin', dir: path.join(h, '.codex', 'skills', '.system') },
     { cli: 'cursor', origin: 'plugin', dir: path.join(h, '.cursor', 'plugins'), walk: true },
@@ -63,9 +68,9 @@ export function skillRoots(env: LocalEnv, projects: string[]): SkillRoot[] {
   for (const p of projects) {
     roots.push(
       { cli: 'cursor', origin: 'project', projectPath: p, dir: path.join(p, '.cursor', 'skills') },
-      { cli: 'codex', origin: 'project', projectPath: p, dir: path.join(p, '.agents', 'skills') },
-      { cli: 'codex', origin: 'project', projectPath: p, dir: path.join(p, '.codex', 'skills'), skip: ['.system'] },
-      { cli: 'claude', origin: 'project', projectPath: p, dir: path.join(p, '.claude', 'skills') }
+      { cli: 'codex', origin: 'project', projectPath: p, dir: path.join(p, '.agents', 'skills'), sharedWith: CURSOR },
+      { cli: 'codex', origin: 'project', projectPath: p, dir: path.join(p, '.codex', 'skills'), skip: ['.system'], sharedWith: CURSOR },
+      { cli: 'claude', origin: 'project', projectPath: p, dir: path.join(p, '.claude', 'skills'), sharedWith: CURSOR }
     )
   }
   const seen: SkillRoot[] = []
@@ -146,6 +151,8 @@ function toEntry(root: SkillRoot, rel: string, dir: string, stashed: boolean): L
   return {
     id: JSON.stringify([path.resolve(root.dir), rel]),
     cli: root.cli,
+    // The app writes its own copy into every CLI folder, so its entries stay with one CLI.
+    usedBy: origin === 'app' ? [root.cli] : [root.cli, ...(root.sharedWith ?? [])],
     origin,
     ...(root.projectPath ? { projectPath: root.projectPath } : {}),
     name: parsed.name?.trim() || path.basename(rel),

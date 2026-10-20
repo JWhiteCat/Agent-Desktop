@@ -87,9 +87,17 @@ describe('local skills', () => {
     expect(by('sys')).toMatchObject({ cli: 'codex', origin: 'builtin', readonly: true })
     expect(by('user-codex')).toMatchObject({ cli: 'codex', origin: 'user' })
     expect(by('plug')).toMatchObject({ cli: 'cursor', origin: 'plugin', readonly: true })
-    expect(by('managed')).toMatchObject({ cli: 'claude', origin: 'app', readonly: true })
-    expect(by('proj')).toMatchObject({ cli: 'claude', origin: 'project', projectPath: project })
+    expect(by('managed')).toMatchObject({ cli: 'claude', usedBy: ['claude'], origin: 'app', readonly: true })
+    expect(by('proj')).toMatchObject({ cli: 'claude', usedBy: ['claude', 'cursor'], origin: 'project', projectPath: project })
     expect(entries.filter((e) => e.name === 'sys')).toHaveLength(1)
+  })
+
+  it('marks project .agents skills as loaded by both Codex and Cursor', () => {
+    skill(path.join(project, '.agents', 'skills', 'shared'), '---\nname: shared\ndescription: S\n---\n')
+    skill(path.join(project, '.cursor', 'skills', 'own'), '---\nname: own\ndescription: O\n---\n')
+    const entries = scanLocalSkills(env, [project]).entries
+    expect(entries.find((e) => e.name === 'shared')).toMatchObject({ cli: 'codex', usedBy: ['codex', 'cursor'], origin: 'project', projectPath: project })
+    expect(entries.find((e) => e.name === 'own')).toMatchObject({ cli: 'cursor', usedBy: ['cursor'] })
   })
 
   it('creates, edits, renames, and refuses stale edits', () => {

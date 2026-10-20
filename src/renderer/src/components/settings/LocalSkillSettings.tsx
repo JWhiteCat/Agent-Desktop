@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { isValidSkillName } from '@shared/agent-config'
 import type { LocalSkillEntry, LocalSkillOrigin, LocalSkillReport, LocalTarget } from '@shared/local-config'
+import type { CliProvider } from '@shared/types'
 import { useT } from '../../lib/i18n'
 import { errorText, toast } from '../../store'
 import { emptySkillDraft, SkillForm, type SkillDraft } from '../AgentConfigSettings'
@@ -71,57 +72,65 @@ export function LocalSkillSettings() {
     }
   }
 
-  const row = (entry: LocalSkillEntry) => (
-    <div key={entry.id} className="config-item">
-      <input
-        type="checkbox"
-        className="toggle"
-        checked={entry.enabled}
-        disabled={entry.readonly}
-        title={entry.readonly ? t('由 CLI 或本应用管理') : entry.enabled ? t('停用') : t('启用')}
-        onChange={() => void run(() => window.api.localSkillToggle(entry.id, !entry.enabled))}
-      />
-      <div className="config-main">
-        <div className="config-title">
-          {entry.name}
-          <span className="config-tag">{originLabel(entry)}</span>
+  const row = (cli: CliProvider) => (entry: LocalSkillEntry) => {
+    const others = entry.usedBy.filter((other) => other !== cli)
+    return (
+      <div key={entry.id} className="config-item">
+        <input
+          type="checkbox"
+          className="toggle"
+          checked={entry.enabled}
+          disabled={entry.readonly}
+          title={entry.readonly ? t('由 CLI 或本应用管理') : entry.enabled ? t('停用') : t('启用')}
+          onChange={() => void run(() => window.api.localSkillToggle(entry.id, !entry.enabled))}
+        />
+        <div className="config-main">
+          <div className="config-title">
+            {entry.name}
+            <span className="config-tag">{originLabel(entry)}</span>
+            {others.length > 0 && (
+              <span className="config-tag" title={entry.root}>
+                {t('与 {names} 共用', { names: others.map((other) => CLI_LABEL[other]).join(' / ') })}
+              </span>
+            )}
+          </div>
+          <div className="config-sub" title={entry.dir}>
+            {entry.description || t('没有描述')}
+          </div>
         </div>
-        <div className="config-sub" title={entry.dir}>
-          {entry.description || t('没有描述')}
-        </div>
+        {!entry.readonly && (
+          <button className="btn small" type="button" onClick={() => void edit(entry)}>
+            {t('编辑')}
+          </button>
+        )}
+        {!window.api.isRemote && (
+          <button className="btn small" type="button" onClick={() => void window.api.openPath(entry.dir)}>
+            {t('打开目录')}
+          </button>
+        )}
+        {!entry.readonly && (
+          <button
+            className="btn small"
+            type="button"
+            onClick={() => {
+              if (!window.confirm(t('把 Skill「{name}」的目录 {path} 移到回收站？', { name: entry.name, path: entry.dir }))) return
+              if (editing?.entry?.id === entry.id) setEditing(null)
+              void run(() => window.api.localSkillDelete(entry.id))
+            }}
+          >
+            {t('删除')}
+          </button>
+        )}
       </div>
-      {!entry.readonly && (
-        <button className="btn small" type="button" onClick={() => void edit(entry)}>
-          {t('编辑')}
-        </button>
-      )}
-      {!window.api.isRemote && (
-        <button className="btn small" type="button" onClick={() => void window.api.openPath(entry.dir)}>
-          {t('打开目录')}
-        </button>
-      )}
-      {!entry.readonly && (
-        <button
-          className="btn small"
-          type="button"
-          onClick={() => {
-            if (!window.confirm(t('把 Skill「{name}」的目录 {path} 移到回收站？', { name: entry.name, path: entry.dir }))) return
-            if (editing?.entry?.id === entry.id) setEditing(null)
-            void run(() => window.api.localSkillDelete(entry.id))
-          }}
-        >
-          {t('删除')}
-        </button>
-      )}
-    </div>
-  )
+    )
+  }
 
   const entries = report?.entries ?? []
 
   return (
     <div className="config-block">
       <div className="muted small">
-        {t('列出 ~/.cursor/skills、~/.agents/skills、~/.codex/skills、~/.claude/skills 和已添加项目里的同名目录，以及 CLI 内置和插件 Skill。停用会把目录移到本应用的暂存区，启用时移回；删除会移到回收站。内置、插件和本应用创建的 Skill 在这里只读。')}
+        {t('列出 ~/.cursor/skills、~/.agents/skills、~/.codex/skills、~/.claude/skills 和已添加项目里的同名目录，以及 CLI 内置和插件 Skill。Cursor 也会加载 .agents、.codex 和 .claude 下的 Skill，所以这些 Skill 同时列在 Cursor 下。停用会把目录移到本应用的暂存区，启用时移回；删除会移到回收站。内置、插件和本应用创建的 Skill 在这里只读。')}
       </div>
       {report?.errors.map((error) => (
         <div key={error.file} className="config-error">
@@ -129,20 +138,20 @@ export function LocalSkillSettings() {
         </div>
       ))}
       {CLI_ORDER.map((cli) => {
-        const list = entries.filter((entry) => entry.cli === cli)
+        const list = entries.filter((entry) => entry.usedBy.includes(cli))
         const own = list.filter((entry) => entry.origin !== 'builtin' && entry.origin !== 'plugin')
         const shipped = list.filter((entry) => entry.origin === 'builtin' || entry.origin === 'plugin')
         return (
           <div key={cli} className="config-block">
             <div className="config-group-title">{CLI_LABEL[cli]}</div>
             <div className="config-list">
-              {own.map(row)}
+              {own.map(row(cli))}
               {own.length === 0 && <div className="empty-hint">{loading ? t('读取中…') : t('没有找到 Skill')}</div>}
             </div>
             {shipped.length > 0 && (
               <details className="config-details">
                 <summary>{t('内置和插件（{count}）', { count: shipped.length })}</summary>
-                <div className="config-list">{shipped.map(row)}</div>
+                <div className="config-list">{shipped.map(row(cli))}</div>
               </details>
             )}
           </div>

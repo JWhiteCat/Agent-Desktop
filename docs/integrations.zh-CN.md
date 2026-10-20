@@ -16,7 +16,7 @@ MCP 和 Skill 页的「本地所有」分区扫描本机上各 CLI 自己的配�
 | Codex | `~/.codex/config.toml` 的 `[mcp_servers.*]` | `<项目>/.codex/config.toml` | `~/.agents/skills`、`~/.codex/skills`、`<项目>/.agents/skills`、`<项目>/.codex/skills` |
 | Claude | `~/.claude.json` 的 `mcpServers`，以及 `projects[<路径>].mcpServers`（本地级） | `<项目>/.mcp.json` | `~/.claude/skills`、`<项目>/.claude/skills` |
 
-项目指已添加到侧边栏的项目。新增条目时选择 CLI 和作用域（用户或某个项目）。
+项目指已添加到侧边栏的项目。新增条目时选择 CLI 和作用域（用户或某个项目）。Cursor 也会加载 Codex 和 Claude 的 Skill 目录（`.agents/skills`、`.codex/skills`、`.claude/skills` 及对应的用户级目录），所以这些 Skill 同时列在 Cursor 下，并标为「与 Cursor 共用」（在 Cursor 分组里则显示与 Codex 或 Claude 共用）。本应用创建的 Skill 每个 CLI 各有一份，只列在各自的 CLI 下。
 
 - MCP：Codex 使用原生的 `enabled = false`。修改 `config.toml` 时只替换该服务器的 `[mcp_servers.<名称>]` 及其子表，文件其余部分和注释保持不变。Cursor 和 Claude 没有停用开关，停用的服务器从原文件移到本应用数据目录的 `local-config/disabled-mcp.json`，启用时写回。在 `[mcp_servers]` 里以内联表定义的 Codex 服务器只读。Codex 不支持 SSE 传输。
 - Skill：停用会把目录移到 `local-config/disabled-skills/`，启用时移回；删除会把目录移到回收站。编辑只重写 `SKILL.md` 的 `name`、`description` 和正文，其他 frontmatter 字段与目录里的其他文件保留；目录名与原名称一致时，改名会一并重命名目录。
