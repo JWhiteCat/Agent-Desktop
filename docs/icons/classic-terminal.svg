@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <!-- Classic Terminal: a refreshed version of the original prompt icon. -->
+  <defs>
+    <linearGradient id="bg" x1="64" y1="48" x2="448" y2="464" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1f3b52"/>
+      <stop offset="1" stop-color="#0f2232"/>
+    </linearGradient>
+  </defs>
+  <rect x="32" y="32" width="448" height="448" rx="104" fill="url(#bg)"/>
+  <rect x="80" y="112" width="352" height="288" rx="36" fill="#27475e"/>
+  <circle cx="124" cy="152" r="11" fill="#f87171"/>
+  <circle cx="156" cy="152" r="11" fill="#fbbf24"/>
+  <circle cx="188" cy="152" r="11" fill="#34d399"/>
+  <path d="M140 236 196 280 140 324" fill="none" stroke="#6ee7b7" stroke-width="30" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M232 324H320" fill="none" stroke="#f1f5f9" stroke-width="30" stroke-linecap="round"/>
+</svg>

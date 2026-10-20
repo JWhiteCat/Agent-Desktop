@@ -35,6 +35,7 @@ export function createMainWindow(): BrowserWindow {
     show: false,
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#181818' : '#ffffff',
     ...(process.platform === 'linux' ? { icon: path.join(app.getAppPath(), 'resources/icons/512x512.png') } : {}),
+    ...(isWin ? { icon: path.join(app.getAppPath(), 'resources/icons/icon.ico') } : {}),
     // Linux uses the window manager's native frame and controls (including Wayland).
     // `hidden` without an overlay removes close/minimize/maximize on Linux.
     ...((isWin || isMac) ? { titleBarStyle: 'hidden' as const } : {}),

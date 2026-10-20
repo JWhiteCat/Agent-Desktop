@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <!-- Agent Hub: one desktop prompt connected to three coding agents. -->
+  <defs>
+    <linearGradient id="bg" x1="64" y1="48" x2="448" y2="464" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1e293b"/>
+      <stop offset="1" stop-color="#0f172a"/>
+    </linearGradient>
+  </defs>
+  <rect x="32" y="32" width="448" height="448" rx="104" fill="url(#bg)"/>
+  <path d="M256 272V138M256 272 374 340M256 272 138 340" fill="none" stroke="#475569" stroke-width="20" stroke-linecap="round"/>
+  <circle cx="256" cy="138" r="40" fill="#38bdf8"/>
+  <circle cx="374" cy="340" r="40" fill="#34d399"/>
+  <circle cx="138" cy="340" r="40" fill="#fb923c"/>
+  <circle cx="256" cy="272" r="80" fill="#f8fafc"/>
+  <path d="M238 234 276 272 238 310" fill="none" stroke="#0f172a" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

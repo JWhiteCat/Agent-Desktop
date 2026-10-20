@@ -99,6 +99,9 @@ chmod +x release/agent-desktop-*-linux-x86_64.AppImage
 | `npm run dist` | Package installers into `release/` |
 | `npm run dist:linux` | Build Linux x64 AppImage and Debian packages without publishing |
 | `npm run dist:linux:dir` | Build the unpacked Linux x64 application |
+| `npm run icons` | Regenerate every PNG size and the Windows `icon.ico` from `resources/icons/icon.svg` |
+
+The application icon source is `resources/icons/icon.svg`. Alternative designs live in `docs/icons/`, compared in `docs/icons/preview.png`. Switch to another design with `npm run icons -- docs/icons/agent-hub.svg` (copies it to `icon.svg`, then regenerates), and refresh the comparison after editing a candidate with `npm run icons -- --preview`. The script renders with the project's own Electron, so no extra dependency is needed.
 
 `npm test` does not talk to Cursor CLI, Codex, or Claude. `npm run test:live` calls `composer-2.5[fast=true]` in Ask mode in temporary directories: one check asks `Reply with exactly ok`, and another verifies native image recognition plus reading an original managed file outside the workspace. The text check uses `CURSOR_API_KEY` when set, otherwise the saved CLI login; the attachment check requires `CURSOR_API_KEY`. Run only the attachment check with `npm run test:live -- test/live/attachment-smoke.test.ts`.
 

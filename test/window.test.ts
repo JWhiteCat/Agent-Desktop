@@ -100,6 +100,7 @@ describe('desktop window platform integration', () => {
     const { createMainWindow, syncTitleBar } = await load('win32')
     const win = createMainWindow()
     expect(mocks.windows[0].options).toMatchObject({ titleBarStyle: 'hidden', titleBarOverlay: { height: 44 } })
+    expect(mocks.windows[0].options.icon).toBe(path.join('/app', 'resources/icons/icon.ico'))
     mocks.nativeTheme.shouldUseDarkColors = true
     syncTitleBar(win)
     expect(mocks.windows[0].setTitleBarOverlay).toHaveBeenCalledWith({ color: '#00000000', symbolColor: '#c9c9c9', height: 44 })

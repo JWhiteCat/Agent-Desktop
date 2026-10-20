@@ -99,6 +99,9 @@ chmod +x release/agent-desktop-*-linux-x86_64.AppImage
 | `npm run dist` | 打包安装包到 `release/` |
 | `npm run dist:linux` | 构建 Linux x64 AppImage 和 Debian 安装包，不会发布 |
 | `npm run dist:linux:dir` | 构建 Linux x64 未封装应用 |
+| `npm run icons` | 由 `resources/icons/icon.svg` 重新生成各尺寸 PNG 和 Windows `icon.ico` |
+
+应用图标的源文件是 `resources/icons/icon.svg`；备选方案位于 `docs/icons/`，对比图见 `docs/icons/preview.png`。换用其他方案可运行 `npm run icons -- docs/icons/agent-hub.svg`（复制为 `icon.svg` 后重新生成），修改备选 SVG 后用 `npm run icons -- --preview` 刷新对比图。脚本使用项目自带的 Electron 渲染，无需额外依赖。
 
 `npm test` 不访问 Cursor CLI、Codex 或 Claude。`npm run test:live` 在临时目录中用 Ask 模式调用 `composer-2.5[fast=true]`：文字检查只要求 `Reply with exactly ok`，附件检查验证原生图片识别及工作目录之外的受管理原文件读取。文字检查优先使用 `CURSOR_API_KEY`，未设置时使用 CLI 保存的登录；附件检查要求 `CURSOR_API_KEY`。只运行附件检查可用 `npm run test:live -- test/live/attachment-smoke.test.ts`。
 

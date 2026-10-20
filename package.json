@@ -15,6 +15,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json && npm run typecheck:tests",
     "typecheck:tests": "tsc --noEmit -p tsconfig.test.json",
     "test": "vitest run",
+    "icons": "electron scripts/render-icons.cjs",
     "setup:public-server": "node scripts/setup-public-server.mjs",
     "test:live": "vitest run --config vitest.live.config.ts",
     "dist": "electron-vite build && electron-builder",
@@ -53,10 +54,12 @@
       { "from": "out/main/toolbar-runner.cjs", "to": "toolbar-runner.cjs" }
     ],
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "icon": "resources/icons/icon.ico"
     },
     "mac": {
-      "target": "dmg"
+      "target": "dmg",
+      "icon": "resources/icons/1024x1024.png"
     },
     "linux": {
       "target": [
