@@ -22,6 +22,7 @@ vi.mock('electron', () => ({
     }
     setMenu = vi.fn()
     setTitleBarOverlay = vi.fn()
+    setAppDetails = vi.fn()
     show = vi.fn()
     loadURL = vi.fn()
     loadFile = vi.fn()
@@ -101,6 +102,7 @@ describe('desktop window platform integration', () => {
     const win = createMainWindow()
     expect(mocks.windows[0].options).toMatchObject({ titleBarStyle: 'hidden', titleBarOverlay: { height: 44 } })
     expect(mocks.windows[0].options.icon).toBe(path.join('/app', 'resources/icons/icon.ico'))
+    expect(mocks.windows[0].setAppDetails).toHaveBeenCalledExactlyOnceWith({ appId: 'dev.agentdesktop.app.dev-window' })
     mocks.nativeTheme.shouldUseDarkColors = true
     syncTitleBar(win)
     expect(mocks.windows[0].setTitleBarOverlay).toHaveBeenCalledWith({ color: '#00000000', symbolColor: '#c9c9c9', height: 44 })

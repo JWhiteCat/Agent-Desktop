@@ -48,6 +48,9 @@ export function createMainWindow(): BrowserWindow {
     }
   })
   if (!isMac) win.setMenu(null)
+  // Unpackaged toasts make Electron keep a Start Menu Electron.lnk (electron.exe's icon) for the
+  // process app ID; a window ID without any shortcut lets the taskbar use the window icon instead.
+  if (isWin && !app.isPackaged) win.setAppDetails({ appId: 'dev.agentdesktop.app.dev-window' })
 
   win.once('ready-to-show', () => win.show())
   win.webContents.setWindowOpenHandler(({ url, referrer }) => {

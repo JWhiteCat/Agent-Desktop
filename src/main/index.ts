@@ -33,8 +33,7 @@ const remoteRuntime = new RemoteRuntime(
 
 const isWin = process.platform === 'win32'
 const isMac = process.platform === 'darwin'
-// The exe path as a development ID would make the taskbar show electron.exe's icon instead of the window icon.
-const windowsAppId = app.isPackaged ? 'dev.agentdesktop.app' : 'dev.agentdesktop.app.dev'
+const windowsAppId = app.isPackaged ? 'dev.agentdesktop.app' : process.execPath
 
 function snapshot(): AppState {
   return {
