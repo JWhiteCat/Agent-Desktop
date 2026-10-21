@@ -1,9 +1,16 @@
 import { execFile } from 'node:child_process'
-import fs from 'node:fs/promises'
+import nodeFs from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import path from 'node:path'
 import { quoteGitPath } from '@shared/git-path'
 import { unifiedDiff } from '@shared/unified-diff'
 import type { FileChange } from '@shared/types'
+
+// Workspace archives are physical files. Electron's fs.lstat opens ASARs as
+// virtual directories and caches handles that prevent replacing them on Windows.
+const fs: typeof nodeFs = process.versions.electron
+  ? createRequire(process.execPath)('original-fs').promises
+  : nodeFs
 
 const MAX_FILE_BYTES = 256 * 1024
 const MAX_TOTAL_BYTES = 16 * 1024 * 1024

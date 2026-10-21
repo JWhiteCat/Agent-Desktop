@@ -107,6 +107,8 @@ chmod +x release/agent-desktop-*-linux-x86_64.AppImage
 
 可用 `npm test -- test/claude.test.ts test/turn-usage.test.ts` 定向检查。这些测试将 Claude 检测与用户主目录隔离，覆盖含空格路径下的用量 preload 加载，并清理临时夹具。仅适用于 Windows 的检查在其他平台会明确标为跳过。
 
+工作文件快照在桌面进程中使用 Electron 的 `original-fs`，在 Node 测试中使用普通 Node 文件接口。工作区内的 `.asar` 归档按物理文件及原有大小上限处理；扫描不得将其作为虚拟目录打开并缓存句柄，以免阻止游戏或应用更新。运行 `npm test -- test/turn-files.test.ts test/turn-files-electron.test.ts` 验证快照功能。Windows Electron 回归测试覆盖普通目录、Git 仓库及含子仓库的项目容器，确认扫描进程仍存活时归档也能替换。构建这项主进程修复后，需重启桌面客户端，释放旧实例缓存的归档句柄。
+
 顶部命令的测试位于 `test/toolbar-terminal.test.ts` 和 `test/toolbar-runner.test.ts`：在临时目录构建独立 runner，验证参数原文、Windows `.cmd` 启动器、启动失败、输出与退出码。Windows 下设置 `AGENT_DESKTOP_CONSOLE_SMOKE=1` 可额外开启真实新终端检查，读取控制台缓冲区并发送 Enter 正常关闭。将 `AGENT_DESKTOP_CONSOLE_EXECUTABLE` 和 `AGENT_DESKTOP_CONSOLE_RUNNER` 分别设为打包后的程序和 `resources/toolbar-runner.cjs` 路径，可对未封装构建重复该检查。普通测试不会弹出终端窗口。
 
 打包目标：Windows NSIS、macOS DMG、Linux x64 AppImage / Debian（`.deb`）。
