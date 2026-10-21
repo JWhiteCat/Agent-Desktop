@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { composeCommands } from '@shared/commands'
 import { normalizeCliProvider } from '@shared/types'
 import { displayThreadTitle } from '@shared/thread-title'
 import { useT } from '../lib/i18n'
 import { relativeTime, shortPath } from '../lib/format'
 import { defaultModelFor, favoritesFor, modelForChat, projectModelFor } from '../lib/model-prefs'
-import { addProjectInteractive, chatModel, cliCommands, goHome, openThread, setCliProvider, startThread, useStore } from '../store'
+import { addProjectInteractive, chatModel, cliCommands, goHome, loadSkillCommands, openThread, setCliProvider, skillCommands, startThread, useStore } from '../store'
 import { Composer, type ComposerHandle } from './Composer'
 import { IconChevronDown, IconFolder, IconImport, IconPlus } from './icons'
 import { MenuList, Popover } from './Menu'
@@ -22,15 +23,18 @@ export function Home({ projectId, onOpenImport }: { projectId?: string; onOpenIm
   const threads = useStore((s) => s.app.threads)
   const settings = useStore((s) => s.app.settings)
   const cli = normalizeCliProvider(settings.cliProvider)
-  const slashCommands = useStore((s) => cliCommands(s, cli))
   const models = useStore((s) => s.modelsByCli[cli] ?? s.models)
   const project = projects.find((p) => p.id === projectId) ?? projects[0]
+  const cachedCommands = useStore((s) => cliCommands(s, cli))
+  const skills = useStore((s) => (project ? skillCommands(s, project.id) : undefined))
+  const slashCommands = useMemo(() => composeCommands([], cachedCommands, skills ?? [], cli), [cachedCommands, skills, cli])
   const composer = useRef<ComposerHandle>(null)
   const [pickerOpen, setPickerOpen] = useState(false)
   const pickerBtn = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
     composer.current?.focus()
+    if (project) void loadSkillCommands(project.id)
   }, [project?.id])
 
   const recent = project
@@ -124,6 +128,7 @@ export function Home({ projectId, onOpenImport }: { projectId?: string; onOpenIm
                 cli
               }}
               commands={slashCommands}
+              onPrepare={() => void loadSkillCommands(project.id)}
               placeholder={
                 slashCommands.length
                   ? t('在 {project} 中让 Agent 做点什么… 输入 / 查看命令', { project: project.name })

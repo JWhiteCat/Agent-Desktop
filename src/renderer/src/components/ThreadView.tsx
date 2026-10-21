@@ -1,6 +1,6 @@
 import { useT } from '../lib/i18n'
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { FORK_COMMAND, mergeCommands } from '@shared/commands'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { composeCommands, FORK_COMMAND } from '@shared/commands'
 import { displayThreadTitle } from '@shared/thread-title'
 import { isBackgroundAgentItem, mergeInterruptedAssistantMessages } from '@shared/transcript'
 import { cliTitle, threadCli, type AssistantItem, type CliProvider, type Item, type ResultItem, type ThreadMeta, type ToolItem, type UserItem } from '@shared/types'
@@ -8,7 +8,7 @@ import { DiffFileView, collectEditedFiles } from '../lib/diff'
 import { duration } from '../lib/format'
 import { planPath, planUriOf } from '../lib/tools'
 import { defaultModelFor, favoritesFor, modelForChat, projectModelFor } from '../lib/model-prefs'
-import { chatModel, cliCommands, forkThread, prepareCommands, sendMessage, setCliProvider, useStore } from '../store'
+import { chatModel, cliCommands, forkThread, loadSkillCommands, prepareCommands, sendMessage, setCliProvider, skillCommands, useStore, type SendOptions } from '../store'
 import { markDisplayedThreadRead } from '../store/threads'
 import { Composer, sendNowShortcut, type ComposerHandle } from './Composer'
 import { QueuedMessages } from './QueuedMessages'
@@ -189,10 +189,22 @@ export function ThreadView({ thread, changesOpen, onToggleChanges }: Props) {
 
   const ownCommands = useStore((s) => s.commandsByThread[thread.id])
   const cachedCommands = useStore((s) => cliCommands(s, cli))
+  const skills = useStore((s) => skillCommands(s, thread.projectId, thread.id))
   const commands = useMemo(() => {
     const remote = ownCommands?.length ? ownCommands : cachedCommands
-    return mergeCommands(items && items.length > 0 ? [FORK_COMMAND] : [], remote)
-  }, [items, ownCommands, cachedCommands])
+    return composeCommands(items && items.length > 0 ? [FORK_COMMAND] : [], remote, skills, cli)
+  }, [items, ownCommands, cachedCommands, skills, cli])
+  const onPrepare = useCallback(
+    (opts: SendOptions) => {
+      void loadSkillCommands(thread.projectId, thread.id)
+      if (thread.chatId) void prepareCommands(thread.id, opts)
+    },
+    [thread.projectId, thread.id, thread.chatId]
+  )
+
+  useEffect(() => {
+    void loadSkillCommands(thread.projectId, thread.id)
+  }, [thread.projectId, thread.id, thread.cwd])
   const turns = useMemo(() => groupTurns(items ?? []), [items])
   const latestPlan = useMemo(() => {
     const list = items ?? []
@@ -355,7 +367,7 @@ export function ThreadView({ thread, changesOpen, onToggleChanges }: Props) {
                 : t('描述任务，Enter 发送，Shift+Enter 换行')
           }
           commands={commands}
-          onPrepare={thread.chatId ? (opts) => void prepareCommands(thread.id, opts) : undefined}
+          onPrepare={onPrepare}
           onForceChange={(force) => void window.api.updateThread(thread.id, { force })}
           onSend={(text, opts) => {
             if (text.trim() === '/fork') {

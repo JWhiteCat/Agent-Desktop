@@ -94,6 +94,8 @@ export interface DesktopApi {
   localMcpDelete(id: string, fileHash?: string): Promise<void>
   /** Skills in user, project, built-in, and plugin directories. */
   localSkillList(): Promise<LocalSkillReport>
+  /** `.agents` skills for the project, or for the thread's working directory, as slash commands. */
+  localSkillCommands(projectId: string, threadId?: string): Promise<SlashCommand[]>
   localSkillRead(id: string): Promise<LocalSkillContent>
   localSkillSave(req: LocalSkillSaveRequest): Promise<void>
   localSkillToggle(id: string, enabled: boolean): Promise<void>

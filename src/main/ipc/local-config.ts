@@ -1,10 +1,11 @@
 import { shell } from 'electron'
+import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import type { LocalMcpSaveRequest, LocalSkillSaveRequest } from '@shared/local-config'
 import type { LocalEnv } from '../local-files'
 import { deleteLocalMcp, saveLocalMcp, scanLocalMcp, toggleLocalMcp } from '../local-mcp'
-import { deleteLocalSkill, readLocalSkill, saveLocalSkill, scanLocalSkills, toggleLocalSkill } from '../local-skills'
+import { agentsSkillCommands, deleteLocalSkill, readLocalSkill, saveLocalSkill, scanLocalSkills, toggleLocalSkill } from '../local-skills'
 import type { Handler } from '../remote'
 import type { IpcDeps } from './deps'
 
@@ -29,6 +30,13 @@ export function localConfigHandlers(deps: IpcDeps, trash: (dir: string) => Promi
       changed()
     },
     'local:skillList': () => scanLocalSkills(env(), projects()),
+    'local:skillCommands': (projectId: string, threadId?: string) => {
+      const project = deps.store.project(projectId)
+      if (!project) return []
+      const thread = threadId ? deps.store.thread(threadId) : undefined
+      const cwd = thread?.projectId === project.id && thread.cwd && fs.existsSync(thread.cwd) ? thread.cwd : project.path
+      return agentsSkillCommands(os.homedir(), cwd)
+    },
     'local:skillRead': (id: string) => readLocalSkill(env(), projects(), id),
     'local:skillSave': (req: LocalSkillSaveRequest) => {
       saveLocalSkill(env(), projects(), req)

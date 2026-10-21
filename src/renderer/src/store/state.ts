@@ -15,6 +15,8 @@ export interface UIState {
   commandsByThread: Record<string, SlashCommand[] | undefined>
   /** Last slash-command list announced by each CLI. Shared by new conversations. */
   commandsByCli: CommandCache
+  /** `.agents` skills keyed by `skillCommandsKey`. */
+  skillCommands: Record<string, SlashCommand[] | undefined>
   view: View
   models: ModelInfo[]
   modelsByCli: Record<CliProvider, ModelInfo[]>
@@ -44,6 +46,7 @@ let state: UIState = {
   items: {},
   commandsByThread: {},
   commandsByCli: readCommandCache(),
+  skillCommands: {},
   view: { kind: 'home' },
   models: [{ id: 'auto', label: 'Auto' }],
   modelsByCli: { cursor: [{ id: 'auto', label: 'Auto' }], codex: [], claude: [] },

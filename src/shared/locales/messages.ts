@@ -15,6 +15,7 @@ export const messagesMessages: Record<string, string> = {
   '未命名': 'Untitled',
   '未知的统计范围': 'Unknown usage period',
   '从当前对话分叉，原对话保持不变': 'Fork this conversation and keep the original unchanged',
+  '补充说明（可选）': 'Additional instructions (optional)',
   '每周': 'Weekly',
   '每月': 'Monthly',
   '5小时': '5 hours',

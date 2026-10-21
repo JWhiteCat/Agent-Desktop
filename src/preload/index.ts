@@ -56,6 +56,7 @@ const api: DesktopApi = {
   localMcpToggle: (id, enabled, hash) => ipcRenderer.invoke('local:mcpToggle', id, enabled, hash),
   localMcpDelete: (id, hash) => ipcRenderer.invoke('local:mcpDelete', id, hash),
   localSkillList: () => ipcRenderer.invoke('local:skillList'),
+  localSkillCommands: (projectId, threadId) => ipcRenderer.invoke('local:skillCommands', projectId, threadId),
   localSkillRead: (id) => ipcRenderer.invoke('local:skillRead', id),
   localSkillSave: (req) => ipcRenderer.invoke('local:skillSave', req),
   localSkillToggle: (id, enabled) => ipcRenderer.invoke('local:skillToggle', id, enabled),

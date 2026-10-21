@@ -131,6 +131,7 @@ export function createWebApi(): DesktopApi {
     localMcpToggle: (id, enabled, hash) => call('local:mcpToggle', id, enabled, hash),
     localMcpDelete: (id, hash) => call('local:mcpDelete', id, hash),
     localSkillList: () => call('local:skillList'),
+    localSkillCommands: (projectId, threadId) => call('local:skillCommands', projectId, threadId),
     localSkillRead: (id) => call('local:skillRead', id),
     localSkillSave: (req) => call('local:skillSave', req),
     localSkillToggle: (id, enabled) => call('local:skillToggle', id, enabled),

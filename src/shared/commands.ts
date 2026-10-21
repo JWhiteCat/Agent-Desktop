@@ -1,4 +1,5 @@
 import { t } from './i18n'
+import type { CliProvider } from './types'
 
 export interface SlashCommand {
   name: string
@@ -64,6 +65,17 @@ export function filterCommands(commands: SlashCommand[], query: string): SlashCo
 export function mergeCommands(local: SlashCommand[], remote: SlashCommand[]): SlashCommand[] {
   const names = new Set(local.map((c) => c.name))
   return [...local, ...remote.filter((c) => !names.has(c.name))]
+}
+
+/** Claude does not read `.agents/skills`, so those skills would not run there. */
+export function loadsAgentsSkills(cli: CliProvider): boolean {
+  return cli === 'cursor' || cli === 'codex'
+}
+
+/** Local commands, then CLI commands, then `.agents` skills the CLI has not announced yet. */
+export function composeCommands(local: SlashCommand[], remote: SlashCommand[], skills: SlashCommand[], cli: CliProvider): SlashCommand[] {
+  const merged = mergeCommands(local, remote)
+  return loadsAgentsSkills(cli) ? mergeCommands(merged, skills) : merged
 }
 
 /** Keeps CLI commands. Drops local commands and broken entries. */

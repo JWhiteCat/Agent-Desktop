@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { argumentHint, filterCommands, mergeCommands, parseAvailableCommands, sanitizeCommandCache, sanitizeSlashCommands, slashQuery, type SlashCommand } from '../src/shared/commands'
+import { argumentHint, composeCommands, filterCommands, mergeCommands, parseAvailableCommands, sanitizeCommandCache, sanitizeSlashCommands, slashQuery, type SlashCommand } from '../src/shared/commands'
 
 const web: SlashCommand = { name: 'web', description: 'Search the web', hint: 'query to search for' }
 const test: SlashCommand = { name: 'test', description: 'Run tests' }
@@ -70,6 +70,20 @@ describe('filterCommands', () => {
 describe('mergeCommands', () => {
   it('keeps the local command when the CLI uses the same name', () => {
     expect(mergeCommands([fork], [{ name: 'fork', description: 'CLI fork' }, web])).toEqual([fork, web])
+  })
+})
+
+describe('composeCommands', () => {
+  const skill: SlashCommand = { name: 'review-pr', description: 'Review a PR', hint: 'notes' }
+
+  it('adds .agents skills after local and CLI commands, letting both win on a shared name', () => {
+    const cliSkill = { name: 'review-pr', description: 'From CLI' }
+    expect(composeCommands([fork], [web], [skill, { name: 'web', description: 'skill web' }], 'codex')).toEqual([fork, web, skill])
+    expect(composeCommands([], [cliSkill], [skill], 'cursor')).toEqual([cliSkill])
+  })
+
+  it('leaves .agents skills out for Claude', () => {
+    expect(composeCommands([fork], [web], [skill], 'claude')).toEqual([fork, web])
   })
 })
 

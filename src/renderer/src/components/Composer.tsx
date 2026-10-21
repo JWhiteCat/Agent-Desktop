@@ -52,7 +52,7 @@ interface Props {
   cliDisabled?: boolean
   /** Slash commands offered when the draft is `/name`. */
   commands?: SlashCommand[]
-  /** Called once when the user starts a `/` command, so the CLI list can be loaded. */
+  /** Called once when the user starts a `/` command, so the command lists can be refreshed. */
   onPrepare?: (opts: SendOptions) => void
   onForceChange?: (force: boolean) => void
   footerLeft?: React.ReactNode

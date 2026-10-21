@@ -19,6 +19,8 @@ const actions = vi.hoisted(() => ({
 vi.mock('../src/renderer/src/store', () => ({
   useStore: (selector: (value: unknown) => unknown) => selector(state.current),
   cliCommands: () => [],
+  skillCommands: () => [],
+  loadSkillCommands: vi.fn(),
   chatModel: vi.fn(),
   forkThread: actions.forkThread,
   prepareCommands: vi.fn(),

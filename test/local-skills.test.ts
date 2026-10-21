@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { deleteLocalSkill, readLocalSkill, saveLocalSkill, scanLocalSkills, toggleLocalSkill } from '../src/main/local-skills'
+import { agentsSkillCommands, deleteLocalSkill, readLocalSkill, saveLocalSkill, scanLocalSkills, toggleLocalSkill } from '../src/main/local-skills'
 import { hashText, pathKey, type LocalEnv } from '../src/main/local-files'
 import { parseSkillMarkdown, updateSkillMarkdown } from '../src/shared/local-config'
 
@@ -37,6 +37,31 @@ describe('skill frontmatter', () => {
   it('keeps other frontmatter keys when updating', () => {
     const next = updateSkillMarkdown('---\nname: old\ndescription: >\n  long\n  text\nlicense: MIT\nmetadata:\n  a: 1\n---\n\nOld body\n', 'new', 'Short', 'New body')
     expect(next).toBe('---\nname: "new"\ndescription: "Short"\nlicense: MIT\nmetadata:\n  a: 1\n---\n\nNew body\n')
+  })
+})
+
+describe('agentsSkillCommands', () => {
+  it('lists project and user .agents skills, with the project copy winning on a shared name', () => {
+    skill(path.join(env.home, '.agents', 'skills', 'shared'), '---\nname: shared\ndescription: User copy\n---\n')
+    skill(path.join(env.home, '.agents', 'skills', 'beta'), '---\nname: beta\ndescription: Beta skill\n---\n')
+    skill(path.join(project, '.agents', 'skills', 'shared'), '---\nname: shared\ndescription: Project copy\n---\n')
+    skill(path.join(project, '.agents', 'skills', 'alpha-dir'), '---\ndescription: No name\n---\n')
+    skill(path.join(project, '.agents', 'skills', 'spaced'), '---\nname: has space\ndescription: Skipped\n---\n')
+    skill(path.join(env.home, '.cursor', 'skills', 'cursor-only'), '---\nname: cursor-only\ndescription: Not .agents\n---\n')
+    fs.mkdirSync(path.join(project, '.agents', 'skills', 'empty'), { recursive: true })
+
+    expect(agentsSkillCommands(env.home, project).map((c) => [c.name, c.description])).toEqual([
+      ['alpha-dir', 'No name'],
+      ['beta', 'Beta skill'],
+      ['shared', 'Project copy']
+    ])
+    expect(agentsSkillCommands(env.home, project)[0].hint).toBeTruthy()
+  })
+
+  it('reads the user folder once when the project is the home directory', () => {
+    skill(path.join(env.home, '.agents', 'skills', 'one'), '---\nname: one\ndescription: One\n---\n')
+    expect(agentsSkillCommands(env.home, env.home).map((c) => c.name)).toEqual(['one'])
+    expect(agentsSkillCommands(env.home).map((c) => c.name)).toEqual(['one'])
   })
 })
 

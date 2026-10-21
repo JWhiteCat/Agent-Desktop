@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { t as translate } from '@shared/i18n'
 import { isValidSkillName, renderSkillMarkdown } from '@shared/agent-config'
+import type { SlashCommand } from '@shared/commands'
 import {
   parseSkillMarkdown,
   updateSkillMarkdown,
@@ -185,6 +186,27 @@ function collect(env: LocalEnv, projects: string[]): { found: Found[]; errors: R
 export function scanLocalSkills(env: LocalEnv, projects: string[]): LocalSkillReport {
   const { found, errors } = collect(env, projects)
   return { entries: found.map((f) => f.entry), errors }
+}
+
+/**
+ * Enabled skills in `<cwd>/.agents/skills` and `~/.agents/skills`, offered before the CLI announces its own list.
+ * The project copy wins when both use a name.
+ */
+export function agentsSkillCommands(home: string, cwd?: string): SlashCommand[] {
+  const roots = [...(cwd ? [path.join(cwd, '.agents', 'skills')] : []), path.join(home, '.agents', 'skills')]
+  const out: SlashCommand[] = []
+  const seen = new Set<string>()
+  roots.forEach((dir, i) => {
+    if (roots.slice(0, i).some((other) => samePath(other, dir))) return
+    for (const rel of childSkillDirs({ cli: 'codex', origin: 'user', dir })) {
+      const parsed = parseSkillMarkdown(readText(path.join(dir, rel, SKILL_FILE)) ?? '')
+      const name = parsed.name?.trim() || rel
+      if (/\s/.test(name) || seen.has(name)) continue
+      seen.add(name)
+      out.push({ name, description: parsed.description?.trim() || name, hint: translate('补充说明（可选）') })
+    }
+  })
+  return out.sort((a, b) => a.name.localeCompare(b.name))
 }
 
 function find(env: LocalEnv, projects: string[], id: string, writable = true): Found {
