@@ -173,6 +173,23 @@ describe('unfinished session activity', () => {
     expect(collectSnapshotTurns(ctx.items).at(-1)?.files).toEqual([])
   })
 
+  it('marks only a newly started CLI process, then continues the same session', async () => {
+    const ctx = setup()
+    await ctx.manager.send(ctx.req)
+    await ctx.waitForPrompt()
+    expect(ctx.manager.starting()).toEqual(['thread'])
+    ctx.complete()
+    await vi.waitFor(() => expect(ctx.finished).toHaveBeenCalledOnce())
+    expect(ctx.manager.starting()).toEqual([])
+    ctx.req.prompt = 'Next'
+    await ctx.manager.send(ctx.req)
+    await vi.waitFor(() => expect(ctx.calls.filter((call) => call.method === 'session/prompt')).toHaveLength(2))
+    expect(ctx.manager.starting()).toEqual([])
+    expect(spawnProvider).toHaveBeenCalledOnce()
+    ctx.complete()
+    await vi.waitFor(() => expect(ctx.finished).toHaveBeenCalledTimes(2))
+  })
+
   it('counts a send immediately and throughout worktree startup and execution, then excludes the idle process', async () => {
     const worktree = deferred<string>()
     vi.mocked(createWorktree).mockReturnValue(worktree.promise)

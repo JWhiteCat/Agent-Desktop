@@ -70,11 +70,13 @@ const thread: ThreadMeta = {
   mode: 'agent', createdAt: 1, updatedAt: 2, source: 'app'
 }
 
-function renderThread(items: Item[], running = false): string {
+function renderThread(items: Item[], running = false, starting = false): string {
   state.current = {
     items: { [thread.id]: items },
     app: {
-      running: running ? [thread.id] : [], projects: [{ id: 'project', path: 'C:/example', name: 'Example' }],
+      running: running ? [thread.id] : [],
+      ...(starting ? { starting: [thread.id] } : {}),
+      projects: [{ id: 'project', path: 'C:/example', name: 'Example' }],
       settings: DEFAULT_SETTINGS
     },
     modelsByCli: { codex: [] }, models: [], commandsByThread: {}
@@ -371,6 +373,21 @@ describe('Markdown rendering after background activity', () => {
     expect(actions.copyTexts).toContain(questions)
     actions.forks.at(-1)!()
     expect(actions.forkThread).toHaveBeenCalledWith(thread.id, 'suffix')
+  })
+
+  it('says the CLI is starting only while a new process is launching', () => {
+    const previous = thread.cli
+    thread.cli = 'cursor'
+    try {
+      const cold = renderThread([user], true, true)
+      expect(cold).toContain('正在启动 agent')
+      expect(cold).toContain('class="working"')
+      const warm = renderThread([user], true, false)
+      expect(warm).toContain('处理中')
+      expect(warm).not.toContain('正在启动')
+    } finally {
+      thread.cli = previous
+    }
   })
 
   it('keeps a partial questions block loading while background completions trail the active assistant', () => {

@@ -348,6 +348,8 @@ export interface AppState {
   threads: ThreadMeta[]
   settings: Settings
   running: string[]
+  /** Running conversations whose current turn launched a CLI process. Reused sessions are omitted. */
+  starting?: string[]
   /** Running conversations with a live question or permission decision awaiting input. */
   waitingForInput?: string[]
   /** Follow-up messages waiting for the current turn, keyed by thread id. Threads with an empty queue are omitted. */

@@ -64,6 +64,8 @@ interface Run extends InteractionRun {
   failText?: string
   /** Terminal UI state for this turn has already been published. */
   settled: boolean
+  /** This turn spawned a CLI process instead of reusing the idle one. */
+  starting: boolean
   killTimer?: NodeJS.Timeout
   /** Defined only for ChatGPT-authenticated Codex turns; an empty path selects the detected CLI. */
   codexAccountPath?: string
@@ -129,6 +131,11 @@ export class SessionManager {
 
   running(): string[] {
     return [...this.runs.keys()]
+  }
+
+  /** Running turns that launched a CLI process. A reused session is omitted. */
+  starting(): string[] {
+    return [...this.runs].filter(([, run]) => run.starting).map(([id]) => id)
   }
 
   waitingForInput(): string[] {
@@ -446,6 +453,7 @@ export class SessionManager {
       },
       switchCalls: new Set(),
       settled: false,
+      starting: !reusable,
       attachments,
       managedMessageId,
       userItemId: userId,

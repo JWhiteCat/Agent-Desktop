@@ -80,6 +80,7 @@ function TurnView({
   cwd,
   fallbackModel,
   cli,
+  starting,
   onFork
 }: {
   turn: Turn
@@ -88,6 +89,8 @@ function TurnView({
   cwd: string
   fallbackModel?: string
   cli: CliProvider
+  /** The current turn launched a CLI process. A reused session stays in the working state. */
+  starting: boolean
   onFork?: (itemId: string) => void
 }) {
   const t = useT()
@@ -117,7 +120,7 @@ function TurnView({
         {!streamingText && !busy && (
           <div className="working">
             <Spinner size={12} />
-            <span className="shimmer">{turn.steps.length ? t('处理中') : cli === 'codex' ? t('正在启动 codex') : cli === 'claude' ? t('正在启动 claude') : t('正在启动 agent')}</span>
+            <span className="shimmer">{turn.steps.length || !starting ? t('处理中') : cli === 'codex' ? t('正在启动 codex') : cli === 'claude' ? t('正在启动 claude') : t('正在启动 agent')}</span>
           </div>
         )}
       </div>
@@ -175,6 +178,7 @@ export function ThreadView({ thread, changesOpen, onToggleChanges }: Props) {
   const t = useT()
   const items = useStore((s) => s.items[thread.id])
   const running = useStore((s) => s.app.running.includes(thread.id))
+  const starting = useStore((s) => !!s.app.starting?.includes(thread.id))
   const project = useStore((s) => s.app.projects.find((p) => p.id === thread.projectId))
   const settings = useStore((s) => s.app.settings)
   const cli = threadCli(thread)
@@ -319,6 +323,7 @@ export function ThreadView({ thread, changesOpen, onToggleChanges }: Props) {
                     cwd={cwd}
                     fallbackModel={thread.model}
                     cli={cli}
+                    starting={starting}
                     live={running && last}
                     onFork={running ? undefined : (itemId) => void forkThread(thread.id, itemId)}
                   />
