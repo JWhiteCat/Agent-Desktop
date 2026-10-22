@@ -118,6 +118,7 @@ export const coreMessages: Record<string, string> = {
   '分叉历史缺失，无法恢复上下文': 'Fork history is missing; unable to restore context',
   '已停止': 'Stopped',
   'Cursor 连接中断，正在发送「继续」。': 'The Cursor connection dropped. Sending “继续”.',
+  'Codex 所选模型已满载，正在发送「继续」。': 'The selected Codex model is at capacity. Sending “继续”.',
   '无法启动 {label}：{error}': 'Unable to start {label}: {error}',
   '{label} 意外退出（退出码 {code}）': '{label} exited unexpectedly (exit code {code})',
   '端口需在 1024–65535 之间': 'The port must be between 1024 and 65535',
