@@ -1,9 +1,10 @@
 import { useT } from '../lib/i18n'
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react'
 import { argumentHint, filterCommands, slashQuery, type SlashCommand } from '@shared/commands'
 import { cliTitle, type AgentMode, type AttachmentRef, type CliProvider, type SendDelivery } from '@shared/types'
 import { rememberModel, type SendOptions } from '../store'
 import { errorText, toast } from '../store/feedback'
+import { useDraftState } from '../store/drafts'
 import { appendDraftAttachments, restoreDraftAttachments, textSendOptions, uploadDraftAttachments, type DraftAttachment } from '../lib/attachments'
 import { IconArrowUp, IconBranch, IconChevronDown, IconFolder, IconList, IconPlus, IconShield, IconSparkle, IconStop } from './icons'
 import { MenuList, Popover } from './Menu'
@@ -39,7 +40,10 @@ export interface ComposerHandle {
 
 interface Props {
   projectId: string
+  draftScope: string
   initial: SendOptions
+  /** Home defaults are shared with other conversations; keep this draft's choices on return. */
+  preserveChoicesOnRestore?: boolean
   running?: boolean
   disabled?: boolean
   placeholder?: string
@@ -63,12 +67,13 @@ interface Props {
 export const Composer = forwardRef<ComposerHandle, Props>(function Composer(props, ref) {
   const t = useT()
   const { running, disabled } = props
-  const [text, setText] = useState('')
-  const [opts, setOpts] = useState<SendOptions>(props.initial)
-  const [sending, setSending] = useState(false)
-  const [attachments, setAttachments] = useState<DraftAttachment[]>([])
-  const attachmentsRef = useRef<DraftAttachment[]>([])
-  const [sendError, setSendError] = useState('')
+  const [text, setText] = useDraftState(props.draftScope, 'composer:text', '')
+  const [opts, setOpts] = useDraftState<SendOptions>(props.draftScope, 'composer:options', props.initial)
+  const [sending, setSending] = useDraftState(props.draftScope, 'composer:sending', false)
+  const [attachments, setAttachments] = useDraftState<DraftAttachment[]>(props.draftScope, 'composer:attachments', [])
+  const attachmentsRef = useRef(attachments)
+  attachmentsRef.current = attachments
+  const [sendError, setSendError] = useDraftState(props.draftScope, 'composer:error', '')
   const [dragging, setDragging] = useState(false)
   const dragDepth = useRef(0)
   const fileInput = useRef<HTMLInputElement>(null)
@@ -84,23 +89,28 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
   const menuOpen = query !== undefined && !dismissed && matches.length > 0 && !disabled
   const hint = argumentHint(text, commands)
 
-  useEffect(() => {
-    setOpts((o) => (o.model === props.initial.model ? o : { ...o, model: props.initial.model }))
-  }, [props.initial.model])
-
-  useEffect(() => {
-    setOpts((o) => (o.mode === props.initial.mode ? o : { ...o, mode: props.initial.mode }))
-  }, [props.initial.mode])
-
-  useEffect(() => {
-    const cli = props.initial.cli
-    if (!cli) return
-    setOpts((o) => (o.cli === cli ? o : { ...o, cli }))
-  }, [props.initial.cli])
-
-  useEffect(() => {
-    setOpts((o) => (o.force === props.initial.force ? o : { ...o, force: props.initial.force }))
-  }, [props.initial.force])
+  const [previousInitial, setPreviousInitial] = useDraftState(props.draftScope, 'composer:initial', props.initial)
+  const lastSync = useRef<{ scope: string; initial: SendOptions } | undefined>(undefined)
+  useLayoutEffect(() => {
+    // StrictMode replays mount effects with the same props and cached snapshot.
+    if (lastSync.current?.scope === props.draftScope && lastSync.current.initial === props.initial) return
+    const restoring = lastSync.current?.scope !== props.draftScope
+    lastSync.current = { scope: props.draftScope, initial: props.initial }
+    // While away, apply changed defaults only to fields the user had not edited.
+    // This picks up background mode changes without erasing unsent selections.
+    // Live updates keep the existing CLI/model/permission synchronization.
+    const patch: Partial<SendOptions> = {}
+    const cliChanged = props.initial.cli !== previousInitial.cli
+    for (const key of ['model', 'mode', 'force', 'cli'] as const) {
+      const canSync = !restoring || (!props.preserveChoicesOnRestore &&
+        (opts[key] === previousInitial[key] || (cliChanged && (key === 'cli' || key === 'model'))))
+      if (canSync && (props.initial[key] !== previousInitial[key] || (cliChanged && key === 'model'))) {
+        Object.assign(patch, { [key]: props.initial[key] })
+      }
+    }
+    if (Object.keys(patch).length) setOpts((o) => ({ ...o, ...patch }))
+    setPreviousInitial(props.initial)
+  }, [props.initial.model, props.initial.mode, props.initial.cli, props.initial.force, setOpts, setPreviousInitial])
 
   useImperativeHandle(ref, () => ({
     focus: () => ta.current?.focus(),
@@ -121,13 +131,18 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
     },
     restore: async (value, refs) => {
       if (text.trim() || attachmentsRef.current.length || sending) return false
-      const drafts = refs.length ? await restoreDraftAttachments(refs, window.api.readAttachment) : []
-      attachmentsRef.current = drafts
-      setAttachments(drafts)
-      setText(value)
-      setSendError('')
-      requestAnimationFrame(() => ta.current?.focus())
-      return true
+      setSending(true)
+      try {
+        const drafts = refs.length ? await restoreDraftAttachments(refs, window.api.readAttachment) : []
+        attachmentsRef.current = drafts
+        setAttachments(drafts)
+        setText(value)
+        setSendError('')
+        requestAnimationFrame(() => ta.current?.focus())
+        return true
+      } finally {
+        setSending(false)
+      }
     }
   }))
 

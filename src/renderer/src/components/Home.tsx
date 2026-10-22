@@ -6,6 +6,7 @@ import { useT } from '../lib/i18n'
 import { relativeTime, shortPath } from '../lib/format'
 import { defaultModelFor, favoritesFor, modelForChat, projectModelFor } from '../lib/model-prefs'
 import { addProjectInteractive, chatModel, cliCommands, goHome, loadSkillCommands, openThread, setCliProvider, skillCommands, startThread, useStore } from '../store'
+import { projectDraftScope, useDraftState } from '../store/drafts'
 import { Composer, type ComposerHandle } from './Composer'
 import { IconChevronDown, IconFolder, IconImport, IconPlus } from './icons'
 import { MenuList, Popover } from './Menu'
@@ -22,15 +23,23 @@ export function Home({ projectId, onOpenImport }: { projectId?: string; onOpenIm
   const projects = useStore((s) => s.app.projects)
   const threads = useStore((s) => s.app.threads)
   const settings = useStore((s) => s.app.settings)
-  const cli = normalizeCliProvider(settings.cliProvider)
-  const models = useStore((s) => s.modelsByCli[cli] ?? s.models)
   const project = projects.find((p) => p.id === projectId) ?? projects[0]
+  const draftScope = project ? projectDraftScope(project.id) : undefined
+  const defaultCli = normalizeCliProvider(settings.cliProvider)
+  const [cli, setCli] = useDraftState(draftScope, 'cli', defaultCli)
+  const previousDefaultCli = useRef(defaultCli)
+  const models = useStore((s) => s.modelsByCli[cli] ?? s.models)
   const cachedCommands = useStore((s) => cliCommands(s, cli))
   const skills = useStore((s) => (project ? skillCommands(s, project.id) : undefined))
   const slashCommands = useMemo(() => composeCommands([], cachedCommands, skills ?? [], cli), [cachedCommands, skills, cli])
   const composer = useRef<ComposerHandle>(null)
   const [pickerOpen, setPickerOpen] = useState(false)
   const pickerBtn = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    if (previousDefaultCli.current !== defaultCli) setCli(defaultCli)
+    previousDefaultCli.current = defaultCli
+  }, [defaultCli, setCli])
 
   useEffect(() => {
     composer.current?.focus()
@@ -111,11 +120,14 @@ export function Home({ projectId, onOpenImport }: { projectId?: string; onOpenIm
           <div className="composer-dock">
             <Composer
               key={project.id}
+              draftScope={projectDraftScope(project.id)}
+              preserveChoicesOnRestore
               ref={composer}
               projectId={project.id}
               cli={cli}
               cliNote={t('新建对话使用的 CLI。已有对话不会跟着改。')}
               onCliChange={(next) => {
+                setCli(next)
                 setCliProvider(next)
                 return chatModel(project.id, next)
               }}

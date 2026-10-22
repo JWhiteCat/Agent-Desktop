@@ -4,6 +4,12 @@
 
 The app does not call a model itself. The main process starts the Cursor CLI, Codex CLI, or Claude Code adapter on this machine and talks to it over the [Agent Client Protocol](https://agentclientprotocol.com) (ACP). The composer picks Cursor, Codex, or Claude. A new conversation uses that choice and remembers it. In an existing conversation, switching CLI keeps the messages already on screen and starts the next message as a new session on the CLI you picked, sending the existing conversation along as context until that session's first turn completes. The sidebar marks each one Cursor, Codex, or Claude.
 
+## Switching conversations and drafts
+
+Switching conversations or visiting Home preserves each conversation's unsent text, attachments, and composer choices for CLI, model, mode, and permissions. Home keeps a separate new-conversation draft and Worktree choice for each project. Question cards retain single and multiple selections, custom answers, and plan revision feedback; plan cards retain their expanded state.
+
+You can switch conversations during a send or submission. Its result updates only the original draft: a successful message clears its text and attachments, while a failure keeps them for retry. Submitted card answers follow the conversation history. Drafts stay in the current window or remote page's memory; they are not restored after a page refresh, window close, or restart, and are not shared with other windows. Deleting a conversation or project clears its drafts.
+
 ## Working with projects
 
 1. Add a project folder. The agent works in that directory, or, for a new conversation, in that conversation’s own worktree. Removing a project deletes it from this app only. Files on disk stay.

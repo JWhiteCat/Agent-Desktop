@@ -13,6 +13,9 @@ export interface TurnActions {
 
 export const TurnActionsContext = createContext<TurnActions & { streaming?: boolean }>({})
 
+/** Stable transcript identity for card drafts, including identical blocks in different messages. */
+export const ItemDraftContext = createContext<{ scope?: string; itemId?: string }>({})
+
 export function TurnActionsProvider({ value, children }: { value: TurnActions & { streaming?: boolean }; children: React.ReactNode }) {
   return <TurnActionsContext.Provider value={value}>{children}</TurnActionsContext.Provider>
 }

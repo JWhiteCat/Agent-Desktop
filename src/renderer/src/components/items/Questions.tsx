@@ -1,11 +1,14 @@
-import { useContext, useId, useMemo, useState } from 'react'
+import { useContext, useId, useMemo } from 'react'
 import { formatAnswers, parseQuestionBlock, QUESTION_BLOCK_LANG } from '@shared/questions'
 import type { QuestionAnswer, QuestionPrompt } from '@shared/types'
 import { useT } from '../../lib/i18n'
+import { useDraftState } from '../../store/drafts'
 import { CodeBlock } from './primitives'
-import { TurnActionsContext } from './TurnActions'
+import { ItemDraftContext, TurnActionsContext } from './TurnActions'
 
 interface QuestionFormProps {
+  draftScope?: string
+  draftKey?: string
   title?: string
   questions: QuestionPrompt[]
   answers?: QuestionAnswer[]
@@ -19,16 +22,16 @@ interface QuestionFormProps {
   onSkip?: () => Promise<void> | void
 }
 
-export function QuestionForm({ title, questions, answers, allowOther = false, feedbackPlaceholder, status, onSubmit, onSkip }: QuestionFormProps) {
+export function QuestionForm({ draftScope, draftKey = 'question', title, questions, answers, allowOther = false, feedbackPlaceholder, status, onSubmit, onSkip }: QuestionFormProps) {
   const t = useT()
   const formId = useId()
-  const [selected, setSelected] = useState<Record<string, string[]>>(() => {
+  const [selected, setSelected] = useDraftState<Record<string, string[]>>(draftScope, `${draftKey}:selected`, () => {
     const init: Record<string, string[]> = {}
     for (const answer of answers ?? []) init[answer.questionId] = answer.selectedOptionIds
     return init
   })
-  const [other, setOther] = useState<Record<string, { selected: boolean; text: string }>>({})
-  const [sending, setSending] = useState(false)
+  const [other, setOther] = useDraftState<Record<string, { selected: boolean; text: string }>>(draftScope, `${draftKey}:other`, {})
+  const [sending, setSending] = useDraftState(draftScope, `${draftKey}:sending`, false)
   const locked = !onSubmit || sending
 
   const picked = (questionId: string): string[] => {
@@ -178,9 +181,10 @@ export function QuestionForm({ title, questions, answers, allowOther = false, fe
 }
 
 /** A ```questions block from the model, answered by sending the picks as the next message. */
-export function QuestionBlock({ body }: { body: string }) {
+export function QuestionBlock({ body, offset }: { body: string; offset?: number }) {
   const t = useT()
   const { reply, streaming } = useContext(TurnActionsContext)
+  const draft = useContext(ItemDraftContext)
   const set = useMemo(() => parseQuestionBlock(body), [body])
   if (!set) {
     if (streaming) return <div className="question-card locked question-loading">{t('正在准备问题…')}</div>
@@ -188,6 +192,8 @@ export function QuestionBlock({ body }: { body: string }) {
   }
   return (
     <QuestionForm
+      draftScope={offset !== undefined && draft.itemId ? draft.scope : undefined}
+      draftKey={`message:${draft.itemId}:question:${offset}`}
       title={set.title}
       questions={set.questions}
       allowOther

@@ -10,6 +10,7 @@ import { planPath, planUriOf } from '../lib/tools'
 import { defaultModelFor, favoritesFor, modelForChat, projectModelFor } from '../lib/model-prefs'
 import { chatModel, cliCommands, forkThread, loadSkillCommands, prepareCommands, sendMessage, setCliProvider, skillCommands, useStore, type SendOptions } from '../store'
 import { markDisplayedThreadRead } from '../store/threads'
+import { threadDraftScope } from '../store/drafts'
 import { Composer, sendNowShortcut, type ComposerHandle } from './Composer'
 import { QueuedMessages } from './QueuedMessages'
 import { BinaryFilesGroup } from './BinaryFilesGroup'
@@ -343,6 +344,7 @@ export function ThreadView({ thread, changesOpen, onToggleChanges }: Props) {
         />
         <Composer
           key={thread.id}
+          draftScope={threadDraftScope(thread.id)}
           ref={composer}
           projectId={thread.projectId}
           running={running}

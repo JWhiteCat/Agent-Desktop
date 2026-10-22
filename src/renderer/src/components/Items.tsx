@@ -1,11 +1,13 @@
 import type { Item, QuestionItem } from '@shared/types'
 import { answerQuestion, useStore } from '../store'
+import { threadDraftScope } from '../store/drafts'
 import { useT } from '../lib/i18n'
 import { AssistantMessage, Notice, ThinkingBlock } from './items/Messages'
 import { PlanCard } from './items/PlanCard'
 import { QuestionForm } from './items/Questions'
 import { ResultFooter as ResultFooterView, type ResultFooterProps } from './items/ResultFooter'
 import { ToolRow } from './items/ToolRow'
+import { ItemDraftContext } from './items/TurnActions'
 
 // Keep the existing entry point; store access stays in these adapters.
 export { Markdown } from './items/Markdown'
@@ -39,6 +41,8 @@ export function QuestionCard({ item, threadId }: { item: QuestionItem; threadId:
   })) : item.questions
   return (
     <QuestionForm
+      draftScope={threadDraftScope(threadId)}
+      draftKey={`question:${item.id}`}
       title={planReview ? t('是否执行此计划？') : item.title}
       questions={questions}
       feedbackPlaceholder={planReview ? t('请输入希望 Codex 如何修改计划') : undefined}
@@ -61,18 +65,29 @@ export function StepItem({
   threadId?: string
   onFork?: () => void
 }) {
+  let content: React.ReactNode
   switch (item.kind) {
     case 'assistant':
-      return <AssistantMessage text={item.text} streaming={streaming} onFork={onFork} />
+      content = <AssistantMessage text={item.text} streaming={streaming} onFork={onFork} />
+      break
     case 'thinking':
-      return <ThinkingBlock item={item} />
+      content = <ThinkingBlock item={item} />
+      break
     case 'tool':
-      return item.tool === 'createPlan' ? <PlanCard item={item} /> : <ToolRow item={item} />
+      content = item.tool === 'createPlan' ? <PlanCard item={item} /> : <ToolRow item={item} />
+      break
     case 'question':
-      return threadId ? <QuestionCard item={item} threadId={threadId} /> : null
+      content = threadId ? <QuestionCard item={item} threadId={threadId} /> : null
+      break
     case 'notice':
-      return <Notice item={item} />
+      content = <Notice item={item} />
+      break
     default:
       return null
   }
+  return (
+    <ItemDraftContext.Provider value={{ scope: threadId ? threadDraftScope(threadId) : undefined, itemId: item.id }}>
+      {content}
+    </ItemDraftContext.Provider>
+  )
 }

@@ -30,11 +30,11 @@ function MarkdownLink({ href, children }: React.ComponentProps<'a'>) {
 
 const mdComponents: Components = {
   a: MarkdownLink,
-  pre: ({ children }) => {
+  pre: ({ children, node }) => {
     const code = isValidElement<{ className?: string; children?: React.ReactNode }>(children) ? children.props : undefined
     const text = String(code?.children ?? '').replace(/\n$/, '')
     const lang = /language-([\w+-]+)/.exec(code?.className ?? '')?.[1]
-    if (lang === QUESTION_BLOCK_LANG) return <QuestionBlock body={text} />
+    if (lang === QUESTION_BLOCK_LANG) return <QuestionBlock body={text} offset={node?.position?.start.offset} />
     if (lang?.toLowerCase() === 'mermaid') return <MermaidBlock text={text} />
     return <CodeBlock lang={lang} text={text} />
   },

@@ -5,6 +5,7 @@ import type { SkinConfig } from '@shared/skins'
 import type { AgentMode, AppState, CliProvider, Item, ModelInfo, SendDelivery } from '@shared/types'
 import { syncRemoteViewIfEnabled } from '../lib/view-route'
 import { readCommandCache } from './persistence'
+import { pruneDrafts } from './drafts'
 
 export type View = { kind: 'home'; projectId?: string } | { kind: 'thread'; id: string } | { kind: 'grokbot'; botId?: string }
 
@@ -66,7 +67,10 @@ export function setState(patch: Partial<UIState> | ((s: UIState) => Partial<UISt
     (next.view.kind !== 'thread' || next.view.id !== state.sidebarReveal.threadId)) {
     state = { ...state, sidebarReveal: undefined }
   }
-  if (next.app) setLanguage(next.app.settings.language, next.app.systemLocale ?? (typeof navigator === 'undefined' ? undefined : navigator.language))
+  if (next.app) {
+    pruneDrafts(next.app)
+    setLanguage(next.app.settings.language, next.app.systemLocale ?? (typeof navigator === 'undefined' ? undefined : navigator.language))
+  }
   if (next.view) syncRemoteViewIfEnabled(prevView, state.view)
   for (const l of listeners) l()
 }

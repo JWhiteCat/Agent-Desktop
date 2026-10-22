@@ -1,16 +1,18 @@
-import { useContext, useState } from 'react'
+import { useContext } from 'react'
 import type { ToolItem } from '@shared/types'
 import { useT } from '../../lib/i18n'
 import { errorOf, planPath, planUriOf } from '../../lib/tools'
+import { useDraftState } from '../../store/drafts'
 import { IconChevronDown, IconChevronRight, IconFile, IconList, Spinner } from '../icons'
 import { Markdown } from './Markdown'
-import { TurnActionsContext } from './TurnActions'
+import { ItemDraftContext, TurnActionsContext } from './TurnActions'
 
 export function PlanCard({ item }: { item: ToolItem }) {
   const t = useT()
   const { buildPlan, planId } = useContext(TurnActionsContext)
-  const [open, setOpen] = useState(false)
-  const [starting, setStarting] = useState(false)
+  const { scope } = useContext(ItemDraftContext)
+  const [open, setOpen] = useDraftState(scope, `plan:${item.id}:open`, false)
+  const [starting, setStarting] = useDraftState(scope, `plan:${item.id}:starting`, false)
   const a = typeof item.args === 'object' && item.args ? item.args : {}
   const plan = typeof a.plan === 'string' ? a.plan.trim() : ''
   const todos: any[] = Array.isArray(a.todos) ? a.todos : []
@@ -24,6 +26,8 @@ export function PlanCard({ item }: { item: ToolItem }) {
     try {
       await buildPlan(item)
     } catch {
+      // The send path reports the error; allow retrying this plan.
+    } finally {
       setStarting(false)
     }
   }
