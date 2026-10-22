@@ -44,7 +44,7 @@ npm ci --include=dev --include=optional
 npm run dev
 ```
 
-On Windows, double-click [start-dev.bat](start-dev.bat) to install dependencies and start development mode, or [start-preview.bat](start-preview.bat) to build and launch a production preview. On Linux, run [start-dev.sh](start-dev.sh) or [start-preview.sh](start-preview.sh). The first run needs internet access to download dependencies and Electron.
+On Windows, double-click [start-dev.bat](start-dev.bat) to install dependencies and start development mode, or [start-preview.bat](start-preview.bat) to build and launch a production preview. Double-click [build-portable.bat](build-portable.bat) to package a portable executable that does not need installation. On Linux, run [start-dev.sh](start-dev.sh) or [start-preview.sh](start-preview.sh). The first run needs internet access to download dependencies and Electron.
 
 1. Open **Settings → CLI** and select Cursor, Codex, or Claude. Sign in or configure an API key; Cursor prefers `CURSOR_API_KEY` when no key is saved in Settings.
 2. Add a project folder, then choose a CLI, model, and mode in the composer.
@@ -62,7 +62,7 @@ The [documentation index](docs/README.md) links to all guides. Each guide has an
 | [Usage statistics](docs/usage-stats.md) | Token counts, cost estimates, account quota, and Codex session accounting |
 | [Remote control](docs/remote-control.md) | LAN access, SSH tunnels, access tokens, and server setup |
 | [Data storage](docs/data-storage.md) | Local data, CLI history, forks, worktrees, and multiple windows |
-| [Development guide](docs/development.md) | Startup, Linux packaging, commands, testing, localization, and module layout |
+| [Development guide](docs/development.md) | Startup, Windows portable and Linux packaging, commands, testing, localization, and module layout |
 
 ## Contributing
 

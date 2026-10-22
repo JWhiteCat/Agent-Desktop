@@ -84,6 +84,21 @@ chmod +x release/agent-desktop-*-linux-x86_64.AppImage
 - 若提示缺少共享库，用发行版的包管理器安装对应运行库。没有 `DISPLAY` 和 `WAYLAND_DISPLAY` 的终端无法打开桌面窗口，请在图形会话内启动。
 - **ARM64 暂未作为发行目标。** 仅修改 electron-builder 架构参数不够，Electron、Codex/Claude 的 optional 原生二进制及适配器都必须匹配目标架构。ARM64 原生启动及打包仍需单独验证，提供的发行命令有意限定为 x64。
 
+## Windows 便携包
+
+请在 **Windows x64** 上打包。内置代理的原生二进制按执行打包的机器安装，在其他架构上打包不会得到匹配的便携程序。
+
+双击项目根目录的 `build-portable.bat`。脚本会检查 Node.js 22.12 或更高版本，安装依赖和 Electron 运行时，然后打包。在项目目录的终端中也可以执行：
+
+```bash
+npm ci --include=dev --include=optional
+npm run dist:win:portable
+```
+
+产物是 `release/agent-desktop-<version>-win-x64-portable.exe`。它不需要安装：启动时会把应用解压到临时目录再运行。设置和历史仍保存在 `%APPDATA%\Agent Desktop`，与 NSIS 安装版相同。Windows 上的 `npm run dist` 仍然构建 NSIS 安装包。
+
+首次打包可能下载 Electron，以及 electron-builder 使用的 NSIS 和 7-Zip 工具。该程序未签名，Windows SmartScreen 第一次运行时可能会要求确认。
+
 ## 开发命令与测试
 
 | 命令 | 作用 |
@@ -97,6 +112,7 @@ chmod +x release/agent-desktop-*-linux-x86_64.AppImage
 | `npm run build` | 编译到 `out/` |
 | `npm run preview` | 预览编译结果 |
 | `npm run dist` | 打包安装包到 `release/` |
+| `npm run dist:win:portable` | 构建 Windows x64 免安装便携程序，不会发布 |
 | `npm run dist:linux` | 构建 Linux x64 AppImage 和 Debian 安装包，不会发布 |
 | `npm run dist:linux:dir` | 构建 Linux x64 未封装应用 |
 | `npm run icons` | 由 `resources/icons/icon.svg` 重新生成各尺寸 PNG 和 Windows `icon.ico` |
@@ -111,7 +127,7 @@ chmod +x release/agent-desktop-*-linux-x86_64.AppImage
 
 顶部命令的测试位于 `test/toolbar-terminal.test.ts` 和 `test/toolbar-runner.test.ts`：在临时目录构建独立 runner，验证参数原文、Windows `.cmd` 启动器、启动失败、输出与退出码。Windows 下设置 `AGENT_DESKTOP_CONSOLE_SMOKE=1` 可额外开启真实新终端检查，读取控制台缓冲区并发送 Enter 正常关闭。将 `AGENT_DESKTOP_CONSOLE_EXECUTABLE` 和 `AGENT_DESKTOP_CONSOLE_RUNNER` 分别设为打包后的程序和 `resources/toolbar-runner.cjs` 路径，可对未封装构建重复该检查。普通测试不会弹出终端窗口。
 
-打包目标：Windows NSIS、macOS DMG、Linux x64 AppImage / Debian（`.deb`）。
+打包目标：Windows NSIS、Windows x64 免安装便携程序、macOS DMG、Linux x64 AppImage / Debian（`.deb`）。
 
 `npm test -- test/linux-launcher.test.ts test/linux-packaging.test.ts` 检查 Linux 启动、重复/离线启动、错误处理、打包元数据及图标、桌面标识和 AppImage 启动器，不下载安装包或启动代理。每个目标发行版仍需在真实图形会话内进行冒烟测试。
 

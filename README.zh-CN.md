@@ -53,7 +53,7 @@ npm run dev
 
 也可以使用项目根目录的一键启动脚本：
 
-- Windows：双击 `start-dev.bat` 启动开发模式，或 `start-preview.bat` 构建后启动生产预览。
+- Windows：双击 `start-dev.bat` 启动开发模式，或 `start-preview.bat` 构建后启动生产预览。双击 `build-portable.bat` 打包免安装的便携程序。
 - Linux：执行 `./start-dev.sh` 或 `./start-preview.sh`；没有执行权限时使用 `bash start-dev.sh` 或 `bash start-preview.sh`。
 
 脚本会检查并补齐依赖与 Electron 运行时。首次运行需要联网；Linux 桌面环境、运行库与安装包说明见 [开发指南](docs/development.zh-CN.md)。

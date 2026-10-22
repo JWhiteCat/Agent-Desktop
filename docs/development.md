@@ -84,6 +84,21 @@ chmod +x release/agent-desktop-*-linux-x86_64.AppImage
 - For a missing shared-library error, install that library with your distribution's package manager. A terminal without `DISPLAY` or `WAYLAND_DISPLAY` cannot open the desktop app; use a terminal inside the graphical session.
 - **ARM64 is not a release target yet.** Changing only electron-builder's architecture flag is insufficient: Electron, optional Codex/Claude binaries, and their adapters must all match the target architecture. Native ARM64 startup and packaging still need separate validation; the supplied distribution commands intentionally build x64 only.
 
+## Windows portable package
+
+Build on **Windows x64**. Optional agent binaries are installed for the machine that runs the build, so packaging on another architecture does not produce a matching portable executable.
+
+Double-click `build-portable.bat` in the project root. It checks Node.js 22.12 or newer, installs dependencies and the Electron runtime, then packages the app. From a terminal in the project directory:
+
+```bash
+npm ci --include=dev --include=optional
+npm run dist:win:portable
+```
+
+The result is `release/agent-desktop-<version>-win-x64-portable.exe`. It does not install: launching it unpacks the application into a temporary directory and starts it. Settings and history stay in `%APPDATA%\Agent Desktop`, the same location used by the NSIS installer. `npm run dist` on Windows still builds that installer.
+
+The first package build may download Electron and the electron-builder NSIS and 7-Zip tools. The executable is unsigned, so Windows SmartScreen may ask for confirmation the first time it runs.
+
 ## Commands and tests
 
 | Command | What it does |
@@ -97,6 +112,7 @@ chmod +x release/agent-desktop-*-linux-x86_64.AppImage
 | `npm run build` | Compile into `out/` |
 | `npm run preview` | Preview the compiled app |
 | `npm run dist` | Package installers into `release/` |
+| `npm run dist:win:portable` | Build the Windows x64 portable executable without publishing |
 | `npm run dist:linux` | Build Linux x64 AppImage and Debian packages without publishing |
 | `npm run dist:linux:dir` | Build the unpacked Linux x64 application |
 | `npm run icons` | Regenerate every PNG size and the Windows `icon.ico` from `resources/icons/icon.svg` |
@@ -111,7 +127,7 @@ Working-file snapshots use Electron's `original-fs` in the desktop process and n
 
 Toolbar command checks live in `test/toolbar-terminal.test.ts` and `test/toolbar-runner.test.ts`. They build the standalone runner in a temporary directory and verify literal arguments, Windows `.cmd` shims, startup failures, output, and exit codes. On Windows, setting `AGENT_DESKTOP_CONSOLE_SMOKE=1` opts into a real new-console check that reads the console buffer and sends Enter to close it. Set `AGENT_DESKTOP_CONSOLE_EXECUTABLE` and `AGENT_DESKTOP_CONSOLE_RUNNER` to the packaged executable and its `resources/toolbar-runner.cjs` to repeat that check against an unpacked build. The normal test run does not open terminal windows.
 
-Package targets: Windows NSIS, macOS DMG, and Linux x64 AppImage / Debian (`.deb`).
+Package targets: Windows NSIS, Windows x64 portable executable, macOS DMG, and Linux x64 AppImage / Debian (`.deb`).
 
 `npm test -- test/linux-launcher.test.ts test/linux-packaging.test.ts` checks Linux startup, repeated/offline starts, failure handling, package metadata/icons, desktop identity, and the AppImage launcher without downloading packages or launching an agent. A real graphical-session smoke test is still needed for each target distribution.
 
