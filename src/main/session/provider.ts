@@ -168,14 +168,7 @@ async function applyCursorOptions(session: SessionConnection, req: SendRequest):
   }
   const selection = cursorModelParameters(req.model)
   try {
-    await acp.request('session/set_config_option', {
-      sessionId,
-      configId: CURSOR_MODEL_CONFIG_ID,
-      value: selection?.id ?? req.model
-    })
-    for (const parameter of selection?.parameters ?? []) {
-      await acp.request('session/set_config_option', { sessionId, configId: parameter.id, value: parameter.value })
-    }
+    await applyCursorModel(acp, sessionId, selection?.id ?? req.model, selection?.parameters ?? [])
   } catch (error) {
     try {
       await acp.request('session/set_model', { sessionId, modelId: req.model })
@@ -185,6 +178,37 @@ async function applyCursorOptions(session: SessionConnection, req: SendRequest):
     }
   }
   session.cursorModel = req.model
+}
+
+/**
+ * Cursor applies a variant as the base model, then one config option per parameter.
+ * A catalog refresh between those calls answers parameter updates with
+ * "No current ACP model found for config option: …" even though the model was just selected.
+ * Select the base model again and apply the whole variant once more before failing the turn.
+ */
+async function applyCursorModel(
+  acp: SessionConnection['acp'],
+  sessionId: string,
+  modelId: string,
+  parameters: { id: string; value: string }[]
+): Promise<void> {
+  const apply = async () => {
+    await acp.request('session/set_config_option', { sessionId, configId: CURSOR_MODEL_CONFIG_ID, value: modelId })
+    for (const parameter of parameters) {
+      await acp.request('session/set_config_option', { sessionId, configId: parameter.id, value: parameter.value })
+    }
+  }
+  try {
+    await apply()
+  } catch (error) {
+    if (!parameters.length || !missingCurrentAcpModel(error)) throw error
+    await apply()
+  }
+}
+
+function missingCurrentAcpModel(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  return message.includes('No current ACP model found')
 }
 
 /**

@@ -128,6 +128,23 @@ describe('Cursor parameterized model selection', () => {
     ])
   })
 
+  it('selects the base model again when a parameter is rejected for a missing ACP model', async () => {
+    let fastAttempts = 0
+    const request = vi.fn(async (method: string, params: { configId?: string }) => {
+      if (method === 'session/set_config_option' && params.configId === 'fast' && fastAttempts++ === 0) {
+        throw new Error('Invalid params: No current ACP model found for config option: fast')
+      }
+      return {}
+    })
+    const session: SessionConnection = { provider: 'cursor', sessionId: SESSION_ID, acp: { request } }
+    await applySessionOptions(session, cursorRequest(GROK_500K), 'default')
+    const modelCalls = request.mock.calls.filter(([method]) => method === 'session/set_config_option')
+    expect(modelCalls.map(([, params]) => (params as { configId: string }).configId)).toEqual([
+      'model', 'context', 'reasoning_effort', 'fast',
+      'model', 'context', 'reasoning_effort', 'fast'
+    ])
+  })
+
   it('reports a rejected variant instead of continuing with another model', async () => {
     const request = vi.fn(async (method: string) => {
       if (method === 'session/set_config_option') throw new Error('Invalid value for context: 500k')
