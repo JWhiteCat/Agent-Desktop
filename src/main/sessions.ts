@@ -62,6 +62,10 @@ interface Run extends InteractionRun {
   /** SwitchMode tool calls seen this turn; their completion carries no kind. */
   switchCalls: Set<string>
   failText?: string
+  /** Model selected for this turn, reused by the one automatic continue after HTTP 502. */
+  model: string
+  /** This turn is the single automatic「继续」after a Cursor HTTP 502. It must not send another. */
+  http502Continue?: boolean
   /** Terminal UI state for this turn has already been published. */
   settled: boolean
   /** This turn spawned a CLI process instead of reusing the idle one. */
@@ -101,6 +105,23 @@ export function titleFrom(prompt: string): string {
 const CANCEL_KILL_MS = 5000
 const COMMAND_WAIT_MS = 2000
 const FORK_TIMEOUT_MS = 60_000
+/** A real reply can mention these errors. Only a short failure text is the dropped turn. */
+const CURSOR_DISCONNECT_TEXT_LIMIT = 240
+const CURSOR_DISCONNECT_NOTICE = 'Cursor 连接中断，正在发送「继续」。'
+
+/**
+ * Cursor reports a dropped model request as `RetriableError: [unavailable] HTTP 502`
+ * or `RetriableError: [canceled] http/2 stream closed ... CANCEL`.
+ * The whole text has to be that failure. A longer reply that merely mentions it is left alone.
+ */
+export function isCursorRetriableDisconnect(text: string | undefined): boolean {
+  if (!text) return false
+  const clean = text.trim()
+  if (!clean || clean.length > CURSOR_DISCONNECT_TEXT_LIMIT) return false
+  if (!clean.includes('RetriableError')) return false
+  if (/HTTP\s*502/.test(clean)) return true
+  return /\[canceled\]/i.test(clean) && /stream closed|http\/2/i.test(clean)
+}
 
 export class SessionManager {
   private runs = new Map<string, Run>()
@@ -371,7 +392,7 @@ export class SessionManager {
     return result
   }
 
-  private async beginSend(req: SendRequest): Promise<void> {
+  private async beginSend(req: SendRequest, internal?: { http502Continue?: boolean }): Promise<void> {
     if (this.shuttingDown) throw new Error(translate('应用正在关闭'))
     if (this.runs.has(req.threadId)) throw new Error(translate('该对话正在运行中'))
     const thread = this.store.thread(req.threadId)
@@ -447,6 +468,8 @@ export class SessionManager {
       acceptUpdates: false,
       force: req.force,
       mode: req.mode,
+      model: req.model,
+      ...(internal?.http502Continue ? { http502Continue: true } : {}),
       onPlanApproved: () => {
         this.store.updateThread(thread.id, { mode: 'agent' })
         this.onStateChange()
@@ -474,6 +497,12 @@ export class SessionManager {
     void turn.catch((err) => {
       if (run.settled) return
       if (!run.stopped) run.failText = err instanceof Error ? err.message : String(err)
+      // A live process can take the follow-up. Killing it here would drop the session
+      // that the automatic「继续」needs to reuse.
+      if (this.cursor502CanContinue(thread.id, run)) {
+        void this.endRun(thread.id, run, null)
+        return
+      }
       this.killProc(run.proc)
     })
   }
@@ -611,7 +640,13 @@ export class SessionManager {
     child.on('close', (code) => {
       if (this.agents.get(threadId) === proc) this.agents.delete(threadId)
       const run = this.runs.get(threadId)
-      if (run?.proc === proc) this.endRun(threadId, run, code)
+      if (run?.proc !== proc) return
+      // Prompt rejection records failText in a microtask. Ending the turn on this
+      // close event would run first and miss a Cursor HTTP 502 from that rejection.
+      setImmediate(() => {
+        if (run.settled || this.runs.get(threadId) !== run) return
+        void this.endRun(threadId, run, code)
+      })
     })
     return proc
   }
@@ -972,10 +1007,25 @@ export class SessionManager {
         changed.push(result)
       }
     }
+    const recover = this.cursor502CanContinue(threadId, run)
     if (run.stopped) {
       changed.push(r.push({ id: newId(), kind: 'notice', level: 'info', ...localizedMessage('已停止') }))
     } else if (spawnError) {
       changed.push(r.push({ id: newId(), kind: 'notice', level: 'error', ...localizedMessage('无法启动 {label}：{error}', { label: cliLabel(run.proc.provider), error: spawnError.message }) }))
+    } else if (recover) {
+      const existing = [...items].reverse().find((item) => item.kind === 'result')
+      if (existing?.kind === 'result' && existing.isError) {
+        existing.isError = false
+        changed.push(existing)
+      }
+      changed.push(r.push({ id: newId(), kind: 'notice', level: 'info', ...localizedMessage(CURSOR_DISCONNECT_NOTICE) }))
+    } else if (run.http502Continue && r.gotResult && isCursorRetriableDisconnect(r.lastAssistantText)) {
+      const existing = [...items].reverse().find((item) => item.kind === 'result')
+      if (existing?.kind === 'result') {
+        existing.isError = true
+        changed.push(existing)
+      }
+      changed.push(r.push({ id: newId(), kind: 'notice', level: 'error', text: r.lastAssistantText.trim() }))
     } else if (!r.gotResult) {
       const detail = exitFailureDetail(run.failText, run.proc.stderr)
       changed.push(
@@ -1002,11 +1052,11 @@ export class SessionManager {
       void this.usage.saveQuotaEstimate(threadId, run.resultId, run.proc.sessionId)
     }
 
-    const keep = !run.proc.dying && !spawnError && r.gotResult && run.proc.child.exitCode === null
+    const keep = !run.proc.dying && !spawnError && run.proc.child.exitCode === null && (r.gotResult || recover)
     if (keep) this.agents.set(threadId, run.proc)
     else this.killProc(run.proc)
 
-    const preview = r.lastAssistantText.replace(/\s+/g, ' ').trim().slice(0, 120)
+    const preview = (recover ? translate(CURSOR_DISCONNECT_NOTICE) : r.lastAssistantText).replace(/\s+/g, ' ').trim().slice(0, 120)
     const updated = this.store.updateThread(threadId, {
       updatedAt: Date.now(),
       syncedAt: Date.now(),
@@ -1017,7 +1067,7 @@ export class SessionManager {
     this.emit({ type: 'running', threadId, running: false })
     this.onStateChange()
     const result = [...items].reverse().find((it) => it.kind === 'result')
-    const failed = !!spawnError || !r.gotResult || (result?.kind === 'result' && result.isError)
+    const failed = !recover && (!!spawnError || !r.gotResult || (result?.kind === 'result' && result.isError))
     let summary = preview
     if (failed && !summary) {
       const notice = [...items].reverse().find((it) => it.kind === 'notice' && it.level === 'error')
@@ -1042,6 +1092,39 @@ export class SessionManager {
     }
     if (run.resultId && run.codexAccountPath !== undefined) {
       void this.usage.saveAccountUsage(threadId, run.resultId, run.proc.sessionId, run.codexAccountPath)
+    }
+    if (recover) void this.sendCursor502Continue(threadId, run)
+  }
+
+  /** Cursor HTTP 502 gets one automatic「继续」on this session. A repeat shows the error. */
+  private cursor502CanContinue(threadId: string, run: Run): boolean {
+    if (run.http502Continue || run.stopped || this.shuttingDown) return false
+    if (run.proc.provider !== 'cursor') return false
+    if (!this.store.thread(threadId)) return false
+    return isCursorRetriableDisconnect(run.failText) || isCursorRetriableDisconnect(run.reducer.lastAssistantText)
+  }
+
+  private async sendCursor502Continue(threadId: string, run: Run): Promise<void> {
+    if (this.shuttingDown || run.stopped || this.runs.has(threadId) || !this.store.thread(threadId)) return
+    try {
+      await this.beginSend({
+        threadId,
+        prompt: '继续',
+        model: run.model,
+        mode: run.mode,
+        force: run.force,
+        cli: 'cursor',
+        worktree: false
+      }, { http502Continue: true })
+    } catch (error) {
+      if (!this.store.thread(threadId)) return
+      const notice: Item = {
+        id: newId(), kind: 'notice', level: 'error',
+        text: error instanceof Error ? error.message : String(error)
+      }
+      this.store.items(threadId).push(notice)
+      this.store.markItemsDirty(threadId)
+      this.emit({ type: 'items', threadId, items: [notice] })
     }
   }
 
