@@ -2,7 +2,7 @@
   "name": "agent-desktop",
   "productName": "Agent Desktop",
   "desktopName": "dev.agentdesktop.app.desktop",
-  "version": "0.1.0",
+  "version": "1.1.0",
   "description": "A desktop client for Cursor CLI, Codex CLI, and Claude Code with multi-project history",
   "homepage": "https://github.com/JWhiteCat/Agent-Desktop",
   "main": "out/main/index.js",
@@ -60,7 +60,10 @@
       "node_modules/zod/**/*"
     ],
     "extraResources": [
-      { "from": "out/main/toolbar-runner.cjs", "to": "toolbar-runner.cjs" }
+      {
+        "from": "out/main/toolbar-runner.cjs",
+        "to": "toolbar-runner.cjs"
+      }
     ],
     "win": {
       "target": "nsis",
@@ -88,13 +91,26 @@
     },
     "linux": {
       "target": [
-        { "target": "AppImage", "arch": ["x64"] },
-        { "target": "deb", "arch": ["x64"] }
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
       "executableName": "agent-desktop",
       "icon": "resources/icons",
       "extraFiles": [
-        { "from": "scripts/linux-appimage-apprun.sh", "to": "AppRun" }
+        {
+          "from": "scripts/linux-appimage-apprun.sh",
+          "to": "AppRun"
+        }
       ],
       "category": "Development",
       "synopsis": "Desktop client for AI coding agents",
