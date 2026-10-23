@@ -9,6 +9,17 @@ import { quoteGitPath } from '@shared/git-path'
 const MAX_UNTRACKED_FILES = 60
 const MAX_UNTRACKED_BYTES = 256 * 1024
 
+/** Resolve existing ancestors too, so a not-yet-created child still shares its parent's identity. */
+function canonicalPath(dir: string): string {
+  const absolute = path.resolve(dir)
+  try {
+    return fs.realpathSync.native(absolute)
+  } catch {
+    const parent = path.dirname(absolute)
+    return parent === absolute ? absolute : path.join(canonicalPath(parent), path.basename(absolute))
+  }
+}
+
 function git(cwd: string, args: string[]): Promise<{ ok: boolean; out: string; err: string }> {
   return new Promise((resolve) => {
     const child = execFile('git', args, { cwd, maxBuffer: 32 * 1024 * 1024, windowsHide: true }, (error, stdout, stderr) => {
@@ -56,7 +67,7 @@ export async function createWorktree(project: string, parent: string): Promise<s
   fs.mkdirSync(path.dirname(dir), { recursive: true })
   const added = await git(root, ['worktree', 'add', '-b', `${WORKTREE_BRANCH_PREFIX}${name}`, dir, 'HEAD'])
   if (!added.ok) throw new Error(translate('无法创建 worktree：{error}', { error: added.err.trim() }))
-  const inner = path.join(dir, path.relative(root, path.resolve(project)))
+  const inner = path.join(dir, path.relative(canonicalPath(root), canonicalPath(project)))
   return fs.existsSync(inner) ? inner : dir
 }
 
@@ -92,26 +103,19 @@ export async function removeWorktree(dir: string): Promise<void> {
 
 /** Removes app-created worktrees under `parent` that no remaining thread still uses. */
 export async function releaseWorktrees(deleted: Array<{ cwd?: string }>, remaining: Array<{ cwd?: string }>, parent: string): Promise<void> {
-  const canonical = (dir: string) => {
-    try {
-      return fs.realpathSync.native(dir)
-    } catch {
-      return path.resolve(dir)
-    }
-  }
   const inside = (root: string, dir: string) => {
     const rel = path.relative(root, dir)
     return rel !== '..' && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel)
   }
   const key = (dir: string) => process.platform === 'win32' ? dir.toLowerCase() : dir
-  const parentRoot = canonical(parent)
-  const used = remaining.flatMap((t) => t.cwd ? [canonical(t.cwd)] : [])
+  const parentRoot = canonicalPath(parent)
+  const used = remaining.flatMap((t) => t.cwd ? [canonicalPath(t.cwd)] : [])
   const dirs = new Map<string, string>()
   for (const t of deleted) {
-    if (!t.cwd || !inside(parentRoot, canonical(t.cwd))) continue
+    if (!t.cwd || !inside(parentRoot, canonicalPath(t.cwd))) continue
     const top = await git(t.cwd, ['rev-parse', '--show-toplevel'])
     if (!top.ok) continue
-    const root = canonical(top.out.trim())
+    const root = canonicalPath(top.out.trim())
     // Validate the directory Git will actually remove, including symlink targets.
     if (key(root) === key(parentRoot) || !inside(parentRoot, root)) continue
     if (!used.some((dir) => inside(root, dir))) dirs.set(key(root), root)

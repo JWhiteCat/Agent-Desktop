@@ -53,6 +53,8 @@ The first toolbar command may ask permission to control Terminal. After a denial
 
 `verify:mac` mounts the DMG and copies its app into a temporary directory. It checks the signature, architecture of all three executables, bundled CLI versions, both ACP initialize handshakes, runner arguments, and the real window/preload IPC with a mock CLI. It does not call models or read user logins, and cleans up processes and the mount. A Mac graphical session is required.
 
+On macOS, `/var` is an alias of `/private/var`. Offline tests use the physical temporary directory so child working directories and fixture expectations agree. Separate directory-alias regressions cover worktree subdirectories, missing shared child paths and snapshot display paths, ensuring fixture normalization does not hide application bugs.
+
 Validation record: this change was implemented on Windows. Native macOS packaging and automatic smoke checks must run in the new CI; they are not recorded as passed here. Manual acceptance is pending on both Apple Silicon and Intel for browser-download first launch, Terminal permission allow/deny, editors, attachments/clipboard, Git diffs, all three real CLI login/send/stop flows, Dock/notifications, and quit behavior. The minimum macOS 13 version also needs separate hardware acceptance.
 
 ## Linux startup and packages

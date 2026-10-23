@@ -10,6 +10,7 @@ Write upcoming changes under `## [Unreleased]`. `release.bat X.Y.Z` or `npm run 
 
 - 支持 macOS 13 Ventura 及更新版本，分别提供 Apple Silicon（M 系列，arm64）和 Intel（x64）DMG 安装包；安装包自带运行时和 Codex/Claude，无需另装 Node.js。
 - 补齐编辑器应用回退、Terminal 自动化权限错误提示、命令 PATH 传递、⌘ 快捷键提示和 Dock 未读数；关闭窗口后可通过 Dock 或完成通知恢复会话。Finder 启动时按芯片架构优先检测对应 Homebrew 路径。
+- 修复 `/var` / `/private/var` 等目录别名下的 worktree 子目录识别和共享引用判断，快照文件继续使用所选工作目录的路径，避免显示错误的绝对路径。
 - 提供 macOS 本机开发启动和打包命令，以及两个架构各自的 CI 构建和离线安装包验证。
 
 ### 安装与首次打开

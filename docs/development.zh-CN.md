@@ -53,6 +53,8 @@ npm run verify:mac -- release/agent-desktop-0.1.0-mac-arm64.dmg arm64
 
 `verify:mac` 在临时目录挂载并复制 DMG 内的应用，检查签名、三种可执行文件的架构、内置 CLI 版本、两个 ACP initialize 握手、runner 参数，以及真实窗口、preload IPC 和模拟 CLI 检测；不调用模型或读取用户登录，检查后清理进程和挂载。该检查需要 Mac 图形会话。
 
+macOS 的 `/var` 是 `/private/var` 的目录别名。离线测试使用真实临时目录，避免把两种路径拼写当成不同目录；单独的目录别名回归覆盖 worktree 子目录、尚不存在的共享子路径及快照显示路径，确保测试环境统一不会掩盖应用中的别名问题。
+
 验证记录：本次修改在 Windows 环境实施；macOS 原生打包及自动冒烟须由新增 CI 执行，此处不表示 CI 已通过。Apple Silicon 与 Intel 的以下人工验收均待完成：从浏览器下载后的首次打开、Terminal 允许/拒绝、编辑器打开、附件和剪贴板、Git 差异、三种真实 CLI 登录/发送/停止、Dock/通知和退出行为。最低系统 macOS 13 也需单独实机验收。
 
 ## Linux 启动与打包
