@@ -1,0 +1,147 @@
+name: Release
+
+# Pushing release/X.Y.Z only checks the branch name against package.json.
+# Pushing vX.Y.Z builds installers and creates the GitHub Release.
+
+on:
+  push:
+    tags:
+      - 'v*'
+    branches:
+      - 'release/*'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Check version
+        id: version
+        run: |
+          set -euo pipefail
+          ref="$GITHUB_REF"
+          if [ "${ref#refs/tags/v}" != "$ref" ]; then
+            version="${ref#refs/tags/v}"
+            kind="tag"
+          elif [ "${ref#refs/heads/release/}" != "$ref" ]; then
+            version="${ref#refs/heads/release/}"
+            kind="branch"
+          else
+            echo "Unexpected ref: $ref"
+            exit 1
+          fi
+          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "Version must be MAJOR.MINOR.PATCH: $version"
+            exit 1
+          fi
+          package_version="$(node -p "require('./package.json').version")"
+          if [ "$package_version" != "$version" ]; then
+            echo "package.json version ${package_version} does not match ${version}"
+            exit 1
+          fi
+          if [ "$kind" = "tag" ]; then
+            git fetch --no-tags origin "refs/heads/release/${version}"
+            branch_tip="$(git rev-parse FETCH_HEAD)"
+            # Checkout peels an annotated tag, so HEAD is the tagged commit.
+            tagged_commit="$(git rev-parse HEAD)"
+            if [ "$branch_tip" != "$tagged_commit" ]; then
+              echo "release/${version} is ${branch_tip}, but ${ref} points at ${tagged_commit}"
+              exit 1
+            fi
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+  build-windows:
+    needs: verify
+    if: ${{ startsWith(github.ref, 'refs/tags/v') && needs.verify.result == 'success' }}
+    runs-on: windows-latest
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci --include=dev --include=optional
+      - name: Compile
+        run: npx electron-vite build
+      - name: Package Windows installers
+        run: npx electron-builder --win portable nsis --x64 --publish never
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: release/*.exe
+          if-no-files-found: error
+
+  build-linux:
+    needs: verify
+    if: ${{ startsWith(github.ref, 'refs/tags/v') && needs.verify.result == 'success' }}
+    runs-on: ubuntu-latest
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci --include=dev --include=optional
+      - name: Package Linux installers
+        run: npm run dist:linux
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: |
+            release/*.AppImage
+            release/*.deb
+          if-no-files-found: error
+
+  publish:
+    needs: [verify, build-windows, build-linux]
+    if: ${{ startsWith(github.ref, 'refs/tags/v') && success() }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: |
+          set -euo pipefail
+          tag="v${VERSION}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Release ${tag} already exists"
+          else
+            gh release create "$tag" --generate-notes
+          fi
+          files=()
+          while IFS= read -r -d '' file; do
+            files+=("$file")
+          done < <(find artifacts -type f \( -name '*.exe' -o -name '*.AppImage' -o -name '*.deb' \) -print0)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "No release files found"
+            exit 1
+          fi
+          gh release upload "$tag" "${files[@]}" --clobber

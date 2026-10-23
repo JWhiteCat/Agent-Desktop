@@ -99,6 +99,26 @@ npm run dist:win:portable
 
 首次打包可能下载 Electron，以及 electron-builder 使用的 NSIS 和 7-Zip 工具。该程序未签名，Windows SmartScreen 第一次运行时可能会要求确认。
 
+## GitHub 发布
+
+每个发布版本是一条短期分支 `release/X.Y.Z`，以及打在同一提交上的附注 tag `vX.Y.Z`。`X.Y.Z` 就是 `package.json` 和 `package-lock.json` 里的 `version`。这条提交留在 release 分支上，不要合并回 `master`。`master` 上的版本号保持未发布状态。
+
+先推送分支，再推送 tag。以 0.2.0 为例：
+
+```bash
+git switch -c release/0.2.0
+npm version 0.2.0 --no-git-tag-version
+git add package.json package-lock.json
+git commit -m "Release 0.2.0"
+git push -u origin release/0.2.0
+git tag -a v0.2.0 -m "0.2.0"
+git push origin v0.2.0
+```
+
+[`.github/workflows/release.yml`](../.github/workflows/release.yml) 会在 `v*` tag 和 `release/*` 分支的推送上运行。推送分支时，只检查分支名是否为三段数字，并且与 `package.json` 一致。推送 tag 时会再做同样的检查，并确认 `release/X.Y.Z` 已存在且指向该 tag 的提交。`v1` 或 `release/next` 这类名称通不过检查，也不会发布。只有 tag 会继续：构建 Windows x64 便携包和 NSIS 安装包，以及 Linux x64 AppImage 和 Debian 包，再把这些文件上传到 GitHub Release。不构建 macOS 和 ARM64。工作流调用 electron-builder 时使用 `--publish never`，再由 `gh` 上传文件。本地打包命令不变。
+
+工作流成功后，不要再向 `release/X.Y.Z` 提交，也不要移动该 tag。
+
 ## 开发命令与测试
 
 | 命令 | 作用 |

@@ -99,6 +99,26 @@ The result is `release/agent-desktop-<version>-win-x64-portable.exe`. It does no
 
 The first package build may download Electron and the electron-builder NSIS and 7-Zip tools. The executable is unsigned, so Windows SmartScreen may ask for confirmation the first time it runs.
 
+## GitHub releases
+
+Each published version is a short-lived branch `release/X.Y.Z` and an annotated tag `vX.Y.Z` on that same commit. `X.Y.Z` is the `version` in `package.json` and `package-lock.json`. Leave that commit on the release branch. Do not merge it back to `master`. The version on `master` stays unpublished.
+
+Push the branch before the tag. For 0.2.0:
+
+```bash
+git switch -c release/0.2.0
+npm version 0.2.0 --no-git-tag-version
+git add package.json package-lock.json
+git commit -m "Release 0.2.0"
+git push -u origin release/0.2.0
+git tag -a v0.2.0 -m "0.2.0"
+git push origin v0.2.0
+```
+
+[`.github/workflows/release.yml`](../.github/workflows/release.yml) runs for `v*` tags and `release/*` branches. A branch push only checks that the name is three numeric parts and matches `package.json`. A tag push checks that again, then checks that `release/X.Y.Z` exists and points at the tagged commit. Other names, such as `v1` or `release/next`, fail the check and do not publish. Only the tag continues: it builds the Windows x64 portable executable and NSIS installer, and the Linux x64 AppImage and Debian package, then uploads those files to the GitHub Release. macOS and ARM64 are not built. The workflow calls electron-builder with `--publish never` and uploads the files with `gh`. Local packaging commands are unchanged.
+
+After the workflow succeeds, do not commit to `release/X.Y.Z` and do not move the tag.
+
 ## Commands and tests
 
 | Command | What it does |
