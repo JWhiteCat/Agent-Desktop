@@ -4,9 +4,21 @@ Write upcoming changes under `## [Unreleased]`. `release.bat X.Y.Z` or `npm run 
 
 ## [Unreleased]
 
-- 新增 macOS 13+ 支持：Apple Silicon / Intel 独立 DMG、本机开发启动、无需开发者账号的 ad-hoc 临时签名，以及双架构 CI 打包和离线安装包验证。发布时要求六个跨平台安装包齐全并生成 SHA256。
-- 补齐 macOS 编辑器应用回退、Terminal 自动化权限错误提示、命令 PATH 传递、⌘ 快捷键提示和 Dock 未读数；关闭窗口后可通过 Dock 或通知恢复会话。
-- 补充中英文 macOS 安装、首次打开、权限、构建和验收说明。macOS 原生 CI 和实机人工验收尚待执行，未接入 Apple Developer 签名或公证。
+## [1.1.0] - 2026-10-23
+
+### macOS 支持
+
+- 支持 macOS 13 Ventura 及更新版本，分别提供 Apple Silicon（M 系列，arm64）和 Intel（x64）DMG 安装包；安装包自带运行时和 Codex/Claude，无需另装 Node.js。
+- 补齐编辑器应用回退、Terminal 自动化权限错误提示、命令 PATH 传递、⌘ 快捷键提示和 Dock 未读数；关闭窗口后可通过 Dock 或完成通知恢复会话。Finder 启动时按芯片架构优先检测对应 Homebrew 路径。
+- 提供 macOS 本机开发启动和打包命令，以及两个架构各自的 CI 构建和离线安装包验证。
+
+### 安装与首次打开
+
+- Apple Silicon 下载 `agent-desktop-1.1.0-mac-arm64.dmg`，Intel 下载 `agent-desktop-1.1.0-mac-x64.dmg`，将应用拖入 Applications 后启动。
+- macOS 应用使用无需开发者账号的 ad-hoc 临时签名，未接入 Apple Developer 签名或公证。确认下载来源和 SHA256 后，首次打开若被拦截，可到「系统设置 → 隐私与安全性」选择「仍要打开」。顶部命令请求控制 Terminal 时允许授权；拒绝后可在「自动化」中重新允许。
+- 保留 Windows x64 便携版/安装版和 Linux x64 AppImage/Debian 包；发布要求六个安装包齐全，`SHA256SUMS.txt` 覆盖全部安装包。
+
+中英文说明见[开发指南](https://github.com/JWhiteCat/Agent-Desktop/blob/v1.1.0/docs/development.zh-CN.md)和[使用指南](https://github.com/JWhiteCat/Agent-Desktop/blob/v1.1.0/docs/user-guide.zh-CN.md)。自动检查不调用模型；首次打开、权限和真实 CLI 交互等实机人工验收尚未完成。
 
 ## [1.0.0] - 2026-10-23
 
