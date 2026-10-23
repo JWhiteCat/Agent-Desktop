@@ -4,6 +4,8 @@ Write upcoming changes under `## [Unreleased]`. `release.bat X.Y.Z` or `npm run 
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-10-23
+
 ### 新增
 
 - 支持会话内搜索、后续消息队列与模式显示；生成计划后，可等待计划实施再继续处理队列。
@@ -26,3 +28,4 @@ Write upcoming changes under `## [Unreleased]`. `release.bat X.Y.Z` or `npm run 
 - 本次使用新发布流程重新发布 1.0.0，替换旧的 `Agent Desktop v1.0.0` Release 与标签，发布源码为新的 `release/1.0.0` 分支。
 - GitHub Release 正文来自本版本 Changelog；全部安装包上传完成后才公开，附带 `SHA256SUMS.txt` 校验文件。
 - Windows 程序未签名；本次不提供 macOS 或 ARM64 构建。
+
