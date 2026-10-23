@@ -20,6 +20,7 @@ const env = {
   CLAUDE_CONFIG_DIR: path.join(home, '.claude'), XDG_CONFIG_HOME: path.join(home, '.config'),
   ELECTRON_RUN_AS_NODE: '1', NO_COLOR: '1'
 }
+for (const directory of [env.CODEX_HOME, env.CLAUDE_CONFIG_DIR, env.XDG_CONFIG_HOME]) fs.mkdirSync(directory, { recursive: true, mode: 0o700 })
 for (const key of ['CURSOR_API_KEY', 'CURSOR_AUTH_TOKEN', 'CODEX_API_KEY', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'CLAUDE_CODE_OAUTH_TOKEN', 'NODE_OPTIONS']) delete env[key]
 
 function run(command, args, extra = {}) {
