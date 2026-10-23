@@ -5,6 +5,7 @@ import { PassThrough, Writable } from 'node:stream'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_SETTINGS, type CliProvider, type Item, type SendRequest, type ThreadMeta } from '../src/shared/types'
 import { spawnProvider } from '../src/main/session/provider'
+import { setLanguage } from '../src/shared/i18n'
 import { isCodexModelCapacity, isCursorRetriableDisconnect, SessionManager } from '../src/main/sessions'
 import type { Store } from '../src/main/store'
 
@@ -26,6 +27,7 @@ vi.mock('../src/main/cli', async (original) => ({
 }))
 
 const HTTP_502 = 'Error: RetriableError: [unavailable] HTTP 502'
+const HTTP_503 = 'Error: RetriableError: [unavailable] HTTP 503'
 const HTTP2_CANCEL = 'Error: RetriableError: [canceled] http/2 stream closed with error code CANCEL (0x8)'
 const CODEX_CAPACITY = 'Selected model is at capacity. Please try a different model.'
 
@@ -104,9 +106,11 @@ afterEach(() => {
 })
 
 describe('isCursorRetriableDisconnect', () => {
-  it('matches a short Cursor HTTP 502 or http/2 CANCEL failure', () => {
+  it('matches a short Cursor HTTP 502, HTTP 503, or http/2 CANCEL failure', () => {
     expect(isCursorRetriableDisconnect(`  ${HTTP_502}\n`)).toBe(true)
     expect(isCursorRetriableDisconnect('RetriableError: [unavailable] HTTP502')).toBe(true)
+    expect(isCursorRetriableDisconnect(`  ${HTTP_503}\n`)).toBe(true)
+    expect(isCursorRetriableDisconnect('RetriableError: [unavailable] HTTP503')).toBe(true)
     expect(isCursorRetriableDisconnect(HTTP2_CANCEL)).toBe(true)
     expect(isCursorRetriableDisconnect('RetriableError: [canceled] stream closed')).toBe(true)
     expect(isCursorRetriableDisconnect('RetriableError: [unavailable]')).toBe(false)
@@ -119,7 +123,7 @@ describe('isCursorRetriableDisconnect', () => {
 })
 
 describe('Cursor HTTP 502 continue', () => {
-  it.each([HTTP_502, HTTP2_CANCEL])('sends one 继续 on the same process after %s', async (failure) => {
+  it.each([HTTP_502, HTTP_503, HTTP2_CANCEL])('sends one 继续 on the same process after %s', async (failure) => {
     const ctx = setup()
     ctx.setPrompt((id, child, index) => {
       ctx.reply(child, index === 1
@@ -133,6 +137,25 @@ describe('Cursor HTTP 502 continue', () => {
     expect(ctx.notice('info').map((item) => item.kind === 'notice' ? item.text : '')).toEqual(['Cursor 连接中断，正在发送「继续」。'])
     expect(ctx.notice('error')).toEqual([])
     expect(ctx.finished.map((info) => info.failed)).toEqual([false, false])
+  })
+
+  it('sends continue when the interface language is English', async () => {
+    setLanguage('en')
+    try {
+      const ctx = setup()
+      ctx.setPrompt((id, child, index) => {
+        ctx.reply(child, index === 1
+          ? { id, error: { code: -32603, message: HTTP_503 } }
+          : { id, result: { stopReason: 'end_turn' } })
+      })
+      await ctx.send()
+      await ctx.idle()
+      expect(ctx.prompts.map((prompt) => prompt.text)).toEqual(['修复这个报错', 'continue'])
+      expect(ctx.notice('info').map((item) => item.kind === 'notice' ? item.text : '')).toEqual(['The Cursor connection dropped. Sending “continue”.'])
+      expect(ctx.notice('error')).toEqual([])
+    } finally {
+      setLanguage('system', 'zh-CN')
+    }
   })
 
   it('shows the error when the automatic continue fails the same way', async () => {

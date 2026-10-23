@@ -92,9 +92,10 @@ export function procFingerprint(
   force: boolean,
   apiKey: string,
   mcpServers: unknown,
-  skills: unknown
+  skills: unknown,
+  proxy: NodeJS.ProcessEnv = {}
 ): string {
-  return JSON.stringify([provider, cli.command, cli.prefixArgs, cwd, sandbox, force ? 1 : 0, apiKey, mcpServers, skills])
+  return JSON.stringify([provider, cli.command, cli.prefixArgs, cwd, sandbox, force ? 1 : 0, apiKey, mcpServers, skills, proxy])
 }
 
 /** Same fingerprint with another working directory, for a process whose session moved into a worktree. */

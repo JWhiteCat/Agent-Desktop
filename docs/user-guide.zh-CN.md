@@ -67,9 +67,11 @@ Cursor、Codex、Claude 均通过原生图片输入接收 PNG、JPEG、WebP、GI
 
 同一段对话里，CLI 进程在应用开着且上一轮正常结束时会保留。状态行只在真正新开进程时显示正在启动，否则显示处理中。
 
-Cursor 回合如果以 `Error: RetriableError: [unavailable] HTTP 502` 或 `Error: RetriableError: [canceled] http/2 stream closed with error code CANCEL (0x8)` 结束，应用会在同一会话里自动发送一次「继续」，并保留仍在运行的 CLI 进程。进程若已经退出，则用已保存的会话重新加载后再发送。这次继续若再次失败，才显示错误。代理或 VPN 仍可能让第二次失败。
+Cursor 回合如果以 `Error: RetriableError: [unavailable] HTTP 502`、`Error: RetriableError: [unavailable] HTTP 503` 或 `Error: RetriableError: [canceled] http/2 stream closed with error code CANCEL (0x8)` 结束，应用会在同一会话里自动发送一次继续，并保留仍在运行的 CLI 进程。界面语言为英文时发送 `continue`，否则发送「继续」。进程若已经退出，则用已保存的会话重新加载后再发送。这次继续若再次失败，才显示错误。代理或 VPN 仍可能让第二次失败。
 
-Codex 回合如果以 `Selected model is at capacity. Please try a different model.` 结束，应用会在同一会话里自动发送一次「继续」，并保留仍在运行的 CLI 进程。进程若已经退出，则用已保存的会话重新加载后再发送。这次继续若再次失败，才显示错误。
+Codex 回合如果以 `Selected model is at capacity. Please try a different model.` 结束，应用会在同一会话里自动发送一次继续，并保留仍在运行的 CLI 进程。界面语言为英文时发送 `continue`，否则发送「继续」。进程若已经退出，则用已保存的会话重新加载后再发送。这次继续若再次失败，才显示错误。
+
+新建或继续 Codex 会话时，应用会先把系统代理传给 Codex 再连接。若工作区路由仍然超时，对话里会提示确认代理或 VPN 已启动后再试。
 
 在一段对话里输入 `/` 会打开命令菜单。方向键移动，Enter 或 Tab 选中，Esc 只关闭菜单，不会停止正在运行的回合。`/fork` 在本地分叉。需要参数的命令会填成 `/名称 `，并在输入框下方显示提示，再按 Enter 发送。没有参数的命令会立刻执行。列表里还有 CLI 通过 ACP `available_commands_update` 宣告的命令。已有 CLI 会话的对话，第一次输入 `/` 会加载该会话，以便列出这些命令。新对话和首页不启动 CLI，而是复用这个 CLI 上一次宣告的命令列表，并记在本机；还没有任何列表时不显示菜单。下一次真实会话会刷新这份列表。使用 Cursor 或 Codex 时，菜单还会直接列出工作目录 `.agents/skills` 和 `~/.agents/skills` 中的 Skill（同名时项目内的优先），不用等 CLI 宣告，第一次输入 `/` 就能看到；每次输入 `/` 都会重新读取这两个目录。选中 Skill 会填成 `/名称 `，可补充说明后按 Enter 发送。CLI 宣告了同名命令时以 CLI 的为准。Claude 不读取 `.agents`，因此不列出这些 Skill。以 `/` 开头但没有匹配项的文本仍按普通消息发送。
 
@@ -129,7 +131,7 @@ Web 壁纸在隔离框架中运行，不能调用应用 API、联网、创建子
 
 打开 **设置 → 外观与历史 → 外观 → 语言**（英文界面为 **Settings → Appearance and history → Appearance → Language**），选择 **跟随系统**、**简体中文** 或 **English**。默认跟随系统：桌面端操作系统语言为中文时使用简体中文，其他语言使用英文。选择保存在 `state.json` 中，桌面端与远程页面共用该设置；跟随系统时也统一使用桌面端的系统语言。切换立即生效，无需重启应用或中断正在运行的会话。
 
-导航、设置、弹窗、工具摘要、用量说明、日期、相对时间和应用系统通知均支持中英文。新生成的应用提示和自动会话标题保留文案标识，之后切换语言也会更新；用户自定义名称、消息、模型回复、CLI 原始输出，以及没有文案标识的旧历史文字保留原文。
+导航、设置、弹窗、工具摘要、用量说明、日期、相对时间和应用系统通知均支持中英文。自动继续发给模型的那一句也跟随这项设置：生效语言为英文时发送 `continue`，否则发送「继续」。新生成的应用提示和自动会话标题保留文案标识，之后切换语言也会更新；用户自定义名称、消息、模型回复、CLI 原始输出，以及没有文案标识的旧历史文字保留原文。
 
 ### 字体与字号
 

@@ -51,7 +51,7 @@ npm install -g @anthropic-ai/claude-code
 
 Cursor 认证优先使用 [Cursor API Key](https://cursor.com/dashboard/api)。设置中的 Key 优先于环境变量 `CURSOR_API_KEY`。没有 Key 时，使用 `agent login` 保存的浏览器登录。
 
-Codex 认证优先使用设置中的 Key，其次是 `CODEX_API_KEY`，再次是 `OPENAI_API_KEY`。都没有时使用 ChatGPT 登录。
+Codex 认证优先使用设置中的 Key，其次是 `CODEX_API_KEY`，再次是 `OPENAI_API_KEY`。都没有时使用 ChatGPT 登录。应用会把系统对 `https://chatgpt.com` 的代理解析结果传给 Codex。环境里已经设置的 `HTTP_PROXY` / `HTTPS_PROXY` 优先。
 
 Claude 认证优先使用设置中的 Key，其次是 `ANTHROPIC_API_KEY`。只要其中有一个，就按 API 计费，不会使用 Claude 订阅。都没有时使用 `~/.claude` 里的登录。登录按钮走适配器的 Claude.ai 登录。
 

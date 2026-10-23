@@ -1,4 +1,4 @@
-import { localizedMessage, t as translate } from '@shared/i18n'
+import { getLocale, localizedMessage, t as translate } from '@shared/i18n'
 import { displayThreadTitle } from '@shared/thread-title'
 import type { ChildProcess } from 'node:child_process'
 import fs from 'node:fs'
@@ -24,6 +24,7 @@ import { loadCodexAccountUsage } from './codex-account'
 import { CodexTurnUsageReader } from './codex-turn-usage'
 import { SessionUsage } from './session/usage'
 import { loadCodexQuota } from './quota'
+import { codexProxyOverlay, isCodexRoutingTimeout, refreshCodexProxyEnv } from './system-proxy'
 import {
   applySessionOptions, cliLabel, cursorArgs, fingerprintWithCwd, initializeSession, leftPlanMode,
   planPrompt, procFingerprint, providerApiKey, resolveLaunch, spawnProvider, worktreePathFrom, type AgentLaunch
@@ -107,12 +108,12 @@ const COMMAND_WAIT_MS = 2000
 const FORK_TIMEOUT_MS = 60_000
 /** A real reply can mention these errors. Only a short failure text is the dropped turn. */
 const AUTO_CONTINUE_TEXT_LIMIT = 240
-const CURSOR_DISCONNECT_NOTICE = 'Cursor 连接中断，正在发送「继续」。'
-const CODEX_CAPACITY_NOTICE = 'Codex 所选模型已满载，正在发送「继续」。'
+const CURSOR_DISCONNECT_NOTICE = 'Cursor 连接中断，正在发送「{word}」。'
+const CODEX_CAPACITY_NOTICE = 'Codex 所选模型已满载，正在发送「{word}」。'
 
 /**
  * Cursor reports a dropped model request as `RetriableError: [unavailable] HTTP 502`
- * or `RetriableError: [canceled] http/2 stream closed ... CANCEL`.
+ * or `HTTP 503`, or `RetriableError: [canceled] http/2 stream closed ... CANCEL`.
  * The whole text has to be that failure. A longer reply that merely mentions it is left alone.
  */
 export function isCursorRetriableDisconnect(text: string | undefined): boolean {
@@ -120,7 +121,7 @@ export function isCursorRetriableDisconnect(text: string | undefined): boolean {
   const clean = text.trim()
   if (!clean || clean.length > AUTO_CONTINUE_TEXT_LIMIT) return false
   if (!clean.includes('RetriableError')) return false
-  if (/HTTP\s*502/.test(clean)) return true
+  if (/HTTP\s*50[23]/.test(clean)) return true
   return /\[canceled\]/i.test(clean) && /stream closed|http\/2/i.test(clean)
 }
 
@@ -140,6 +141,11 @@ function isAutomaticContinueFailure(provider: CliProvider, text: string | undefi
   if (provider === 'cursor') return isCursorRetriableDisconnect(text)
   if (provider === 'codex') return isCodexModelCapacity(text)
   return false
+}
+
+/** English interface language asks the model to continue in English. */
+export function automaticContinuePrompt(): string {
+  return getLocale() === 'en' ? 'continue' : '继续'
 }
 
 function automaticContinueNotice(provider: CliProvider): string {
@@ -447,7 +453,12 @@ export class SessionManager {
     this.usage.cancel(thread.id)
 
     const mcpServers = toAcpMcpServers(settings.mcpServers)
-    const fingerprint = procFingerprint(launch.cli, provider, cwd, settings.sandbox, req.force, apiKey, mcpServers, enabledSkillFingerprint(settings.skills))
+    const skills = enabledSkillFingerprint(settings.skills)
+    // Automatic「继续」must register its run before this function yields. A refresh here
+    // lets the deferred queue drain, and idle observers, see the thread as already finished.
+    const fingerprint = internal?.autoContinue
+      ? this.cachedFingerprint(provider, launch, cwd, settings.sandbox, req.force, apiKey, mcpServers, skills)
+      : await this.launchFingerprint(provider, launch, cwd, settings.sandbox, req.force, apiKey, mcpServers, skills)
     let proc = this.agents.get(thread.id)
     const reusable = !!proc && this.canReuse(proc, fingerprint)
     if (proc && !reusable) {
@@ -588,6 +599,37 @@ export class SessionManager {
     }
   }
 
+  /** Refresh Codex's system proxy before the fingerprint, so a newly detected proxy starts a new process. */
+  private async launchFingerprint(
+    provider: CliProvider,
+    launch: AgentLaunch,
+    cwd: string,
+    sandbox: string,
+    force: boolean,
+    apiKey: string,
+    mcpServers: unknown,
+    skills: unknown
+  ): Promise<string> {
+    if (provider === 'codex') await refreshCodexProxyEnv()
+    return this.cachedFingerprint(provider, launch, cwd, sandbox, force, apiKey, mcpServers, skills)
+  }
+
+  private cachedFingerprint(
+    provider: CliProvider,
+    launch: AgentLaunch,
+    cwd: string,
+    sandbox: string,
+    force: boolean,
+    apiKey: string,
+    mcpServers: unknown,
+    skills: unknown
+  ): string {
+    return procFingerprint(
+      launch.cli, provider, cwd, sandbox, force, apiKey, mcpServers, skills,
+      provider === 'codex' ? codexProxyOverlay() : {}
+    )
+  }
+
   private canReuse(proc: AgentProc, fingerprint: string): boolean {
     return proc.ready && !proc.dying && proc.child.exitCode === null && proc.fingerprint === fingerprint
   }
@@ -714,9 +756,9 @@ export class SessionManager {
     if (!fs.existsSync(cwd)) throw new Error(translate('项目目录不存在：{path}', { path: cwd }))
 
     const mcpServers = toAcpMcpServers(settings.mcpServers)
-    const fingerprint = procFingerprint(
-      launch.cli,
+    const fingerprint = await this.launchFingerprint(
       provider,
+      launch,
       cwd,
       settings.sandbox,
       opts.force,
@@ -1031,18 +1073,19 @@ export class SessionManager {
       }
     }
     const recover = this.canAutoContinue(threadId, run)
-    const recoverNotice = recover ? automaticContinueNotice(run.proc.provider) : undefined
+    const continuePrompt = recover ? automaticContinuePrompt() : undefined
+    const recoverNotice = continuePrompt ? automaticContinueNotice(run.proc.provider) : undefined
     if (run.stopped) {
       changed.push(r.push({ id: newId(), kind: 'notice', level: 'info', ...localizedMessage('已停止') }))
     } else if (spawnError) {
       changed.push(r.push({ id: newId(), kind: 'notice', level: 'error', ...localizedMessage('无法启动 {label}：{error}', { label: cliLabel(run.proc.provider), error: spawnError.message }) }))
-    } else if (recover && recoverNotice) {
+    } else if (continuePrompt && recoverNotice) {
       const existing = [...items].reverse().find((item) => item.kind === 'result')
       if (existing?.kind === 'result' && existing.isError) {
         existing.isError = false
         changed.push(existing)
       }
-      changed.push(r.push({ id: newId(), kind: 'notice', level: 'info', ...localizedMessage(recoverNotice) }))
+      changed.push(r.push({ id: newId(), kind: 'notice', level: 'info', ...localizedMessage(recoverNotice, { word: continuePrompt }) }))
     } else if (run.autoContinue && r.gotResult && isAutomaticContinueFailure(run.proc.provider, r.lastAssistantText)) {
       const existing = [...items].reverse().find((item) => item.kind === 'result')
       if (existing?.kind === 'result') {
@@ -1057,7 +1100,11 @@ export class SessionManager {
           id: newId(),
           kind: 'notice',
           level: 'error',
-          ...(detail ? { text: detail } : localizedMessage('{label} 意外退出（退出码 {code}）', { label: cliLabel(run.proc.provider), code: code ?? 'unknown' }))
+          ...(isCodexRoutingTimeout(detail)
+            ? localizedMessage('Codex 工作区路由超时，请确认代理或 VPN 已启动后重试。')
+            : detail
+              ? { text: detail }
+              : localizedMessage('{label} 意外退出（退出码 {code}）', { label: cliLabel(run.proc.provider), code: code ?? 'unknown' }))
         })
       )
     }
@@ -1080,7 +1127,7 @@ export class SessionManager {
     if (keep) this.agents.set(threadId, run.proc)
     else this.killProc(run.proc)
 
-    const preview = (recoverNotice ? translate(recoverNotice) : r.lastAssistantText).replace(/\s+/g, ' ').trim().slice(0, 120)
+    const preview = (recoverNotice && continuePrompt ? translate(recoverNotice, { word: continuePrompt }) : r.lastAssistantText).replace(/\s+/g, ' ').trim().slice(0, 120)
     const updated = this.store.updateThread(threadId, {
       updatedAt: Date.now(),
       syncedAt: Date.now(),
@@ -1117,10 +1164,10 @@ export class SessionManager {
     if (run.resultId && run.codexAccountPath !== undefined) {
       void this.usage.saveAccountUsage(threadId, run.resultId, run.proc.sessionId, run.codexAccountPath)
     }
-    if (recover) void this.sendAutoContinue(threadId, run)
+    if (recover && continuePrompt) void this.sendAutoContinue(threadId, run, continuePrompt)
   }
 
-  /** Cursor disconnects and Codex model-capacity failures get one automatic「继续」. A repeat shows the error. */
+  /** Cursor disconnects and Codex model-capacity failures get one automatic continue. A repeat shows the error. */
   private canAutoContinue(threadId: string, run: Run): boolean {
     if (run.autoContinue || run.stopped || this.shuttingDown) return false
     if (!this.store.thread(threadId)) return false
@@ -1128,12 +1175,12 @@ export class SessionManager {
       || isAutomaticContinueFailure(run.proc.provider, run.reducer.lastAssistantText)
   }
 
-  private async sendAutoContinue(threadId: string, run: Run): Promise<void> {
+  private async sendAutoContinue(threadId: string, run: Run, prompt: string): Promise<void> {
     if (this.shuttingDown || run.stopped || this.runs.has(threadId) || !this.store.thread(threadId)) return
     try {
       await this.beginSend({
         threadId,
-        prompt: '继续',
+        prompt,
         model: run.model,
         mode: run.mode,
         force: run.force,

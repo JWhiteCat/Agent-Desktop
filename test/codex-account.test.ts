@@ -14,6 +14,7 @@ vi.mock('../src/main/cli', () => ({ killTree: vi.fn((child: ChildProcess) => chi
 vi.mock('../src/main/codex', () => ({ resolveCodex: vi.fn(), spawnCodexAppServer: vi.fn() }))
 vi.mock('../src/main/codex-session-usage', () => ({ loadCodexSessionUsage: vi.fn() }))
 vi.mock('../src/main/codex-history', () => ({ readCodexSessionCreatedAt: vi.fn() }))
+vi.mock('../src/main/system-proxy', () => ({ refreshCodexProxyEnv: vi.fn(() => Promise.resolve({})) }))
 
 const quotaResponse = {
   rateLimits: {
@@ -209,6 +210,7 @@ describe('read-only Codex account RPC client', () => {
   it('contains an asynchronous spawn error', async () => {
     const ctx = server()
     const pending = loadCodexAccountUsage('', 'thread-a')
+    await Promise.resolve()
     ctx.child.emit('error', new Error('spawn failed'))
     expect(await pending).toEqual({})
     expect(killTree).toHaveBeenCalledExactlyOnceWith(ctx.child)
@@ -235,6 +237,7 @@ describe('read-only Codex account RPC client', () => {
     expect(await loadCodexAccountUsage('', 'thread-a')).toEqual({})
     const closed = server()
     const pending = loadCodexAccountUsage('', 'thread-a')
+    await Promise.resolve()
     closed.child.emit('close', 1)
     expect(await pending).toEqual({})
   })

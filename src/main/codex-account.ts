@@ -3,6 +3,7 @@ import { parseCodexQuota, type ProviderQuota } from '@shared/quota'
 import { AcpConnection, MethodNotFound } from './acp'
 import { killTree } from './cli'
 import { resolveCodex, spawnCodexAppServer } from './codex'
+import { refreshCodexProxyEnv } from './system-proxy'
 import { loadCodexSessionUsage } from './codex-session-usage'
 import { readCodexSessionCreatedAt } from './codex-history'
 
@@ -35,6 +36,7 @@ async function loadCodexRpcAccountUsage(customPath: string, threadId: string): P
   if (!codex) return {}
   let child: ReturnType<typeof spawnCodexAppServer>
   try {
+    await refreshCodexProxyEnv()
     child = spawnCodexAppServer(codex)
   } catch {
     return {}

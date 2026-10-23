@@ -8,6 +8,7 @@ import type { AgentMode, ModelInfo } from '@shared/types'
 import { AcpConnection, MethodNotFound, permissionResult } from './acp'
 import { killTree, type ResolvedCli } from './cli'
 import { cliEnvironment, cliSearchDirectories, findCliExecutable, normalizeCliPath, spawnCliProcess } from './cli-runtime'
+import { codexProxyOverlay, refreshCodexProxyEnv } from './system-proxy'
 
 const isWin = process.platform === 'win32'
 
@@ -100,9 +101,10 @@ export async function codexStatus(codex: ResolvedCodex): Promise<string> {
 }
 
 /** Opens ChatGPT login. Uses the user binary when present, otherwise the bundled CLI. */
-export function codexLogin(codex: ResolvedCodex): Promise<string> {
+export async function codexLogin(codex: ResolvedCodex): Promise<string> {
   const script = codexBinary(codex)
-  if (!script) return Promise.resolve(translate('未找到 Codex CLI'))
+  if (!script) return translate('未找到 Codex CLI')
+  await refreshCodexProxyEnv()
   return new Promise((resolve) => {
     const child = spawnCliProcess(codexCommand(script.command), script.args.concat(['login']), {
       env: nodeEnv(script.command),
@@ -134,6 +136,7 @@ export interface CodexModelList {
 export async function listCodexModels(customPath: string, apiKey: string): Promise<CodexModelList> {
   const codex = resolveCodex(customPath)
   if (!codex) throw new Error(translate('未找到 Codex CLI'))
+  await refreshCodexProxyEnv()
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-desktop-codex-'))
   const child = spawnCodexAcp(codex, cwd, apiKey)
   const acp = new AcpConnection(child)
@@ -348,8 +351,14 @@ function codexEnv(codex: ResolvedCodex, apiKey: string): NodeJS.ProcessEnv {
   return env
 }
 
+/** Login, version checks, app-server, and the ACP adapter all start from here. */
 function nodeEnv(executable?: string): NodeJS.ProcessEnv {
-  return cliEnvironment({ ELECTRON_RUN_AS_NODE: '1', NO_COLOR: '1', FORCE_COLOR: '0' }, executable ? path.dirname(executable) : undefined)
+  return cliEnvironment({
+    ELECTRON_RUN_AS_NODE: '1',
+    NO_COLOR: '1',
+    FORCE_COLOR: '0',
+    ...codexProxyOverlay()
+  }, executable ? path.dirname(executable) : undefined)
 }
 
 function codexBinary(codex: ResolvedCodex): { command: string; args: string[] } | undefined {
@@ -364,7 +373,8 @@ function bundledCodexScript(acpEntry: string): string | undefined {
   return fs.existsSync(script) ? script : undefined
 }
 
-function runCodex(command: string, args: string[], timeoutMs: number): Promise<{ stdout: string; stderr: string }> {
+async function runCodex(command: string, args: string[], timeoutMs: number): Promise<{ stdout: string; stderr: string }> {
+  await refreshCodexProxyEnv()
   return new Promise((resolve) => {
     const child = spawnCliProcess(codexCommand(command), args, {
       windowsHide: true,
