@@ -2,6 +2,7 @@ import { localizedMessage, t as translate } from '@shared/i18n'
 import { isCliProvider, normalizeCliProvider, type CliProvider } from '@shared/types'
 import { claudeCliInfo, claudeModelList, codexCliInfo, codexModelList, cursorCliInfo, cursorModelList, loginClaude, loginCodex, loginCursor } from '../cli-catalog'
 import { updateClaude, updateCodex, updateCursor } from '../cli-update'
+import { cliInfoCacheFor, cliInfoSignature } from '../cli-info-cache'
 import { scanClaudeSessions } from '../claude-history'
 import { scanCodexSessions } from '../codex-history'
 import { scanCliSessions } from '../history'
@@ -23,6 +24,7 @@ function modelList(cli: CliProvider, settings: { agentPath: string; apiKey: stri
 export function cliHandlers(deps: IpcDeps): Record<string, Handler> {
   const { store, broadcast, modelsCache } = deps
   const updating = new Set<CliProvider>()
+  const infoCache = cliInfoCacheFor(store)
   const history = {
     store,
     isRunning: (id: string) => deps.sessions.isRunning(id),
@@ -37,17 +39,24 @@ export function cliHandlers(deps: IpcDeps): Record<string, Handler> {
       if (models.length) modelsCache.set(cli, models)
       return models
     },
-    'cli:info': async (provider?: CliProvider) => {
+    'cli:info': async (provider?: CliProvider, refresh = false) => {
       const cli = chosen(store.settings.cliProvider, provider)
-      if (cli === 'codex') return codexCliInfo(store.settings.codexPath, store.settings.codexApiKey)
-      if (cli === 'claude') return claudeCliInfo(store.settings.claudePath, store.settings.claudeApiKey)
-      return cursorCliInfo(store.settings.agentPath, store.settings.apiKey)
+      const settings = store.settings
+      return infoCache.get(cli, cliInfoSignature(cli, settings), () => {
+        if (cli === 'codex') return codexCliInfo(settings.codexPath, settings.codexApiKey)
+        if (cli === 'claude') return claudeCliInfo(settings.claudePath, settings.claudeApiKey)
+        return cursorCliInfo(settings.agentPath, settings.apiKey)
+      }, refresh)
     },
     'cli:login': async (provider?: CliProvider) => {
       const cli = chosen(store.settings.cliProvider, provider)
-      if (cli === 'codex') return loginCodex(store.settings.codexPath)
-      if (cli === 'claude') return loginClaude(store.settings.claudePath)
-      return loginCursor(store.settings.agentPath)
+      try {
+        if (cli === 'codex') return await loginCodex(store.settings.codexPath)
+        if (cli === 'claude') return await loginClaude(store.settings.claudePath)
+        return await loginCursor(store.settings.agentPath)
+      } finally {
+        infoCache.invalidate(cli)
+      }
     },
     'cli:update': async (provider: CliProvider) => {
       if (!isCliProvider(provider)) throw new Error(translate('请选择要更新的 CLI'))
@@ -64,6 +73,7 @@ export function cliHandlers(deps: IpcDeps): Record<string, Handler> {
         deps.sessions.dropIdle()
         return result
       } finally {
+        infoCache.invalidate(provider)
         updating.delete(provider)
       }
     },

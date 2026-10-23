@@ -32,4 +32,17 @@ describe('CLI update browser API', () => {
 
     await expect(createWebApi().updateCli('cursor')).rejects.toThrow('CLI update failed')
   })
+
+  it.each([undefined, false, true])('forwards the CLI detection refresh flag (%s)', async (refresh) => {
+    fetch.mockResolvedValueOnce({ json: async () => ({ ok: true, result: { found: true } }) })
+    await expect(createWebApi().cliInfo('codex', refresh)).resolves.toEqual({ found: true })
+    expect(fetch).toHaveBeenCalledExactlyOnceWith(
+      'https://example.com/c/aaaaaaaaaaaaaaaa/api/rpc/cli%3Ainfo',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-token': 'remote-token' },
+        body: JSON.stringify(['codex', refresh])
+      }
+    )
+  })
 })

@@ -79,7 +79,8 @@ export interface DesktopApi {
   /** Redeems one Codex reset card. The caller must already have confirmed. */
   consumeCodexReset(creditId: string): Promise<void>
   listModels(refresh?: boolean, provider?: CliProvider): Promise<ModelInfo[]>
-  cliInfo(provider?: CliProvider): Promise<CliInfo>
+  /** Reuses persisted detection results unless refresh is true or the configuration changed. */
+  cliInfo(provider?: CliProvider, refresh?: boolean): Promise<CliInfo>
   login(provider?: CliProvider): Promise<string>
   updateCli(provider: CliProvider): Promise<string>
   scanCliSessions(): Promise<CliSession[]>

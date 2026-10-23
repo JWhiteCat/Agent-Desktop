@@ -8,6 +8,7 @@ import { normalizeSkin, normalizeSkins } from '@shared/skins'
 import { normalizeLanguage, setLanguage } from '@shared/i18n'
 import { isCliProvider, type Settings } from '@shared/types'
 import { syncAllManagedSkills } from '../skills'
+import { cliInfoCacheFor } from '../cli-info-cache'
 import { validClientId, validatePublicHost, validatePublicPort, validatePublicUser, validateSshPort } from '../public-tunnel'
 import type { Handler } from '../remote'
 import type { IpcDeps } from './deps'
@@ -45,7 +46,12 @@ export function settingsHandlers(deps: IpcDeps): Record<string, Handler> {
       if (patch.cliProvider !== undefined && !isCliProvider(patch.cliProvider)) {
         next.cliProvider = 'cursor'
       }
+      const previous = deps.store.settings
       const s = deps.store.updateSettings(next)
+      const infoCache = cliInfoCacheFor(deps.store)
+      if (s.agentPath !== previous.agentPath || s.apiKey !== previous.apiKey) infoCache.invalidate('cursor')
+      if (s.codexPath !== previous.codexPath || s.codexApiKey !== previous.codexApiKey) infoCache.invalidate('codex')
+      if (s.claudePath !== previous.claudePath || s.claudeApiKey !== previous.claudeApiKey) infoCache.invalidate('claude')
       if (patch.language !== undefined) setLanguage(s.language)
       if (patch.theme) deps.applyTheme(patch.theme)
       if (patch.agentPath !== undefined || patch.apiKey !== undefined) deps.modelsCache.delete('cursor')

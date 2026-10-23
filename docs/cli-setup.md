@@ -49,6 +49,10 @@ If nothing is found, set the executable or install directory in Settings.
 
 macOS packages do not need a separate Node.js installation: bundled Codex/Claude adapters use the app runtime. Finder launches usually do not inherit a terminal's initialized PATH. Discovery adds common locations including `/opt/homebrew/bin`, `/usr/local/bin` and `~/.local/bin`, retaining inherited PATH precedence. For a CLI installed in a nonstandard directory by nvm or another manager, select its executable or installation prefix in Settings; `~/`, quoted paths and spaces are supported. The app does not run shell startup files.
 
+CLI detection results (path, version, and login status) are cached separately for Cursor, Codex, and Claude in `cli-info-cache.json` in the app's data directory, including across restarts. Opening Settings, switching tabs, or changing the interface language reuses the cache without launching the CLIs again. Automatic detection runs only when no valid cache exists; missing-CLI results are cached too. There is no timed expiration.
+
+Changing a CLI's path or API key, finishing a login, or finishing an update triggers detection for that CLI. Use **Check again** to refresh manually, including after installing, updating, or changing CLI authentication outside the app. Remote pages share the desktop main process's cache. Authentication configuration is stored only as a digest in this cache, without an additional plaintext copy of API keys.
+
 ### Authentication
 
 Cursor auth prefers a [Cursor API key](https://cursor.com/dashboard/api). A key saved in Settings overrides the `CURSOR_API_KEY` environment variable. Without a key, the app uses the browser login saved by `agent login`.

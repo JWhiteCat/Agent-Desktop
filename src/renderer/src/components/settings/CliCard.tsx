@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { CliInfo, CliProvider } from '@shared/types'
 import { useT } from '../../lib/i18n'
 import { errorText, loadModels, toast } from '../../store'
@@ -32,22 +32,25 @@ export function CliCard({
 }) {
   const t = useT()
   const [info, setInfo] = useState<CliInfo | null>(null)
-  const [checking, setChecking] = useState(false)
+  const [checking, setChecking] = useState(true)
   const [loggingIn, setLoggingIn] = useState(false)
   const [updating, setUpdating] = useState(false)
   const [saving, setSaving] = useState(false)
   const [updateResult, setUpdateResult] = useState<{ text: string; error: boolean } | null>(null)
   const [pathDraft, setPathDraft] = useState(pathValue)
   const [keyDraft, setKeyDraft] = useState(keyValue)
+  const checkId = useRef(0)
 
-  const check = async () => {
+  const check = async (refresh = true) => {
+    const id = ++checkId.current
     setChecking(true)
     try {
-      setInfo(await window.api.cliInfo(provider))
+      const result = await window.api.cliInfo(provider, refresh)
+      if (id === checkId.current) setInfo(result)
     } catch (err) {
-      toast(errorText(err), 'error')
+      if (id === checkId.current) toast(errorText(err), 'error')
     } finally {
-      setChecking(false)
+      if (id === checkId.current) setChecking(false)
     }
   }
 
@@ -65,8 +68,9 @@ export function CliCard({
   }
 
   useEffect(() => {
-    void check()
-  }, [provider, t])
+    void check(false)
+    return () => { checkId.current++ }
+  }, [provider, pathValue, keyValue])
 
   return (
     <>
@@ -93,21 +97,21 @@ export function CliCard({
           </>
         )}
         <div className="row-gap wrap">
-          <button className="btn" onClick={() => void check()} disabled={checking || updating || saving}>
+          <button className="btn" onClick={() => void check()} disabled={checking || loggingIn || updating || saving}>
             <IconRefresh size={13} className={checking ? 'spin' : ''} /> {t('重新检测')}
           </button>
           <button
             className="btn"
-            disabled={!info?.found || loggingIn || updating || saving}
+            disabled={!info?.found || checking || loggingIn || updating || saving}
             onClick={async () => {
               setLoggingIn(true)
               try {
                 const out = await window.api.login(provider)
                 toast(out.split('\n').pop() || t('登录流程已结束'))
-                void check()
               } catch (err) {
                 toast(errorText(err), 'error')
               } finally {
+                await check()
                 setLoggingIn(false)
               }
             }}

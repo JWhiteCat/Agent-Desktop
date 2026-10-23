@@ -118,7 +118,7 @@ export function createWebApi(): DesktopApi {
     usageQuotas: () => call('usage:quotas'),
     consumeCodexReset: (creditId) => call('usage:consumeCodexReset', creditId),
     listModels: (refresh, provider) => call('cli:models', refresh, provider),
-    cliInfo: (provider) => call('cli:info', provider),
+    cliInfo: (provider, refresh) => call('cli:info', provider, refresh),
     login: (provider) => call('cli:login', provider),
     updateCli: (provider) => call('cli:update', provider),
     scanCliSessions: () => call('cli:scan'),
