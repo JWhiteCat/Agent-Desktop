@@ -14,7 +14,7 @@ export function prepareReleaseArtifacts(directory, version) {
     names.filter((name) => name === `${prefix}-win-x64-portable.exe`),
     names.filter((name) => name === `${prefix}-win-x64-setup.exe`),
     names.filter((name) => name.startsWith(linuxPrefix) && /^(x64|x86_64)\.AppImage$/.test(name.slice(linuxPrefix.length))),
-    names.filter((name) => name.startsWith(linuxPrefix) && /^(x64|x86_64)\.deb$/.test(name.slice(linuxPrefix.length)))
+    names.filter((name) => name.startsWith(linuxPrefix) && /^(x64|amd64)\.deb$/.test(name.slice(linuxPrefix.length)))
   ]
   const labels = ['Windows portable', 'Windows installer', 'Linux AppImage', 'Debian package']
   for (const [index, group] of groups.entries()) {

@@ -10,7 +10,7 @@ const names = [
   'agent-desktop-1.0.0-win-x64-portable.exe',
   'agent-desktop-1.0.0-win-x64-setup.exe',
   'agent-desktop-1.0.0-linux-x86_64.AppImage',
-  'agent-desktop-1.0.0-linux-x64.deb'
+  'agent-desktop-1.0.0-linux-amd64.deb'
 ]
 
 function fixture() {
