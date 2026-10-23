@@ -42,7 +42,7 @@ function untrackedDiff(root: string, rel: string): string {
     const buf = fs.readFileSync(file)
     if (buf.includes(0)) return `diff --git ${before} ${after}\nBinary files /dev/null and ${after} differ\n`
     const lines = buf.toString('utf8').replace(/\r\n/g, '\n').replace(/\n$/, '').split('\n')
-    if (lines.length === 1 && lines[0] === '') return header
+    if (buf.length === 0) return header
     return `${header}@@ -0,0 +1,${lines.length} @@\n${lines.map((l) => `+${l}`).join('\n')}\n`
   } catch {
     return ''
@@ -149,7 +149,10 @@ export async function gitDiff(cwd: string): Promise<GitDiff> {
     'diff',
     base,
     '--no-color',
-    '--no-ext-diff'
+    '--no-ext-diff',
+    // The parser expects a/ and b/, regardless of the user's diff prefix settings.
+    '--src-prefix=a/',
+    '--dst-prefix=b/'
   ])
   // Keep display status unchanged; NUL-delimited paths need no unquoting or trimming.
   const untracked = untrackedFiles.out.split('\0').filter(Boolean)

@@ -28,6 +28,33 @@ describe('turn working-file snapshots', () => {
     fs.rmSync(resolved, { recursive: true, force: true })
   })
 
+  it.each(['git', 'directory'])('distinguishes clearing, deleting and creating empty files in %s snapshots', async (mode) => {
+    if (mode === 'git') init()
+    write('cleared.txt', 'before\n')
+    write('deleted.txt', 'before\n')
+    write('deleted-empty.txt', '')
+    write('unchanged-empty.txt', '')
+    const before = await snapshotTurnFiles(root)
+    write('cleared.txt', '')
+    fs.rmSync(path.join(root, 'deleted.txt'))
+    fs.rmSync(path.join(root, 'deleted-empty.txt'))
+    write('created-empty.txt', '')
+    const changes = await changedTurnFiles(before)
+    expect(changes.map((file) => path.basename(file.path)).sort()).toEqual([
+      'cleared.txt', 'created-empty.txt', 'deleted-empty.txt', 'deleted.txt'
+    ])
+    const diff = (name: string) => changes.find((file) => path.basename(file.path) === name)!.diff
+    expect(diff('cleared.txt')).toContain('+++ b/cleared.txt')
+    expect(diff('cleared.txt')).not.toContain('deleted file mode')
+    expect(diff('cleared.txt')).not.toContain('/dev/null')
+    for (const name of ['deleted.txt', 'deleted-empty.txt']) {
+      expect(diff(name)).toContain('deleted file mode 100644')
+      expect(diff(name)).toContain('+++ /dev/null')
+    }
+    expect(diff('created-empty.txt')).toContain('new file mode 100644')
+    expect(diff('created-empty.txt')).toContain('--- /dev/null')
+  })
+
   it('captures script edits even when committed, without counting existing dirty files or touching the index', async () => {
     init()
     write('edited.txt', 'original\n')

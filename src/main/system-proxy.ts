@@ -25,12 +25,13 @@ export function proxyEnvFrom(result: string, env: NodeJS.ProcessEnv = process.en
     if (kind === 'PROXY' || kind === 'HTTPS') {
       if (envHas(env, 'HTTP_PROXY') || envHas(env, 'HTTPS_PROXY')) return {}
       return withLocalBypass(env, {
-        HTTP_PROXY: proxyUrl('http', endpoint),
-        HTTPS_PROXY: proxyUrl('http', endpoint)
+        HTTP_PROXY: proxyUrl(kind === 'HTTPS' ? 'https' : 'http', endpoint),
+        HTTPS_PROXY: proxyUrl(kind === 'HTTPS' ? 'https' : 'http', endpoint)
       })
     }
     if (envHas(env, 'ALL_PROXY')) return {}
-    const scheme = kind === 'SOCKS4' ? 'socks4' : 'socks5'
+    // Chromium's unversioned PAC SOCKS token denotes SOCKSv4, not SOCKSv5.
+    const scheme = kind === 'SOCKS5' ? 'socks5' : 'socks4'
     return withLocalBypass(env, { ALL_PROXY: proxyUrl(scheme, endpoint) })
   }
   return {}

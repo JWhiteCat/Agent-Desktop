@@ -208,8 +208,9 @@ export class Store {
       this.markItemsDirty(id)
     }
     const nextPatch: Partial<ThreadMeta> = nextCli !== undefined ? { ...patch, cli: nextCli } : { ...patch }
-    if (cliChanged && !t.forkContextThroughItemId) {
-      // The new CLI session starts empty; replay the local transcript into its first prompt.
+    if (cliChanged) {
+      // Each new CLI session starts empty. Refresh even a pending replay marker:
+      // the previous CLI may have failed after adding new messages to the transcript.
       const items = this.items(id)
       if (items.some((item) => item.kind === 'user' || item.kind === 'assistant')) nextPatch.forkContextThroughItemId = items.at(-1)?.id
     }

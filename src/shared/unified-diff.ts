@@ -122,15 +122,15 @@ function hunks(rows: Numbered[]): string[] {
   return out
 }
 
-/** Build a unified diff from the before/after text Cursor ACP sends on an edit. */
-export function unifiedDiff(filePath: string, oldText: string | null, newText: string): UnifiedDiff {
+/** Build a unified diff. null means a missing file; an empty string is an existing empty file. */
+export function unifiedDiff(filePath: string, oldText: string | null, newText: string | null): UnifiedDiff {
   const path = filePath || 'file'
   const a = quoteGitPath(`a/${path}`)
   const b = quoteGitPath(`b/${path}`)
   const oldLines = splitLines(oldText ?? '')
-  const newLines = splitLines(newText)
+  const newLines = splitLines(newText ?? '')
   const body = hunks(numberRows(diffLines(oldLines, newLines)))
-  if (!body.length) return { text: '', added: 0, removed: 0 }
+  if (!body.length && (oldText == null) === (newText == null)) return { text: '', added: 0, removed: 0 }
   let added = 0
   let removed = 0
   for (const line of body) {
@@ -139,7 +139,7 @@ export function unifiedDiff(filePath: string, oldText: string | null, newText: s
   }
   const header = [`diff --git ${a} ${b}`]
   if (oldText == null) header.push('new file mode 100644', '--- /dev/null', `+++ ${b}`)
-  else if (!newText) header.push('deleted file mode 100644', `--- ${a}`, '+++ /dev/null')
+  else if (newText == null) header.push('deleted file mode 100644', `--- ${a}`, '+++ /dev/null')
   else header.push(`--- ${a}`, `+++ ${b}`)
   return { text: [...header, ...body].join('\n'), added, removed }
 }

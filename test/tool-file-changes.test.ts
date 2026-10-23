@@ -12,6 +12,21 @@ const tool = (patch: Partial<ToolItem> = {}): ToolItem => ({ id: 'tool', kind: '
 const diff = (path: string, oldText: string | null = 'before\n', newText = 'agent\n') => ({ type: 'diff', path, oldText, newText })
 
 describe('operation-owned file evidence', () => {
+  it('does not infer deletion from an ACP empty replacement string', () => {
+    const items: Item[] = []
+    const reducer = new StreamReducer(items)
+    reducer.init.cwd = '/project'
+    reducer.handleAcp({ sessionUpdate: 'tool_call', toolCallId: 'clear', kind: 'edit', status: 'completed',
+      content: [diff('source.ts', 'before\n', '')] })
+    const item = items[0] as ToolItem
+    for (const text of [item.fileChanges?.[0].diff, item.result?.success?.diffString]) {
+      expect(text).toContain('+++ b/source.ts')
+      expect(text).toContain('-before')
+      expect(text).not.toContain('deleted file mode')
+      expect(text).not.toContain('/dev/null')
+    }
+  })
+
   it.each(['cursor', 'codex', 'claude'])('retains %s previews until completion and ignores duplicate starts and status-only updates', () => {
     const items: Item[] = []
     const reducer = new StreamReducer(items)

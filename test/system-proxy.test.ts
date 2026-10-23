@@ -19,6 +19,21 @@ describe('proxyEnvFrom', () => {
     })
   })
 
+  it('preserves TLS transport for an HTTPS proxy', () => {
+    expect(proxyEnvFrom('HTTPS secure.example:443', {})).toEqual({
+      HTTP_PROXY: 'https://secure.example:443',
+      HTTPS_PROXY: 'https://secure.example:443',
+      NO_PROXY: 'localhost,127.0.0.1,::1'
+    })
+  })
+
+  it.each(['SOCKS', 'SOCKS4'])('maps PAC %s to SOCKSv4', (kind) => {
+    expect(proxyEnvFrom(`${kind} legacy.example:1080`, {})).toEqual({
+      ALL_PROXY: 'socks4://legacy.example:1080',
+      NO_PROXY: 'localhost,127.0.0.1,::1'
+    })
+  })
+
   it('keeps an existing HTTPS proxy', () => {
     expect(proxyEnvFrom('PROXY 127.0.0.1:7890', { HTTPS_PROXY: 'http://existing:1' })).toEqual({})
     expect(proxyEnvFrom('PROXY 127.0.0.1:7890', { http_proxy: 'http://existing:1' })).toEqual({})

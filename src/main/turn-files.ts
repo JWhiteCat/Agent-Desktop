@@ -177,7 +177,7 @@ export async function changedTurnFiles(before: RepoSnapshot[]): Promise<FileChan
       if (old?.includes(0) || current?.includes(0)) {
         diff = `diff --git ${a} ${b}\nBinary files ${old ? a : '/dev/null'} and ${current ? b : '/dev/null'} differ\n`
       } else {
-        diff = unifiedDiff(name, old?.toString('utf8') ?? null, current?.toString('utf8') ?? '').text
+        diff = unifiedDiff(name, old?.toString('utf8') ?? null, current?.toString('utf8') ?? null).text
         // Empty files and newline-only changes still belong in the file list.
         if (!diff) diff = `diff --git ${a} ${b}\n`
       }

@@ -120,9 +120,8 @@ export function isCursorRetriableDisconnect(text: string | undefined): boolean {
   if (!text) return false
   const clean = text.trim()
   if (!clean || clean.length > AUTO_CONTINUE_TEXT_LIMIT) return false
-  if (!clean.includes('RetriableError')) return false
-  if (/HTTP\s*50[23]/.test(clean)) return true
-  return /\[canceled\]/i.test(clean) && /stream closed|http\/2/i.test(clean)
+  return /^(?:Error:\s*)?RetriableError:\s*\[unavailable\]\s*HTTP\s*50[23]$/.test(clean)
+    || /^(?:Error:\s*)?RetriableError:\s*\[canceled\]\s*(?:http\/2\s+)?stream closed(?: with error code CANCEL(?: \(0x8\))?)?$/i.test(clean)
 }
 
 /**
@@ -134,7 +133,7 @@ export function isCodexModelCapacity(text: string | undefined): boolean {
   if (!text) return false
   const clean = text.trim()
   if (!clean || clean.length > AUTO_CONTINUE_TEXT_LIMIT) return false
-  return clean.includes('Selected model is at capacity')
+  return /^(?:Error:\s*)?Selected model is at capacity\.?(?: Please try a different model\.)?$/.test(clean)
 }
 
 function isAutomaticContinueFailure(provider: CliProvider, text: string | undefined): boolean {
@@ -154,6 +153,8 @@ function automaticContinueNotice(provider: CliProvider): string {
 
 export class SessionManager {
   private runs = new Map<string, Run>()
+  /** Cancellation remains observable before asynchronous startup creates a process/run. */
+  private startups = new Map<string, Set<{ cancelled: boolean }>>()
   /** Sends queued or still preparing before they hand over to `runs`. */
   private pendingSends = new Map<string, number>()
   /** Idle or preparing CLI processes, keyed by thread id. Not included in `running()`. */
@@ -217,7 +218,7 @@ export class SessionManager {
       }
     }
     this.pendingSends.set(id, (this.pendingSends.get(id) ?? 0) + 1)
-    return this.enqueue(id, () => this.beginSend(req)).finally(() => {
+    return this.withStartup(id, (cancelled) => this.enqueue(id, () => this.beginSend(req, undefined, cancelled))).finally(() => {
       const remaining = this.pendingSends.get(id)! - 1
       if (remaining === 0) this.pendingSends.delete(id)
       else this.pendingSends.set(id, remaining)
@@ -353,7 +354,7 @@ export class SessionManager {
    * A thread with no `chatId` is left alone. A list already received is returned immediately.
    */
   prepare(threadId: string, opts: PrepareRequest): Promise<SlashCommand[]> {
-    return this.enqueue(threadId, () => this.prepareBody(threadId, opts))
+    return this.withStartup(threadId, (cancelled) => this.enqueue(threadId, () => this.prepareBody(threadId, opts, cancelled)))
   }
 
   /** Copies the persisted CLI session immediately, without prompting or loading the source. */
@@ -421,7 +422,40 @@ export class SessionManager {
     return result
   }
 
-  private async beginSend(req: SendRequest, internal?: { autoContinue?: boolean }): Promise<void> {
+  private async withStartup<T>(threadId: string, body: (cancelled: () => boolean) => Promise<T>): Promise<T> {
+    const token = { cancelled: false }
+    const tokens = this.startups.get(threadId) ?? new Set<{ cancelled: boolean }>()
+    tokens.add(token)
+    this.startups.set(threadId, tokens)
+    try {
+      return await body(() => {
+        if (this.shuttingDown) throw new Error(translate('应用正在关闭'))
+        if (!this.store.thread(threadId)) throw new Error(translate('对话不存在'))
+        return token.cancelled
+      })
+    } finally {
+      tokens.delete(token)
+      if (!tokens.size && this.startups.get(threadId) === tokens) this.startups.delete(threadId)
+    }
+  }
+
+  private beginSend(req: SendRequest, internal?: { autoContinue?: boolean }, cancelled?: () => boolean): Promise<void> {
+    const start = async (isCancelled: () => boolean) => {
+      const started = await this.beginSendBody(req, isCancelled, internal)
+      if (!started) {
+        // A cancelled startup has no endRun to pause the queue or dispatch a "now" message.
+        setImmediate(() => {
+          if (!this.active().includes(req.threadId)) {
+            this.drainQueue(req.threadId, { interrupted: true, planned: false, agent: false })
+          }
+        })
+      }
+    }
+    return cancelled ? start(cancelled) : this.withStartup(req.threadId, start)
+  }
+
+  private async beginSendBody(req: SendRequest, cancelled: () => boolean, internal?: { autoContinue?: boolean }): Promise<boolean> {
+    if (cancelled()) return false
     if (this.shuttingDown) throw new Error(translate('应用正在关闭'))
     if (this.runs.has(req.threadId)) throw new Error(translate('该对话正在运行中'))
     const thread = this.store.thread(req.threadId)
@@ -446,8 +480,7 @@ export class SessionManager {
     // Cursor creates its own worktree from `--worktree`; the Codex and Claude adapters have no such flag.
     if (provider !== 'cursor' && req.worktree && !thread.chatId && !thread.cwd) {
       cwd = await createWorktree(cwd, worktreeRoot(this.store))
-      if (this.shuttingDown) throw new Error(translate('应用正在关闭'))
-      if (!this.store.thread(thread.id)) throw new Error(translate('对话不存在'))
+      if (cancelled()) return false
       this.store.updateThread(thread.id, { cwd, worktree: true })
     }
     this.usage.cancel(thread.id)
@@ -459,6 +492,7 @@ export class SessionManager {
     const fingerprint = internal?.autoContinue
       ? this.cachedFingerprint(provider, launch, cwd, settings.sandbox, req.force, apiKey, mcpServers, skills)
       : await this.launchFingerprint(provider, launch, cwd, settings.sandbox, req.force, apiKey, mcpServers, skills)
+    if (cancelled()) return false
     let proc = this.agents.get(thread.id)
     const reusable = !!proc && this.canReuse(proc, fingerprint)
     if (proc && !reusable) {
@@ -539,6 +573,7 @@ export class SessionManager {
       }
       this.killProc(run.proc)
     })
+    return true
   }
 
   answerQuestion(threadId: string, questionId: string, answers: QuestionAnswer[] | null): void {
@@ -547,6 +582,7 @@ export class SessionManager {
 
   /** Cancel the current turn and keep the CLI process for the next message. */
   stop(threadId: string): void {
+    for (const startup of this.startups.get(threadId) ?? []) startup.cancelled = true
     const run = this.runs.get(threadId)
     if (!run) return
     run.stopped = true
@@ -567,6 +603,7 @@ export class SessionManager {
 
   /** Kill the CLI process for this thread. Used when the thread or app is going away. */
   dispose(threadId: string): void {
+    for (const startup of this.startups.get(threadId) ?? []) startup.cancelled = true
     this.usage.cancel(threadId)
     this.commandLists.delete(threadId)
     this.commandWaiters.delete(threadId)
@@ -738,7 +775,8 @@ export class SessionManager {
     await this.runPrompt(threadId, run, req)
   }
 
-  private async prepareBody(threadId: string, opts: PrepareRequest): Promise<SlashCommand[]> {
+  private async prepareBody(threadId: string, opts: PrepareRequest, cancelled: () => boolean): Promise<SlashCommand[]> {
+    if (cancelled()) return []
     const known = this.commandLists.get(threadId)
     if (known) return known
     if (this.runs.has(threadId)) return []
@@ -766,6 +804,7 @@ export class SessionManager {
       mcpServers,
       enabledSkillFingerprint(settings.skills)
     )
+    if (cancelled()) return []
     const req: SendRequest = { threadId, prompt: '', model: opts.model, mode: opts.mode, force: opts.force }
     let proc = this.agents.get(threadId)
     const reusable = !!proc && this.canReuse(proc, fingerprint)

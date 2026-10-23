@@ -34,6 +34,46 @@ describe('Git changes', () => {
     git('config', 'core.autocrlf', 'false')
   }
 
+  it.each([
+    ['diff.noprefix', 'true'],
+    ['diff.mnemonicprefix', 'true'],
+    ['diff.srcprefix', 'before/'],
+    ['diff.dstprefix', 'after/']
+  ])('normalizes diff paths without changing %s', async (key, value) => {
+    init()
+    git('config', key, value)
+    fs.writeFileSync(path.join(root, 'tracked.txt'), 'before\n')
+    git('add', 'tracked.txt')
+    git('-c', 'user.name=Test', '-c', 'user.email=test@example.com', 'commit', '-qm', 'Initial')
+    fs.writeFileSync(path.join(root, 'tracked.txt'), 'after\n')
+    const configBefore = fs.readFileSync(path.join(root, '.git/config'))
+
+    const result = await gitDiff(root)
+
+    expect(result.error).toBeUndefined()
+    expect(result.diff).toContain('diff --git a/tracked.txt b/tracked.txt')
+    expect(result.diff).toContain('--- a/tracked.txt\n+++ b/tracked.txt')
+    expect(collectGitFiles(result)).toEqual([{
+      path: 'tracked.txt', lines: ['@@ -1 +1 @@', '-before', '+after'], added: 1, removed: 1
+    }])
+    expect(fs.readFileSync(path.join(root, '.git/config'))).toEqual(configBefore)
+    expect(git('config', '--get', key).trim()).toBe(value)
+  })
+
+  it.each(['', '\n', '\r\n', '\n\n'])('counts untracked blank lines separately from an empty file (%j)', async (contents) => {
+    init()
+    fs.writeFileSync(path.join(root, 'blank.txt'), contents)
+    const result = await gitDiff(root)
+    const count = (contents.match(/\n/g) ?? []).length
+    expect(result.error).toBeUndefined()
+    expect(collectGitFiles(result)).toEqual([{
+      path: 'blank.txt', lines: count ? [`@@ -0,0 +1,${count} @@`, ...Array(count).fill('+')] : [], added: count, removed: 0
+    }])
+    expect(execFileSync('git', ['apply', '--numstat', '-z'], {
+      cwd: root, encoding: 'utf8', input: result.diff, windowsHide: true
+    })).toBe(`${count}\t0\tblank.txt\0`)
+  })
+
   it.each(['sha1', 'sha256'])('shows the working contents before the first %s commit', async (format) => {
     init(format)
     fs.writeFileSync(path.join(root, 'file.txt'), 'staged version\n')

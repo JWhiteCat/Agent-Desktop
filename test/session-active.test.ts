@@ -9,11 +9,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_SETTINGS, type CliProvider, type Item, type SendRequest, type ThreadMeta } from '../src/shared/types'
 import { createWorktree } from '../src/main/git'
 import { spawnProvider } from '../src/main/session/provider'
+import { refreshCodexProxyEnv } from '../src/main/system-proxy'
 import { SessionManager } from '../src/main/sessions'
 import type { Store } from '../src/main/store'
 import { isolateGitEnvironment } from './helpers/git-environment'
 import { collectEditedFiles, collectSnapshotTurns } from '../src/renderer/src/lib/diff'
 
+vi.mock('../src/main/system-proxy', () => ({ refreshCodexProxyEnv: vi.fn(async () => ({})), codexProxyOverlay: () => ({}), isCodexRoutingTimeout: () => false }))
 vi.mock('../src/main/skills', () => ({ syncAllManagedSkills: vi.fn() }))
 vi.mock('../src/main/git', () => ({ createWorktree: vi.fn() }))
 vi.mock('../src/main/session/provider', async (original) => ({
@@ -107,6 +109,174 @@ afterEach(async () => {
 })
 
 describe('unfinished session activity', () => {
+  it.each(['stop', 'dispose'] as const)('cancels all sends enqueued in the same tick on %s, but allows a later send', async (action) => {
+    const ctx = setup('codex')
+    const first = ctx.manager.send(ctx.req)
+    const second = ctx.manager.send({ ...ctx.req, prompt: 'Second pending send' })
+    ctx.manager[action]('thread')
+    await Promise.all([first, second])
+    expect(spawnProvider).not.toHaveBeenCalled()
+    expect(ctx.items).toEqual([])
+    expect(ctx.manager.active()).toEqual([])
+    await ctx.manager.send(ctx.req)
+    await ctx.waitForPrompt()
+    expect(spawnProvider).toHaveBeenCalledOnce()
+    ctx.complete()
+  })
+
+  it('cancels prepare enqueued in the same tick before any proxy refresh or process launch', async () => {
+    const ctx = setup('codex')
+    ctx.thread.chatId = 'test-session'
+    const preparing = ctx.manager.prepare('thread', ctx.req)
+    ctx.manager.dispose('thread')
+    await expect(preparing).resolves.toEqual([])
+    expect(refreshCodexProxyEnv).not.toHaveBeenCalled()
+    expect(spawnProvider).not.toHaveBeenCalled()
+  })
+
+  it('does not reject an already registered send when shutdown occurs from its running event', async () => {
+    const ctx = setup('codex')
+    ctx.emit.mockImplementation((event) => {
+      if (event.type === 'running' && event.running) ctx.manager.stopAll()
+    })
+    await expect(ctx.manager.send(ctx.req)).resolves.toBeUndefined()
+    await vi.waitFor(() => expect(ctx.manager.active()).toEqual([]))
+    expect(spawnProvider).toHaveBeenCalledOnce()
+  })
+
+  it.each(['stop', 'dispose', 'delete', 'shutdown'] as const)('cancels send startup during proxy refresh on %s', async (action) => {
+    const proxy = deferred<NodeJS.ProcessEnv>()
+    vi.mocked(refreshCodexProxyEnv).mockReturnValueOnce(proxy.promise)
+    const ctx = setup('codex')
+    const sending = ctx.manager.send(ctx.req).catch((error: Error) => error)
+    await vi.waitFor(() => expect(refreshCodexProxyEnv).toHaveBeenCalledOnce())
+    expect(ctx.manager.active()).toEqual(['thread'])
+    if (action === 'shutdown') ctx.manager.stopAll()
+    else if (action === 'delete') {
+      ctx.manager.dispose('thread')
+      vi.spyOn(ctx.store, 'thread').mockReturnValue(undefined)
+    } else ctx.manager[action]('thread')
+    proxy.resolve({})
+    const result = await sending
+    if (action === 'shutdown') expect(result).toMatchObject({ message: '应用正在关闭' })
+    else if (action === 'delete') expect(result).toMatchObject({ message: '对话不存在' })
+    else expect(result).toBeUndefined()
+    expect(spawnProvider).not.toHaveBeenCalled()
+    expect(ctx.items).toEqual([])
+    expect(ctx.store.updateThread).not.toHaveBeenCalled()
+    expect(ctx.manager.active()).toEqual([])
+    if (action === 'stop' || action === 'dispose') {
+      await ctx.manager.send(ctx.req)
+      await ctx.waitForPrompt()
+      expect(spawnProvider).toHaveBeenCalledOnce()
+      ctx.complete()
+    }
+  })
+
+  it.each(['stop', 'dispose', 'delete', 'shutdown'] as const)('cancels prepare startup during proxy refresh on %s', async (action) => {
+    const proxy = deferred<NodeJS.ProcessEnv>()
+    vi.mocked(refreshCodexProxyEnv).mockReturnValueOnce(proxy.promise)
+    const ctx = setup('codex')
+    ctx.thread.chatId = 'test-session'
+    const preparing = ctx.manager.prepare('thread', ctx.req).catch((error: Error) => error)
+    await vi.waitFor(() => expect(refreshCodexProxyEnv).toHaveBeenCalledOnce())
+    if (action === 'shutdown') ctx.manager.stopAll()
+    else if (action === 'delete') {
+      ctx.manager.dispose('thread')
+      vi.spyOn(ctx.store, 'thread').mockReturnValue(undefined)
+    } else ctx.manager[action]('thread')
+    proxy.resolve({})
+    const result = await preparing
+    if (action === 'shutdown') expect(result).toMatchObject({ message: '应用正在关闭' })
+    else if (action === 'delete') expect(result).toMatchObject({ message: '对话不存在' })
+    else expect(result).toEqual([])
+    expect(spawnProvider).not.toHaveBeenCalled()
+    expect(ctx.store.updateThread).not.toHaveBeenCalled()
+  })
+
+  it('starts normally after a delayed proxy refresh when not cancelled', async () => {
+    const proxy = deferred<NodeJS.ProcessEnv>()
+    vi.mocked(refreshCodexProxyEnv).mockReturnValueOnce(proxy.promise)
+    const ctx = setup('codex')
+    const sending = ctx.manager.send(ctx.req)
+    await vi.waitFor(() => expect(refreshCodexProxyEnv).toHaveBeenCalledOnce())
+    expect(spawnProvider).not.toHaveBeenCalled()
+    proxy.resolve({})
+    await sending
+    await ctx.waitForPrompt()
+    expect(spawnProvider).toHaveBeenCalledOnce()
+    expect(ctx.items.filter((item) => item.kind === 'user')).toHaveLength(1)
+    ctx.complete()
+  })
+
+  it('pauses ordinary queued messages after cancelling startup', async () => {
+    const proxy = deferred<NodeJS.ProcessEnv>()
+    vi.mocked(refreshCodexProxyEnv).mockReturnValueOnce(proxy.promise)
+    const ctx = setup('codex')
+    const sending = ctx.manager.send(ctx.req)
+    await vi.waitFor(() => expect(refreshCodexProxyEnv).toHaveBeenCalledOnce())
+    await ctx.manager.send({ ...ctx.req, prompt: 'Later', delivery: 'queue' })
+    ctx.manager.stop('thread')
+    proxy.resolve({})
+    await sending
+    await vi.waitFor(() => expect(ctx.manager.queued().thread?.paused).toBe(true))
+    expect(spawnProvider).not.toHaveBeenCalled()
+    expect(ctx.manager.queued().thread.items).toHaveLength(1)
+  })
+
+  it('does not double-dispatch now messages after two cancelled sends while replacement startup is delayed', async () => {
+    const proxy = deferred<NodeJS.ProcessEnv>()
+    vi.mocked(refreshCodexProxyEnv).mockReturnValueOnce(proxy.promise)
+    const ctx = setup('codex')
+    const first = ctx.manager.send(ctx.req)
+    const second = ctx.manager.send({ ...ctx.req, prompt: 'Second pending send' })
+    ctx.manager.stop('thread')
+    await ctx.manager.send({ ...ctx.req, prompt: 'First replacement', delivery: 'now' })
+    await ctx.manager.send({ ...ctx.req, prompt: 'Second replacement', delivery: 'now' })
+    await Promise.all([first, second])
+    await vi.waitFor(() => expect(refreshCodexProxyEnv).toHaveBeenCalledOnce())
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    expect(ctx.manager.queued().thread?.items.map((item) => item.prompt)).toEqual(['Second replacement'])
+    expect(spawnProvider).not.toHaveBeenCalled()
+    proxy.resolve({})
+    await ctx.waitForPrompt()
+    ctx.complete()
+    await vi.waitFor(() => expect(ctx.calls.filter((call) => call.method === 'session/prompt')).toHaveLength(2))
+    expect(ctx.items.filter((item) => item.kind === 'user').map((item) => item.text)).toEqual(['First replacement', 'Second replacement'])
+    expect(ctx.manager.queued()).toEqual({})
+    ctx.complete()
+  })
+
+  it('dispatches an immediate queued message instead of a cancelled startup', async () => {
+    const proxy = deferred<NodeJS.ProcessEnv>()
+    vi.mocked(refreshCodexProxyEnv).mockReturnValueOnce(proxy.promise)
+    const ctx = setup('codex')
+    const sending = ctx.manager.send(ctx.req)
+    await vi.waitFor(() => expect(refreshCodexProxyEnv).toHaveBeenCalledOnce())
+    await ctx.manager.send({ ...ctx.req, prompt: 'Do this instead', delivery: 'now' })
+    proxy.resolve({})
+    await sending
+    await ctx.waitForPrompt()
+    expect(ctx.items.filter((item) => item.kind === 'user').map((item) => item.text)).toEqual(['Do this instead'])
+    expect(spawnProvider).toHaveBeenCalledOnce()
+    expect(ctx.manager.queued()).toEqual({})
+    ctx.complete()
+  })
+
+  it('stops before persisting a newly created worktree or launching a process', async () => {
+    const worktree = deferred<string>()
+    vi.mocked(createWorktree).mockReturnValueOnce(worktree.promise)
+    const ctx = setup('claude')
+    const sending = ctx.manager.send({ ...ctx.req, worktree: true })
+    await vi.waitFor(() => expect(createWorktree).toHaveBeenCalledOnce())
+    ctx.manager.stop('thread')
+    worktree.resolve(workspace)
+    await sending
+    expect(spawnProvider).not.toHaveBeenCalled()
+    expect(ctx.store.updateThread).not.toHaveBeenCalled()
+    expect(ctx.items).toEqual([])
+  })
+
   it.each([
     { ending: 'complete', repository: true }, { ending: 'exit', repository: true },
     { ending: 'complete', repository: false }, { ending: 'exit', repository: false }

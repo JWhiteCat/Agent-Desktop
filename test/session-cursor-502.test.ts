@@ -451,3 +451,32 @@ describe('Codex model capacity continue', () => {
     expect(ctx.finished).toEqual([{ failed: false, stopped: false }])
   })
 })
+
+
+describe('short explanations are not automatic-continue failures', () => {
+  const cases = [
+    { provider: 'codex', text: `The message "${CODEX_CAPACITY}" means the model is busy.` },
+    { provider: 'codex', text: `${CODEX_CAPACITY} This is the error you asked me to explain.` },
+    { provider: 'cursor', text: `The log says ${HTTP_502}; retry the request manually.` },
+    { provider: 'cursor', text: `${HTTP_503}. This means the service was unavailable.` },
+    { provider: 'cursor', text: `${HTTP2_CANCEL}. I have fixed the connection handling.` },
+    { provider: 'cursor', text: `\`${HTTP_502}\`` }
+  ] as const
+
+  it.each(cases)('does not classify or continue $provider explanation: $text', async ({ provider, text }) => {
+    expect(text.length).toBeLessThan(240)
+    expect(provider === 'codex' ? isCodexModelCapacity(text) : isCursorRetriableDisconnect(text)).toBe(false)
+    const ctx = setup(provider)
+    ctx.setPrompt((id, child) => {
+      ctx.reply(child, { method: 'session/update', params: { sessionId: 'test-session', update: {
+        sessionUpdate: 'agent_message_chunk', content: { text }
+      } } })
+      ctx.reply(child, { id, result: { stopReason: 'end_turn' } })
+    })
+    await ctx.send()
+    await ctx.idle()
+    expect(ctx.prompts).toHaveLength(1)
+    expect(ctx.notice('info')).toEqual([])
+    expect(ctx.finished).toEqual([{ failed: false, stopped: false }])
+  })
+})

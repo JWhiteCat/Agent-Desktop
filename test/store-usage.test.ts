@@ -253,7 +253,25 @@ describe('stored Codex usage repair', () => {
 
     store.items('switch').push({ id: 'later', kind: 'notice', level: 'info', text: 'Not yet sent.' })
     store.updateThread('switch', { cli: 'claude' })
-    expect(store.thread('switch')?.forkContextThroughItemId).toBe('result')
+    expect(store.thread('switch')?.forkContextThroughItemId).toBe('later')
+  })
+
+  it.each(['cancelled', 'failed'])('refreshes pending replay after a %s first turn before another CLI switch', (outcome) => {
+    addThread('switch-pending', transcript(), 'cursor')
+    codex.readUsage.mockReturnValue(undefined)
+    store.updateThread('switch-pending', { cli: 'codex' })
+    expect(store.thread('switch-pending')?.forkContextThroughItemId).toBe('result')
+    store.items('switch-pending').push(
+      { id: 'new-user', kind: 'user', text: 'Keep this new constraint', createdAt: now + 1 },
+      { id: 'partial-reply', kind: 'assistant', text: 'Working on the new constraint' },
+      { id: 'interrupted-result', kind: 'result', cli: 'codex', isError: outcome === 'failed' }
+    )
+    // A failed/cancelled first prompt leaves the prior replay marker pending.
+    store.updateThread('switch-pending', { cli: 'claude' })
+    expect(store.thread('switch-pending')?.forkContextThroughItemId).toBe('interrupted-result')
+    expect(store.thread('switch-pending')?.chatId).toBeUndefined()
+    reload()
+    expect(store.thread('switch-pending')?.forkContextThroughItemId).toBe('interrupted-result')
   })
 
   it('does not mark replay context when switching an empty conversation', () => {
