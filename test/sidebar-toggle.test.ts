@@ -48,7 +48,7 @@ describe('sidebar toggle native hit-test contract', () => {
     ['home', false], ['home', true], ['thread', false], ['thread', true]
   ] as const)('keeps the %s toggle after draggable headers (narrow: %s)', (view, narrow) => {
     state.view = view === 'home' ? { kind: 'home' } : { kind: 'thread', id: 'thread' }
-    vi.stubGlobal('window', { matchMedia: () => ({ matches: narrow }) })
+    vi.stubGlobal('window', { api: { platform: 'win32' }, matchMedia: () => ({ matches: narrow }) })
     const html = renderToStaticMarkup(createElement(App))
     const toggleIndex = html.indexOf('class="icon-btn sidebar-toggle no-drag"')
     expect(toggleIndex).toBeGreaterThan(html.indexOf('</main>'))

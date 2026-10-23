@@ -1,5 +1,5 @@
 // Usage (via `npm run icons --`):
-//   (no args)          rasterize resources/icons/icon.svg into PNGs and icon.ico
+//   (no args)          rasterize resources/icons/icon.svg into PNGs, icon.ico and icon.icns
 //   <file.svg>         copy that SVG to resources/icons/icon.svg, then rasterize
 //   --preview          draw docs/icons/*.svg side by side into docs/icons/preview.png
 const { app, BrowserWindow } = require('electron')
@@ -53,7 +53,19 @@ async function buildAppIcons(win, source) {
   const pngs = await rasterize(win, target, PNG_SIZES)
   PNG_SIZES.forEach((size, i) => fs.writeFileSync(path.join(iconDir, `${size}x${size}.png`), pngs[i]))
   fs.writeFileSync(path.join(iconDir, 'icon.ico'), ico(ICO_SIZES.map((size) => ({ size, png: pngs[PNG_SIZES.indexOf(size)] }))))
-  console.log(`Wrote ${PNG_SIZES.length} PNGs and icon.ico to ${path.relative(root, iconDir)}`)
+  // Modern ICNS elements contain PNG data; no macOS-only iconutil dependency is needed.
+  const elements = [[16, 'icp4'], [32, 'icp5'], [64, 'icp6'], [128, 'ic07'], [256, 'ic08'], [512, 'ic09'], [1024, 'ic10']].map(([size, type]) => {
+    const png = pngs[PNG_SIZES.indexOf(size)]
+    const header = Buffer.alloc(8)
+    header.write(type)
+    header.writeUInt32BE(png.length + 8, 4)
+    return Buffer.concat([header, png])
+  })
+  const header = Buffer.alloc(8)
+  header.write('icns')
+  header.writeUInt32BE(8 + elements.reduce((total, element) => total + element.length, 0), 4)
+  fs.writeFileSync(path.join(iconDir, 'icon.icns'), Buffer.concat([header, ...elements]))
+  console.log(`Wrote ${PNG_SIZES.length} PNGs, icon.ico and icon.icns to ${path.relative(root, iconDir)}`)
 }
 
 async function buildPreview(win) {

@@ -51,6 +51,7 @@ try {
   payload = JSON.parse(fs.readFileSync(payloadFile, 'utf8')) as ToolbarCommandPayload
   // Retain launch mode for this runner only: programs such as VS Code are Electron apps too.
   const env = { ...process.env }
+  if (payload.path !== undefined) env.PATH = payload.path
   delete env.ELECTRON_RUN_AS_NODE
   delete env.AGENT_DESKTOP_TOOLBAR_CONSOLE
   const child = spawn(payload.program, payload.args, { cwd: payload.cwd, env, stdio, shell: false })

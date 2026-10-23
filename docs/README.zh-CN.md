@@ -12,7 +12,7 @@
 | [用量统计](usage-stats.zh-CN.md) | 账号额度、token、费用估算、Codex 回合统计与历史修复 |
 | [远程控制](remote-control.zh-CN.md) | 局域网访问、SSH 公网隧道、服务器配置 |
 | [数据存储](data-storage.zh-CN.md) | 数据路径、CLI 历史、worktree、分叉与窗口缓存 |
-| [开发指南](development.zh-CN.md) | 开发启动、Windows 便携包与 Linux 打包、GitHub 发布、测试命令、本地化、目录与模块边界 |
+| [开发指南](development.zh-CN.md) | 开发启动、Windows/macOS/Linux 打包、GitHub 发布、测试命令、本地化、目录与模块边界 |
 
 ## 阅读路径
 

@@ -23,6 +23,7 @@ export function cliSearchDirectories(env: NodeJS.ProcessEnv = process.env): stri
     const prefix = normalizeCliPath(value ?? '')
     return prefix ? path.join(prefix, 'bin') : undefined
   }
+  const preferredBrew = process.platform === 'darwin' && process.arch === 'arm64' ? ['/opt/homebrew/bin'] : []
   const extra = [
     prefixBin(env.NPM_CONFIG_PREFIX || env.npm_config_prefix),
     normalizeCliPath(env.NVM_BIN ?? ''),
@@ -36,6 +37,7 @@ export function cliSearchDirectories(env: NodeJS.ProcessEnv = process.env): stri
     path.join(home, '.volta', 'bin'),
     path.join(home, '.linuxbrew', 'bin'),
     '/home/linuxbrew/.linuxbrew/bin',
+    ...preferredBrew,
     '/usr/local/bin',
     '/usr/bin',
     '/bin',

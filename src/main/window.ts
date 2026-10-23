@@ -98,9 +98,11 @@ export function openInEditor(target: string, editor: EditorId = 'cursor'): Promi
   if (editor !== 'cursor' && editor !== 'vscode') return Promise.resolve(false)
   const env = cliEnvironment()
   const executable = findTerminalExecutable(editor === 'vscode' ? 'code' : 'cursor', env)
-  if (!executable) return Promise.resolve(false)
+  if (!executable && !isMac) return Promise.resolve(false)
+  const command = executable ?? '/usr/bin/open'
+  const args = executable ? [target] : ['-a', editor === 'vscode' ? 'Visual Studio Code' : 'Cursor', '--', target]
   return new Promise((resolve) => {
-    const child = spawn(executable, [target], {
+    const child = spawn(command, args, {
       shell: false,
       env,
       detached: true,
@@ -110,8 +112,10 @@ export function openInEditor(target: string, editor: EditorId = 'cursor'): Promi
     child.once('error', () => resolve(false))
     child.once('spawn', () => {
       child.unref()
-      resolve(true)
+      // Launch Services reports an absent application through open's exit code.
+      if (executable) resolve(true)
     })
+    if (!executable) child.once('close', (code) => resolve(code === 0))
   })
 }
 

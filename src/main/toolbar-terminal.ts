@@ -78,6 +78,29 @@ export async function waitForTerminalStatus(directory: string, timeout = 10_000,
   throw new Error(t('终端启动确认超时；终端可能仍会稍后打开，请检查后再试。'))
 }
 
+/** osascript must finish before accepting a launch: spawn alone hides automation denial. */
+export function startTerminal(launch: TerminalLaunch, cwd: string, env: NodeJS.ProcessEnv, platform = process.platform): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const mac = platform === 'darwin'
+    const child = spawn(launch.command, launch.args, {
+      cwd, env, detached: platform !== 'win32', windowsHide: platform === 'win32',
+      stdio: mac ? ['ignore', 'ignore', 'pipe'] : 'ignore', shell: false
+    })
+    let errors = ''
+    child.stderr?.on('data', (chunk) => { errors = (errors + chunk.toString()).slice(-4096) })
+    child.once('error', reject)
+    child.once('spawn', () => {
+      if (!mac) { child.unref(); resolve() }
+    })
+    if (mac) child.once('close', (code) => {
+      if (code === 0) resolve()
+      else if (/-1743|not authorized to send apple events/i.test(errors)) {
+        reject(new Error(t('请在系统设置 → 隐私与安全性 → 自动化中允许 Agent Desktop 控制 Terminal，然后重试。')))
+      } else reject(new Error(t('命令启动失败：{message}', { message: errors.trim() || `osascript exit ${code}` })))
+    })
+  })
+}
+
 export async function launchToolbarCommand(command: { program: string; args: string[]; cwd: string }): Promise<void> {
   if (!path.isAbsolute(command.cwd) || !fs.statSync(command.cwd, { throwIfNoEntry: false })?.isDirectory()) {
     throw new Error(t('工作目录不存在：{path}', { path: command.cwd }))
@@ -93,6 +116,7 @@ export async function launchToolbarCommand(command: { program: string; args: str
   const payloadFile = path.join(directory, 'payload.json')
   const payload: ToolbarCommandPayload = {
     ...command, program,
+    ...(process.platform !== 'win32' ? { path: cliEnvironment({}, path.dirname(program)).PATH } : {}),
     messages: { finished: t('命令已结束，退出码'), failed: t('命令启动失败'), close: t('按 Enter 关闭终端。') }
   }
   fs.writeFileSync(payloadFile, JSON.stringify(payload), { mode: 0o600, flag: 'wx' })
@@ -100,11 +124,7 @@ export async function launchToolbarCommand(command: { program: string; args: str
   let timedOut = false
   try {
     const launch = terminalLaunch(process.platform, process.execPath, runner, payloadFile)
-    await new Promise<void>((resolve, reject) => {
-      const child = spawn(launch.command, launch.args, { cwd: command.cwd, env, detached: process.platform !== 'win32', windowsHide: process.platform === 'win32', stdio: 'ignore', shell: false })
-      child.once('error', reject)
-      child.once('spawn', () => { child.unref(); resolve() })
-    })
+    await startTerminal(launch, command.cwd, env)
     let status: ToolbarCommandStatus
     try { status = await waitForTerminalStatus(directory) } catch (error) { timedOut = true; throw error }
     if (status.kind === 'error') throw new Error(t('命令启动失败：{message}', { message: status.message }))

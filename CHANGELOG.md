@@ -4,6 +4,10 @@ Write upcoming changes under `## [Unreleased]`. `release.bat X.Y.Z` or `npm run 
 
 ## [Unreleased]
 
+- 新增 macOS 13+ 支持：Apple Silicon / Intel 独立 DMG、本机开发启动、无需开发者账号的 ad-hoc 临时签名，以及双架构 CI 打包和离线安装包验证。发布时要求六个跨平台安装包齐全并生成 SHA256。
+- 补齐 macOS 编辑器应用回退、Terminal 自动化权限错误提示、命令 PATH 传递、⌘ 快捷键提示和 Dock 未读数；关闭窗口后可通过 Dock 或通知恢复会话。
+- 补充中英文 macOS 安装、首次打开、权限、构建和验收说明。macOS 原生 CI 和实机人工验收尚待执行，未接入 Apple Developer 签名或公证。
+
 ## [1.0.0] - 2026-10-23
 
 Agent Desktop 首个正式版本，将 Cursor CLI、Codex CLI 和 Claude Code 集成到一个桌面工作台，提供多项目对话、代码协作、扩展管理和手机远程访问。

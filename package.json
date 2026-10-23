@@ -9,9 +9,11 @@
   "scripts": {
     "dev": "electron-vite dev",
     "dev:linux": "bash scripts/start-linux.sh dev",
+    "dev:mac": "bash scripts/start-mac.sh dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "preview:linux": "bash scripts/start-linux.sh preview",
+    "preview:mac": "bash scripts/start-mac.sh preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json && npm run typecheck:tests",
     "typecheck:tests": "tsc --noEmit -p tsconfig.test.json",
     "test": "vitest run",
@@ -22,7 +24,12 @@
     "dist": "electron-vite build && electron-builder",
     "dist:win:portable": "electron-vite build && electron-builder --win portable --x64 --publish never",
     "dist:linux": "electron-vite build && electron-builder --linux --x64 --publish never",
-    "dist:linux:dir": "electron-vite build && electron-builder --linux --x64 --dir --publish never"
+    "dist:linux:dir": "electron-vite build && electron-builder --linux --x64 --dir --publish never",
+    "dist:mac": "electron-vite build && electron-builder --mac dmg --publish never",
+    "dist:mac:arm64": "electron-vite build && electron-builder --mac dmg --arm64 --publish never",
+    "dist:mac:x64": "electron-vite build && electron-builder --mac dmg --x64 --publish never",
+    "dist:mac:dir": "electron-vite build && electron-builder --mac --dir --publish never",
+    "verify:mac": "node scripts/verify-mac.mjs"
   },
   "build": {
     "appId": "dev.agentdesktop.app",
@@ -68,7 +75,16 @@
     },
     "mac": {
       "target": "dmg",
-      "icon": "resources/icons/1024x1024.png"
+      "icon": "resources/icons/icon.icns",
+      "category": "public.app-category.developer-tools",
+      "minimumSystemVersion": "13.0",
+      "artifactName": "${name}-${version}-mac-${arch}.${ext}",
+      "identity": "-",
+      "hardenedRuntime": false,
+      "notarize": false,
+      "extendInfo": {
+        "NSAppleEventsUsageDescription": "Agent Desktop uses Terminal to run the commands you choose from the toolbar."
+      }
     },
     "linux": {
       "target": [

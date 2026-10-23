@@ -4,7 +4,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { VERSION } from './changelog.mjs'
 
-/** Require all four installers before creating a public release. */
+/** Require all six installers before creating a public release. */
 export function prepareReleaseArtifacts(directory, version) {
   if (!VERSION.test(version)) throw new Error(`Version must be MAJOR.MINOR.PATCH: ${version}`)
   const names = fs.readdirSync(directory).filter((name) => fs.statSync(path.join(directory, name)).isFile())
@@ -14,9 +14,11 @@ export function prepareReleaseArtifacts(directory, version) {
     names.filter((name) => name === `${prefix}-win-x64-portable.exe`),
     names.filter((name) => name === `${prefix}-win-x64-setup.exe`),
     names.filter((name) => name.startsWith(linuxPrefix) && /^(x64|x86_64)\.AppImage$/.test(name.slice(linuxPrefix.length))),
-    names.filter((name) => name.startsWith(linuxPrefix) && /^(x64|amd64)\.deb$/.test(name.slice(linuxPrefix.length)))
+    names.filter((name) => name.startsWith(linuxPrefix) && /^(x64|amd64)\.deb$/.test(name.slice(linuxPrefix.length))),
+    names.filter((name) => name === `${prefix}-mac-arm64.dmg`),
+    names.filter((name) => name === `${prefix}-mac-x64.dmg`)
   ]
-  const labels = ['Windows portable', 'Windows installer', 'Linux AppImage', 'Debian package']
+  const labels = ['Windows portable', 'Windows installer', 'Linux AppImage', 'Debian package', 'macOS Apple Silicon DMG', 'macOS Intel DMG']
   for (const [index, group] of groups.entries()) {
     if (group.length !== 1) throw new Error(`Expected one ${labels[index]} for ${version}, found ${group.length}`)
   }

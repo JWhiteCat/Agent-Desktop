@@ -30,6 +30,11 @@ afterEach(() => {
 })
 
 describe('conversation toolbar', () => {
+  it('uses Command in macOS shortcut hints', () => {
+    vi.stubGlobal('window', { api: { platform: 'darwin', isRemote: false } })
+    expect(toolbar()).toContain('变更面板 (⌘⇧D)')
+    expect(toolbar()).not.toContain('Ctrl+Shift+D')
+  })
   it('ignores unavailable measurements instead of shrinking the toolbar into the Windows caption area', () => {
     expect(measureToolbarLayout([30, 30, 30, 30, 30], 158)).toEqual({ count: 5, width: 158 })
     expect(measureToolbarLayout([0, 0, 0, 0, 0], 158)).toBeNull()

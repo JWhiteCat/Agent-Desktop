@@ -63,6 +63,16 @@ function applyTheme(theme: Settings['theme']): void {
   applyWindowTheme(win, theme)
 }
 
+function ensureMainWindow(): BrowserWindow {
+  if (!win || win.isDestroyed()) {
+    win = createMainWindow()
+    quitConfirmation.watchWindow(win)
+    win.once('closed', () => { win = null })
+    taskbarBadge?.sync(getTaskCounts(snapshot()).unread)
+  }
+  return win
+}
+
 if (process.env.AGENT_DESKTOP_USER_DATA) app.setPath('userData', process.env.AGENT_DESKTOP_USER_DATA)
 // Chromium locks GPUCache under sessionData. A second window sharing that directory fails with
 // "Unable to move the cache" / "Gpu Cache Creation failed". App data stays in userData.
@@ -108,7 +118,7 @@ app.whenReady().then(() => {
     console.error('[skills] sync failed', err)
   }
   sessions = new SessionManager(store, emitAgent, broadcastState, (info) =>
-    notifyRunFinished(info, { enabled: store.settings.notifyOnComplete, getWindow: () => win, send })
+    notifyRunFinished(info, { enabled: store.settings.notifyOnComplete, getWindow: ensureMainWindow, send })
   )
   taskbarBadge = new UnreadTaskbarBadge({
     getWindow: () => win
@@ -133,15 +143,12 @@ app.whenReady().then(() => {
     return fn(...args)
   })
   void remoteRuntime.apply()
-  win = createMainWindow()
-  quitConfirmation.watchWindow(win)
-  taskbarBadge.sync(getTaskCounts(snapshot()).unread)
+  ensureMainWindow()
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      win = createMainWindow()
-      quitConfirmation.watchWindow(win)
-      taskbarBadge?.sync(getTaskCounts(snapshot()).unread)
-    }
+    const current = ensureMainWindow()
+    if (current.isMinimized()) current.restore()
+    current.show()
+    current.focus()
   })
 })
 

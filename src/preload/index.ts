@@ -7,6 +7,14 @@ function subscribe<T>(channel: string, cb: (payload: T) => void): () => void {
   return () => ipcRenderer.removeListener(channel, listener)
 }
 
+// A notification can open a new window before the renderer has loaded its state.
+let pendingFocus: string | undefined
+const focusListeners = new Set<(id: string) => void>()
+if (process.isMainFrame) subscribe<string>('thread:focus', (id) => {
+  if (!focusListeners.size) pendingFocus = id
+  else for (const listener of focusListeners) listener(id)
+})
+
 const api: DesktopApi = {
   platform: process.platform,
   isRemote: false,
@@ -79,7 +87,15 @@ const api: DesktopApi = {
   resetRemoteToken: () => ipcRenderer.invoke('remote:resetToken'),
   onEvent: (cb) => subscribe('agent:event', cb),
   onState: (cb) => subscribe('state:changed', cb),
-  onFocusThread: (cb) => subscribe('thread:focus', cb)
+  onFocusThread: (cb) => {
+    focusListeners.add(cb)
+    if (pendingFocus !== undefined) {
+      const id = pendingFocus
+      pendingFocus = undefined
+      cb(id)
+    }
+    return () => { focusListeners.delete(cb) }
+  }
 }
 
 if (process.isMainFrame) contextBridge.exposeInMainWorld('api', api)

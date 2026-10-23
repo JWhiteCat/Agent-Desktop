@@ -47,6 +47,8 @@ npm install -g @anthropic-ai/claude-code
 
 找不到时，在设置里填写可执行文件或安装目录。
 
+macOS 安装包无需另装 Node.js，内置 Codex/Claude 通过应用自带运行时启动。Finder 启动通常不会继承终端初始化后的 PATH，应用会补充 `/opt/homebrew/bin`、`/usr/local/bin`、`~/.local/bin` 等常见位置，并保留已继承 PATH 的优先级。通过 nvm 等工具安装在非标准目录的 CLI 若未被检测到，请在设置中选择可执行文件或安装前缀；支持 `~/`、带引号及含空格路径。应用不会执行 shell 初始化文件。
+
 ### 认证
 
 Cursor 认证优先使用 [Cursor API Key](https://cursor.com/dashboard/api)。设置中的 Key 优先于环境变量 `CURSOR_API_KEY`。没有 Key 时，使用 `agent login` 保存的浏览器登录。

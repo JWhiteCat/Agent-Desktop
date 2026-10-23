@@ -5,7 +5,7 @@ import type { DesktopApi } from '../src/shared/api'
 const ipc = vi.hoisted(() => ({ invoke: vi.fn(), api: undefined as DesktopApi | undefined }))
 vi.mock('electron', () => ({
   contextBridge: { exposeInMainWorld: (_name: string, api: DesktopApi) => { ipc.api = api } },
-  ipcRenderer: { invoke: ipc.invoke }
+  ipcRenderer: { invoke: ipc.invoke, on: vi.fn() }
 }))
 
 describe('toolbar and project API transports', () => {

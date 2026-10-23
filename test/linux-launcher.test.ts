@@ -4,11 +4,11 @@ import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { afterEach, describe, expect, it } from 'vitest'
 
-const scriptFiles = ['scripts/start-linux.sh', 'start-dev.sh', 'start-preview.sh']
+const scriptFiles = ['scripts/start-posix.sh', 'scripts/start-linux.sh', 'scripts/start-mac.sh', 'start-dev.sh', 'start-preview.sh']
 const fixtures: string[] = []
 type Invocation = { args: string[]; cwd: string; nodeEnv?: string; electronNode?: string }
 
-function fixture({ dependencies = true, runtime = true } = {}) {
+function fixture({ dependencies = true, runtime = true, platform = 'Linux' } = {}) {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-linux-launcher-'))
   fixtures.push(temp)
   const project = path.join(temp, 'project with spaces')
@@ -18,21 +18,24 @@ function fixture({ dependencies = true, runtime = true } = {}) {
   fs.mkdirSync(electron, { recursive: true })
   fs.mkdirSync(bin)
   for (const file of scriptFiles) fs.copyFileSync(path.resolve(file), path.join(project, file))
+  const runtimePath = platform === 'Darwin' ? 'Electron.app/Contents/MacOS/Electron' : 'electron'
   fs.writeFileSync(path.join(electron, 'package.json'), '{"name":"electron"}')
   fs.writeFileSync(path.join(electron, 'install.js'), `
     const fs = require('node:fs');
     if (process.env.TEST_INSTALL_FAIL) process.exit(17);
-    fs.mkdirSync(__dirname + '/dist', { recursive: true });
-    fs.writeFileSync(__dirname + '/dist/electron', '', { mode: 0o755 });
-    fs.writeFileSync(__dirname + '/path.txt', 'electron');
+    const runtime = ${JSON.stringify(runtimePath)};
+    fs.mkdirSync(require('node:path').dirname(__dirname + '/dist/' + runtime), { recursive: true });
+    fs.writeFileSync(__dirname + '/dist/' + runtime, '', { mode: 0o755 });
+    fs.writeFileSync(__dirname + '/path.txt', runtime);
     fs.writeFileSync('runtime-installed', 'yes');
   `)
   if (dependencies) fs.writeFileSync(path.join(project, 'deps-ready'), '')
   if (runtime) {
-    fs.mkdirSync(path.join(electron, 'dist'))
-    fs.writeFileSync(path.join(electron, 'path.txt'), 'electron')
-    fs.writeFileSync(path.join(electron, 'dist/electron'), '', { mode: 0o755 })
+    fs.mkdirSync(path.dirname(path.join(electron, 'dist', runtimePath)), { recursive: true })
+    fs.writeFileSync(path.join(electron, 'path.txt'), runtimePath)
+    fs.writeFileSync(path.join(electron, 'dist', runtimePath), '', { mode: 0o755 })
   }
+  fs.writeFileSync(path.join(bin, 'uname'), `#!/bin/sh\nprintf '%s\\n' '${platform}'\n`, { mode: 0o755 })
   fs.writeFileSync(path.join(bin, 'node'), `#!/usr/bin/env bash
 if [[ "\${1:-}" == --version ]]; then
   printf '%s\\n' "\${TEST_NODE_VERSION:-v24.0.0}"
@@ -214,5 +217,52 @@ describe.skipIf(process.platform !== 'linux' || process.getuid?.() === 0)('Linux
       expect(result.stderr).toContain('No graphical session')
       expect(app.calls()).toEqual([])
     })
+  })
+})
+
+describe.skipIf(process.platform === 'win32')('macOS startup script (Bash 3.2 compatible)', () => {
+  it.each(['start-dev.sh', 'start-preview.sh', 'scripts/start-mac.sh'])('starts %s without DISPLAY from another directory', (entrypoint) => {
+    const app = fixture({ platform: 'Darwin' })
+    expect(app.run([], { DISPLAY: '', WAYLAND_DISPLAY: '' }, entrypoint).status).toBe(0)
+    expect(app.run([], {}, entrypoint).status).toBe(0)
+    const mode = entrypoint === 'start-preview.sh' ? 'preview' : 'dev'
+    const launches = app.calls().filter(call => call.args[1] === mode)
+    expect(launches).toHaveLength(2)
+    for (const call of launches) {
+      expect(call.cwd).toBe(app.project)
+      expect(call.electronNode).toBeUndefined()
+      expect(call.nodeEnv).toBe(mode === 'dev' ? 'development' : 'production')
+    }
+    expect(app.calls().some(call => call.args[0] === 'ci')).toBe(false)
+    expect(app.calls().filter(call => call.args[1] === 'build')).toHaveLength(mode === 'preview' ? 2 : 0)
+  })
+
+  it('installs dependencies and a macOS app runtime once, and forwards --install', () => {
+    const app = fixture({ platform: 'Darwin', dependencies: false, runtime: false })
+    expect(app.run([], {}, 'start-dev.sh').status).toBe(0)
+    expect(app.run([], {}, 'start-dev.sh').status).toBe(0)
+    expect(app.calls().filter(call => call.args[0] === 'ci')).toHaveLength(1)
+    expect(fs.existsSync(path.join(app.project, 'runtime-installed'))).toBe(true)
+    expect(app.run(['--install'], {}, 'start-dev.sh').status).toBe(0)
+    expect(app.calls().filter(call => call.args[0] === 'ci')).toHaveLength(2)
+  })
+
+  it('stops on dependency, runtime and preview build errors', () => {
+    const dependencies = fixture({ platform: 'Darwin', dependencies: false })
+    expect(dependencies.run([], { TEST_CI_FAIL: '1' }, 'start-dev.sh').status).toBe(1)
+    expect(dependencies.calls().some(call => call.args[0] === 'run')).toBe(false)
+    const runtime = fixture({ platform: 'Darwin', runtime: false })
+    expect(runtime.run([], { TEST_INSTALL_FAIL: '1' }, 'start-dev.sh').status).toBe(1)
+    const preview = fixture({ platform: 'Darwin' })
+    expect(preview.run([], { TEST_RUN_FAIL: 'build' }, 'start-preview.sh').status).toBe(19)
+    expect(preview.calls().some(call => call.args[1] === 'preview')).toBe(false)
+  })
+
+  it('rejects the wrong platform or unsupported Node before installation', () => {
+    const wrong = fixture()
+    expect(wrong.run([], {}, 'scripts/start-mac.sh').stderr).toContain('This launcher is for macOS')
+    const app = fixture({ platform: 'Darwin' })
+    expect(app.run([], { TEST_NODE_VERSION: 'v20.0.0' }, 'start-dev.sh').status).toBe(1)
+    expect(app.calls()).toEqual([])
   })
 })

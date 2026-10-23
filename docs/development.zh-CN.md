@@ -16,6 +16,45 @@ Windows 一键启动（需先安装 Node.js 22.12 或更高版本，包含 npm�
 
 首次运行需要联网下载依赖和 Electron；之后会复用已安装的依赖与运行时。脚本可从任意工作目录启动，失败时会保留窗口显示错误。Electron 下载失败时，检查网络、代理或 `ELECTRON_MIRROR` 环境变量后重试。
 
+## macOS 启动与打包
+
+支持 macOS 13 Ventura 或更新版本，分别构建 Apple Silicon（arm64）和 Intel（x64）应用。安装包包含 Electron 和内置 Codex/Claude，无需另装 Node.js；源码开发和打包需要上述 Node.js 环境，Git 功能还需要本机 `git`。
+
+在已登录桌面的终端中运行，兼容系统自带 Bash 3.2：
+
+```bash
+bash start-dev.sh
+bash start-preview.sh
+# 或使用平台专用入口：
+npm run dev:mac
+npm run preview:mac
+```
+
+入口按系统自动分流，macOS 不检查 Linux 的 DISPLAY/Wayland 环境。首次启动补齐依赖和 Electron，后续可离线复用；传入 `--install` 刷新锁文件依赖。预览会先构建，构建失败不会打开旧版本。支持从其他工作目录启动及含空格路径。
+
+请在对应架构的 Mac 上安装依赖并打包，不要从 Windows/Linux 复制 node_modules，也不要在单一架构的依赖目录内交叉打包：
+
+```bash
+npm ci --include=dev --include=optional
+node node_modules/electron/install.js
+npm run dist:mac          # 当前架构的 DMG
+npm run dist:mac:arm64    # 在 Apple Silicon 上构建
+npm run dist:mac:x64      # 在 Intel 上构建
+npm run dist:mac:dir      # 当前架构的未封装应用
+# 用实际版本号和本机架构替换示例：
+npm run verify:mac -- release/agent-desktop-0.1.0-mac-arm64.dmg arm64
+```
+
+产物为 `agent-desktop-<version>-mac-<arch>.dmg`，命令均不发布。应用使用无需 Apple Developer 账号的 ad-hoc 临时签名，未使用 Developer ID、未公证。按当前 electron-builder v26 接口设置 `identity: "-"`、`hardenedRuntime: false`、`notarize: false`，并提供 Terminal 自动化用途说明。[签名配置参考](https://www.electron.build/v26/docs/mac/)
+
+下载对应芯片的 DMG，拖入 Applications 并退出磁盘镜像，再从 Finder 启动应用。首次打开被 Gatekeeper 拦截时，先确认下载来源和 SHA256，然后到「系统设置 → 隐私与安全性」找到该应用并选择「仍要打开」。这只是当前应用的例外，不需要全局关闭 Gatekeeper。[Apple 首次打开说明](https://support.apple.com/zh-cn/102445)
+
+顶部命令首次运行可能请求控制 Terminal，请允许；拒绝后可在「隐私与安全性 → 自动化」重新允许 Agent Desktop 控制 Terminal，开发模式对应的名称可能是 Electron。没有安装 `code` / `cursor` 命令时，编辑器按钮会尝试打开已安装的 VS Code / Cursor 应用。应用关闭窗口后继续运行，点击 Dock 可重开窗口，点击完成通知会打开对应会话；⌘Q 退出时保留任务确认。
+
+`verify:mac` 在临时目录挂载并复制 DMG 内的应用，检查签名、三种可执行文件的架构、内置 CLI 版本、两个 ACP initialize 握手、runner 参数，以及真实窗口、preload IPC 和模拟 CLI 检测；不调用模型或读取用户登录，检查后清理进程和挂载。该检查需要 Mac 图形会话。
+
+验证记录：本次修改在 Windows 环境实施；macOS 原生打包及自动冒烟须由新增 CI 执行，此处不表示 CI 已通过。Apple Silicon 与 Intel 的以下人工验收均待完成：从浏览器下载后的首次打开、Terminal 允许/拒绝、编辑器打开、附件和剪贴板、Git 差异、三种真实 CLI 登录/发送/停止、Dock/通知和退出行为。最低系统 macOS 13 也需单独实机验收。
+
 ## Linux 启动与打包
 
 Linux 安装包面向 **x86-64 / amd64**、基于 glibc 的桌面发行版，需要已登录的 X11 或 Wayland 图形会话。请使用普通桌面用户运行应用。无头服务器、普通 SSH 会话和 Alpine/musl 不属于支持的桌面环境。应用使用 Linux 原生标题栏；桌面通知、文件及链接打开功能依赖相应桌面服务。
@@ -82,7 +121,7 @@ chmod +x release/agent-desktop-*-linux-x86_64.AppImage
 - 当前锁定的 electron-builder 使用 FUSE 2 AppImage 运行时。若提示缺少 `libfuse.so.2`，Ubuntu 24.04 安装 `libfuse2t64`，Ubuntu 22.04 / Debian 12 安装 `libfuse2`。安装兼容库即可，不要替换系统的 FUSE 3。无法使用 FUSE 时，可执行 `./release/agent-desktop-*-linux-x86_64.AppImage --appimage-extract-and-run`，通过解压启动而不挂载镜像。详见 [AppImage FUSE 指南](https://docs.appimage.org/user-guide/troubleshooting/fuse.html)。
 - FUSE 与 Chromium 沙箱是两个独立条件。随包提供的 AppImage 启动器保留 Chromium 沙箱，不会在用户命名空间不可用时悄悄关闭它。解压也不能解决沙箱错误。若系统限制用户命名空间或有 AppArmor 策略，优先通过系统包管理器安装 `.deb`，或请管理员按发行版支持的方式配置针对该应用的策略。不要用 `sudo` 运行应用、全局关闭 AppArmor 或添加关闭沙箱的启动参数。详见 [Electron 沙箱说明](https://www.electronjs.org/docs/latest/tutorial/sandbox)。
 - 若提示缺少共享库，用发行版的包管理器安装对应运行库。没有 `DISPLAY` 和 `WAYLAND_DISPLAY` 的终端无法打开桌面窗口，请在图形会话内启动。
-- **ARM64 暂未作为发行目标。** 仅修改 electron-builder 架构参数不够，Electron、Codex/Claude 的 optional 原生二进制及适配器都必须匹配目标架构。ARM64 原生启动及打包仍需单独验证，提供的发行命令有意限定为 x64。
+- **Linux ARM64 暂未作为发行目标。** Electron、Codex/Claude 的 optional 原生二进制及适配器都必须匹配目标架构；Linux 发行命令仍限定为 x64。macOS ARM64 使用上面的独立原生构建流程。
 
 ## Windows 便携包
 
@@ -113,9 +152,9 @@ npm run release -- 0.2.0
 
 脚本会把这些说明移到 `## [0.2.0] - YYYY-MM-DD`，并在 `master` 上提交。接着创建 `release/0.2.0`，只在那条分支上把 `package.json` 和 `package-lock.json` 的版本号改为 `0.2.0`，然后推送 `master`、release 分支和附注 tag `v0.2.0`。版本号提交留在 release 分支上。
 
-[`.github/workflows/release.yml`](../.github/workflows/release.yml) 会在 `v*` tag 和 `release/*` 分支的推送上运行。推送分支时，只检查分支名是否为三段数字，并且与 `package.json` 一致。推送 tag 时会再做同样的检查，并确认 `release/X.Y.Z` 已存在且指向该 tag 的提交。`v1` 或 `release/next` 这类名称通不过检查，也不会发布。只有 tag 会继续：构建 Windows x64 便携包和 NSIS 安装包，以及 Linux x64 AppImage 和 Debian 包。GitHub Release 的说明就是该版本的 Changelog 小节。不构建 macOS 和 ARM64。工作流调用 electron-builder 时使用 `--publish never`，再由 `gh` 上传文件。本地打包命令不变。
+[`.github/workflows/release.yml`](../.github/workflows/release.yml) 会在 `v*` tag 和 `release/*` 分支的推送上运行。推送分支时，只检查分支名是否为三段数字，并且与 `package.json` 一致。推送 tag 时还会确认 `release/X.Y.Z` 已存在且指向该 tag 的提交。`v1` 或 `release/next` 等名称通不过检查。只有 tag 会继续构建 Windows x64 便携包/NSIS、Linux x64 AppImage/Debian，以及 macOS arm64/x64 DMG。macOS 矩阵分别在 `macos-15`（arm64）和 `macos-15-intel`（x64）安装本机 optional 依赖，运行类型检查、离线测试、打包和 `verify:mac`。Release 说明来自对应版本的 Changelog。electron-builder 使用 `--publish never`，再由 `gh` 上传文件。
 
-工作流会在构建前拒绝缺失或为空的版本说明，显式安装并检查 Electron，确认四种安装包齐全，并生成 `SHA256SUMS.txt`。Windows 附件名为 `agent-desktop-<version>-win-x64-portable.exe` 和 `agent-desktop-<version>-win-x64-setup.exe`。全部附件上传前 Release 保持草稿，上传完成后才公开为正式版和 Latest。重试可以继续未完成的草稿，不会覆盖已经公开的版本。
+工作流在构建前拒绝缺失或为空的版本说明，显式安装并检查 Electron，确认六个安装包齐全，并生成 `SHA256SUMS.txt`。Windows 附件名为 `agent-desktop-<version>-win-x64-portable.exe` 和 `agent-desktop-<version>-win-x64-setup.exe`；macOS 为 `agent-desktop-<version>-mac-arm64.dmg` 和 `agent-desktop-<version>-mac-x64.dmg`。任一平台失败、缺包或空包都会阻止公开发布。全部附件上传前 Release 保持草稿，上传完成后才公开为正式版和 Latest。重试可以继续草稿，不覆盖已经公开的版本。
 
 工作流成功后，不要再向 `release/X.Y.Z` 提交，也不要移动该 tag。脚本若在推送中途失败，先检查已存在的分支和 tag，再补齐剩余推送；脚本不会删除或回滚已经完成的操作。准备完成后，脚本会返回 `master`。
 
@@ -127,6 +166,7 @@ npm run release -- 0.2.0
 | --- | --- |
 | `npm run dev` | 打开开发窗口 |
 | `npm run dev:linux` / `npm run preview:linux` | 带依赖和运行时检查的 Linux 启动 |
+| `npm run dev:mac` / `npm run preview:mac` | 带依赖和运行时检查的 macOS 启动 |
 | `npm test` | 离线单元测试，不调用模型 |
 | `npm run test:live` | 用 Composer 2.5 Fast 检查极短文字及附件输入 |
 | `npm run typecheck` | 检查应用与全部测试的类型，不执行测试 |
@@ -137,8 +177,11 @@ npm run release -- 0.2.0
 | `npm run dist:win:portable` | 构建 Windows x64 免安装便携程序，不会发布 |
 | `npm run dist:linux` | 构建 Linux x64 AppImage 和 Debian 安装包，不会发布 |
 | `npm run dist:linux:dir` | 构建 Linux x64 未封装应用 |
+| `npm run dist:mac` / `npm run dist:mac:dir` | 构建本机架构的 DMG / 未封装应用，不发布 |
+| `npm run dist:mac:arm64` / `npm run dist:mac:x64` | 在对应架构的 Mac 上原生打包 |
+| `npm run verify:mac -- DMG ARCH` | 在与 ARCH 匹配的 Mac 上离线验证安装包 |
 | `release.bat 0.2.0` / `npm run release -- 0.2.0` | 用 Unreleased 中的变更说明发布该版本 |
-| `npm run icons` | 由 `resources/icons/icon.svg` 重新生成各尺寸 PNG 和 Windows `icon.ico` |
+| `npm run icons` | 由 `resources/icons/icon.svg` 生成 PNG、Windows `icon.ico` 和 macOS `icon.icns` |
 
 应用图标的源文件是 `resources/icons/icon.svg`；备选方案位于 `docs/icons/`，对比图见 `docs/icons/preview.png`。换用其他方案可运行 `npm run icons -- docs/icons/agent-hub.svg`（复制为 `icon.svg` 后重新生成），修改备选 SVG 后用 `npm run icons -- --preview` 刷新对比图。脚本使用项目自带的 Electron 渲染，无需额外依赖。
 

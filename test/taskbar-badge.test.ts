@@ -6,8 +6,8 @@ import { getTaskCounts } from '../src/shared/task-counts'
 import type { ThreadMeta } from '../src/shared/types'
 import { UnreadTaskbarBadge } from '../src/main/taskbar-badge'
 
-const mocks = vi.hoisted(() => ({ createFromBitmap: vi.fn() }))
-vi.mock('electron', () => ({ nativeImage: { createFromBitmap: mocks.createFromBitmap } }))
+const mocks = vi.hoisted(() => ({ createFromBitmap: vi.fn(), setBadge: vi.fn() }))
+vi.mock('electron', () => ({ app: { dock: { setBadge: mocks.setBadge } }, nativeImage: { createFromBitmap: mocks.createFromBitmap } }))
 
 function image(empty = false): NativeImage {
   return { isEmpty: () => empty } as NativeImage
@@ -214,7 +214,31 @@ describe('unread taskbar badge controller', () => {
     expect(mocks.createFromBitmap).toHaveBeenCalledOnce()
   })
 
-  it.each(['darwin', 'linux'])('does no native or timer work on %s', (platformName) => {
+  it('updates and clears the macOS Dock without a window or refresh timer', () => {
+    Object.defineProperty(process, 'platform', { ...platform, value: 'darwin' })
+    const { badge, win, setWindow } = fixture()
+    setWindow(null)
+    badge.sync(3)
+    badge.sync(3)
+    badge.sync(105)
+    badge.restore()
+    badge.sync(2)
+    expect(mocks.setBadge.mock.calls).toEqual([['3'], ['99+'], ['']])
+    expect(mocks.createFromBitmap).not.toHaveBeenCalled()
+    expect(win.setOverlayIcon).not.toHaveBeenCalled()
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('contains Dock failures and retries on the next broadcast', () => {
+    Object.defineProperty(process, 'platform', { ...platform, value: 'darwin' })
+    const { badge } = fixture()
+    mocks.setBadge.mockImplementationOnce(() => { throw new Error('Dock unavailable') })
+    expect(() => badge.sync(1)).not.toThrow()
+    badge.sync(1)
+    expect(mocks.setBadge).toHaveBeenCalledTimes(2)
+  })
+
+  it.each(['linux'])('does no native or timer work on %s', (platformName) => {
     Object.defineProperty(process, 'platform', { ...platform, value: platformName })
     const { badge, win } = fixture()
     badge.sync(1)

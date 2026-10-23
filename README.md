@@ -29,7 +29,7 @@ See the [user guide](docs/user-guide.md) for detailed behavior and shortcuts.
 
 ## Requirements
 
-- [Node.js 24 LTS](https://nodejs.org/en/download) is recommended; Node 22.12+ (22.x) and Node 26+ are also supported by the current toolchain
+- macOS 13 Ventura or newer, with separate Apple Silicon (arm64) and Intel (x64) DMGs. Packaged apps include their runtime; source development requires [Node.js 24 LTS](https://nodejs.org/en/download) (Node 22.12+ in the 22.x line and Node 26+ are also supported)
 - At least one authenticated CLI: Cursor CLI, Codex CLI, or Claude Code. Codex and Claude can use the binaries bundled with their adapters
 - `git` on `PATH` for git diffs and isolated worktrees
 
@@ -44,7 +44,9 @@ npm ci --include=dev --include=optional
 npm run dev
 ```
 
-On Windows, double-click [start-dev.bat](start-dev.bat) to install dependencies and start development mode, or [start-preview.bat](start-preview.bat) to build and launch a production preview. Double-click [build-portable.bat](build-portable.bat) to package a portable executable that does not need installation. On Linux, run [start-dev.sh](start-dev.sh) or [start-preview.sh](start-preview.sh). The first run needs internet access to download dependencies and Electron.
+On Windows, double-click [start-dev.bat](start-dev.bat) to install dependencies and start development mode, or [start-preview.bat](start-preview.bat) to build and launch a production preview. Double-click [build-portable.bat](build-portable.bat) to package a portable executable that does not need installation. On macOS or Linux, run [start-dev.sh](start-dev.sh) or [start-preview.sh](start-preview.sh), using `bash` if executable permissions are missing. The first run needs internet access to download dependencies and Electron.
+
+Mac users can download `agent-desktop-<version>-mac-arm64.dmg` (Apple Silicon) or `agent-desktop-<version>-mac-x64.dmg` (Intel) from Releases, then drag the app into Applications. Packages use account-free ad-hoc signatures and are not notarized by Apple. If the first launch is blocked, use **Privacy & Security → Open Anyway** as described in [macOS setup](docs/development.md#macos-startup-and-packages).
 
 1. Open **Settings → CLI** and select Cursor, Codex, or Claude. Sign in or configure an API key; Cursor prefers `CURSOR_API_KEY` when no key is saved in Settings.
 2. Add a project folder, then choose a CLI, model, and mode in the composer.
@@ -62,7 +64,7 @@ The [documentation index](docs/README.md) links to all guides. Each guide has an
 | [Usage statistics](docs/usage-stats.md) | Token counts, cost estimates, account quota, and Codex session accounting |
 | [Remote control](docs/remote-control.md) | LAN access, SSH tunnels, access tokens, and server setup |
 | [Data storage](docs/data-storage.md) | Local data, CLI history, forks, worktrees, and multiple windows |
-| [Development guide](docs/development.md) | Startup, Windows portable and Linux packaging, commands, testing, localization, and module layout |
+| [Development guide](docs/development.md) | Startup, Windows/macOS/Linux packaging, commands, testing, localization, and module layout |
 
 ## Contributing
 

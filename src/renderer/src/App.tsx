@@ -12,6 +12,7 @@ import { useT } from './lib/i18n'
 import { isWebClient, panelLayout, readStoredPanelWidths } from './lib/panel-layout'
 import { applyTypography } from './lib/appearance'
 import { SkinBackground } from './components/SkinBackground'
+import { shortcutHint } from './lib/shortcut'
 
 const NARROW = '(max-width: 720px)'
 const isNarrow = (): boolean => window.matchMedia(NARROW).matches
@@ -118,8 +119,8 @@ export default function App() {
       <button
         type="button"
         className="icon-btn sidebar-toggle no-drag"
-        title={t(sidebarOpen ? '隐藏侧边栏 (Ctrl+B)' : '显示侧边栏 (Ctrl+B)')}
-        aria-label={t(sidebarOpen ? '隐藏侧边栏 (Ctrl+B)' : '显示侧边栏 (Ctrl+B)')}
+        title={shortcutHint(t(sidebarOpen ? '隐藏侧边栏 (Ctrl+B)' : '显示侧边栏 (Ctrl+B)'))}
+        aria-label={shortcutHint(t(sidebarOpen ? '隐藏侧边栏 (Ctrl+B)' : '显示侧边栏 (Ctrl+B)'))}
         aria-expanded={sidebarOpen}
         onClick={() => setSidebarOpen((o) => !o)}
       >

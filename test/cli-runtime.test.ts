@@ -67,6 +67,27 @@ afterEach(async () => {
   fs.rmSync(root, { recursive: true, force: true })
 })
 
+describe('macOS Homebrew search order', () => {
+  it.each(['arm64', 'x64'])('prefers native Homebrew locations for macOS %s without overriding inherited PATH', async (name) => {
+    const platform = Object.getOwnPropertyDescriptor(process, 'platform')!
+    const arch = Object.getOwnPropertyDescriptor(process, 'arch')!
+    try {
+      Object.defineProperty(process, 'platform', { ...platform, value: 'darwin' })
+      Object.defineProperty(process, 'arch', { ...arch, value: name })
+      vi.resetModules()
+      const runtime = await import('../src/main/cli-runtime')
+      const directories = runtime.cliSearchDirectories({ PATH: ['/selected/bin', '/usr/bin', '/bin'].join(path.delimiter) })
+      expect(directories[0]).toBe('/selected/bin')
+      const preferred = name === 'arm64' ? '/opt/homebrew/bin' : '/usr/local/bin'
+      const other = name === 'arm64' ? '/usr/local/bin' : '/opt/homebrew/bin'
+      expect(directories.indexOf(preferred)).toBeLessThan(directories.indexOf(other))
+    } finally {
+      Object.defineProperty(process, 'platform', platform)
+      Object.defineProperty(process, 'arch', arch)
+    }
+  })
+})
+
 describe.skipIf(process.platform === 'win32')('POSIX desktop CLI discovery and environment', () => {
   it('preserves inherited PATH precedence, removes duplicates and adds Linux desktop locations', () => {
     const selected = path.join(root, 'selected node', 'bin')
@@ -82,7 +103,7 @@ describe.skipIf(process.platform === 'win32')('POSIX desktop CLI discovery and e
     expect(directories).toEqual(expect.arrayContaining([
       path.join(prefix, 'bin'), path.join(root, 'nvm', 'bin'), path.join(root, 'brew', 'bin'),
       path.join(home, '.local', 'bin'), path.join(home, 'bin'), path.join(home, '.npm-global', 'bin'),
-      path.join(home, '.linuxbrew', 'bin'), '/home/linuxbrew/.linuxbrew/bin', '/usr/bin', '/bin'
+      path.join(home, '.linuxbrew', 'bin'), '/home/linuxbrew/.linuxbrew/bin', '/usr/bin', '/bin', '/usr/local/bin', '/opt/homebrew/bin'
     ]))
     const previous = process.env.NO_COLOR
     const env = cliEnvironment({ NO_COLOR: '1' })

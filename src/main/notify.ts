@@ -19,7 +19,11 @@ export function notifyRunFinished(
     if (win.isMinimized()) win.restore()
     win.show()
     win.focus()
-    opts.send('thread:focus', info.threadId)
+    const focus = () => {
+      if (!win.isDestroyed()) opts.send('thread:focus', info.threadId)
+    }
+    if (win.webContents.isLoadingMainFrame()) win.webContents.once('did-finish-load', focus)
+    else focus()
   })
   notification.show()
 }

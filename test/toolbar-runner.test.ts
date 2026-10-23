@@ -23,9 +23,9 @@ beforeAll(async () => {
 })
 afterAll(() => fs.rmSync(directory, { recursive: true, force: true }))
 
-async function run(program: string, args: string[], executable = process.execPath): Promise<{ output: string; code: number | null; status: unknown }> {
+async function run(program: string, args: string[], executable = process.execPath, extra: Partial<ToolbarCommandPayload> = {}): Promise<{ output: string; code: number | null; status: unknown }> {
   const launch = fs.mkdtempSync(path.join(directory, 'payload-'))
-  const payload: ToolbarCommandPayload = { program, args, cwd: directory, messages: { failed: 'FAILED', finished: 'EXIT', close: 'ENTER_TO_CLOSE' } }
+  const payload: ToolbarCommandPayload = { program, args, cwd: directory, messages: { failed: 'FAILED', finished: 'EXIT', close: 'ENTER_TO_CLOSE' }, ...extra }
   const file = path.join(launch, 'payload.json')
   fs.writeFileSync(file, JSON.stringify(payload))
   return new Promise((resolve, reject) => {
@@ -48,6 +48,12 @@ async function run(program: string, args: string[], executable = process.execPat
 }
 
 describe('standalone toolbar runner', () => {
+  it.skipIf(process.platform === 'win32')('preserves the desktop PATH for commands in a separately opened terminal', async () => {
+    const selected = path.join(directory, 'selected node', 'bin')
+    const result = await run(process.execPath, ['-e', 'console.log("PATH:" + process.env.PATH)'], process.execPath, { path: selected })
+    expect(result.code).toBe(0)
+    expect(result.output).toContain(`PATH:${selected}`)
+  })
   const args = ['plain', '', 'with spaces', '中文路径', 'a"quote', 'a\\"quote', 'C:\\tail\\', '&|<>^%!()', '%PATH%', '!EXPAND!', '$(command)', '{cwd}']
 
   it('preserves literal arguments and cwd through a real native child and removes Electron launch mode', async () => {

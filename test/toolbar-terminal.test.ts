@@ -1,8 +1,10 @@
 import fs from 'node:fs'
+import { EventEmitter } from 'node:events'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { findTerminalExecutable, launchToolbarCommand, quotePosix, terminalLaunch, waitForTerminalStatus } from '../src/main/toolbar-terminal'
+import { findTerminalExecutable, launchToolbarCommand, quotePosix, startTerminal, terminalLaunch, waitForTerminalStatus } from '../src/main/toolbar-terminal'
+import { setLanguage } from '../src/shared/i18n'
 
 const mocks = vi.hoisted(() => ({ spawn: vi.fn(), app: { isPackaged: false } }))
 vi.mock('electron', () => ({ app: mocks.app }))
@@ -17,6 +19,8 @@ function temporary() {
 afterEach(() => {
   for (const directory of directories.splice(0)) fs.rmSync(directory, { recursive: true, force: true })
   vi.useRealTimers()
+  vi.resetAllMocks()
+  setLanguage('system', 'zh-CN')
 })
 
 describe('terminal launchers', () => {
@@ -69,6 +73,32 @@ describe('terminal launchers', () => {
 })
 
 describe('terminal acknowledgement', () => {
+  it('waits for macOS automation permission and reports denial without retrying', async () => {
+    setLanguage('zh-CN')
+    const child = Object.assign(new EventEmitter(), { stderr: new EventEmitter(), unref: vi.fn() })
+    mocks.spawn.mockReturnValue(child)
+    const started = startTerminal(terminalLaunch('darwin', '/app', '/runner', '/payload'), '/tmp', {}, 'darwin')
+    child.emit('spawn')
+    child.stderr.emit('data', Buffer.from('Not authorized to send Apple events to Terminal. (-1743)'))
+    child.emit('close', 1)
+    await expect(started).rejects.toThrow('自动化中允许 Agent Desktop 控制 Terminal')
+    expect(mocks.spawn).toHaveBeenCalledOnce()
+  })
+
+  it('accepts macOS Terminal only after osascript succeeds', async () => {
+    const child = Object.assign(new EventEmitter(), { stderr: new EventEmitter(), unref: vi.fn() })
+    mocks.spawn.mockReturnValue(child)
+    const started = startTerminal(terminalLaunch('darwin', '/app', '/runner', '/payload'), '/tmp', {}, 'darwin')
+    const done = vi.fn()
+    void started.then(done)
+    child.emit('spawn')
+    await Promise.resolve()
+    expect(done).not.toHaveBeenCalled()
+    child.emit('close', 0)
+    await started
+    expect(done).toHaveBeenCalledOnce()
+  })
+
   it.each([{ kind: 'started' }, { kind: 'error', message: 'Permission denied' }])('reads %j from the runner', async (status) => {
     const directory = temporary()
     fs.writeFileSync(path.join(directory, 'status.json'), JSON.stringify(status))

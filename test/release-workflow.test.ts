@@ -32,12 +32,22 @@ describe('GitHub release workflow', () => {
     expect(verify).not.toContain('electron-builder')
     expect(verify).toContain('node scripts/changelog.mjs "$version"')
 
-    for (const name of ['build-windows', 'build-linux', 'publish']) {
+    for (const name of ['build-windows', 'build-linux', 'build-macos', 'publish']) {
       expect(jobBlock(workflow, name)).toContain("startsWith(github.ref, 'refs/tags/v')")
     }
     expect(jobBlock(workflow, 'build-windows')).toContain('electron-builder --win portable nsis --x64 --publish never')
     expect(jobBlock(workflow, 'build-linux')).toContain('npm run dist:linux')
     const publish = jobBlock(workflow, 'publish')
+    const mac = jobBlock(workflow, 'build-macos')
+    expect(mac).toContain('runner: macos-15\n')
+    expect(mac).toContain('runner: macos-15-intel')
+    expect(mac).toContain('process.arch')
+    expect(mac).toContain('npm ci --include=dev --include=optional')
+    expect(mac).toContain('npm run typecheck')
+    expect(mac).toContain('npm test')
+    expect(mac).toContain('npm run dist:mac:${{ matrix.arch }}')
+    expect(mac).toContain('npm run verify:mac --')
+    expect(publish).toContain('needs: [verify, build-windows, build-linux, build-macos]')
     expect(publish).toContain('node scripts/changelog.mjs "$VERSION"')
     expect(publish).toContain('node scripts/release-artifacts.mjs artifacts "$VERSION"')
     expect(publish).toContain('gh release create "$tag" --verify-tag --draft --title "Agent Desktop ${tag}" --notes-file release-notes.md')

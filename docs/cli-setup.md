@@ -47,6 +47,8 @@ The app looks for the CLIs automatically:
 
 If nothing is found, set the executable or install directory in Settings.
 
+macOS packages do not need a separate Node.js installation: bundled Codex/Claude adapters use the app runtime. Finder launches usually do not inherit a terminal's initialized PATH. Discovery adds common locations including `/opt/homebrew/bin`, `/usr/local/bin` and `~/.local/bin`, retaining inherited PATH precedence. For a CLI installed in a nonstandard directory by nvm or another manager, select its executable or installation prefix in Settings; `~/`, quoted paths and spaces are supported. The app does not run shell startup files.
+
 ### Authentication
 
 Cursor auth prefers a [Cursor API key](https://cursor.com/dashboard/api). A key saved in Settings overrides the `CURSOR_API_KEY` environment variable. Without a key, the app uses the browser login saved by `agent login`.

@@ -10,7 +10,9 @@ const names = [
   'agent-desktop-1.0.0-win-x64-portable.exe',
   'agent-desktop-1.0.0-win-x64-setup.exe',
   'agent-desktop-1.0.0-linux-x86_64.AppImage',
-  'agent-desktop-1.0.0-linux-amd64.deb'
+  'agent-desktop-1.0.0-linux-amd64.deb',
+  'agent-desktop-1.0.0-mac-arm64.dmg',
+  'agent-desktop-1.0.0-mac-x64.dmg'
 ]
 
 function fixture() {
@@ -25,7 +27,7 @@ afterEach(() => {
 })
 
 describe('release artifacts', () => {
-  it('includes four installers and a checksum manifest that matches their contents', () => {
+  it('includes six installers and a checksum manifest that matches their contents', () => {
     const directory = fixture()
     fs.writeFileSync(path.join(directory, 'builder-debug.yml'), 'not a release asset')
     const files = prepareReleaseArtifacts(directory, '1.0.0')
@@ -35,6 +37,13 @@ describe('release artifacts', () => {
       const hash = createHash('sha256').update(fs.readFileSync(path.join(directory, name))).digest('hex')
       expect(manifest).toContain(`${hash}  ${name}\n`)
     }
+  })
+
+  it.each(names.slice(4))('refuses to publish without %s', (name) => {
+    const directory = fixture()
+    fs.unlinkSync(path.join(directory, name))
+    expect(() => prepareReleaseArtifacts(directory, '1.0.0')).toThrow(/macOS/)
+    expect(fs.existsSync(path.join(directory, 'SHA256SUMS.txt'))).toBe(false)
   })
 
   it('refuses incomplete, empty, ambiguous, or wrong-version installers', () => {

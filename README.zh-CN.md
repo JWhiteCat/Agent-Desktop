@@ -30,7 +30,7 @@
 
 ## 环境要求
 
-- 推荐 [Node.js 24 LTS](https://nodejs.org/en/download)；Node 22.12+（22.x）或 Node 26+ 也满足当前 Electron 和测试工具链要求。
+- macOS 13 Ventura 或更新版本，支持 Apple Silicon（arm64）与 Intel（x64），分别提供 DMG。安装包自带运行时；源码开发才需要 [Node.js 24 LTS](https://nodejs.org/en/download)（也支持 Node 22.12+ 的 22.x、26+）。
 - 至少一种已配置 API Key 或已登录的 CLI：Cursor CLI、Codex CLI 或 Claude Code；找不到本机 Codex / Claude 时可使用适配器自带版本。
 - 变更面板的 Git 页签需要本机可执行 `git`。
 
@@ -54,9 +54,11 @@ npm run dev
 也可以使用项目根目录的一键启动脚本：
 
 - Windows：双击 `start-dev.bat` 启动开发模式，或 `start-preview.bat` 构建后启动生产预览。双击 `build-portable.bat` 打包免安装的便携程序。
-- Linux：执行 `./start-dev.sh` 或 `./start-preview.sh`；没有执行权限时使用 `bash start-dev.sh` 或 `bash start-preview.sh`。
+- macOS / Linux：执行 `./start-dev.sh` 或 `./start-preview.sh`；没有执行权限时使用 `bash start-dev.sh` 或 `bash start-preview.sh`。
 
 脚本会检查并补齐依赖与 Electron 运行时。首次运行需要联网；Linux 桌面环境、运行库与安装包说明见 [开发指南](docs/development.zh-CN.md)。
+
+macOS 用户可从 Releases 下载对应芯片的 `agent-desktop-<version>-mac-arm64.dmg` 或 `agent-desktop-<version>-mac-x64.dmg`，将应用拖入 Applications 后启动。安装包采用无需开发者账号的 ad-hoc 临时签名，未经过 Apple 公证；首次被拦截时，按[macOS 安装说明](docs/development.zh-CN.md#macos-启动与打包)在「隐私与安全性」中选择「仍要打开」。
 
 ## 文档
 

@@ -1,4 +1,4 @@
-import { nativeImage, type BrowserWindow, type NativeImage } from 'electron'
+import { app, nativeImage, type BrowserWindow, type NativeImage } from 'electron'
 import { t } from '@shared/i18n'
 import { createUnreadBadgeBitmap, unreadBadgeLabel } from './taskbar-icon'
 
@@ -20,7 +20,19 @@ export class UnreadTaskbarBadge {
   constructor(private readonly options: Options) {}
 
   sync(count: number): void {
-    if (process.platform !== 'win32' || this.stopped) return
+    if (this.stopped) return
+    if (process.platform === 'darwin') {
+      const label = unreadBadgeLabel(count)
+      if (label === this.appliedLabel) return
+      try {
+        app.dock?.setBadge(label)
+        this.appliedLabel = label
+      } catch (error) {
+        console.error('[dock] Badge update failed', error)
+      }
+      return
+    }
+    if (process.platform !== 'win32') return
     this.count = count
     this.apply()
   }

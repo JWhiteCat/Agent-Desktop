@@ -1,4 +1,5 @@
 export const terminalMessages: Record<string, string> = {
+  '请在系统设置 → 隐私与安全性 → 自动化中允许 Agent Desktop 控制 Terminal，然后重试。': 'Allow Agent Desktop to control Terminal in System Settings → Privacy & Security → Automation, then try again.',
   '未找到可用终端，请安装 x-terminal-emulator、GNOME Terminal、Konsole 或 xterm。': 'No supported terminal found. Install x-terminal-emulator, GNOME Terminal, Konsole, or xterm.',
   '终端启动确认超时；终端可能仍会稍后打开，请检查后再试。': 'Terminal launch confirmation timed out. The terminal may still open later; check before trying again.',
   '工作目录不存在：{path}': 'Working directory does not exist: {path}',

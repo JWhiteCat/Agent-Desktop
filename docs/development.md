@@ -16,6 +16,45 @@ Windows one-click startup requires Node.js 22.12 or newer, including npm:
 
 The first run needs internet access to download dependencies and Electron. Later runs reuse installed dependencies and the runtime. Both scripts work from any working directory and keep the window open on failure. If the Electron download fails, check your network, proxy, or `ELECTRON_MIRROR` environment variable and retry.
 
+## macOS startup and packages
+
+macOS 13 Ventura or newer is supported, with separate Apple Silicon (arm64) and Intel (x64) builds. Packages include Electron and the bundled Codex/Claude binaries; users do not need Node.js. Source development and packaging need the Node.js environment above, and Git features need local `git`.
+
+Run from a terminal in your desktop session; the launchers support the system's Bash 3.2:
+
+```bash
+bash start-dev.sh
+bash start-preview.sh
+# Or use the platform-specific commands:
+npm run dev:mac
+npm run preview:mac
+```
+
+The root launchers detect macOS/Linux automatically. macOS does not require Linux DISPLAY/Wayland variables. The first launch installs missing dependencies and Electron; subsequent launches reuse them offline. Pass `--install` to refresh locked dependencies. Preview builds first and stops on build failure. Launching from another directory or a path containing spaces is supported.
+
+Install dependencies and build on a Mac matching the target architecture. Do not copy node_modules from Windows/Linux or cross-package with a dependency tree installed for another architecture:
+
+```bash
+npm ci --include=dev --include=optional
+node node_modules/electron/install.js
+npm run dist:mac          # DMG for the host architecture
+npm run dist:mac:arm64    # Build on Apple Silicon
+npm run dist:mac:x64      # Build on Intel
+npm run dist:mac:dir      # Unpacked app for the host architecture
+# Substitute the actual version and host architecture:
+npm run verify:mac -- release/agent-desktop-0.1.0-mac-arm64.dmg arm64
+```
+
+The output is `agent-desktop-<version>-mac-<arch>.dmg`; packaging commands never publish. Applications use account-free ad-hoc signatures, without Developer ID or notarization. The current electron-builder v26 configuration sets `identity: "-"`, `hardenedRuntime: false`, `notarize: false`, and a Terminal automation usage description. [Signing configuration reference](https://www.electron.build/v26/docs/mac/)
+
+Download the DMG for your chip, drag the app into Applications, eject the image, and launch from Finder. If Gatekeeper blocks the first launch, verify the download source and SHA256, then find the app in **System Settings → Privacy & Security → Open Anyway**. This grants an exception for this app without disabling Gatekeeper globally. [Apple's first-launch instructions](https://support.apple.com/102445)
+
+The first toolbar command may ask permission to control Terminal. After a denial, allow Agent Desktop under **Privacy & Security → Automation** and retry; development builds may appear as Electron. Editor buttons can open installed VS Code/Cursor apps even without their `code`/`cursor` launchers. Closing a window keeps conversations running; click the Dock to reopen, or a completion notification to open its conversation. ⌘Q retains the active-task quit confirmation.
+
+`verify:mac` mounts the DMG and copies its app into a temporary directory. It checks the signature, architecture of all three executables, bundled CLI versions, both ACP initialize handshakes, runner arguments, and the real window/preload IPC with a mock CLI. It does not call models or read user logins, and cleans up processes and the mount. A Mac graphical session is required.
+
+Validation record: this change was implemented on Windows. Native macOS packaging and automatic smoke checks must run in the new CI; they are not recorded as passed here. Manual acceptance is pending on both Apple Silicon and Intel for browser-download first launch, Terminal permission allow/deny, editors, attachments/clipboard, Git diffs, all three real CLI login/send/stop flows, Dock/notifications, and quit behavior. The minimum macOS 13 version also needs separate hardware acceptance.
+
 ## Linux startup and packages
 
 The Linux packages target **x86-64 / amd64**, with a glibc-based desktop and an active X11 or Wayland session. Run the application as your normal desktop user. A headless server, a plain SSH session, and Alpine/musl are not supported desktop environments. The app uses native Linux window decorations; desktop notifications and opening links/files depend on your desktop services.
@@ -82,7 +121,7 @@ chmod +x release/agent-desktop-*-linux-x86_64.AppImage
 - The pinned electron-builder uses the FUSE 2 AppImage runtime. If it reports a missing `libfuse.so.2`, install `libfuse2t64` on Ubuntu 24.04, or `libfuse2` on Ubuntu 22.04 / Debian 12. Install the compatibility library, not a replacement for FUSE 3. If FUSE is unavailable, `./release/agent-desktop-*-linux-x86_64.AppImage --appimage-extract-and-run` avoids mounting the image. See the [AppImage FUSE guide](https://docs.appimage.org/user-guide/troubleshooting/fuse.html).
 - FUSE and Chromium sandboxing are separate requirements. The included AppImage launcher retains Chromium's sandbox and does not silently disable it when user namespaces are unavailable. Extraction does not fix a sandbox error. On systems that restrict user namespaces or apply AppArmor policies, prefer the `.deb` installed through the system package manager, or ask the administrator for a distribution-supported application-specific configuration. Do not run the app with `sudo`, disable AppArmor globally, or add sandbox-disabling flags. See [Electron's sandbox guidance](https://www.electronjs.org/docs/latest/tutorial/sandbox).
 - For a missing shared-library error, install that library with your distribution's package manager. A terminal without `DISPLAY` or `WAYLAND_DISPLAY` cannot open the desktop app; use a terminal inside the graphical session.
-- **ARM64 is not a release target yet.** Changing only electron-builder's architecture flag is insufficient: Electron, optional Codex/Claude binaries, and their adapters must all match the target architecture. Native ARM64 startup and packaging still need separate validation; the supplied distribution commands intentionally build x64 only.
+- **Linux ARM64 is not a release target yet.** Electron, optional Codex/Claude binaries, and their adapters must match the target architecture. Linux distribution commands still build x64 only; macOS ARM64 uses the separate native build flow above.
 
 ## Windows portable package
 
@@ -113,9 +152,9 @@ npm run release -- 0.2.0
 
 The script moves those notes into `## [0.2.0] - YYYY-MM-DD` and commits that on `master`. It then creates `release/0.2.0`, sets the `package.json` and `package-lock.json` version there, and pushes `master`, the release branch, and the annotated tag `v0.2.0`. The version commit stays on the release branch.
 
-[`.github/workflows/release.yml`](../.github/workflows/release.yml) runs for `v*` tags and `release/*` branches. A branch push only checks that the name is three numeric parts and matches `package.json`. A tag push checks that again, then checks that `release/X.Y.Z` exists and points at the tagged commit. Other names, such as `v1` or `release/next`, fail the check and do not publish. Only the tag continues: it builds the Windows x64 portable executable and NSIS installer, and the Linux x64 AppImage and Debian package. The GitHub Release notes are the changelog section for that version. macOS and ARM64 are not built. The workflow calls electron-builder with `--publish never` and uploads the files with `gh`. Local packaging commands are unchanged.
+[`.github/workflows/release.yml`](../.github/workflows/release.yml) runs for `v*` tags and `release/*` branches. A branch push only checks that the name is three numeric parts and matches `package.json`. A tag push also checks that `release/X.Y.Z` exists and points at the tagged commit. Other names, such as `v1` or `release/next`, fail and do not publish. Only tags build Windows x64 portable/NSIS, Linux x64 AppImage/Debian, and macOS arm64/x64 DMGs. The macOS matrix installs native optional dependencies on `macos-15` (arm64) and `macos-15-intel` (x64), then runs types, offline tests, packaging and `verify:mac`. The Release notes come from that version's changelog. electron-builder uses `--publish never`; `gh` uploads the files.
 
-The workflow rejects missing or empty version notes before building. It installs and checks Electron explicitly, requires all four installers, and generates `SHA256SUMS.txt`. Windows assets use `agent-desktop-<version>-win-x64-portable.exe` and `agent-desktop-<version>-win-x64-setup.exe`. The Release stays a draft until every asset is uploaded, then becomes a formal Latest release. Retrying can resume a draft; it will not overwrite an already public release.
+The workflow rejects missing or empty version notes before building. It installs and checks Electron explicitly, requires all six installers, and generates `SHA256SUMS.txt`. Windows assets use `agent-desktop-<version>-win-x64-portable.exe` and `agent-desktop-<version>-win-x64-setup.exe`; macOS assets use `agent-desktop-<version>-mac-arm64.dmg` and `agent-desktop-<version>-mac-x64.dmg`. Any platform failure or missing/empty installer prevents publication. The Release stays a draft until all assets are uploaded, then becomes Latest. Retrying can resume a draft; it will not overwrite a public release.
 
 After the workflow succeeds, do not commit to `release/X.Y.Z` and do not move the tag. If the script stops during a push, inspect the existing branch and tag and finish the remaining pushes; it does not delete or roll back completed work. The script returns to `master` after preparing the release.
 
@@ -127,6 +166,7 @@ Run tests with `NODE_ENV=test` if your terminal inherits `NODE_ENV=production` f
 | --- | --- |
 | `npm run dev` | Open the development window |
 | `npm run dev:linux` / `npm run preview:linux` | Linux startup with dependency/runtime checks |
+| `npm run dev:mac` / `npm run preview:mac` | macOS startup with dependency/runtime checks |
 | `npm test` | Offline unit tests. Does not call a model |
 | `npm run test:live` | Short text and attachment checks with Composer 2.5 Fast |
 | `npm run typecheck` | Typecheck the app and all tests without running them |
@@ -137,8 +177,11 @@ Run tests with `NODE_ENV=test` if your terminal inherits `NODE_ENV=production` f
 | `npm run dist:win:portable` | Build the Windows x64 portable executable without publishing |
 | `npm run dist:linux` | Build Linux x64 AppImage and Debian packages without publishing |
 | `npm run dist:linux:dir` | Build the unpacked Linux x64 application |
+| `npm run dist:mac` / `npm run dist:mac:dir` | Build the host Mac's DMG / unpacked application without publishing |
+| `npm run dist:mac:arm64` / `npm run dist:mac:x64` | Build the matching architecture on a native Mac |
+| `npm run verify:mac -- DMG ARCH` | Verify the packaged app offline on a Mac matching ARCH |
 | `release.bat 0.2.0` / `npm run release -- 0.2.0` | Publish that version from the Unreleased changelog |
-| `npm run icons` | Regenerate every PNG size and the Windows `icon.ico` from `resources/icons/icon.svg` |
+| `npm run icons` | Regenerate PNGs, Windows `icon.ico` and macOS `icon.icns` from `resources/icons/icon.svg` |
 
 The application icon source is `resources/icons/icon.svg`. Alternative designs live in `docs/icons/`, compared in `docs/icons/preview.png`. Switch to another design with `npm run icons -- docs/icons/agent-hub.svg` (copies it to `icon.svg`, then regenerates), and refresh the comparison after editing a candidate with `npm run icons -- --preview`. The script renders with the project's own Electron, so no extra dependency is needed.
 

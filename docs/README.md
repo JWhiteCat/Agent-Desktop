@@ -12,7 +12,7 @@ Start with the project's [quick start](../README.md#quick-start). For first-time
 | [Usage statistics](usage-stats.md) | Token counts, pricing, account quota, session quota, and accounting limitations |
 | [Remote control](remote-control.md) | LAN connections, public SSH tunnels, access tokens, and server setup |
 | [Data storage](data-storage.md) | Storage locations, CLI history, forks, worktrees, and multiple windows |
-| [Development guide](development.md) | Startup, Windows portable and Linux packaging, GitHub releases, commands, tests, localization, and architecture |
+| [Development guide](development.md) | Startup, Windows/macOS/Linux packaging, GitHub releases, commands, tests, localization, and architecture |
 
 To contribute, start with the [development guide](development.md). For phone access, follow [remote control](remote-control.md), including its access-token and HTTP security guidance before enabling public access.
 

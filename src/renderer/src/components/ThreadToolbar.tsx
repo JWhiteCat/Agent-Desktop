@@ -3,6 +3,7 @@ import type { BuiltinToolbarAction, ToolbarButton } from '@shared/types'
 import { normalizeToolbarButtons } from '@shared/toolbar'
 import { useT } from '../lib/i18n'
 import { shortPath } from '../lib/format'
+import { shortcutHint } from '../lib/shortcut'
 import { errorText, toast } from '../store'
 import { MenuButton, type MenuEntry } from './Menu'
 import { IconBranch, IconCursor, IconDiff, IconFolder, IconMore, IconTerminal, IconVSCode, Spinner } from './icons'
@@ -81,7 +82,7 @@ export function ThreadToolbar({ buttons, threadId, cwd, modelLabel, canFork, onF
       case 'files': return t('在文件管理器中打开 {path}', { path: shortPath(cwd) })
       case 'vscode': return t('在 VS Code 中打开')
       case 'cursor': return t('在 Cursor 中打开')
-      case 'changes': return t('变更面板 (Ctrl+Shift+D)')
+      case 'changes': return shortcutHint(t('变更面板 (Ctrl+Shift+D)'))
     }
   }
   const disabled = (button: ToolbarButton) => button.kind === 'command' ? pending.has(button.id) || !cwd

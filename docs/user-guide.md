@@ -29,6 +29,8 @@ Click **In progress** beside Unread to cycle through running conversations acros
 
 ### Header buttons and commands
 
+On macOS, editor buttons can open installed VS Code/Cursor apps even without the `code`/`cursor` commands. The first custom command may request control of Terminal. After a denial, allow Agent Desktop under **System Settings → Privacy & Security → Automation**, then retry manually. Commands are not repeated automatically while waiting for permission.
+
 On the desktop, drag the blank space, project name, or non-interactive badges in the conversation header to move the window. Double-click the conversation title to rename it. The title, editing field, and toolbar buttons remain interactive and do not drag the window.
 
 On the desktop, **Settings → Appearance and history → Toolbar buttons** controls the visibility and order of Fork, File manager, VS Code, Cursor, Changes, and your custom commands. Use the up/down buttons to reorder them. Actions that do not fit in the header appear in its More menu. Configuration is saved globally and restored after restart.
@@ -85,7 +87,7 @@ With full access off, tool permission requests show a choice card and wait for a
 
 If any conversation on this machine is starting, running, or waiting for a permission decision or an answer, quitting asks you to confirm. Choose **Cancel** to keep the app open and the conversations running, or **Stop conversations and quit** to stop them and exit. With no unfinished conversations, the app quits directly. Tasks started through the remote page receive the same protection; closing that page leaves the host app running.
 
-On macOS, closing the window keeps the app and its conversations running in the background. Confirmation appears when you quit the app.
+On macOS, closing the window keeps the app and its conversations running in the background. Click the Dock to reopen a window, or a completion notification to open its conversation. Confirmation appears when you quit the app with ⌘Q.
 
 ## Attachments
 
@@ -177,6 +179,7 @@ Under ACP, the CLI auto-approves a SwitchMode the model starts, and it does not 
 - System notification when a task finishes; clicking it returns to that conversation. A finished run that is not on screen leaves an unread dot
 - Above Settings, the sidebar shows **In progress** and **Unread** counts across all projects, including archived conversations. Each conversation counts once in each total. A new question, permission choice, or plan confirmation waiting for your answer marks its conversation unread, including while it remains in progress, and updates the unread dot, navigation, and taskbar badge. Viewing the loaded conversation in the visible, focused window clears unread even before answering; further updates to the same card do not mark it unread again, but a new question does. Markdown question cards become unread when the turn finishes. Other running conversations are excluded from unread. Success, failure, and manual stop retain the existing unread behavior. Returning to that conversation after minimizing clears its unread state; reading through the remote page also updates the desktop count.
 - On Windows, unread results appear as a native taskbar overlay (`1–99`, then `99+`); zero unread clears it, and the sidebar retains the full count. Windows places this overlay at the lower-right of the icon, so its position differs from an upper-right badge. The overlay supports pinned and grouped taskbar buttons without relying on executable or shortcut icon caches. The main process updates it while minimized and when completion notifications are disabled, reapplies it when the window is shown or restored, and refreshes it every five seconds while unread results remain to recover after taskbar creation or an Explorer restart. If it is missing, check Windows **Taskbar settings → Taskbar behaviors → Show badges on taskbar apps**; small taskbar buttons do not support overlays. Display scaling and taskbar configurations still require native desktop visual checks.
+- The macOS Dock shows the same unread count (`1–99`, then `99+`), clearing it at zero or on quit. The main process keeps updating it after the window closes and with completion notifications disabled; the sidebar retains the full count.
 - Theme: follow the system, dark, or light
 - Language: follow the system, Simplified Chinese, or English; changes take effect immediately and persist across restarts
 - Font and size: system default, common fonts, or an installed font by name; 10–24 px (default 13.5 px), with immediate changes saved across restarts
