@@ -35,6 +35,23 @@ afterEach(() => {
 })
 
 describe('app-created worktrees', () => {
+  it('keeps the selected project subdirectory through a directory alias', async () => {
+    const alias = path.join(root, 'repo-alias')
+    fs.symlinkSync(repo, alias, process.platform === 'win32' ? 'junction' : 'dir')
+    const dir = await createWorktree(path.join(alias, 'sub'), parent)
+    expect(path.basename(dir)).toBe('sub')
+    expect(fs.readFileSync(path.join(dir, 'a.txt'), 'utf8')).toBe('a')
+  })
+
+  it('keeps a shared worktree when the remaining path has a missing child through an alias', async () => {
+    const shared = await createWorktree(repo, parent)
+    const alias = path.join(root, 'worktrees-alias')
+    fs.symlinkSync(parent, alias, process.platform === 'win32' ? 'junction' : 'dir')
+    const remaining = path.join(alias, path.relative(parent, shared), 'not-created-yet')
+    await releaseWorktrees([{ cwd: shared }], [{ cwd: remaining }], parent)
+    expect(fs.existsSync(shared)).toBe(true)
+  })
+
   it('opens the matching subdirectory on a new agent-desktop branch', async () => {
     const dir = await createWorktree(path.join(repo, 'sub'), parent)
     expect(path.basename(dir)).toBe('sub')

@@ -25,6 +25,8 @@ const EXCLUDED_DIRECTORIES = new Set([
 
 interface RepoSnapshot {
   root: string
+  canonicalRoot: string
+  workspace?: { requested: string; real: string }
   mode: 'git' | 'directory'
   files: Map<string, Buffer>
   /** Listed but not captured: never mistake these for newly created files. */
@@ -73,7 +75,7 @@ async function readFiles(root: string, names: string[], budget: ReturnType<typeo
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') skipped.add(name)
     }
   }
-  return { root, mode, files, skipped }
+  return { root, canonicalRoot, mode, files, skipped }
 }
 
 /** Ordinary projects need no Git installation or repository to record script edits. */
@@ -140,6 +142,10 @@ export async function snapshotTurnFiles(cwd: string): Promise<RepoSnapshot[]> {
     const directory = await readDirectory(cwd, snapshots.map((snapshot) => snapshot.root), [], budget)
     if (directory) snapshots.push(directory)
   }
+  if (snapshots.length) {
+    const workspace = { requested: path.resolve(cwd), real: await fs.realpath(cwd) }
+    for (const snapshot of snapshots) snapshot.workspace = workspace
+  }
   return snapshots
 }
 
@@ -158,7 +164,13 @@ export async function changedTurnFiles(before: RepoSnapshot[]): Promise<FileChan
       // An unreadable or capped initial walk cannot prove that an unseen file is new.
       if (!old && repo.incomplete) continue
       if (old && current && old.equals(current)) continue
-      const filePath = path.join(repo.root, name)
+      let filePath = path.join(repo.root, name)
+      if (repo.workspace) {
+        const relative = path.relative(repo.workspace.real, path.join(repo.canonicalRoot, name))
+        if (relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)) {
+          filePath = path.join(repo.workspace.requested, relative)
+        }
+      }
       const a = quoteGitPath(`a/${name}`)
       const b = quoteGitPath(`b/${name}`)
       let diff: string

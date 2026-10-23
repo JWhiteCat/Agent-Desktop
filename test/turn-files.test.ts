@@ -58,6 +58,22 @@ describe('turn working-file snapshots', () => {
     expect((await changedTurnFiles(before)).map((file) => path.relative(root, file.path))).toEqual([path.join('code', 'script.py')])
   })
 
+  it.each(['', 'sub'])('keeps snapshot paths under the selected directory alias (%s)', async (subdir) => {
+    git('init', '-q', 'repo')
+    const repo = path.join(root, 'repo')
+    fs.mkdirSync(path.join(repo, 'sub'))
+    write(path.join('repo', subdir, 'file.txt'), 'before\n')
+    const alias = path.join(root, 'alias')
+    fs.symlinkSync(repo, alias, process.platform === 'win32' ? 'junction' : 'dir')
+    const cwd = path.join(alias, subdir)
+    const before = await snapshotTurnFiles(cwd)
+    write(path.join('repo', subdir, 'file.txt'), 'after\n')
+    const changes = await changedTurnFiles(before)
+    expect(changes.map(change => change.path)).toEqual([path.join(cwd, 'file.txt')])
+    const turns = collectSnapshotTurns([{ id: 'r', kind: 'result', isError: false, fileChanges: changes }], cwd)
+    expect(turns[0].files?.map(file => file.path)).toEqual(['file.txt'])
+  })
+
   it('tracks additions, deletions, empty files, binary files, and an unborn repository; skips ignored and oversized files', async () => {
     init()
     write('.gitignore', 'ignored.txt\n')
