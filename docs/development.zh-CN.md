@@ -101,23 +101,25 @@ npm run dist:win:portable
 
 ## GitHub 发布
 
-每个发布版本是一条短期分支 `release/X.Y.Z`，以及打在同一提交上的附注 tag `vX.Y.Z`。`X.Y.Z` 就是 `package.json` 和 `package-lock.json` 里的 `version`。这条提交留在 release 分支上，不要合并回 `master`。`master` 上的版本号保持未发布状态。
+把本次变更写在 [`CHANGELOG.md`](../CHANGELOG.md) 的 `## [Unreleased]` 下面。工作区里其他文件必须已经提交。`master` 不能落后于 `origin/master`，也不能和它分叉。然后用一条命令发布 `0.2.0`：
 
-先推送分支，再推送 tag。以 0.2.0 为例：
-
-```bash
-git switch -c release/0.2.0
-npm version 0.2.0 --no-git-tag-version
-git add package.json package-lock.json
-git commit -m "Release 0.2.0"
-git push -u origin release/0.2.0
-git tag -a v0.2.0 -m "0.2.0"
-git push origin v0.2.0
+```bat
+release.bat 0.2.0
 ```
 
-[`.github/workflows/release.yml`](../.github/workflows/release.yml) 会在 `v*` tag 和 `release/*` 分支的推送上运行。推送分支时，只检查分支名是否为三段数字，并且与 `package.json` 一致。推送 tag 时会再做同样的检查，并确认 `release/X.Y.Z` 已存在且指向该 tag 的提交。`v1` 或 `release/next` 这类名称通不过检查，也不会发布。只有 tag 会继续：构建 Windows x64 便携包和 NSIS 安装包，以及 Linux x64 AppImage 和 Debian 包，再把这些文件上传到 GitHub Release。不构建 macOS 和 ARM64。工作流调用 electron-builder 时使用 `--publish never`，再由 `gh` 上传文件。本地打包命令不变。
+```bash
+npm run release -- 0.2.0
+```
 
-工作流成功后，不要再向 `release/X.Y.Z` 提交，也不要移动该 tag。
+脚本会把这些说明移到 `## [0.2.0] - YYYY-MM-DD`，并在 `master` 上提交。接着创建 `release/0.2.0`，只在那条分支上把 `package.json` 和 `package-lock.json` 的版本号改为 `0.2.0`，然后推送 `master`、release 分支和附注 tag `v0.2.0`。版本号提交留在 release 分支上。
+
+[`.github/workflows/release.yml`](../.github/workflows/release.yml) 会在 `v*` tag 和 `release/*` 分支的推送上运行。推送分支时，只检查分支名是否为三段数字，并且与 `package.json` 一致。推送 tag 时会再做同样的检查，并确认 `release/X.Y.Z` 已存在且指向该 tag 的提交。`v1` 或 `release/next` 这类名称通不过检查，也不会发布。只有 tag 会继续：构建 Windows x64 便携包和 NSIS 安装包，以及 Linux x64 AppImage 和 Debian 包。GitHub Release 的说明就是该版本的 Changelog 小节。不构建 macOS 和 ARM64。工作流调用 electron-builder 时使用 `--publish never`，再由 `gh` 上传文件。本地打包命令不变。
+
+工作流会在构建前拒绝缺失或为空的版本说明，显式安装并检查 Electron，确认四种安装包齐全，并生成 `SHA256SUMS.txt`。Windows 附件名为 `agent-desktop-<version>-win-x64-portable.exe` 和 `agent-desktop-<version>-win-x64-setup.exe`。全部附件上传前 Release 保持草稿，上传完成后才公开为正式版和 Latest。重试可以继续未完成的草稿，不会覆盖已经公开的版本。
+
+工作流成功后，不要再向 `release/X.Y.Z` 提交，也不要移动该 tag。脚本若在推送中途失败，先检查已存在的分支和 tag，再补齐剩余推送；脚本不会删除或回滚已经完成的操作。准备完成后，脚本会返回 `master`。
+
+若终端从桌面启动器继承了 `NODE_ENV=production`，测试前请设为 `NODE_ENV=test`（PowerShell：`$env:NODE_ENV = 'test'`）。组件测试需要 React 的开发版 JSX 运行时。
 
 ## 开发命令与测试
 
@@ -135,6 +137,7 @@ git push origin v0.2.0
 | `npm run dist:win:portable` | 构建 Windows x64 免安装便携程序，不会发布 |
 | `npm run dist:linux` | 构建 Linux x64 AppImage 和 Debian 安装包，不会发布 |
 | `npm run dist:linux:dir` | 构建 Linux x64 未封装应用 |
+| `release.bat 0.2.0` / `npm run release -- 0.2.0` | 用 Unreleased 中的变更说明发布该版本 |
 | `npm run icons` | 由 `resources/icons/icon.svg` 重新生成各尺寸 PNG 和 Windows `icon.ico` |
 
 应用图标的源文件是 `resources/icons/icon.svg`；备选方案位于 `docs/icons/`，对比图见 `docs/icons/preview.png`。换用其他方案可运行 `npm run icons -- docs/icons/agent-hub.svg`（复制为 `icon.svg` 后重新生成），修改备选 SVG 后用 `npm run icons -- --preview` 刷新对比图。脚本使用项目自带的 Electron 渲染，无需额外依赖。

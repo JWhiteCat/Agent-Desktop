@@ -30,14 +30,21 @@ describe('GitHub release workflow', () => {
     expect(verify).not.toContain('GITHUB_SHA')
     expect(verify).not.toContain("startsWith(github.ref, 'refs/tags/v')")
     expect(verify).not.toContain('electron-builder')
+    expect(verify).toContain('node scripts/changelog.mjs "$version"')
 
     for (const name of ['build-windows', 'build-linux', 'publish']) {
       expect(jobBlock(workflow, name)).toContain("startsWith(github.ref, 'refs/tags/v')")
     }
     expect(jobBlock(workflow, 'build-windows')).toContain('electron-builder --win portable nsis --x64 --publish never')
     expect(jobBlock(workflow, 'build-linux')).toContain('npm run dist:linux')
-    expect(jobBlock(workflow, 'publish')).toContain('gh release create "$tag" --generate-notes')
-    expect(jobBlock(workflow, 'publish')).toContain('gh release upload "$tag" "${files[@]}" --clobber')
+    const publish = jobBlock(workflow, 'publish')
+    expect(publish).toContain('node scripts/changelog.mjs "$VERSION"')
+    expect(publish).toContain('node scripts/release-artifacts.mjs artifacts "$VERSION"')
+    expect(publish).toContain('gh release create "$tag" --verify-tag --draft --title "Agent Desktop ${tag}" --notes-file release-notes.md')
+    expect(publish.indexOf('gh release upload')).toBeLessThan(publish.indexOf('--draft=false'))
+    expect(publish).toContain('--draft=false --prerelease=false --latest')
+    expect(publish).not.toContain('--generate-notes')
+    expect(publish).toContain('gh release upload "$tag" "${files[@]}" --clobber')
     expect(workflow.match(/contents:\s*write/g)).toEqual(['contents: write'])
     expect(workflow).not.toContain('--publish always')
 

@@ -1,7 +1,7 @@
 name: Release
 
 # Pushing release/X.Y.Z only checks the branch name against package.json.
-# Pushing vX.Y.Z builds installers and creates the GitHub Release.
+# Pushing vX.Y.Z builds installers and publishes that version's changelog.
 
 on:
   push:
@@ -13,6 +13,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -23,6 +27,10 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - name: Check version
         id: version
         run: |
@@ -57,6 +65,7 @@ jobs:
               exit 1
             fi
           fi
+          node scripts/changelog.mjs "$version" > /dev/null
           echo "version=${version}" >> "$GITHUB_OUTPUT"
 
   build-windows:
@@ -64,7 +73,7 @@ jobs:
     if: ${{ startsWith(github.ref, 'refs/tags/v') && needs.verify.result == 'success' }}
     runs-on: windows-latest
     env:
-      CSC_IDENTITY_AUTO_DISCOVERY: false
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -75,6 +84,10 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci --include=dev --include=optional
+      - name: Install Electron runtime
+        run: node node_modules/electron/install.js
+      - name: Check Electron runtime
+        run: node -e "const fs = require('node:fs'); const path = require('node:path'); const root = path.dirname(require.resolve('electron/package.json')); const exe = fs.readFileSync(path.join(root, 'path.txt'), 'utf8').trim(); if (!exe || !fs.existsSync(path.join(root, 'dist', exe))) process.exit(1)"
       - name: Compile
         run: npx electron-vite build
       - name: Package Windows installers
@@ -91,7 +104,7 @@ jobs:
     if: ${{ startsWith(github.ref, 'refs/tags/v') && needs.verify.result == 'success' }}
     runs-on: ubuntu-latest
     env:
-      CSC_IDENTITY_AUTO_DISCOVERY: false
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -102,6 +115,10 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci --include=dev --include=optional
+      - name: Install Electron runtime
+        run: node node_modules/electron/install.js
+      - name: Check Electron runtime
+        run: node -e "const fs = require('node:fs'); const path = require('node:path'); const root = path.dirname(require.resolve('electron/package.json')); const exe = fs.readFileSync(path.join(root, 'path.txt'), 'utf8').trim(); if (!exe || !fs.existsSync(path.join(root, 'dist', exe))) process.exit(1)"
       - name: Package Linux installers
         run: npm run dist:linux
       - name: Upload Linux artifacts
@@ -120,10 +137,17 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
+          merge-multiple: true
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -131,17 +155,18 @@ jobs:
         run: |
           set -euo pipefail
           tag="v${VERSION}"
+          node scripts/changelog.mjs "$VERSION" > release-notes.md
+          node scripts/release-artifacts.mjs artifacts "$VERSION" > release-files.txt
+          mapfile -t files < release-files.txt
           if gh release view "$tag" >/dev/null 2>&1; then
-            echo "Release ${tag} already exists"
+            draft="$(gh release view "$tag" --json isDraft --jq '.isDraft')"
+            if [ "$draft" != "true" ]; then
+              echo "Release ${tag} is already published; refusing to replace public assets"
+              exit 1
+            fi
+            gh release edit "$tag" --title "Agent Desktop ${tag}" --notes-file release-notes.md
           else
-            gh release create "$tag" --generate-notes
-          fi
-          files=()
-          while IFS= read -r -d '' file; do
-            files+=("$file")
-          done < <(find artifacts -type f \( -name '*.exe' -o -name '*.AppImage' -o -name '*.deb' \) -print0)
-          if [ "${#files[@]}" -eq 0 ]; then
-            echo "No release files found"
-            exit 1
+            gh release create "$tag" --verify-tag --draft --title "Agent Desktop ${tag}" --notes-file release-notes.md
           fi
           gh release upload "$tag" "${files[@]}" --clobber
+          gh release edit "$tag" --draft=false --prerelease=false --latest

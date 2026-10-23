@@ -101,23 +101,25 @@ The first package build may download Electron and the electron-builder NSIS and 
 
 ## GitHub releases
 
-Each published version is a short-lived branch `release/X.Y.Z` and an annotated tag `vX.Y.Z` on that same commit. `X.Y.Z` is the `version` in `package.json` and `package-lock.json`. Leave that commit on the release branch. Do not merge it back to `master`. The version on `master` stays unpublished.
+Write the changes under `## [Unreleased]` in [`CHANGELOG.md`](../CHANGELOG.md). Other files in the working tree must already be committed. `master` must not be behind or diverged from `origin/master`. Then publish `0.2.0` with one command:
 
-Push the branch before the tag. For 0.2.0:
-
-```bash
-git switch -c release/0.2.0
-npm version 0.2.0 --no-git-tag-version
-git add package.json package-lock.json
-git commit -m "Release 0.2.0"
-git push -u origin release/0.2.0
-git tag -a v0.2.0 -m "0.2.0"
-git push origin v0.2.0
+```bat
+release.bat 0.2.0
 ```
 
-[`.github/workflows/release.yml`](../.github/workflows/release.yml) runs for `v*` tags and `release/*` branches. A branch push only checks that the name is three numeric parts and matches `package.json`. A tag push checks that again, then checks that `release/X.Y.Z` exists and points at the tagged commit. Other names, such as `v1` or `release/next`, fail the check and do not publish. Only the tag continues: it builds the Windows x64 portable executable and NSIS installer, and the Linux x64 AppImage and Debian package, then uploads those files to the GitHub Release. macOS and ARM64 are not built. The workflow calls electron-builder with `--publish never` and uploads the files with `gh`. Local packaging commands are unchanged.
+```bash
+npm run release -- 0.2.0
+```
 
-After the workflow succeeds, do not commit to `release/X.Y.Z` and do not move the tag.
+The script moves those notes into `## [0.2.0] - YYYY-MM-DD` and commits that on `master`. It then creates `release/0.2.0`, sets the `package.json` and `package-lock.json` version there, and pushes `master`, the release branch, and the annotated tag `v0.2.0`. The version commit stays on the release branch.
+
+[`.github/workflows/release.yml`](../.github/workflows/release.yml) runs for `v*` tags and `release/*` branches. A branch push only checks that the name is three numeric parts and matches `package.json`. A tag push checks that again, then checks that `release/X.Y.Z` exists and points at the tagged commit. Other names, such as `v1` or `release/next`, fail the check and do not publish. Only the tag continues: it builds the Windows x64 portable executable and NSIS installer, and the Linux x64 AppImage and Debian package. The GitHub Release notes are the changelog section for that version. macOS and ARM64 are not built. The workflow calls electron-builder with `--publish never` and uploads the files with `gh`. Local packaging commands are unchanged.
+
+The workflow rejects missing or empty version notes before building. It installs and checks Electron explicitly, requires all four installers, and generates `SHA256SUMS.txt`. Windows assets use `agent-desktop-<version>-win-x64-portable.exe` and `agent-desktop-<version>-win-x64-setup.exe`. The Release stays a draft until every asset is uploaded, then becomes a formal Latest release. Retrying can resume a draft; it will not overwrite an already public release.
+
+After the workflow succeeds, do not commit to `release/X.Y.Z` and do not move the tag. If the script stops during a push, inspect the existing branch and tag and finish the remaining pushes; it does not delete or roll back completed work. The script returns to `master` after preparing the release.
+
+Run tests with `NODE_ENV=test` if your terminal inherits `NODE_ENV=production` from a desktop launcher (PowerShell: `$env:NODE_ENV = 'test'`). React's development JSX runtime is needed by component tests.
 
 ## Commands and tests
 
@@ -135,6 +137,7 @@ After the workflow succeeds, do not commit to `release/X.Y.Z` and do not move th
 | `npm run dist:win:portable` | Build the Windows x64 portable executable without publishing |
 | `npm run dist:linux` | Build Linux x64 AppImage and Debian packages without publishing |
 | `npm run dist:linux:dir` | Build the unpacked Linux x64 application |
+| `release.bat 0.2.0` / `npm run release -- 0.2.0` | Publish that version from the Unreleased changelog |
 | `npm run icons` | Regenerate every PNG size and the Windows `icon.ico` from `resources/icons/icon.svg` |
 
 The application icon source is `resources/icons/icon.svg`. Alternative designs live in `docs/icons/`, compared in `docs/icons/preview.png`. Switch to another design with `npm run icons -- docs/icons/agent-hub.svg` (copies it to `icon.svg`, then regenerates), and refresh the comparison after editing a candidate with `npm run icons -- --preview`. The script renders with the project's own Electron, so no extra dependency is needed.
