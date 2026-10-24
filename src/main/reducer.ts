@@ -1,3 +1,4 @@
+import type { ToolImageCapture } from '@shared/tool-images'
 import { t as translate } from '@shared/i18n'
 import type { AssistantItem, Item, ResultItem, ThinkingItem, ToolItem } from '@shared/types'
 import { isBackgroundAgentActivity } from '@shared/transcript'
@@ -26,6 +27,10 @@ export function compact(value: unknown, depth = 0): unknown {
     return value.length > 500 ? [...arr, `… (${value.length - 500} more)`] : arr
   }
   if (value && typeof value === 'object' && depth < 12) {
+    const image = value as any
+    if (image.type === 'image' && (typeof image.data === 'string' || image.source?.type === 'base64')) return { type: 'image', note: '[图片数据独立保存]' }
+    if (image.type === 'resource' && typeof image.resource?.blob === 'string' && String(image.resource.mimeType ?? '').startsWith('image/')) return { type: 'resource', resource: { ...image.resource, blob: '[图片数据独立保存]' } }
+    if ((image.type === 'input_image' || image.type === 'image_url') && String(image.image_url?.url ?? image.image_url ?? '').startsWith('data:image/')) return { type: image.type, note: '[图片数据独立保存]' }
     const out: Record<string, unknown> = {}
     for (const [k, v] of Object.entries(value)) {
       if (!DROP_KEYS.has(k)) out[k] = compact(v, depth + 1)
@@ -72,7 +77,7 @@ export class StreamReducer {
   /** API model id Claude attaches to `usage_update`, since the chosen model may be an alias. */
   lastModel?: string
 
-  constructor(private readonly items: Item[]) {}
+  constructor(private readonly items: Item[], private readonly captureImages?: ToolImageCapture) {}
 
   /** Returns items that were created or changed. */
   handle(ev: any): Item[] {
@@ -307,6 +312,7 @@ export class StreamReducer {
     item.status = toolStatus(payload.result)
     item.endedAt = Number(tc.completedAtMs) || Date.now()
     this.fileRecorder.record(item, this.init.cwd ?? '', payload.args ?? item.args, payload.result)
+    this.captureImages?.(item, payload.result)
     return [item]
   }
 
@@ -341,6 +347,7 @@ export class StreamReducer {
       this.fileRecorder.record(item, this.init.cwd ?? '', rawInput ?? args, update.rawOutput ?? result, update.content)
       if (result !== undefined) item.result = compact(result)
       if (status !== 'running') item.endedAt = Date.now()
+      this.captureImages?.(item, [update.content, update.rawOutput])
       this.tools.set(callId, item)
       this.items.push(item)
       return [...changed, item]
@@ -356,6 +363,7 @@ export class StreamReducer {
       if (status !== 'running') item.endedAt = Date.now()
     }
     this.fileRecorder.record(item, this.init.cwd ?? '', rawInput ?? item.args, update.rawOutput ?? result, update.content)
+    this.captureImages?.(item, [update.content, update.rawOutput])
     return [item]
   }
 }

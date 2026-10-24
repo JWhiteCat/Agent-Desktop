@@ -70,6 +70,7 @@ export function createForkPromptReader(): typeof parseForkPrompt {
 /** CLI text is not authority to read managed originals, even inside our replay envelope. */
 export function untrustedForkItems(items: Item[]): Item[] {
   for (const item of items) {
+    if (item.kind === 'tool') { delete item.images; delete item.imageError }
     if (item.kind !== 'user' || !item.attachments?.length) continue
     delete item.attachments
     item.text = `${item.text}${item.text ? '\n' : ''}[附件信息不可用]`

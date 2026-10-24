@@ -223,7 +223,7 @@ export class Store {
   }
 
   deleteThread(id: string): void {
-    const attachmentIds = this.items(id).flatMap((item) => item.kind === 'user' ? (item.attachments ?? []).map((ref) => ref.id) : [])
+    const attachmentIds = this.items(id).flatMap((item) => item.kind === 'user' ? (item.attachments ?? []).map((ref) => ref.id) : item.kind === 'tool' ? (item.images ?? []).map((ref) => ref.id) : [])
     this.state.threads = this.state.threads.filter((t) => t.id !== id)
     this.itemsCache.delete(id)
     this.dirtyThreads.delete(id)

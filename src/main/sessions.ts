@@ -1,3 +1,4 @@
+import { imageCapture } from './tool-images'
 import { getLocale, localizedMessage, t as translate } from '@shared/i18n'
 import { displayThreadTitle } from '@shared/thread-title'
 import type { ChildProcess } from 'node:child_process'
@@ -529,7 +530,7 @@ export class SessionManager {
 
     const run: Run = {
       proc,
-      reducer: new StreamReducer(items),
+      reducer: new StreamReducer(items, imageCapture(this.store, cwd, items)),
       stopped: false,
       pending: new Map(),
       announcedQuestions: new Set(),

@@ -1,3 +1,4 @@
+import type { ToolImageCapture } from '@shared/tool-images'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -141,7 +142,7 @@ function userText(content: unknown): string {
 }
 
 /** Rebuilds a readable transcript from the CLI's local chat store (message blobs are plain JSON). */
-export function readCliTranscript(chatId: string): Item[] | undefined {
+export function readCliTranscript(chatId: string, captureImages?: ToolImageCapture): Item[] | undefined {
   const dir = findChatDir(chatId)
   if (!dir) return undefined
   const db = new DatabaseSync(path.join(dir, 'store.db'), { readOnly: true })
@@ -214,6 +215,7 @@ export function readCliTranscript(chatId: string): Item[] | undefined {
           tool.result = compact(output)
           tool.status = high?.isError || output.error !== undefined || output.failure !== undefined || output.rejected !== undefined ? 'error' : 'success'
           fileRecorder.record(tool, cwd, tool.args, output)
+          captureImages?.(tool, output)
         }
       }
     }

@@ -114,6 +114,8 @@ export interface ThinkingItem {
 }
 
 export interface ToolItem {
+  images?: import('./tool-images').ToolImageRef[]
+  imageError?: string
   id: string
   kind: 'tool'
   callId: string

@@ -74,7 +74,7 @@ export function StepItem({
       content = <ThinkingBlock item={item} />
       break
     case 'tool':
-      content = item.tool === 'createPlan' ? <PlanCard item={item} /> : <ToolRow item={item} />
+      content = item.tool === 'createPlan' ? <PlanCard item={item} /> : <ToolRow item={item} threadId={threadId} />
       break
     case 'question':
       content = threadId ? <QuestionCard item={item} threadId={threadId} /> : null

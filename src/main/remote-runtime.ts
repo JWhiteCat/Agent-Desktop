@@ -34,7 +34,7 @@ const REMOTE_BLOCKED = new Set([
   'project:pick',
   'remote:info',
   'remote:resetToken',
-  'attachment:open',
+  'attachment:open', 'tool-image:copy',
   'shell:runToolbarCommand',
   'grokbot:attachmentSave',
   'grokbot:attachmentReveal'

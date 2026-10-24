@@ -1,3 +1,4 @@
+import { imageCapture } from './tool-images'
 import { localizedMessage, t as translate } from '@shared/i18n'
 import type { Item, ResultItem, ThreadMeta, ToolItem, UserItem } from '@shared/types'
 import { isManagedMessageId } from '@shared/attachment-message'
@@ -222,11 +223,12 @@ export function syncFromCli(deps: Pick<HistoryDeps, 'store' | 'isRunning'>, thre
   if (!t?.chatId || deps.isRunning(threadId)) return undefined
   if (t.forkContextThroughItemId) throw new Error(translate('分叉上下文尚未写入 CLI，请成功发送一条消息后再同步'))
   const cli = threadCli(t)
-  const items = cli === 'codex' ? readCodexTranscript(t.chatId) : cli === 'claude' ? readClaudeTranscript(t.chatId) : readCliTranscript(t.chatId)
+  const previous = deps.store.items(threadId)
+  const capture = imageCapture(deps.store, t.cwd ?? deps.store.project(t.projectId)?.path ?? '', previous)
+  const items = cli === 'codex' ? readCodexTranscript(t.chatId, capture) : cli === 'claude' ? readClaudeTranscript(t.chatId, undefined, capture) : readCliTranscript(t.chatId, capture)
   // A CLI may have created its database before persisting any messages.
   // Keep the local transcript until there is history to replace it with.
   if (!items?.length) return undefined
-  const previous = deps.store.items(threadId)
   preserveManagedAttachments(previous, items)
   preserveTurnFiles(previous, items, cli)
   if (cli === 'codex') preserveQuotaEstimates(previous, items)

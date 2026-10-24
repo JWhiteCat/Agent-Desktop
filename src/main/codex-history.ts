@@ -1,3 +1,4 @@
+import type { ToolImageCapture } from '@shared/tool-images'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -121,7 +122,7 @@ export function codexChatUpdatedAt(chatId: string): number | undefined {
   }
 }
 
-export function readCodexTranscript(chatId: string): Item[] | undefined {
+export function readCodexTranscript(chatId: string, captureImages?: ToolImageCapture): Item[] | undefined {
   const file = findRollout(chatId)
   if (!file) return undefined
   let text: string
@@ -130,7 +131,7 @@ export function readCodexTranscript(chatId: string): Item[] | undefined {
   } catch {
     return undefined
   }
-  const items = transcriptItems(text)
+  const items = transcriptItems(text, captureImages)
   return items.length ? items : undefined
 }
 
@@ -301,12 +302,12 @@ interface SessionMeta {
 }
 
 /** Parses a Codex rollout JSONL fixture into the same item kinds the thread view already draws. */
-export function transcriptItems(text: string): Item[] {
+export function transcriptItems(text: string, captureImages?: ToolImageCapture): Item[] {
   const rows = parseLines(text)
   const usage = parseCodexUsage(text)
-  const items = itemsFrom(rows, false, usage)
+  const items = itemsFrom(rows, false, usage, captureImages)
   if (items.some((item) => item.kind === 'user' || item.kind === 'assistant')) return items
-  return itemsFrom(rows, true, usage)
+  return itemsFrom(rows, true, usage, captureImages)
 }
 
 interface TranscriptRow { row: any; line: number }
@@ -324,7 +325,7 @@ function parseLines(text: string): TranscriptRow[] {
   return rows
 }
 
-function itemsFrom(rows: TranscriptRow[], events: boolean, usage: CodexUsageTurn[]): Item[] {
+function itemsFrom(rows: TranscriptRow[], events: boolean, usage: CodexUsageTurn[], captureImages?: ToolImageCapture): Item[] {
   const items: Item[] = []
   const tools = new Map<string, ToolItem>()
   const readForkPrompt = createForkPromptReader()
@@ -390,10 +391,11 @@ function itemsFrom(rows: TranscriptRow[], events: boolean, usage: CodexUsageTurn
       const callId = String(payload.call_id ?? payload.callId ?? '')
       const tool = tools.get(callId)
       if (!tool) continue
-      const output = typeof payload.output === 'string' ? payload.output : JSON.stringify(payload.output ?? '')
+      const output = typeof payload.output === 'string' ? payload.output : JSON.stringify(compact(payload.output ?? ''))
       tool.result = compact({ success: { stdout: output } })
       const failed = payload.is_error === true || /^(?:Error:|error:|Failed|Exit code: [1-9])/.test(output)
       tool.status = failed ? 'error' : 'success'
+      captureImages?.(tool, payload.output)
       const patch = tool.tool.toLowerCase().replace(/[^a-z]/g, '') === 'applypatch'
       if (!patch || /^Success\. Updated the following files:/m.test(output)) fileRecorder.record(tool, cwd, tool.args,
         typeof payload.output === 'object' ? payload.output : tool.result)

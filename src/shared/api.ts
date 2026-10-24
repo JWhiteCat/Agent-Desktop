@@ -1,3 +1,4 @@
+import type { ToolImageData, ToolImageRef } from './tool-images'
 import type {
   AgentEvent,
   AgentMode,
@@ -56,6 +57,9 @@ export interface DesktopApi {
   send(req: SendRequest): Promise<void>
   uploadAttachment(req: AttachmentUpload): Promise<AttachmentRef>
   readAttachment(id: string): Promise<AttachmentData>
+  prepareToolImages(threadId: string, itemId: string): Promise<{ images: ToolImageRef[]; error?: string; retryable?: boolean }>
+  readToolImage(threadId: string, itemId: string, imageId: string): Promise<ToolImageData>
+  copyToolImage(threadId: string, itemId: string, imageId: string, png: string): Promise<void>
   /** Opens a managed attachment in its desktop application. */
   openAttachment(id: string): Promise<void>
   /** Loads slash commands for a thread that already has a CLI session. */

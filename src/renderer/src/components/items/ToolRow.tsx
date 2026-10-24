@@ -1,3 +1,4 @@
+import { ToolImages } from './ToolImages'
 import { useState } from 'react'
 import type { ToolItem } from '@shared/types'
 import { useT } from '../../lib/i18n'
@@ -91,11 +92,12 @@ export function ToolDetail({ item: storedItem }: { item: ToolItem }) {
   )
 }
 
-export function ToolRow({ item: storedItem }: { item: ToolItem }) {
-  useT()
+export function ToolRow({ item: storedItem, threadId }: { item: ToolItem; threadId?: string }) {
+  const t = useT()
   const item = toolForDisplay(storedItem)
   const [open, setOpen] = useState(false)
   const sum = summarizeTool(item)
+  const hasImages = !!(item.images?.length || item.imageError || (/^(read|readfile|viewimage|readimage)$/i.test(item.tool.replace(/[^a-z]/gi, '')) && /\.(png|jpe?g|gif|webp)/i.test(JSON.stringify(item.args))))
   const failed = item.status === 'error'
   return (
     <div className={`step ${failed ? 'failed' : ''}`}>
@@ -111,7 +113,8 @@ export function ToolRow({ item: storedItem }: { item: ToolItem }) {
       </div>
       {open && (
         <div className="step-body">
-          <ToolDetail item={item} />
+          {hasImages && threadId && <ToolImages key={`${threadId}:${item.id}`} threadId={threadId} item={item} />}
+          {hasImages ? <details><summary>{t('原始详情')}</summary><ToolDetail item={item} /></details> : <ToolDetail item={item} />}
         </div>
       )}
     </div>

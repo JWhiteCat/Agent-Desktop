@@ -171,6 +171,7 @@ export class AttachmentStore {
     for (const thread of this.store.threads) {
       for (const item of this.store.items(thread.id)) {
         if (item.kind === 'user') for (const ref of item.attachments ?? []) live.add(ref.id)
+        if (item.kind === 'tool') for (const ref of item.images ?? []) live.add(ref.id)
       }
     }
     return live

@@ -56,14 +56,14 @@ export function summarizeTool(item: ToolItem): ToolSummary {
   const a = typeof item.args === 'object' && item.args ? item.args : {}
   const s = successOf(item) ?? {}
   const running = item.status === 'running'
-  const path = pick(a, 'path', 'targetFile', 'filePath', 'file', 'targetDirectory', 'target_directory', 'directory') ?? patchPath(item.args)
+  const path = pick(a, 'path', 'file_path', 'local_image_path', 'targetFile', 'filePath', 'file', 'targetDirectory', 'target_directory', 'directory') ?? patchPath(item.args)
   const name = item.tool.toLowerCase().replace(/[^a-z]/g, '')
 
   if (typeof a.server === 'string' && typeof a.tool === 'string' && a.command === undefined) {
     return { kind: 'mcp', verb: t('调用工具'), target: `${a.server} · ${a.tool}` }
   }
 
-  if (name === 'read' || name === 'readfile') {
+  if (['read', 'readfile', 'viewimage', 'readimage'].includes(name)) {
     const range = s.readRange ? `L${s.readRange.startLine}-${s.readRange.endLine}` : undefined
     return { kind: 'read', verb: running ? t('正在读取') : t('已读取'), target: path && basename(path), meta: range }
   }
@@ -137,7 +137,7 @@ export function toolDiff(item: ToolItem): string | undefined {
   if (!a || typeof a !== 'object') return undefined
   const name = item.tool.toLowerCase().replace(/[^a-z]/g, '')
   if (!EDIT_TOOLS.has(name)) return undefined
-  const path = String(pick(a, 'path', 'targetFile', 'filePath', 'file') ?? 'file')
+  const path = String(pick(a, 'path', 'file_path', 'local_image_path', 'targetFile', 'filePath', 'file') ?? 'file')
   const oldText = typeof a.old_string === 'string' ? a.old_string : typeof a.oldString === 'string' ? a.oldString : undefined
   const newText = typeof a.new_string === 'string' ? a.new_string : typeof a.newString === 'string' ? a.newString : undefined
   if (oldText !== undefined || newText !== undefined) {
@@ -165,5 +165,5 @@ export function planPath(uri: string): string {
 }
 
 export function toolPath(item: ToolItem): string | undefined {
-  return pick(item.args ?? {}, 'path', 'targetFile', 'filePath', 'file') ?? patchPath(item.args) ?? successOf(item)?.path
+  return pick(item.args ?? {}, 'path', 'file_path', 'local_image_path', 'targetFile', 'filePath', 'file') ?? patchPath(item.args) ?? successOf(item)?.path
 }

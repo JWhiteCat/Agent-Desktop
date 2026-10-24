@@ -1,3 +1,4 @@
+import type { ToolImageCapture } from '@shared/tool-images'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -47,7 +48,7 @@ export function claudeChatUpdatedAt(chatId: string, root = projectsRoot()): numb
   }
 }
 
-export function readClaudeTranscript(chatId: string, root = projectsRoot()): Item[] | undefined {
+export function readClaudeTranscript(chatId: string, root = projectsRoot(), captureImages?: ToolImageCapture): Item[] | undefined {
   const file = findSession(chatId, root)
   if (!file) return undefined
   let text: string
@@ -56,12 +57,12 @@ export function readClaudeTranscript(chatId: string, root = projectsRoot()): Ite
   } catch {
     return undefined
   }
-  const items = claudeTranscriptItems(text)
+  const items = claudeTranscriptItems(text, captureImages)
   return items.length ? items : undefined
 }
 
 /** Parses a Claude Code JSONL transcript into the item kinds the thread view already draws. */
-export function claudeTranscriptItems(text: string): Item[] {
+export function claudeTranscriptItems(text: string, captureImages?: ToolImageCapture): Item[] {
   const items: Item[] = []
   const tools = new Map<string, ToolItem>()
   const readForkPrompt = createForkPromptReader()
@@ -80,7 +81,10 @@ export function claudeTranscriptItems(text: string): Item[] {
     for (const block of blocks) {
       const callId = block?.type === 'tool_use' ? block.id : block?.tool_use_id ?? block?.toolUseId
       const tool = tools.get(callId)
-      if (tool) fileRecorder.record(tool, cwd, block?.type === 'tool_use' ? block.input : tool.args, tool.result)
+      if (tool) {
+        fileRecorder.record(tool, cwd, block?.type === 'tool_use' ? block.input : tool.args, tool.result)
+        if (block?.type === 'tool_result') captureImages?.(tool, block.content ?? block.output)
+      }
     }
     if (type === 'user' && blocks.some((block: any) => block?.type === 'text')) fileRecorder = new ToolFileRecorder()
   }
