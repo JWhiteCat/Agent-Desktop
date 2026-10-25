@@ -84,3 +84,5 @@ npm run typecheck
 ```
 
 开发命令、在线冒烟测试、打包方式和模块边界见 [开发指南](docs/development.zh-CN.md)。
+
+在线冒烟测试需显式运行，包含 Agent 文件编辑、会消耗模型额度，并要求 CLI 登录或 API key；请先阅读[测试模式与权限边界](docs/development.zh-CN.md#开发命令与测试)。

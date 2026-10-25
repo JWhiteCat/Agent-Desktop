@@ -86,6 +86,12 @@ jobs:
         run: node node_modules/electron/install.js
       - name: Check Electron runtime
         run: node -e "const fs = require('node:fs'); const path = require('node:path'); const root = path.dirname(require.resolve('electron/package.json')); const exe = fs.readFileSync(path.join(root, 'path.txt'), 'utf8').trim(); if (!exe || !fs.existsSync(path.join(root, 'dist', exe))) process.exit(1)"
+      - name: Type check
+        run: npm run typecheck
+      - name: Offline tests
+        run: npm test -- --maxWorkers=4
+        env:
+          NODE_ENV: test
       - name: Compile
         run: npx electron-vite build
       - name: Package Windows installers
@@ -117,8 +123,12 @@ jobs:
         run: node node_modules/electron/install.js
       - name: Check Electron runtime
         run: node -e "const fs = require('node:fs'); const path = require('node:path'); const root = path.dirname(require.resolve('electron/package.json')); const exe = fs.readFileSync(path.join(root, 'path.txt'), 'utf8').trim(); if (!exe || !fs.existsSync(path.join(root, 'dist', exe))) process.exit(1)"
-      - name: Release publication regressions
-        run: npm test -- test/release-latest.test.ts test/release-publication.test.ts test/release-workflow.test.ts --maxWorkers=4
+      - name: Type check
+        run: npm run typecheck
+      # Includes Linux-only filesystem/launcher and isolated publication regressions.
+      # Graphical Electron fixtures run on Windows/macOS; headless Linux skips them.
+      - name: Offline tests
+        run: npm test -- --maxWorkers=4
         env:
           NODE_ENV: test
       - name: Package Linux installers

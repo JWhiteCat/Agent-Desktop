@@ -158,7 +158,7 @@ npm run release -- 0.2.0
 
 工作流在构建前拒绝缺失或为空的版本说明，显式安装并检查 Electron，确认六个安装包齐全，并生成 `SHA256SUMS.txt`。Windows 附件名为 `agent-desktop-<version>-win-x64-portable.exe` 和 `agent-desktop-<version>-win-x64-setup.exe`；macOS 为 `agent-desktop-<version>-mac-arm64.dmg` 和 `agent-desktop-<version>-mac-x64.dmg`。任一平台失败、缺包或空包都会阻止公开发布。全部附件上传前 Release 保持草稿，上传完成后才公开为正式版。只有不低于任何已发布稳定版的版本才设为 Latest，补发旧版明确保持 Latest 不变。重试可以继续草稿，不覆盖已经公开的版本。
 
-Linux 作业在打包前还会运行发版策略和隔离伪 `gh` 发布脚本回归。各平台构建仍可并行，最终 publish 作业使用仓库级共享锁。`queue: max` 最多保留 100 个等待发布的作业，避免替换先前的等待者；`cancel-in-progress: false` 不取消正在发布的作业。持锁期间、正式发布前查询所有分页的已发布版本；API 或元数据错误会保留草稿。新版本和旧版补发都必须包含此工作流修复；旧工作流重跑以及网页/API 手动发布不参与该锁，不应同时进行。等待队列满时新增作业会被拒绝，需另行重试。
+Windows 和 Linux 作业也会在打包前执行全量离线测试与类型检查；Linux 包含发版策略和隔离伪 `gh` 发布脚本回归。各平台构建仍可并行，最终 publish 作业使用仓库级共享锁。`queue: max` 最多保留 100 个等待发布的作业，避免替换先前的等待者；`cancel-in-progress: false` 不取消正在发布的作业。持锁期间、正式发布前查询所有分页的已发布版本；API 或元数据错误会保留草稿。新版本和旧版补发都必须包含此工作流修复；旧工作流重跑以及网页/API 手动发布不参与该锁，不应同时进行。等待队列满时新增作业会被拒绝，需另行重试。
 
 工作流成功后，不要再向 `release/X.Y.Z` 提交，也不要移动该 tag。脚本若在推送中途失败，先检查已存在的分支和 tag，再补齐剩余推送；脚本不会删除或回滚已经完成的操作。准备完成后，脚本会返回 `master`。
 
@@ -172,7 +172,7 @@ Linux 作业在打包前还会运行发版策略和隔离伪 `gh` 发布脚本�
 | `npm run dev:linux` / `npm run preview:linux` | 带依赖和运行时检查的 Linux 启动 |
 | `npm run dev:mac` / `npm run preview:mac` | 带依赖和运行时检查的 macOS 启动 |
 | `npm test` | 离线单元测试，不调用模型 |
-| `npm run test:live` | 用 Composer 2.5 Fast 检查极短文字及附件输入 |
+| `npm run test:live` | 显式运行真实模型文字、附件及 Agent 文件编辑检查（消耗额度） |
 | `npm run typecheck` | 检查应用与全部测试的类型，不执行测试 |
 | `npm run typecheck:tests` | 单独检查测试 fixture、mock 与断言的类型 |
 | `npm run build` | 编译到 `out/` |
@@ -189,7 +189,23 @@ Linux 作业在打包前还会运行发版策略和隔离伪 `gh` 发布脚本�
 
 应用图标的源文件是 `resources/icons/icon.svg`；备选方案位于 `docs/icons/`，对比图见 `docs/icons/preview.png`。换用其他方案可运行 `npm run icons -- docs/icons/agent-hub.svg`（复制为 `icon.svg` 后重新生成），修改备选 SVG 后用 `npm run icons -- --preview` 刷新对比图。脚本使用项目自带的 Electron 渲染，无需额外依赖。
 
-`npm test` 不访问 Cursor CLI、Codex 或 Claude。`npm run test:live` 在临时目录中用 Ask 模式调用 `composer-2.5[fast=true]`：文字检查只要求 `Reply with exactly ok`，附件检查验证原生图片识别及工作目录之外的受管理原文件读取。文字检查优先使用 `CURSOR_API_KEY`，未设置时使用 CLI 保存的登录；附件检查要求 `CURSOR_API_KEY`。只运行附件检查可用 `npm run test:live -- test/live/attachment-smoke.test.ts`。
+`npm test` 离线运行，不调用真实模型；包括单元测试、本地 HTTP/子进程/Git 集成测试，以及环境支持时的 Electron 图形测试。发版任务在 Windows、Linux 和两种原生 macOS 架构上执行全量离线测试与类型检查。Windows 专属文件系统/控制台回归保留平台限制。React 图形测试在 Windows/macOS，以及设置了 `DISPLAY` 或 `WAYLAND_DISPLAY` 的 Linux 上运行；无图形会话的 Linux 会报告跳过。Linux 可使用正常桌面会话，或已安装的 `xvfb-run -a npm test -- test/cli-card-electron.test.ts test/draft-ui-electron.test.ts test/tool-images-electron.test.ts`。不要为使测试通过而关闭 Chromium 沙箱。Windows 新控制台测试仍按下文单独选择启用。
+
+`npm run test:live` 会显式启用 **三项真实 Cursor 模型检查**，使用 `composer-2.5[fast=true]`，会消耗账号/API 额度，并可能产生费用。它们不属于 `npm test` 或发版 CI；仅修改离线测试时不要顺带运行。
+
+- `model-smoke.test.ts`：Ask 模式，要求仅回复 `ok`（忽略大小写和首尾空白）。优先使用 `CURSOR_API_KEY`，未设置时使用 CLI 保存的登录。
+- `attachment-smoke.test.ts`：Ask 模式，验证图片识别和读取临时工作目录之外的受管理原文件。要求 `CURSOR_API_KEY`；权限处理仅允许限定范围内的原文件读取。
+- `file-changes-smoke.test.ts`：**Agent 模式**，编辑临时目录中的 `edited.txt`，并注入并发外部写入。要求 `CURSOR_API_KEY`。测试权限处理对请求选择 `allow_once`，CLI 使用信任/强制执行选项；提示要求仅编辑一个文件且不运行终端命令，但临时工作目录**不是操作系统沙箱**。只应在合适的测试环境中使用可信 CLI 与账号运行。
+
+三项都会清理临时测试文件。明确只运行其中一项时使用：
+
+```bash
+npm run test:live -- test/live/model-smoke.test.ts
+npm run test:live -- test/live/attachment-smoke.test.ts
+npm run test:live -- test/live/file-changes-smoke.test.ts
+```
+
+离线的 `test/live-model-contract.test.ts` 会验证严格回复契约（包括拒绝 `not ok` 和 `token expired`），不启动 CLI、不消耗模型额度。
 
 可用 `npm test -- test/claude.test.ts test/turn-usage.test.ts` 定向检查。这些测试将 Claude 检测与用户主目录隔离，覆盖含空格路径下的用量 preload 加载，并清理临时夹具。仅适用于 Windows 的检查在其他平台会明确标为跳过。
 

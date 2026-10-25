@@ -33,6 +33,8 @@ function deferred() {
 export async function runCliCardChecks() {
   const calls: { provider: string | undefined; refresh: boolean | undefined }[] = []
   const saved: string[] = []
+  const logins: (CliProvider | undefined)[] = []
+  const updates: (CliProvider | undefined)[] = []
   let next: Promise<CliInfo> | undefined
   let revision = 0
   let pathValue = ''
@@ -45,8 +47,8 @@ export async function runCliCardChecks() {
       next = undefined
       return response
     },
-    login: async () => 'Logged in',
-    updateCli: async () => 'Updated',
+    login: async (provider?: CliProvider) => { logins.push(provider); return 'Logged in' },
+    updateCli: async (provider?: CliProvider) => { updates.push(provider); return 'Updated' },
     listModels: async () => [{ id: 'auto', label: 'Auto' }]
   } as unknown as typeof window.api
 
@@ -105,12 +107,19 @@ export async function runCliCardChecks() {
   check(document.body.textContent?.includes('manually-refreshed'), 'Detection errors preserve displayed results')
   check(getState().toast?.text.includes('detection failed'), 'Detection errors show a toast')
 
+  const beforeLogin = calls.length
   await click('Log in / Log in again')
+  await eventually(() => calls.length > beforeLogin, 'Login starts a new detection')
   await idle()
-  check(calls.at(-1)?.refresh === true, 'Login forces detection')
+  check(logins.length === 1 && logins[0] === 'cursor', 'Login calls the selected provider exactly once')
+  check(calls.length === beforeLogin + 1 && calls.at(-1)?.provider === 'cursor' && calls.at(-1)?.refresh === true, 'Login forces exactly one new detection')
+  const beforeUpdate = calls.length
   await click('Update')
+  await eventually(() => calls.length > beforeUpdate, 'Update starts a new detection')
   await idle()
-  check(calls.at(-1)?.refresh === true, 'Update forces detection')
+  check(updates.length === 1 && updates[0] === 'cursor', 'Update calls the selected provider exactly once')
+  check(calls.length === beforeUpdate + 1 && calls.at(-1)?.provider === 'cursor' && calls.at(-1)?.refresh === true, 'Update forces exactly one new detection')
+  check(document.querySelector('[role="status"]')?.textContent === 'Updated', 'Update result is visible')
   const pathCall = calls.length
   await edit(1, '/new-agent')
   check(saved.at(-1) === '/new-agent' && calls.slice(pathCall).some((call) => call.refresh === true), 'Saving path forces detection')

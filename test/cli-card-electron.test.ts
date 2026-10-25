@@ -5,6 +5,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterAll, expect, it } from 'vitest'
 import { build } from 'vite'
+import { canRunElectronUi } from './helpers/electron-ui-environment'
 import type {} from './helpers/cli-card-ui-fixture'
 
 const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-desktop-cli-card-ui-'))
@@ -15,7 +16,7 @@ afterAll(() => {
   fs.rmSync(resolved, { recursive: true, force: true })
 })
 
-it.runIf(process.platform === 'win32')('checks cached detection, refresh actions and stale responses in real React', async () => {
+it.runIf(canRunElectronUi)('checks cached detection, refresh actions and stale responses in real React', async () => {
   await build({ configFile: false, publicDir: false, logLevel: 'silent',
     define: { 'process.env.NODE_ENV': '"development"' },
     resolve: { alias: { '@shared': path.resolve('src/shared') } },

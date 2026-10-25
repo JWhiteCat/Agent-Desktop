@@ -43,7 +43,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-describe('sidebar toggle native hit-test contract', () => {
+describe('sidebar toggle structural layering contract', () => {
   it.each([
     ['home', false], ['home', true], ['thread', false], ['thread', true]
   ] as const)('keeps the %s toggle after draggable headers (narrow: %s)', (view, narrow) => {

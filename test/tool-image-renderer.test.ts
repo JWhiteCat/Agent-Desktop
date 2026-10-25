@@ -129,14 +129,12 @@ describe('tool image browser clipboard', () => {
 })
 
 describe('collapsed tool rows', () => {
-  it('does not load tool images before expansion or alter read summary', () => {
-    const prepare = vi.fn()
-    vi.stubGlobal('window', { api: { prepareToolImages: prepare } })
+  // SSR covers markup only; tool-images-electron.test.ts exercises mounted effects.
+  it('renders the collapsed read summary without image markup', () => {
     const item: ToolItem = { id: 't', kind: 'tool', callId: 'c', tool: 'read', args: { path: '/project/image.png' }, status: 'success', startedAt: 0,
       images: [{ id: 'image', key: 'k', name: 'image.png', mimeType: 'image/png', size: 123, sourceKind: 'file' }] }
     const html = renderToStaticMarkup(createElement(ToolRow, { item, threadId: 'thread' }))
     expect(html).toContain('已读取'); expect(html).toContain('image.png')
     expect(html).not.toContain('<img'); expect(html).not.toContain('tool-images')
-    expect(prepare).not.toHaveBeenCalled()
   })
 })

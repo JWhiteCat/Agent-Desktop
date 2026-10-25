@@ -1,8 +1,9 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { expect, it } from 'vitest'
+import { it } from 'vitest'
 import { killTree, resolveCli, spawnCli, stripAnsi, type ResolvedCli } from '../../src/main/cli'
+import { assertExactOkReply } from '../helpers/live-model-contract'
 
 const PROMPT = 'Reply with exactly ok'
 const MODEL = 'composer-2.5[fast=true]'
@@ -57,8 +58,7 @@ it.skipIf(!process.env.AGENT_DESKTOP_LIVE_MODEL)(
       const result = await runPrint(cli, cwd, 85_000)
       const text = result.stdout.trim()
       if (result.code !== 0) throw new Error(`CLI 退出 ${result.code}: ${safeErr(result.stderr) || '无 stderr'}`)
-      expect(text.toLowerCase()).toContain('ok')
-      expect(text.length).toBeLessThanOrEqual(80)
+      assertExactOkReply(text)
     } finally {
       const resolved = path.resolve(cwd)
       if (path.dirname(resolved) !== path.resolve(os.tmpdir()) || !path.basename(resolved).startsWith('agent-desktop-live-')) {

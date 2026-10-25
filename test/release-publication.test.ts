@@ -3,21 +3,13 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
+import { readWorkflow, requiredStep } from './helpers/workflow'
 
 const roots: string[] = []
-const workflow = fs.readFileSync(path.resolve('.github/workflows/release.yml'), 'utf8').replace(/\r\n/g, '\n')
-
 function publicationShell(): string {
-  const step = workflow.indexOf('      - name: Publish GitHub Release\n')
-  if (step < 0) throw new Error('Missing publication step')
-  const run = workflow.indexOf('        run: |\n', step)
-  if (run < 0) throw new Error('Missing publication shell')
-  const lines: string[] = []
-  for (const line of workflow.slice(run + '        run: |\n'.length).split('\n')) {
-    if (line && !line.startsWith('          ')) break
-    lines.push(line.slice(10))
-  }
-  return lines.join('\n')
+  const shell = requiredStep(readWorkflow().jobs.publish, 'Publish GitHub Release').run
+  if (!shell) throw new Error('Missing publication shell')
+  return shell
 }
 
 interface FixtureOptions {
@@ -47,6 +39,12 @@ function runPublication(options: FixtureOptions = {}) {
 const fs = require('node:fs');
 const args = process.argv.slice(2);
 fs.appendFileSync(process.env.FIXTURE_LOG, JSON.stringify(args) + '\\n');
+if (args[0] === 'release' && (args[1] === 'create' || (args[1] === 'edit' && args.includes('--title')))) {
+  const notes = args[args.indexOf('--notes-file') + 1];
+  if (!args.includes('--notes-file') || !fs.existsSync(notes) || !fs.readFileSync(notes, 'utf8').includes('- Fixture release.')) {
+    console.error('Missing generated changelog notes'); process.exit(91);
+  }
+}
 if (args[0] === 'api') {
   if (process.env.FIXTURE_API === 'failure') { console.error('fixture API unavailable'); process.exit(1); }
   if (process.env.FIXTURE_API === 'malformed') { console.log('not-json'); process.exit(0); }
@@ -96,7 +94,10 @@ describe.skipIf(process.platform !== 'linux')('actual publication shell with an 
     expect(result.status, result.stderr).toBe(0)
     const final = commands.find((args) => args.includes('--draft=false'))
     expect(final).toEqual(['release', 'edit', 'v1.2.0', '--draft=false', '--prerelease=false', expected])
-    expect(commands.find((args) => args[1] === 'create')).toContain('--draft')
+    expect(commands.find((args) => args[1] === 'create')).toEqual([
+      'release', 'create', 'v1.2.0', '--verify-tag', '--draft', '--title', 'Agent Desktop v1.2.0', '--notes-file', 'release-notes.md'
+    ])
+    expect(commands[commands.findIndex((args) => args[1] === 'upload')]).toContain('--clobber')
     const upload = commands.findIndex((args) => args[1] === 'upload')
     const api = commands.findIndex((args) => args[0] === 'api')
     expect(upload).toBeGreaterThan(-1)

@@ -75,4 +75,4 @@ npm test
 npm run typecheck
 ```
 
-Live checks use `composer-2.5[fast=true]` and require CLI authentication; see [commands and tests](docs/development.md#commands-and-tests).
+Opt-in live checks use `composer-2.5[fast=true]`, include an Agent file-edit test, consume model quota, and require CLI authentication; see [commands and tests](docs/development.md#commands-and-tests).

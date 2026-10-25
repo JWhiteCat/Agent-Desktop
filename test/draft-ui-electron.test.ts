@@ -5,6 +5,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterAll, expect, it } from 'vitest'
 import { build } from 'vite'
+import { canRunElectronUi } from './helpers/electron-ui-environment'
 import type {} from './helpers/draft-ui-fixture'
 
 const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-desktop-draft-ui-'))
@@ -17,7 +18,7 @@ afterAll(() => {
 
 // Use the bundled browser to exercise controlled inputs, effects and real unmounts,
 // without adding a DOM emulation dependency or launching a CLI/model.
-it.runIf(process.platform === 'win32')('preserves isolated composer and question drafts across React unmounts', async () => {
+it.runIf(canRunElectronUi)('preserves isolated composer and question drafts across React unmounts', async () => {
   await build({ configFile: false, publicDir: false, logLevel: 'silent',
     define: { 'process.env.NODE_ENV': '"development"' },
     resolve: { alias: { '@shared': path.resolve('src/shared') } },

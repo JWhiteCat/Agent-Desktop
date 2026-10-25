@@ -158,7 +158,7 @@ The script moves those notes into `## [0.2.0] - YYYY-MM-DD` and commits that on 
 
 The workflow rejects missing or empty version notes before building. It installs and checks Electron explicitly, requires all six installers, and generates `SHA256SUMS.txt`. Windows assets use `agent-desktop-<version>-win-x64-portable.exe` and `agent-desktop-<version>-win-x64-setup.exe`; macOS assets use `agent-desktop-<version>-mac-arm64.dmg` and `agent-desktop-<version>-mac-x64.dmg`. Any platform failure or missing/empty installer prevents publication. The Release stays a draft until all assets are uploaded, then becomes public. Only a version not lower than any published stable release becomes Latest; older backfills explicitly keep Latest unchanged. Retrying can resume a draft; it will not overwrite a public release.
 
-The Linux job also runs the release-policy and isolated fake-`gh` publication-shell regressions before packaging. Platform builds may run concurrently, but the final publish jobs share a repository-wide lock. `queue: max` preserves up to 100 waiting publications instead of replacing an earlier pending job; `cancel-in-progress: false` does not cancel an active publication. Inside this lock, the workflow reads every page of published releases immediately before publishing. API or metadata failures keep the release in draft. New releases and backfills must include this workflow fix; legacy workflow reruns and manual/API publications do not share its lock and must not run alongside it. A full queue rejects additional jobs, which must be retried.
+The Windows and Linux jobs also run full offline tests and type checks before packaging; Linux includes the release-policy and isolated fake-`gh` publication-shell regressions. Platform builds may run concurrently, but the final publish jobs share a repository-wide lock. `queue: max` preserves up to 100 waiting publications instead of replacing an earlier pending job; `cancel-in-progress: false` does not cancel an active publication. Inside this lock, the workflow reads every page of published releases immediately before publishing. API or metadata failures keep the release in draft. New releases and backfills must include this workflow fix; legacy workflow reruns and manual/API publications do not share its lock and must not run alongside it. A full queue rejects additional jobs, which must be retried.
 
 After the workflow succeeds, do not commit to `release/X.Y.Z` and do not move the tag. If the script stops during a push, inspect the existing branch and tag and finish the remaining pushes; it does not delete or roll back completed work. The script returns to `master` after preparing the release.
 
@@ -172,7 +172,7 @@ Run tests with `NODE_ENV=test` if your terminal inherits `NODE_ENV=production` f
 | `npm run dev:linux` / `npm run preview:linux` | Linux startup with dependency/runtime checks |
 | `npm run dev:mac` / `npm run preview:mac` | macOS startup with dependency/runtime checks |
 | `npm test` | Offline unit tests. Does not call a model |
-| `npm run test:live` | Short text and attachment checks with Composer 2.5 Fast |
+| `npm run test:live` | Opt-in real-model text, attachment, and Agent file-edit checks (uses quota) |
 | `npm run typecheck` | Typecheck the app and all tests without running them |
 | `npm run typecheck:tests` | Typecheck test fixtures, mocks, and assertions only |
 | `npm run build` | Compile into `out/` |
@@ -189,7 +189,23 @@ Run tests with `NODE_ENV=test` if your terminal inherits `NODE_ENV=production` f
 
 The application icon source is `resources/icons/icon.svg`. Alternative designs live in `docs/icons/`, compared in `docs/icons/preview.png`. Switch to another design with `npm run icons -- docs/icons/agent-hub.svg` (copies it to `icon.svg`, then regenerates), and refresh the comparison after editing a candidate with `npm run icons -- --preview`. The script renders with the project's own Electron, so no extra dependency is needed.
 
-`npm test` does not talk to Cursor CLI, Codex, or Claude. `npm run test:live` calls `composer-2.5[fast=true]` in Ask mode in temporary directories: one check asks `Reply with exactly ok`, and another verifies native image recognition plus reading an original managed file outside the workspace. The text check uses `CURSOR_API_KEY` when set, otherwise the saved CLI login; the attachment check requires `CURSOR_API_KEY`. Run only the attachment check with `npm run test:live -- test/live/attachment-smoke.test.ts`.
+`npm test` is offline and never calls a real model. It includes unit tests, local HTTP/process/Git integration tests, and graphical Electron fixtures where supported. Release jobs run the full offline suite and type checks on Windows, Linux, and both native macOS architectures. Windows-only filesystem/console regressions keep their platform gates. Graphical React fixtures run on Windows/macOS and on Linux only with `DISPLAY` or `WAYLAND_DISPLAY`; headless Linux reports them as skipped. For a Linux graphical check, use a normal desktop session or an installed `xvfb-run -a npm test -- test/cli-card-electron.test.ts test/draft-ui-electron.test.ts test/tool-images-electron.test.ts`. Do not disable Chromium's sandbox to make a test pass. The Windows console test remains separately opt-in as described below.
+
+`npm run test:live` explicitly enables **three real Cursor model checks**, using `composer-2.5[fast=true]`. These consume account/API quota and may incur charges; they are excluded from `npm test` and release CI. Do not run them merely to validate an offline test change.
+
+- `model-smoke.test.ts`: Ask mode, requires exactly `ok` (case and surrounding whitespace are normalized). Uses `CURSOR_API_KEY` when set, otherwise the saved CLI login.
+- `attachment-smoke.test.ts`: Ask mode, verifies image recognition and reading an original managed file outside the temporary workspace. Requires `CURSOR_API_KEY`; its permission handler allows only the scoped original-file read.
+- `file-changes-smoke.test.ts`: **Agent mode**, edits `edited.txt` and injects concurrent external writes in a temporary directory. Requires `CURSOR_API_KEY`. Its test permission handler selects `allow_once` for requested operations, and the CLI starts with trusted/forced execution; the prompt asks for one file edit and no shell commands, but the temporary working directory is **not an OS sandbox**. Run only with a trusted CLI and account in an appropriate test environment.
+
+All three clean up their temporary fixtures. To intentionally run only one check:
+
+```bash
+npm run test:live -- test/live/model-smoke.test.ts
+npm run test:live -- test/live/attachment-smoke.test.ts
+npm run test:live -- test/live/file-changes-smoke.test.ts
+```
+
+The offline `test/live-model-contract.test.ts` covers strict response validation (including rejection of `not ok` and `token expired`) without launching a CLI or consuming quota.
 
 Run a focused check with `npm test -- test/claude.test.ts test/turn-usage.test.ts`. These tests isolate Claude discovery from the user's home directory, load the usage preload from paths containing spaces, and clean up their temporary fixtures. Windows-only checks are reported as skipped on other platforms.
 
