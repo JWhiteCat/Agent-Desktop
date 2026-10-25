@@ -2,7 +2,7 @@ import spawn from 'cross-spawn'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { promoteUnreleased, releaseNotes, VERSION } from './changelog.mjs'
+import { assertVersion, promoteUnreleased, releaseNotes } from './changelog.mjs'
 
 function localDate(now = new Date()) {
   const month = String(now.getMonth() + 1).padStart(2, '0')
@@ -45,7 +45,7 @@ function refExists(cwd, ref) {
 }
 
 export function publishRelease(version, options = {}) {
-  if (!VERSION.test(version)) throw new Error(`Version must be MAJOR.MINOR.PATCH: ${version}`)
+  assertVersion(version)
   const cwd = options.cwd ?? process.cwd()
   const date = options.date ?? localDate()
   const log = options.log ?? console.log

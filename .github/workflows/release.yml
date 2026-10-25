@@ -16,6 +16,7 @@ permissions:
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
+  queue: max
 
 jobs:
   verify:
@@ -46,10 +47,7 @@ jobs:
             echo "Unexpected ref: $ref"
             exit 1
           fi
-          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-            echo "Version must be MAJOR.MINOR.PATCH: $version"
-            exit 1
-          fi
+          node --input-type=module -e "import { assertVersion } from './scripts/changelog.mjs'; assertVersion(process.argv[1])" "$version"
           package_version="$(node -p "require('./package.json').version")"
           if [ "$package_version" != "$version" ]; then
             echo "package.json version ${package_version} does not match ${version}"
@@ -119,6 +117,10 @@ jobs:
         run: node node_modules/electron/install.js
       - name: Check Electron runtime
         run: node -e "const fs = require('node:fs'); const path = require('node:path'); const root = path.dirname(require.resolve('electron/package.json')); const exe = fs.readFileSync(path.join(root, 'path.txt'), 'utf8').trim(); if (!exe || !fs.existsSync(path.join(root, 'dist', exe))) process.exit(1)"
+      - name: Release publication regressions
+        run: npm test -- test/release-latest.test.ts test/release-publication.test.ts test/release-workflow.test.ts --maxWorkers=4
+        env:
+          NODE_ENV: test
       - name: Package Linux installers
         run: npm run dist:linux
       - name: Upload Linux artifacts
@@ -179,6 +181,12 @@ jobs:
     needs: [verify, build-windows, build-linux, build-macos]
     if: ${{ startsWith(github.ref, 'refs/tags/v') && success() }}
     runs-on: ubuntu-latest
+    # Serialize only publication, not platform builds. Queue all waiting versions
+    # rather than replacing the pending job; GitHub supports up to 100 waiters.
+    concurrency:
+      group: agent-desktop-release-publication
+      cancel-in-progress: false
+      queue: max
     permissions:
       contents: write
     steps:
@@ -214,4 +222,9 @@ jobs:
             gh release create "$tag" --verify-tag --draft --title "Agent Desktop ${tag}" --notes-file release-notes.md
           fi
           gh release upload "$tag" "${files[@]}" --clobber
-          gh release edit "$tag" --draft=false --prerelease=false --latest
+          # Read every page while holding the publication lock. Older backfills
+          # remain public releases but must not displace a newer stable Latest.
+          # Any API/JSON failure leaves this release in draft for a safe retry.
+          gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/releases?per_page=100" > published-releases.json
+          latest="$(node scripts/release-latest.mjs "$VERSION" published-releases.json)"
+          gh release edit "$tag" --draft=false --prerelease=false --latest="$latest"

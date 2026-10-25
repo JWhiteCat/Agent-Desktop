@@ -19,6 +19,42 @@ afterEach(() => {
 })
 
 describe('one-step release', () => {
+  it('rejects invalid versions before invoking git/npm or touching the checkout or remote', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-release-invalid-'))
+    roots.push(root)
+    const origin = path.join(root, 'origin.git')
+    const work = path.join(root, 'work')
+    git(root, ['init', '--bare', '-b', 'master', origin])
+    git(root, ['init', '-b', 'master', work])
+    git(work, ['config', 'user.email', 'release-test@example.com'])
+    git(work, ['config', 'user.name', 'Release Test'])
+    git(work, ['config', 'commit.gpgsign', 'false'])
+    const originalFiles = {
+      'package.json': JSON.stringify({ name: 'agent-desktop', version: '0.1.0' }),
+      'package-lock.json': JSON.stringify({ name: 'agent-desktop', version: '0.1.0', lockfileVersion: 3 }),
+      'CHANGELOG.md': '# Changelog\n\n## [Unreleased]\n\n- Pending changes.\n'
+    }
+    for (const [name, content] of Object.entries(originalFiles)) fs.writeFileSync(path.join(work, name), content)
+    git(work, ['add', '.'])
+    git(work, ['commit', '-m', 'Initial commit'])
+    git(work, ['remote', 'add', 'origin', origin])
+    git(work, ['push', '-u', 'origin', 'master'])
+    const localRefs = git(work, ['show-ref'])
+    const remoteRefs = git(origin, ['show-ref'])
+    for (const version of ['01.2.3', '1.02.3', '1.2.03', 'v1.2.3', '1.2.3-beta.1', '1.2.3+build',
+      '1.2.3\n', '9007199254740992.0.0', '0.9007199254740992.0', '0.0.9007199254740992']) {
+      const commands: string[] = []
+      expect(() => publishRelease(version, { cwd: work, log: (line: string) => commands.push(line) })).toThrow(/MAJOR.MINOR.PATCH/)
+      expect(commands).toEqual([])
+      expect(git(work, ['show-ref'])).toBe(localRefs)
+      expect(git(origin, ['show-ref'])).toBe(remoteRefs)
+      expect(git(work, ['status', '--porcelain=v1'])).toBe('')
+      for (const [name, content] of Object.entries(originalFiles)) {
+        expect(fs.readFileSync(path.join(work, name), 'utf8')).toBe(content)
+      }
+    }
+  })
+
   it('publishes the changelog from master without leaving the version bump there', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-release-'))
     roots.push(root)

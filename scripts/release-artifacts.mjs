@@ -2,11 +2,11 @@ import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { VERSION } from './changelog.mjs'
+import { assertVersion } from './changelog.mjs'
 
 /** Require all six installers before creating a public release. */
 export function prepareReleaseArtifacts(directory, version) {
-  if (!VERSION.test(version)) throw new Error(`Version must be MAJOR.MINOR.PATCH: ${version}`)
+  assertVersion(version)
   const names = fs.readdirSync(directory).filter((name) => fs.statSync(path.join(directory, name)).isFile())
   const prefix = `agent-desktop-${version}`
   const linuxPrefix = `${prefix}-linux-`

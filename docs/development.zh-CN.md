@@ -154,9 +154,11 @@ npm run release -- 0.2.0
 
 脚本会把这些说明移到 `## [0.2.0] - YYYY-MM-DD`，并在 `master` 上提交。接着创建 `release/0.2.0`，只在那条分支上把 `package.json` 和 `package-lock.json` 的版本号改为 `0.2.0`，然后推送 `master`、release 分支和附注 tag `v0.2.0`。版本号提交留在 release 分支上。
 
-[`.github/workflows/release.yml`](../.github/workflows/release.yml) 会在 `v*` tag 和 `release/*` 分支的推送上运行。推送分支时，只检查分支名是否为三段数字，并且与 `package.json` 一致。推送 tag 时还会确认 `release/X.Y.Z` 已存在且指向该 tag 的提交。`v1` 或 `release/next` 等名称通不过检查。只有 tag 会继续构建 Windows x64 便携包/NSIS、Linux x64 AppImage/Debian，以及 macOS arm64/x64 DMG。macOS 矩阵分别在 `macos-15`（arm64）和 `macos-15-intel`（x64）安装本机 optional 依赖，运行类型检查、离线测试、打包和 `verify:mac`。Release 说明来自对应版本的 Changelog。electron-builder 使用 `--publish never`，再由 `gh` 上传文件。
+[`.github/workflows/release.yml`](../.github/workflows/release.yml) 会在 `v*` tag 和 `release/*` 分支的推送上运行。推送分支时，只检查分支名是否为规范的稳定版 `MAJOR.MINOR.PATCH`（不允许前导零、预发布/构建后缀，各段不超过 JavaScript 安全整数上限），并且与 `package.json` 一致。推送 tag 时还会确认 `release/X.Y.Z` 已存在且指向该 tag 的提交。`v1` 或 `release/next` 等名称通不过检查。只有 tag 会继续构建 Windows x64 便携包/NSIS、Linux x64 AppImage/Debian，以及 macOS arm64/x64 DMG。macOS 矩阵分别在 `macos-15`（arm64）和 `macos-15-intel`（x64）安装本机 optional 依赖，运行类型检查、离线测试、打包和 `verify:mac`。Release 说明来自对应版本的 Changelog。electron-builder 使用 `--publish never`，再由 `gh` 上传文件。
 
-工作流在构建前拒绝缺失或为空的版本说明，显式安装并检查 Electron，确认六个安装包齐全，并生成 `SHA256SUMS.txt`。Windows 附件名为 `agent-desktop-<version>-win-x64-portable.exe` 和 `agent-desktop-<version>-win-x64-setup.exe`；macOS 为 `agent-desktop-<version>-mac-arm64.dmg` 和 `agent-desktop-<version>-mac-x64.dmg`。任一平台失败、缺包或空包都会阻止公开发布。全部附件上传前 Release 保持草稿，上传完成后才公开为正式版和 Latest。重试可以继续草稿，不覆盖已经公开的版本。
+工作流在构建前拒绝缺失或为空的版本说明，显式安装并检查 Electron，确认六个安装包齐全，并生成 `SHA256SUMS.txt`。Windows 附件名为 `agent-desktop-<version>-win-x64-portable.exe` 和 `agent-desktop-<version>-win-x64-setup.exe`；macOS 为 `agent-desktop-<version>-mac-arm64.dmg` 和 `agent-desktop-<version>-mac-x64.dmg`。任一平台失败、缺包或空包都会阻止公开发布。全部附件上传前 Release 保持草稿，上传完成后才公开为正式版。只有不低于任何已发布稳定版的版本才设为 Latest，补发旧版明确保持 Latest 不变。重试可以继续草稿，不覆盖已经公开的版本。
+
+Linux 作业在打包前还会运行发版策略和隔离伪 `gh` 发布脚本回归。各平台构建仍可并行，最终 publish 作业使用仓库级共享锁。`queue: max` 最多保留 100 个等待发布的作业，避免替换先前的等待者；`cancel-in-progress: false` 不取消正在发布的作业。持锁期间、正式发布前查询所有分页的已发布版本；API 或元数据错误会保留草稿。新版本和旧版补发都必须包含此工作流修复；旧工作流重跑以及网页/API 手动发布不参与该锁，不应同时进行。等待队列满时新增作业会被拒绝，需另行重试。
 
 工作流成功后，不要再向 `release/X.Y.Z` 提交，也不要移动该 tag。脚本若在推送中途失败，先检查已存在的分支和 tag，再补齐剩余推送；脚本不会删除或回滚已经完成的操作。准备完成后，脚本会返回 `master`。
 

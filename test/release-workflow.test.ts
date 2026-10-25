@@ -23,7 +23,8 @@ describe('GitHub release workflow', () => {
     expect(trigger).not.toContain('workflow_dispatch')
 
     const verify = jobBlock(workflow, 'verify')
-    expect(verify).toContain("grep -Eq '^[0-9]+\\.[0-9]+\\.[0-9]+$'")
+    expect(verify).toContain("import { assertVersion } from './scripts/changelog.mjs'; assertVersion(process.argv[1])")
+    expect(verify.indexOf('assertVersion(process.argv[1])')).toBeLessThan(verify.indexOf('package_version='))
     expect(verify).toContain('refs/heads/release/')
     expect(verify).toContain('git fetch --no-tags origin')
     expect(verify).toContain('git rev-parse HEAD')
@@ -37,6 +38,7 @@ describe('GitHub release workflow', () => {
     }
     expect(jobBlock(workflow, 'build-windows')).toContain('electron-builder --win portable nsis --x64 --publish never')
     expect(jobBlock(workflow, 'build-linux')).toContain('npm run dist:linux')
+    expect(jobBlock(workflow, 'build-linux')).toContain('test/release-publication.test.ts')
     const publish = jobBlock(workflow, 'publish')
     const mac = jobBlock(workflow, 'build-macos')
     expect(mac).toContain('runner: macos-15\n')
@@ -52,7 +54,16 @@ describe('GitHub release workflow', () => {
     expect(publish).toContain('node scripts/release-artifacts.mjs artifacts "$VERSION"')
     expect(publish).toContain('gh release create "$tag" --verify-tag --draft --title "Agent Desktop ${tag}" --notes-file release-notes.md')
     expect(publish.indexOf('gh release upload')).toBeLessThan(publish.indexOf('--draft=false'))
-    expect(publish).toContain('--draft=false --prerelease=false --latest')
+    expect(publish).toContain('--draft=false --prerelease=false --latest="$latest"')
+    expect(publish).toContain('group: agent-desktop-release-publication')
+    expect(publish).toContain('cancel-in-progress: false\n      queue: max')
+    expect(publish).toContain('gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/releases?per_page=100"')
+    expect(publish).toContain('node scripts/release-latest.mjs "$VERSION" published-releases.json')
+    expect(publish.indexOf('gh release upload')).toBeLessThan(publish.indexOf('gh api --paginate'))
+    expect(publish.indexOf('gh api --paginate')).toBeLessThan(publish.indexOf('--draft=false'))
+    for (const name of ['build-windows', 'build-linux', 'build-macos']) {
+      expect(jobBlock(workflow, name)).not.toContain('agent-desktop-release-publication')
+    }
     expect(publish).not.toContain('--generate-notes')
     expect(publish).toContain('gh release upload "$tag" "${files[@]}" --clobber')
     expect(workflow.match(/contents:\s*write/g)).toEqual(['contents: write'])

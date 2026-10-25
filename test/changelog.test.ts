@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { promoteUnreleased, releaseNotes } from '../scripts/changelog.mjs'
+import { assertVersion, promoteUnreleased, releaseNotes } from '../scripts/changelog.mjs'
 import { assertOnlyChangelog } from '../scripts/release.mjs'
 
 const notes = `# Changelog
@@ -16,6 +16,18 @@ const notes = `# Changelog
 `
 
 describe('changelog sections', () => {
+  it.each(['0.0.0', '1.2.3', '9007199254740991.0.0', '0.9007199254740991.0', '0.0.9007199254740991'])('accepts canonical npm-compatible stable version %s', (version) => {
+    expect(() => assertVersion(version)).not.toThrow()
+  })
+
+  it.each(['01.2.3', '1.02.3', '1.2.03', 'v1.2.3', '1.2.3-beta.1', '1.2.3+build',
+    '1.2', '-1.2.3', ' 1.2.3', '1.2.3 ', '1.2.3\n', '1.2.3\r\n',
+    '9007199254740992.0.0', '0.9007199254740992.0', '0.0.9007199254740992'])('rejects noncanonical or unsafe version %j', (version) => {
+    expect(() => assertVersion(version)).toThrow(/MAJOR.MINOR.PATCH/)
+    expect(() => promoteUnreleased(notes, version, '2026-10-25')).toThrow(/MAJOR.MINOR.PATCH/)
+    expect(() => releaseNotes(notes, version)).toThrow(/MAJOR.MINOR.PATCH/)
+  })
+
   it('moves Unreleased notes into a dated version section', () => {
     const changelog = promoteUnreleased(notes, '0.2.0', '2026-10-23')
     expect(changelog).toContain('## [Unreleased]\n\n## [0.2.0] - 2026-10-23')

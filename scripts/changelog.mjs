@@ -2,10 +2,14 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-export const VERSION = /^[0-9]+\.[0-9]+\.[0-9]+$/
+// Use an absolute end assertion: `$` alone also accepts a trailing newline.
+export const VERSION = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?![\s\S])/
 
-function assertVersion(version) {
-  if (!VERSION.test(version)) throw new Error(`Version must be MAJOR.MINOR.PATCH: ${version}`)
+export function assertVersion(version) {
+  if (typeof version !== 'string' || !VERSION.test(version) ||
+      !version.split('.').every((part) => Number.isSafeInteger(Number(part)))) {
+    throw new Error(`Version must be MAJOR.MINOR.PATCH with no leading zeros and safe integer components: ${version}`)
+  }
 }
 
 function normalize(markdown) {
@@ -54,6 +58,7 @@ if (direct) {
     process.exit(1)
   }
   try {
+    assertVersion(version)
     process.stdout.write(releaseNotes(fs.readFileSync(path.resolve('CHANGELOG.md'), 'utf8'), version))
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error))
