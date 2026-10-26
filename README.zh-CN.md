@@ -30,11 +30,13 @@
 
 ## 环境要求
 
-- macOS 13 Ventura 或更新版本，支持 Apple Silicon（arm64）与 Intel（x64），分别提供 DMG。安装包自带运行时；源码开发才需要 [Node.js 24 LTS](https://nodejs.org/en/download)（也支持 Node 22.12+ 的 22.x、26+）。
+- Windows（x64）、macOS 13 Ventura 或更新版本（Apple Silicon / arm64 或 Intel / x64），或 Linux（x64 / amd64，基于 glibc 且运行 X11 或 Wayland 图形会话的桌面环境）。
+- 发布包：Windows NSIS 安装程序或免安装便携程序、按架构分别提供的 macOS DMG，以及 Linux AppImage 或 `.deb`。
+- 安装包自带运行时；源码开发才需要 [Node.js 24 LTS](https://nodejs.org/en/download)（也支持 Node 22.12+ 的 22.x、26+）。
 - 至少一种已配置 API Key 或已登录的 CLI：Cursor CLI、Codex CLI 或 Claude Code；找不到本机 Codex / Claude 时可使用适配器自带版本。
 - 变更面板的 Git 页签需要本机可执行 `git`。
 
-CLI 安装、自动检测和认证优先级见 [CLI 安装与配置](docs/cli-setup.zh-CN.md)。
+CLI 安装、自动检测和认证优先级见 [CLI 安装与配置](docs/cli-setup.zh-CN.md)。Linux 的依赖和打包说明见 [Linux 启动与打包](docs/development.zh-CN.md#linux-启动与打包)。
 
 ## 快速开始
 

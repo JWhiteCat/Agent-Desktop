@@ -29,7 +29,9 @@ See the [user guide](docs/user-guide.md) for detailed behavior and shortcuts.
 
 ## Requirements
 
-- macOS 13 Ventura or newer, with separate Apple Silicon (arm64) and Intel (x64) DMGs. Packaged apps include their runtime; source development requires [Node.js 24 LTS](https://nodejs.org/en/download) (Node 22.12+ in the 22.x line and Node 26+ are also supported)
+- Windows (x64), macOS 13 Ventura or newer (Apple Silicon / arm64 or Intel / x64), or Linux (x64 / amd64, a glibc-based desktop with an active X11 or Wayland session)
+- Release packages: Windows NSIS installer or portable executable, macOS DMG for each architecture, and Linux AppImage or `.deb`
+- Packaged apps include their runtime; source development requires [Node.js 24 LTS](https://nodejs.org/en/download) (Node 22.12+ in the 22.x line and Node 26+ are also supported)
 - At least one authenticated CLI: Cursor CLI, Codex CLI, or Claude Code. Codex and Claude can use the binaries bundled with their adapters
 - `git` on `PATH` for git diffs and isolated worktrees
 
