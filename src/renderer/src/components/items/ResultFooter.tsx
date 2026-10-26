@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { t } from '@shared/i18n'
 import { quoteModel } from '@shared/model-prices'
+import { effectiveOutputTps } from '@shared/turn-performance'
 import { weeklyQuotaEstimate } from '@shared/turn-quota'
 import type { CliProvider, ModelInfo, ResultItem } from '@shared/types'
 import { compactNumber, duration, formatUsd } from '../../lib/format'
@@ -22,7 +23,24 @@ export function ResultFooter({ item, text, fallbackModel, cli = 'cursor', models
   const provider = item.cli ?? cli
   const groups = useMemo(() => groupModels(models), [models])
   const u = item.usage
-  const tokens = u ? (u.inputTokens ?? 0) + (u.outputTokens ?? 0) + (u.cacheReadTokens ?? 0) + (u.cacheWriteTokens ?? 0) : 0
+  const counts = [u?.inputTokens, u?.outputTokens, u?.cacheReadTokens, u?.cacheWriteTokens]
+  const knownCounts = counts.filter(validQuotaAmount)
+  const tokens = knownCounts.reduce((sum, value) => sum + value, 0)
+  const countText = (value: number | undefined) => validQuotaAmount(value) ? String(value) : t('未提供')
+  const tokenDetail = t('输入 {input} · 输出 {output} · 缓存读 {read} · 缓存写 {write}', {
+    input: countText(u?.inputTokens), output: countText(u?.outputTokens),
+    read: countText(u?.cacheReadTokens), write: countText(u?.cacheWriteTokens)
+  }) + '. ' + t('输入不含单列的缓存读写；输出使用服务返回的计数，可能包含隐藏思考和工具调用。缺失字段不是零。')
+  const rate = effectiveOutputTps(item)
+  const first = item.timing?.firstVisibleOutputMs
+  const elapsed = item.timing?.elapsedMs
+  const validFirst = validQuotaAmount(first) && validQuotaAmount(elapsed) && first <= elapsed
+  const ttft = t('首字延迟 {value}', { value: validFirst ? duration(Math.round(first)) : t('暂无数据') })
+  const ttftDetail = t('从发送本轮提示到收到第一段非空助手正文的客户端延迟；不把思考、工具事件或隐藏推理当作首字。包含网络、排队、思考和此前的工具等待，不是 prefill 耗时。历史记录或没有正文时暂无数据。')
+  const rateLabel = t('整轮有效输出 {value}', { value: rate === undefined ? t('暂无数据') : `${rate > 0 && rate < 0.01 ? '<0.01' : Number(rate.toFixed(2))} token/s` })
+  const rateDetail = t('整轮输出 tokens ÷ 整轮秒数；包含多次模型请求、思考、网络、工具执行和等待。输出计数可能包含隐藏思考及工具调用，不是可见出字速度或服务端 decode TPS。未完成、取消、失败、计数不完整或历史缺少计时时不计算。')
+  const backendLabel = t('Prefill / Decode TPS：不支持')
+  const backendDetail = t('当前 CLI 未提供服务端 prefill 和 decode 分阶段耗时，不能用首字延迟或整轮耗时冒充。缓存命中也不代表重新处理了这些输入 tokens。')
   const modelId = item.model || fallbackModel || ''
   const caption = modelId ? modelCaption(groups, modelId) : ''
   const quote = modelId && u ? quoteModel(item.apiModel || modelId, u, provider) : undefined
@@ -33,11 +51,12 @@ export function ResultFooter({ item, text, fallbackModel, cli = 'cursor', models
     <div className="result-footer">
       {text && <CopyButton text={text} />}
       {item.durationMs !== undefined && <span>{duration(item.durationMs)}</span>}
-      {tokens > 0 && (
-        <HoverTip text={t('输入 {input} · 输出 {output} · 缓存读 {read} · 缓存写 {write}', { input: u?.inputTokens ?? 0, output: u?.outputTokens ?? 0, read: u?.cacheReadTokens ?? 0, write: u?.cacheWriteTokens ?? 0 })}>
-          {compactNumber(tokens)} tokens
-        </HoverTip>
-      )}
+      <MetricDetail text={tokenDetail}>
+        {knownCounts.length ? `${compactNumber(tokens)} tokens${knownCounts.length < 4 ? t('（部分）') : ''}${item.usageComplete === false ? t('（统计中）') : ''}` : t('tokens 暂无数据')}
+      </MetricDetail>
+      <MetricDetail text={ttftDetail}>{ttft}</MetricDetail>
+      <MetricDetail text={rateDetail}>{rateLabel}</MetricDetail>
+      <MetricDetail text={backendDetail}>{backendLabel}</MetricDetail>
       {caption && <HoverTip text={caption === modelId ? undefined : modelId}>{caption}</HoverTip>}
       {quote && (
         <HoverTip text={quote.costUsd == null ? t('Auto 和价目表没有的模型未计入费用') : t('估算 ${cost}（{source}）', { cost: quote.costUsd, source: priceSource })}>
@@ -48,6 +67,11 @@ export function ResultFooter({ item, text, fallbackModel, cli = 'cursor', models
       {turnEstimate && <HoverTip text={turnEstimate.title}>{turnEstimate.text}</HoverTip>}
     </div>
   )
+}
+
+/** Native title and a focusable, named trigger keep metric definitions available without a mouse. */
+function MetricDetail({ text, children }: { text: string; children: string }) {
+  return <HoverTip text={text}><span role="note" tabIndex={0} title={text} aria-label={`${children}. ${text}`}>{children}</span></HoverTip>
 }
 
 function weeklyEstimate(item: ResultItem): { text: string; title: string } {

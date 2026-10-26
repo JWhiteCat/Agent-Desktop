@@ -150,6 +150,13 @@ export interface ResultItem {
   /** Saved workspace snapshot delta; can include external writers. Never agent attribution. */
   fileChanges?: FileChange[]
   durationMs?: number
+  /** Client-observed prompt interval, not backend prefill/decode timing. Absent in older history. */
+  timing?: {
+    elapsedMs: number
+    /** Prompt dispatch to first non-whitespace assistant text; excludes thought/tool updates. */
+    firstVisibleOutputMs?: number
+    outcome: 'completed' | 'cancelled' | 'failed'
+  }
   /** When this turn finished. Older transcripts omit it; usage stats then use the preceding user message. */
   createdAt?: number
   /** Model id used for this turn. */

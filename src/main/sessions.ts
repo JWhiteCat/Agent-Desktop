@@ -10,7 +10,7 @@ import { attachmentPrompt } from '@shared/attachment-message'
 import { isImageAttachment, MAX_ATTACHMENTS, MAX_MESSAGE_ATTACHMENT_BYTES, type AttachmentRef } from '@shared/attachments'
 import type { AgentEvent, CliProvider, Item, MessageQueue, PrepareRequest, QuestionAnswer, QueuedMessage, SendRequest } from '@shared/types'
 import { isCliProvider, threadCli } from '@shared/types'
-import { normalizeTurnUsage } from '@shared/turn-usage'
+import { normalizeTurnUsage, preferTurnUsage } from '@shared/turn-usage'
 import type { WeeklyQuotaEstimate } from '@shared/turn-quota'
 import { AcpConnection } from './acp'
 import { exitFailureDetail, killTree, stripAnsi } from './cli'
@@ -21,6 +21,7 @@ import { newId } from './id'
 import { forkPrompt } from './fork-context'
 import { attachmentsFor } from './attachments'
 import { StreamReducer } from './reducer'
+import { TurnTiming } from './turn-timing'
 import { loadCodexAccountUsage } from './codex-account'
 import { CodexTurnUsageReader } from './codex-turn-usage'
 import { SessionUsage } from './session/usage'
@@ -76,6 +77,7 @@ interface Run extends InteractionRun {
   /** Defined only for ChatGPT-authenticated Codex turns; an empty path selects the detected CLI. */
   codexAccountPath?: string
   resultId?: string
+  timing?: TurnTiming
   codexUsage?: CodexTurnUsageReader
   weeklyQuotaEstimate?: WeeklyQuotaEstimate
   attachments?: AttachmentRef[]
@@ -727,6 +729,7 @@ export class SessionManager {
         if ((proc.provider === 'cursor' || proc.provider === 'claude') && run.mode === 'plan' && leftPlanMode(params?.update, run.switchCalls)) {
           proc.acp.request('session/set_mode', { sessionId: proc.sessionId, modeId: 'plan' }).catch(() => undefined)
         }
+        run.timing?.observe(params?.update)
         const changed = run.reducer.handleAcp(params?.update)
         if (changed.length) this.queue(threadId, run, changed)
       },
@@ -989,14 +992,18 @@ export class SessionManager {
       await this.endRun(threadId, run, null)
       return
     }
-    const started = Date.now()
     if (run.proc.provider === 'codex') run.codexUsage = new CodexTurnUsageReader(run.proc.sessionId)
+    run.timing = new TurnTiming()
     const result = await run.proc.acp.request('session/prompt', {
       sessionId: run.proc.sessionId,
       prompt: [{ type: 'text', text }, ...images]
     })
-    if (!this.runs.has(threadId) || run.settled) return
     const stop = String(result?.stopReason ?? 'end_turn')
+    const failedReply = isAutomaticContinueFailure(run.proc.provider, run.reducer.lastAssistantText)
+      || isAutomaticContinueFailure(run.proc.provider, run.failText)
+    const timing = run.timing.finish(run.stopped || stop === 'cancelled'
+      ? 'cancelled' : stop === 'end_turn' && !failedReply ? 'completed' : 'failed')
+    if (!this.runs.has(threadId) || run.settled) return
     const codexUsage = run.codexUsage?.read()
     if (contextThroughId && stop === 'end_turn') {
       this.store.updateThread(threadId, { forkContextThroughItemId: undefined })
@@ -1005,7 +1012,7 @@ export class SessionManager {
     run.reducer.gotResult = true
     const usage = run.proc.provider === 'codex'
       ? codexUsage?.usage
-      : normalizeTurnUsage(result?.usage) ?? run.reducer.lastUsage
+      : preferTurnUsage(normalizeTurnUsage(result?.usage), run.reducer.lastUsage)
     const changed = run.reducer.closeSegments()
     const resultId = newId()
     run.resultId = resultId
@@ -1014,7 +1021,8 @@ export class SessionManager {
         id: resultId,
         kind: 'result',
         isError: stop !== 'end_turn' && stop !== 'cancelled',
-        durationMs: Date.now() - started,
+        durationMs: Math.round(timing.elapsedMs),
+        timing,
         createdAt: Date.now(),
         model: req.model,
         ...(run.proc.provider === 'claude' && run.reducer.lastModel ? { apiModel: run.reducer.lastModel } : {}),
@@ -1065,6 +1073,8 @@ export class SessionManager {
     if (run.settled) return
     run.settled = true
     run.acceptUpdates = false
+    // Freeze before filesystem/account cleanup. A killed/rejected turn must not look completed.
+    const timing = run.timing?.finish(run.stopped ? 'cancelled' : 'failed')
     if (run.killTimer) {
       clearTimeout(run.killTimer)
       run.killTimer = undefined
@@ -1109,6 +1119,19 @@ export class SessionManager {
       }
       if (result?.kind === 'result') {
         result.fileChanges = fileChanges
+        changed.push(result)
+      }
+    }
+    if (timing) {
+      let result = items.find((item) => item.kind === 'result' && item.id === run.resultId)
+      if (!result) {
+        run.resultId = newId()
+        result = r.push({ id: run.resultId, kind: 'result', isError: !run.stopped,
+          cli: run.proc.provider, model: run.model, createdAt: Date.now() })
+      }
+      if (result.kind === 'result') {
+        result.timing = timing
+        result.durationMs = Math.round(timing.elapsedMs)
         changed.push(result)
       }
     }

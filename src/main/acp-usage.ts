@@ -15,7 +15,7 @@ export const ACP_TURN_USAGE_ANCHOR = `case"thinkingDelta":yield ${THOUGHT_UPDATE
 export const ACP_TURN_USAGE_ASYNC_ANCHOR = `case"thinkingDelta":await ${THOUGHT_UPDATE}`
 
 function turnEndedCase(send: 'await' | 'yield'): string {
-  return `case"turnEnded":{const __ad=e.message.value||{};const __n=v=>{if(typeof v==="bigint")return Number(v);const n=Number(v&&typeof v==="object"&&typeof v.toString==="function"?v.toString():v||0);return Number.isFinite(n)?n:0};const __u={inputTokens:__n(__ad.inputTokens),outputTokens:__n(__ad.outputTokens),cacheReadTokens:__n(__ad.cacheReadTokens),cacheWriteTokens:__n(__ad.cacheWriteTokens)};if(__u.inputTokens||__u.outputTokens||__u.cacheReadTokens||__u.cacheWriteTokens)${send} this.sendSessionUpdate({sessionUpdate:"usage_update",usage:Object.assign({inputIncludesCache:true},__u)});break}`
+  return `case"turnEnded":{const __ad=e.message.value||{};const __n=v=>{if(v==null||v==="")return undefined;const n=Number(v&&typeof v==="object"&&typeof v.toString==="function"?v.toString():v);return Number.isFinite(n)&&n>=0?n:undefined};const __u={inputTokens:__n(__ad.inputTokens),outputTokens:__n(__ad.outputTokens),cacheReadTokens:__n(__ad.cacheReadTokens),cacheWriteTokens:__n(__ad.cacheWriteTokens)};if(Object.values(__u).some(v=>v!==undefined))${send} this.sendSessionUpdate({sessionUpdate:"usage_update",usage:Object.assign({inputIncludesCache:true},__u)});break}`
 }
 
 interface PresenterPatch {

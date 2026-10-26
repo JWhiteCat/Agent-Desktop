@@ -2,7 +2,7 @@ import type { ToolImageCapture } from '@shared/tool-images'
 import { t as translate } from '@shared/i18n'
 import type { AssistantItem, Item, ResultItem, ThinkingItem, ToolItem } from '@shared/types'
 import { isBackgroundAgentActivity } from '@shared/transcript'
-import { normalizeTurnUsage } from '@shared/turn-usage'
+import { normalizeTurnUsage, preferTurnUsage } from '@shared/turn-usage'
 import { unifiedDiff } from '@shared/unified-diff'
 import { newId } from './id'
 import { ToolFileRecorder } from './tool-file-changes'
@@ -135,7 +135,7 @@ export class StreamReducer {
         return this.onAcpTool(update)
       case 'usage_update': {
         const usage = normalizeTurnUsage(update.usage)
-        if (usage) this.lastUsage = usage
+        this.lastUsage = preferTurnUsage(usage, this.lastUsage)
         const model = update._meta?.['_claude/model']
         if (typeof model === 'string' && model) this.lastModel = model
         return []
@@ -368,7 +368,7 @@ export class StreamReducer {
   }
 }
 
-function textOfContent(content: unknown): string {
+export function textOfContent(content: unknown): string {
   if (typeof content === 'string') return content
   if (content && typeof content === 'object' && !Array.isArray(content)) {
     const text = (content as { text?: unknown }).text

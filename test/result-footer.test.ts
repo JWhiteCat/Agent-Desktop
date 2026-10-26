@@ -60,14 +60,14 @@ describe('result footer session consumption', () => {
   it('shows valid zero credits and zero USD as supplied by Codex', () => {
     const html = render(undefined, 'codex', { codexThreadUsage: { threadId: 'session', credits: 0, costUsd: 0 } })
     expect(html).toContain('本轮周额度 0 credits / $0</span>')
-    expect(html).not.toContain('未提供')
+    expect(html).not.toContain('本轮周额度 未提供')
   })
 
   it('does not round small positive credits to zero or require a USD estimate', () => {
     const html = render(undefined, 'codex', { codexThreadUsage: { threadId: 'session', credits: 0.000001 } })
     expect(html).toContain('本轮周额度 &lt;0.0001 credits')
     expect(html).not.toContain('credits /')
-    expect(html).not.toContain('未提供')
+    expect(html).not.toContain('本轮周额度 未提供')
   })
 
   it.each([NaN, Infinity, -Infinity, -1])('keeps invalid legacy session credits %s pending', (credits) => {
@@ -85,7 +85,7 @@ describe('result footer session consumption', () => {
     const html = render(undefined, 'codex', { codexThreadUsage: { threadId: 'session', credits: 1.25, costUsd } })
     expect(html).toContain('本轮周额度 1.25 credits')
     expect(html).not.toContain('credits /')
-    expect(html).not.toContain('未提供')
+    expect(html).not.toContain('本轮周额度 未提供')
   })
 
   it.each(['cursor', 'claude'] as const)('does not show Codex consumption for %s results', (cli) => {
@@ -124,7 +124,7 @@ describe('result footer session consumption', () => {
     expect(html).not.toContain('剩余')
     expect(html).not.toContain('37%')
     expect(html).not.toContain('0.2%')
-    expect(html).not.toContain('未提供')
+    expect(html).not.toContain('本轮周额度 未提供')
   })
 
   it('shows only returned windows, preserves small usage, and allows percentages over 100', () => {
@@ -163,7 +163,7 @@ describe('result footer session consumption', () => {
     expect(html).toContain('服务统计时间：2026-09-29T12:34:56Z')
     expect(html).not.toContain('本轮周额度 0')
     expect(html).not.toContain('credits')
-    expect(html).not.toContain('未提供')
+    expect(html).not.toContain('本轮周额度 未提供')
     expectNoAccountQuota(html)
   })
 
@@ -210,7 +210,7 @@ describe('result footer session consumption', () => {
     })
     expect(html).toContain(`本轮周额度 0 credits${status === 'partial' ? '（统计中）' : ''}`)
     expect(html).not.toContain('服务未返回')
-    expect(html).not.toContain('暂无数据')
+    expect(html).not.toContain('本轮周额度 暂无数据')
   })
 })
 

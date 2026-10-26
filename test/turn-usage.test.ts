@@ -28,14 +28,21 @@ describe('normalizeTurnUsage', () => {
     expect(normalizeTurnUsage({ inputTokens: 4, output_tokens: 2, cachedReadTokens: 8 })).toEqual({
       inputTokens: 4,
       outputTokens: 2,
-      cacheReadTokens: 8,
-      cacheWriteTokens: 0
+      cacheReadTokens: 8
     })
   })
 
   it('ignores an empty update', () => {
     expect(normalizeTurnUsage({})).toBeUndefined()
     expect(normalizeTurnUsage(null)).toBeUndefined()
+  })
+
+  it('preserves explicit zero counts without inventing missing counts', () => {
+    expect(normalizeTurnUsage({ outputTokens: 0 })).toEqual({ outputTokens: 0 })
+    expect(normalizeTurnUsage({ inputTokens: 4 })).toEqual({ inputTokens: 4 })
+    expect(normalizeTurnUsage({ outputTokens: NaN, inputTokens: null })).toBeUndefined()
+    expect(normalizeTurnUsage({ outputTokens: false, inputTokens: ' ' })).toBeUndefined()
+    expect(normalizeTurnUsage({ inputTokens: 100, inputIncludesCache: true, outputTokens: 2 })).toEqual({ outputTokens: 2 })
   })
 })
 
@@ -112,6 +119,27 @@ process.stdout.write(JSON.stringify(updates))
     expect(r.error).toBeUndefined()
     expect(r.status, r.stderr).toBe(0)
     expect(JSON.parse(r.stdout)).toEqual([TURN_USAGE])
+  })
+
+  it('preserves missing output and explicit zero counts through the Cursor presenter', () => {
+    const r = loadPatchedChunk(
+      '8210.index.js',
+      `exports.present=async function(e){switch(e.message.case){${ACP_TURN_USAGE_ASYNC_ANCHOR}}}`,
+      `const m = require('./8210.index.js')
+const updates = []
+;(async () => {
+  const target = { sendSessionUpdate(update) { updates.push(update); return Promise.resolve() } }
+  await m.present.call(target, { message: { case: 'turnEnded', value: { inputTokens: 100 } } })
+  await m.present.call(target, { message: { case: 'turnEnded', value: { outputTokens: 0 } } })
+  process.stdout.write(JSON.stringify(updates))
+})().catch((err) => { console.error(err); process.exit(1) })
+`
+    )
+    expect(r.status, r.stderr).toBe(0)
+    expect(JSON.parse(r.stdout)).toEqual([
+      { sessionUpdate: 'usage_update', usage: { inputIncludesCache: true, inputTokens: 100 } },
+      { sessionUpdate: 'usage_update', usage: { inputIncludesCache: true, outputTokens: 0 } }
+    ])
   })
 
   it('forwards turnEnded token counts when the current async chunk loads', () => {

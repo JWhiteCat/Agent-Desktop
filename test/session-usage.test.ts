@@ -1,3 +1,4 @@
+import { performance } from 'node:perf_hooks'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Item, SendRequest } from '../src/shared/types'
 import type { Store } from '../src/main/store'
@@ -42,8 +43,11 @@ function setup() {
   return { items, run, internal, start: () => internal.runPrompt('thread', run, req) as Promise<void> }
 }
 
-beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(now); vi.mocked(readCodexUsage).mockReset() })
-afterEach(() => { vi.clearAllTimers(); vi.useRealTimers() })
+beforeEach(() => {
+  vi.useFakeTimers(); vi.setSystemTime(now); vi.mocked(readCodexUsage).mockReset()
+  vi.spyOn(performance, 'now').mockImplementation(() => Date.now() - now)
+})
+afterEach(() => { vi.clearAllTimers(); vi.useRealTimers(); vi.restoreAllMocks() })
 
 describe('Codex usage collection during a prompt', () => {
   it('stores all requests from the new turn instead of the adapter last request', async () => {
@@ -148,4 +152,44 @@ describe('Codex usage collection during a prompt', () => {
     vi.mocked(readCodexUsage).mockReturnValueOnce([]).mockReturnValue([turn({ startedAt: now - 60000 })])
     expect(new CodexTurnUsageReader('session').read()).toBeUndefined()
   })
+})
+
+describe('persisted prompt timing', () => {
+  it('saves a monotonic completed interval and freezes it before post-turn cleanup', async () => {
+    vi.mocked(readCodexUsage).mockReturnValueOnce([]).mockReturnValue([turn()])
+    const ctx = setup()
+    ctx.run.proc.acp.request.mockImplementation(async () => {
+      await vi.advanceTimersByTimeAsync(200)
+      ;(ctx.run as any).timing.observe({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'visible' } })
+      await vi.advanceTimersByTimeAsync(300)
+      return { stopReason: 'end_turn' }
+    })
+    await ctx.start()
+    expect(ctx.items.find((item) => item.kind === 'result')).toMatchObject({
+      durationMs: 500, timing: { elapsedMs: 500, firstVisibleOutputMs: 200, outcome: 'completed' }
+    })
+  })
+
+  it('persists cancelled timing without marking the interrupted interval completed', async () => {
+    vi.mocked(readCodexUsage).mockReturnValueOnce([]).mockReturnValue([turn({ completed: false })])
+    const ctx = setup()
+    ctx.run.proc.acp.request.mockImplementation(async () => {
+      await vi.advanceTimersByTimeAsync(250)
+      ctx.run.stopped = true
+      return { stopReason: 'cancelled' }
+    })
+    await ctx.start()
+    expect(ctx.items.find((item) => item.kind === 'result')).toMatchObject({
+      durationMs: 250, timing: { elapsedMs: 250, outcome: 'cancelled' }
+    })
+  })
+})
+
+it('does not let a final zero placeholder erase a positive usage update', async () => {
+  const ctx = setup()
+  ctx.run.proc.provider = 'cursor'
+  ctx.run.reducer.lastUsage = { inputTokens: 40, outputTokens: 12 }
+  ctx.run.proc.acp.request.mockResolvedValue({ stopReason: 'end_turn', usage: { inputTokens: 0, outputTokens: 0 } })
+  await ctx.start()
+  expect(ctx.items.find((item) => item.kind === 'result')).toMatchObject({ usage: { inputTokens: 40, outputTokens: 12 } })
 })

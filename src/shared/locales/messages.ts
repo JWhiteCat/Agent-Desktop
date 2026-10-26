@@ -1,5 +1,15 @@
 /** Message, tool, formatting, and quota presentation strings. Model and user content stays unchanged. */
 export const messagesMessages: Record<string, string> = {
+  "输入不含单列的缓存读写；输出使用服务返回的计数，可能包含隐藏思考和工具调用。缺失字段不是零。": "Input excludes separately listed cache reads and writes; output uses provider-reported counts and may include hidden reasoning and tool calls. Missing fields are not zero.",
+  "首字延迟 {value}": "First visible text {value}",
+  "从发送本轮提示到收到第一段非空助手正文的客户端延迟；不把思考、工具事件或隐藏推理当作首字。包含网络、排队、思考和此前的工具等待，不是 prefill 耗时。历史记录或没有正文时暂无数据。": "Client latency from sending this turn's prompt to receiving the first non-empty assistant text; thoughts, tool events, and hidden reasoning do not count as visible text. Includes network, queueing, reasoning, and preceding tool waits, not prefill time. Unavailable for historical records or turns without text.",
+  "整轮有效输出 {value}": "Turn-effective output {value}",
+  "整轮输出 tokens ÷ 整轮秒数；包含多次模型请求、思考、网络、工具执行和等待。输出计数可能包含隐藏思考及工具调用，不是可见出字速度或服务端 decode TPS。未完成、取消、失败、计数不完整或历史缺少计时时不计算。": "Total output tokens / whole-turn seconds, including multiple model requests, reasoning, network, tools, and waits. Counts may include hidden reasoning and tool calls; this is not visible-text speed or server decode TPS. Unavailable for unfinished, cancelled, failed, incomplete-usage, or historical untimed turns.",
+  "Prefill / Decode TPS：不支持": "Prefill / Decode TPS: unsupported",
+  "当前 CLI 未提供服务端 prefill 和 decode 分阶段耗时，不能用首字延迟或整轮耗时冒充。缓存命中也不代表重新处理了这些输入 tokens。": "The current CLIs do not provide server-side prefill and decode timings. First-text latency and whole-turn duration cannot substitute for them. Cache hits do not mean those input tokens were processed again.",
+  '未提供': 'Not provided',
+  "（部分）": " (partial)",
+  "tokens 暂无数据": "tokens unavailable",
   '已在桌面端打开文件': 'Opened the file on the desktop',
   '无法打开此链接：不支持的地址格式': 'Cannot open this link: unsupported address format',
   '无法打开链接：{error}': 'Could not open the link: {error}',

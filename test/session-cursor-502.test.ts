@@ -184,6 +184,10 @@ describe('Cursor HTTP 502 continue', () => {
     await ctx.idle()
     expect(ctx.prompts.map((prompt) => prompt.text)).toEqual(['修复这个报错', '继续'])
     expect(ctx.notice('error')).toEqual([])
+    const results = ctx.items.filter((item) => item.kind === 'result')
+    expect(results.map((item) => item.timing?.outcome)).toEqual(['failed', 'completed'])
+    expect(results[0].timing?.firstVisibleOutputMs).toBeGreaterThanOrEqual(0)
+    expect(results[1].timing?.firstVisibleOutputMs).toBeUndefined()
   })
 
   it('shows the error when the continue reply is the same short failure', async () => {
@@ -314,6 +318,7 @@ describe('Codex model capacity continue', () => {
     expect(ctx.notice('info').map((item) => item.kind === 'notice' ? item.text : '')).toEqual(['Codex 所选模型已满载，正在发送「继续」。'])
     expect(ctx.notice('error')).toEqual([])
     expect(ctx.finished.map((info) => info.failed)).toEqual([false, false])
+    expect(ctx.items.filter((item) => item.kind === 'result').map((item) => item.timing?.outcome)).toEqual(['failed', 'completed'])
   })
 
   it('sends one 继续 when the prompt is rejected with the capacity error', async () => {
