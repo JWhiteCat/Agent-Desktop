@@ -116,6 +116,7 @@
     "@agentclientprotocol/claude-agent-acp": "^0.81.2",
     "@agentclientprotocol/codex-acp": "^1.13.1",
     "cross-spawn": "^7.0.6",
+    "js-tiktoken": "1.0.21",
     "mermaid": "^12.2.0",
     "micromark-core-commonmark": "2.0.3",
     "qrcode": "^1.5.4",

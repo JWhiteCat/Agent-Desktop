@@ -155,6 +155,14 @@ export interface ResultItem {
     elapsedMs: number
     /** Prompt dispatch to first non-whitespace assistant text; excludes thought/tool updates. */
     firstVisibleOutputMs?: number
+    /** BPE-estimated visible text after each first delivery batch; no billing/reasoning tokens. */
+    visibleStream?: {
+      tokenizer: 'cl100k_base'
+      tokens: number
+      durationMs: number
+      segments: number
+      excludedSegments: number
+    }
     outcome: 'completed' | 'cancelled' | 'failed'
   }
   /** When this turn finished. Older transcripts omit it; usage stats then use the preceding user message. */

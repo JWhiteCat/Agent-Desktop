@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { TurnTiming } from '../src/main/turn-timing'
-import { effectiveOutputTps } from '../src/shared/turn-performance'
+import { visibleOutputTps } from '../src/shared/turn-performance'
 import type { ResultItem } from '../src/shared/types'
 
 const result = (extra: Partial<ResultItem> = {}): ResultItem => ({
   id: 'r', kind: 'result', isError: false, usage: { outputTokens: 120 },
-  timing: { elapsedMs: 6000, firstVisibleOutputMs: 2000, outcome: 'completed' }, ...extra
+  timing: { elapsedMs: 6000, firstVisibleOutputMs: 2000, outcome: 'completed', visibleStream: { tokenizer: 'cl100k_base', tokens: 30, durationMs: 1500, segments: 1, excludedSegments: 0 } }, ...extra
 })
 
 describe('client prompt timing', () => {
@@ -23,7 +23,7 @@ describe('client prompt timing', () => {
     now = 3100
     timer.observe({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'more' } })
     now = 6100
-    expect(timer.finish('completed')).toEqual({ elapsedMs: 6000, firstVisibleOutputMs: 2000, outcome: 'completed' })
+    expect(timer.finish('completed')).toMatchObject({ elapsedMs: 6000, firstVisibleOutputMs: 2000, outcome: 'completed', visibleStream: { tokens: 1, durationMs: 1000 } })
     now = 9100
     expect(timer.finish('failed').elapsedMs).toBe(6000)
   })
@@ -41,19 +41,23 @@ describe('client prompt timing', () => {
   })
 })
 
-describe('effective output throughput', () => {
-  it('divides complete reported output by the whole turn, never just the visible output interval', () => {
-    expect(effectiveOutputTps(result())).toBe(20)
-    expect(effectiveOutputTps(result({ usage: { outputTokens: 0 } }))).toBe(0)
-    expect(effectiveOutputTps(result({ timing: { elapsedMs: 6000, outcome: 'completed' } }))).toBe(20)
+describe('visible streaming throughput', () => {
+  it('uses only the measured text estimate, independent of billing usage and whole-turn time', () => {
+    expect(visibleOutputTps(result())).toBe(20)
+    expect(visibleOutputTps(result({ usage: { outputTokens: 0 } }))).toBe(20)
+    expect(visibleOutputTps(result({ usage: undefined, usageComplete: false }))).toBe(20)
   })
   it.each([
-    { timing: undefined, durationMs: 6000 }, { usageComplete: false }, { usage: undefined },
-    { usage: { inputTokens: 120 } }, { usage: { outputTokens: NaN } }, { usage: { outputTokens: -1 } },
+    { timing: undefined, durationMs: 6000 },
     { isError: true }, { timing: { elapsedMs: 6000, outcome: 'cancelled' as const } },
     { timing: { elapsedMs: 6000, outcome: 'failed' as const } },
-    ...[0, -1, NaN, Infinity].map((elapsedMs) => ({ timing: { elapsedMs, outcome: 'completed' as const } }))
-  ])('leaves unavailable/partial/interrupted data unavailable: %j', (extra) => {
-    expect(effectiveOutputTps(result(extra))).toBeUndefined()
+    { timing: { elapsedMs: 6000, outcome: 'completed' as const } }
+  ])('does not invent a rate for unavailable/interrupted data: %j', (extra) => {
+    expect(visibleOutputTps(result(extra))).toBeUndefined()
+  })
+  it.each([0, -1, NaN, Infinity, 99])('rejects invalid or burst-only window %s', (durationMs) => {
+    const item = result()
+    item.timing!.visibleStream!.durationMs = durationMs
+    expect(visibleOutputTps(item)).toBeUndefined()
   })
 })

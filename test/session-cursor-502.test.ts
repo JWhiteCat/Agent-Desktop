@@ -1,3 +1,5 @@
+import { performance } from 'node:perf_hooks'
+import { visibleOutputTps } from '../src/shared/turn-performance'
 import type { ChildProcess } from 'node:child_process'
 import { EventEmitter } from 'node:events'
 import os from 'node:os'
@@ -483,5 +485,31 @@ describe('short explanations are not automatic-continue failures', () => {
     expect(ctx.prompts).toHaveLength(1)
     expect(ctx.notice('info')).toEqual([])
     expect(ctx.finished).toEqual([{ failed: false, stopped: false }])
+  })
+})
+
+
+describe('provider visible-stream transport integration', () => {
+  it.each(['cursor', 'codex', 'claude'] as const)('persists a useful streaming estimate for %s without billing usage', async (provider) => {
+    let clock = 0
+    const time = vi.spyOn(performance, 'now').mockImplementation(() => clock += 100)
+    try {
+      const ctx = setup(provider)
+      ctx.setPrompt((id, child) => {
+        for (const text of ['initial batch', 'hello', ' world']) {
+          ctx.reply(child, { method: 'session/update', params: { sessionId: 'test-session', update: {
+            sessionUpdate: 'agent_message_chunk',
+            ...(provider === 'cursor' ? {} : { messageId: 'main-reply' }),
+            content: { type: 'text', text }
+          } } })
+        }
+        ctx.reply(child, { id, result: { stopReason: 'end_turn' } })
+      })
+      await ctx.send()
+      await ctx.idle()
+      const result = ctx.items.find((item) => item.kind === 'result')!
+      expect(result.timing?.visibleStream).toEqual({ tokenizer: 'cl100k_base', tokens: 2, durationMs: 200, segments: 1, excludedSegments: 0 })
+      expect(visibleOutputTps(result)).toBe(10)
+    } finally { time.mockRestore() }
   })
 })

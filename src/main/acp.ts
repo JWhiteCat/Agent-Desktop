@@ -1,6 +1,7 @@
 import { t as translate } from '@shared/i18n'
 import type { ChildProcess } from 'node:child_process'
 import { QUESTION_BLOCK_LANG } from '@shared/questions'
+import { performance } from 'node:perf_hooks'
 
 export class MethodNotFound extends Error {
   readonly code = -32601
@@ -16,7 +17,7 @@ interface Pending {
 
 interface Handlers {
   onRequest: (method: string, params: any) => Promise<unknown>
-  onNotification: (method: string, params: any) => void
+  onNotification: (method: string, params: any, receivedAt: number) => void
   /** Non-JSON stdout lines, such as the CLI's `Using worktree:` notice. */
   onText?: (line: string) => void
 }
@@ -41,12 +42,13 @@ export class AcpConnection {
     this.child.stdin?.on('error', ignoreWriteError)
     this.child.stdout?.setEncoding('utf8')
     this.child.stdout?.on('data', (chunk: string) => {
+      const receivedAt = performance.now()
       this.buffer += chunk
       let idx: number
       while ((idx = this.buffer.indexOf('\n')) >= 0) {
         const line = this.buffer.slice(0, idx)
         this.buffer = this.buffer.slice(idx + 1)
-        this.onLine(line, handlers)
+        this.onLine(line, handlers, receivedAt)
       }
     })
     this.child.on('close', () => {
@@ -84,7 +86,7 @@ export class AcpConnection {
       .catch(() => undefined)
   }
 
-  private onLine(line: string, handlers: Handlers): void {
+  private onLine(line: string, handlers: Handlers, receivedAt: number): void {
     const trimmed = line.trim()
     if (!trimmed) return
     let msg: any
@@ -116,7 +118,7 @@ export class AcpConnection {
       else waiter.resolve(msg.result)
       return
     }
-    if (typeof msg.method === 'string') handlers.onNotification(msg.method, msg.params ?? {})
+    if (typeof msg.method === 'string') handlers.onNotification(msg.method, msg.params ?? {}, receivedAt)
   }
 }
 

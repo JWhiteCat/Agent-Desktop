@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { t } from '@shared/i18n'
 import { quoteModel } from '@shared/model-prices'
-import { effectiveOutputTps } from '@shared/turn-performance'
+import { visibleOutputTps } from '@shared/turn-performance'
 import { weeklyQuotaEstimate } from '@shared/turn-quota'
 import type { CliProvider, ModelInfo, ResultItem } from '@shared/types'
 import { compactNumber, duration, formatUsd } from '../../lib/format'
@@ -31,16 +31,16 @@ export function ResultFooter({ item, text, fallbackModel, cli = 'cursor', models
     input: countText(u?.inputTokens), output: countText(u?.outputTokens),
     read: countText(u?.cacheReadTokens), write: countText(u?.cacheWriteTokens)
   }) + '. ' + t('输入不含单列的缓存读写；输出使用服务返回的计数，可能包含隐藏思考和工具调用。缺失字段不是零。')
-  const rate = effectiveOutputTps(item)
+  const rate = visibleOutputTps(item)
   const first = item.timing?.firstVisibleOutputMs
   const elapsed = item.timing?.elapsedMs
   const validFirst = validQuotaAmount(first) && validQuotaAmount(elapsed) && first <= elapsed
   const ttft = t('首字延迟 {value}', { value: validFirst ? duration(Math.round(first)) : t('暂无数据') })
   const ttftDetail = t('从发送本轮提示到收到第一段非空助手正文的客户端延迟；不把思考、工具事件或隐藏推理当作首字。包含网络、排队、思考和此前的工具等待，不是 prefill 耗时。历史记录或没有正文时暂无数据。')
-  const rateLabel = t('整轮有效输出 {value}', { value: rate === undefined ? t('暂无数据') : `${rate > 0 && rate < 0.01 ? '<0.01' : Number(rate.toFixed(2))} token/s` })
-  const rateDetail = t('整轮输出 tokens ÷ 整轮秒数；包含多次模型请求、思考、网络、工具执行和等待。输出计数可能包含隐藏思考及工具调用，不是可见出字速度或服务端 decode TPS。未完成、取消、失败、计数不完整或历史缺少计时时不计算。')
-  const backendLabel = t('Prefill / Decode TPS：不支持')
-  const backendDetail = t('当前 CLI 未提供服务端 prefill 和 decode 分阶段耗时，不能用首字延迟或整轮耗时冒充。缓存命中也不代表重新处理了这些输入 tokens。')
+  const rateLabel = t('可见输出 TPS（估算）{value}', { value: rate === undefined ? t('暂无数据') : `${rate > 0 && rate < 0.01 ? '<0.01' : Number(rate.toFixed(2))} token/s` })
+  const rateDetail = t('用 cl100k_base 估算助手正文 tokens，不使用服务计费计数。对每段首个接收批次之后拼接的正文分词，估算 tokens 除以各段首末接收时间之和；至少两个接收批次且相隔 100ms 才计入。消息、思考或工具事件分段，段间等待不计；无消息 ID 时按连续正文分段，不保证对应模型请求。受网络与 CLI 缓冲影响，不是模型原生 tokenizer 或服务端 decode TPS。取消、失败或没有足够流式样本时暂无数据；服务 usage 缺失不影响估算。')
+  const backendLabel = t('服务端 Prefill / Decode：未提供')
+  const backendDetail = t('当前 CLI 未提供服务端 prefill 和 decode 分阶段耗时。可见输出 TPS 是独立的客户端流式估算，不代表服务端算力；首字延迟也不能代替 prefill 耗时。缓存命中不表示重新处理了这些输入 tokens。')
   const modelId = item.model || fallbackModel || ''
   const caption = modelId ? modelCaption(groups, modelId) : ''
   const quote = modelId && u ? quoteModel(item.apiModel || modelId, u, provider) : undefined

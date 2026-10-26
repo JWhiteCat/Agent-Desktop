@@ -708,7 +708,7 @@ export class SessionManager {
         const worktree = worktreePathFrom(stripAnsi(line))
         if (worktree) proc.worktree = worktree
       },
-      onNotification: (method, params) => {
+      onNotification: (method, params, receivedAt) => {
         if (proc.dying) return
         if (method === 'session/update' && params?.update?.sessionUpdate === 'available_commands_update') {
           const sessionId = typeof params?.sessionId === 'string' ? params.sessionId : ''
@@ -729,12 +729,13 @@ export class SessionManager {
         if ((proc.provider === 'cursor' || proc.provider === 'claude') && run.mode === 'plan' && leftPlanMode(params?.update, run.switchCalls)) {
           proc.acp.request('session/set_mode', { sessionId: proc.sessionId, modeId: 'plan' }).catch(() => undefined)
         }
-        run.timing?.observe(params?.update)
+        run.timing?.observe(params?.update, receivedAt)
         const changed = run.reducer.handleAcp(params?.update)
         if (changed.length) this.queue(threadId, run, changed)
       },
       onRequest: (method, params) => {
         const run = this.runs.get(threadId)
+        if (run?.proc === proc) run.timing?.interrupt()
         if (run && run.proc === proc) return onAcpRequest(run, method, params, (items) => this.queue(threadId, run, items))
         return onIdleAcpRequest(proc, method, params)
       }

@@ -1,12 +1,15 @@
 import type { ResultItem } from './types'
 
-/** Whole-turn effective throughput, never decoder speed. Require a measured, completed interval. */
-export function effectiveOutputTps(item: ResultItem): number | undefined {
+/** Tokenizer-estimated visible streaming throughput, never whole-turn or backend decoder speed. */
+export function visibleOutputTps(item: ResultItem): number | undefined {
   const timing = item.timing
-  const output = item.usage?.outputTokens
-  if (!timing || timing.outcome !== 'completed' || item.isError || item.usageComplete === false
-    || !Number.isFinite(timing.elapsedMs) || timing.elapsedMs <= 0
-    || output === undefined || !Number.isFinite(output) || output < 0) return undefined
-  const rate = output / (timing.elapsedMs / 1000)
+  const stream = timing?.visibleStream
+  if (!timing || timing.outcome !== 'completed' || item.isError || !stream
+    || !Number.isFinite(timing.elapsedMs) || stream.durationMs > timing.elapsedMs
+    || stream.tokenizer !== 'cl100k_base' || !Number.isFinite(stream.durationMs) || stream.durationMs < 100
+    || !Number.isSafeInteger(stream.tokens) || stream.tokens <= 0
+    || !Number.isSafeInteger(stream.segments) || stream.segments <= 0 || stream.durationMs < stream.segments * 100
+    || !Number.isSafeInteger(stream.excludedSegments) || stream.excludedSegments < 0) return undefined
+  const rate = stream.tokens / (stream.durationMs / 1000)
   return Number.isFinite(rate) ? rate : undefined
 }
