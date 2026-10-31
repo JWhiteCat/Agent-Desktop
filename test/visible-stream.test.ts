@@ -91,6 +91,15 @@ describe('visible stream BPE estimate', () => {
     expect(failed.finish(() => { throw Error('unavailable') })).toBeUndefined()
   })
 
+  it('keeps measuring later segments after one exceeds the tokenizer budget', () => {
+    const stream = new VisibleStreamRecorder()
+    stream.observe(chunk('start', 'a'), 0)
+    stream.observe(chunk('x'.repeat(1024), 'a'), 500)
+    stream.observe(chunk('next', 'b'), 1000)
+    stream.observe(chunk(' hello', 'b'), 1500)
+    expect(stream.finish()).toEqual({ tokenizer: 'cl100k_base', tokens: 1, durationMs: 500, segments: 1, excludedSegments: 1 })
+  })
+
   it('interrupts at permission/user waits and suppresses cancelled turns', () => {
     let now = 0
     const timer = new TurnTiming(() => now)
@@ -130,5 +139,16 @@ describe('ACP delivery batching', () => {
     const stream = new VisibleStreamRecorder()
     for (const [, params, at] of notify.mock.calls) stream.observe(params.update, at)
     expect(stream.finish()).toBeUndefined()
+  })
+
+  it('delivers a final message written without a trailing newline', async () => {
+    const stdout = new PassThrough()
+    const child = Object.assign(new EventEmitter(), { stdout, stdin: new PassThrough() }) as unknown as ChildProcess
+    const connection = new AcpConnection(child)
+    const notify = vi.fn()
+    connection.start({ onNotification: notify, onRequest: async () => ({}) })
+    const result = connection.request('session/prompt', {})
+    stdout.end(JSON.stringify({ jsonrpc: '2.0', id: 1, result: { stopReason: 'end_turn' } }))
+    await expect(result).resolves.toEqual({ stopReason: 'end_turn' })
   })
 })

@@ -55,7 +55,7 @@ Changing a CLI's path or API key, finishing a login, or finishing an update trig
 
 ### Authentication
 
-Cursor auth prefers a [Cursor API key](https://cursor.com/dashboard/api). A key saved in Settings overrides the `CURSOR_API_KEY` environment variable. Without a key, the app uses the browser login saved by `agent login`.
+Cursor auth prefers a [Cursor API key](https://cursor.com/dashboard/api). A key saved in Settings overrides the `CURSOR_API_KEY` environment variable. The app passes it to the CLI as `CURSOR_API_KEY`, not as a command-line argument, so it does not appear in process listings. Without a key, the app uses the browser login saved by `agent login`.
 
 Codex auth prefers the key in Settings, then `CODEX_API_KEY`, then `OPENAI_API_KEY`. If none of those are set, it uses ChatGPT sign-in. The app passes the system proxy Chromium would use for `https://chatgpt.com` to Codex. `HTTP_PROXY` and `HTTPS_PROXY` already set in the environment take precedence.
 

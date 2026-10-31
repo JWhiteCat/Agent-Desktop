@@ -134,7 +134,7 @@ export async function initializeSession(acp: SessionConnection['acp'], provider:
     },
     clientInfo: { name: 'agent-desktop', version: '0.1.0' }
   })
-  // Cursor API key auth is `--api-key` at process start. `cursor_login` clears stored
+  // Cursor API key auth is CURSOR_API_KEY at process start. `cursor_login` clears stored
   // API-key credentials, so it only runs when no key is configured.
   if (provider === 'cursor' && !apiKey) await acp.request('authenticate', { methodId: 'cursor_login' })
   if (provider === 'codex' && apiKey) await acp.request('authenticate', { methodId: 'api-key' })

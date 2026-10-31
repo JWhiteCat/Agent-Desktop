@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AttachmentStore, attachmentMime } from '../src/main/attachments'
 import { MAX_ATTACHMENT_BYTES } from '../src/shared/attachments'
 import type { Item, ThreadMeta } from '../src/shared/types'
@@ -122,5 +122,17 @@ describe('managed attachments', () => {
     expect(storage.read(ref.id).data).toBeTruthy()
     storage.collectGarbage(Date.now() + 25 * 60 * 60 * 1000)
     expect(() => storage.read(ref.id)).toThrow()
+  })
+
+  it('scans saved references without loading conversations through items()', () => {
+    const load = vi.fn(() => { throw new Error('must not load history') })
+    const scanning = new AttachmentStore({ dataDir: dir, threads, items: load, peekItems: (id) => items[id] ?? [] })
+    const ref = scanning.upload({ name: 'kept.txt', mimeType: 'text/plain', data: Buffer.from('kept').toString('base64') })
+    threads.push({ id: 'saved' } as ThreadMeta)
+    items.saved = [{ id: 'one', kind: 'user', text: '', createdAt: 1, attachments: [ref] }]
+    scanning.retain([ref.id])
+    scanning.collectGarbage(Date.now() + 100 * 24 * 60 * 60 * 1000)
+    expect(scanning.read(ref.id).data).toBeTruthy()
+    expect(load).not.toHaveBeenCalled()
   })
 })

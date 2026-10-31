@@ -6,11 +6,19 @@ import { attachmentsFor } from '../attachments'
 import type { Handler } from '../remote'
 import type { IpcDeps } from './deps'
 
+/** Orphaned drafts expire after a day; scanning every saved conversation per upload is wasted work. */
+const UPLOAD_GC_INTERVAL_MS = 60 * 60 * 1000
+
 export function attachmentHandlers(deps: IpcDeps): Record<string, Handler> {
   const storage = () => attachmentsFor(deps.store)
+  let lastGc = 0
   return {
     'attachment:upload': (req: AttachmentUpload) => {
-      storage().collectGarbage()
+      const now = Date.now()
+      if (now - lastGc >= UPLOAD_GC_INTERVAL_MS) {
+        lastGc = now
+        storage().collectGarbage(now)
+      }
       return storage().upload(req)
     },
     'tool-image:list': (threadId: string, itemId: string) => prepareToolImages(deps.store, threadId, itemId),

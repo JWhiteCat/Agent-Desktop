@@ -25,6 +25,11 @@ interface PersistedState {
   settings: Settings
 }
 
+const STATE_SAVE_MS = 400
+/** Each save rewrites a whole transcript file, so streamed item changes are batched longer. */
+const ITEMS_SAVE_MS = 2000
+const RETRY_SAVE_MS = 5000
+
 function writeAtomic(file: string, data: string): void {
   writeTextSafely(file, data, false)
 }
@@ -44,6 +49,8 @@ export class Store {
   private state: PersistedState
   private itemsCache = new Map<string, Item[]>()
   private saveTimer: NodeJS.Timeout | undefined
+  private saveDue = 0
+  private stateDirty = false
   private dirtyThreads = new Set<string>()
 
   constructor() {
@@ -96,7 +103,10 @@ export class Store {
     if (remoteClientId !== rawClientId || remotePublicSshPort !== rawSshPort
       || fontFamily !== loaded?.settings?.fontFamily || fontSize !== loaded?.settings?.fontSize
       || JSON.stringify(this.state.settings.skin) !== JSON.stringify(loaded?.settings?.skin)
-      || JSON.stringify(this.state.settings.threadToolbarButtons) !== JSON.stringify(loaded?.settings?.threadToolbarButtons)) this.flush()
+      || JSON.stringify(this.state.settings.threadToolbarButtons) !== JSON.stringify(loaded?.settings?.threadToolbarButtons)) {
+      this.stateDirty = true
+      this.flush()
+    }
     if (fs.existsSync(path.join(this.dir, 'attachments'))) {
       try {
         attachmentsFor(this).collectGarbage()
@@ -223,7 +233,7 @@ export class Store {
   }
 
   deleteThread(id: string): void {
-    const attachmentIds = this.items(id).flatMap((item) => item.kind === 'user' ? (item.attachments ?? []).map((ref) => ref.id) : item.kind === 'tool' ? (item.images ?? []).map((ref) => ref.id) : [])
+    const attachmentIds = this.peekItems(id).flatMap((item) => item.kind === 'user' ? (item.attachments ?? []).map((ref) => ref.id) : item.kind === 'tool' ? (item.images ?? []).map((ref) => ref.id) : [])
     this.state.threads = this.state.threads.filter((t) => t.id !== id)
     this.itemsCache.delete(id)
     this.dirtyThreads.delete(id)
@@ -264,6 +274,11 @@ export class Store {
     return items
   }
 
+  /** Saved items for read-only scans: no cache fill and no history repair. */
+  peekItems(threadId: string): Item[] {
+    return this.itemsCache.get(threadId) ?? readJson<Item[]>(this.threadFile(threadId)) ?? []
+  }
+
   private repairUsageCopies(repaired: Map<string, ResultItem>, turns: CodexUsageTurn[]): void {
     if (!repaired.size) return
     for (const thread of this.threads) {
@@ -297,26 +312,40 @@ export class Store {
 
   markItemsDirty(threadId: string): void {
     this.dirtyThreads.add(threadId)
-    this.scheduleSave()
+    this.queueSave(ITEMS_SAVE_MS)
   }
 
   scheduleSave(): void {
-    if (this.saveTimer) return
-    this.saveTimer = setTimeout(() => this.flush(), 400)
+    this.stateDirty = true
+    this.queueSave(STATE_SAVE_MS)
+  }
+
+  /** Keeps the earliest pending deadline. */
+  private queueSave(delay: number): void {
+    const due = Date.now() + delay
+    if (this.saveTimer && this.saveDue <= due) return
+    if (this.saveTimer) clearTimeout(this.saveTimer)
+    this.saveDue = due
+    this.saveTimer = setTimeout(() => this.flush(), delay)
   }
 
   flush(): void {
     if (this.saveTimer) clearTimeout(this.saveTimer)
     this.saveTimer = undefined
     try {
-      writeAtomic(this.stateFile, JSON.stringify(this.state, null, 2))
-      for (const id of this.dirtyThreads) {
+      if (this.stateDirty) {
+        writeAtomic(this.stateFile, JSON.stringify(this.state, null, 2))
+        this.stateDirty = false
+      }
+      for (const id of [...this.dirtyThreads]) {
         const items = this.itemsCache.get(id)
         if (items && this.thread(id)) writeAtomic(this.threadFile(id), JSON.stringify(items))
+        this.dirtyThreads.delete(id)
       }
-      this.dirtyThreads.clear()
     } catch (err) {
       console.error('[store] save failed', err)
+      // A locked file (e.g. antivirus on Windows) must not leave changes only in memory.
+      this.queueSave(RETRY_SAVE_MS)
     }
   }
 

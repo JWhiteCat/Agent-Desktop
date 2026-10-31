@@ -271,8 +271,9 @@ export class SessionManager {
     if (!queue || !item) throw new Error(translate('排队消息不存在'))
     const rest = queue.items.filter((it) => it.id !== messageId)
     this.setQueue(threadId, { items: [{ ...item, immediate: true }, ...rest], paused: queue.paused, waitingForPlan: queue.waitingForPlan })
-    if (this.runs.has(threadId)) this.stop(threadId)
-    else if (!this.active().includes(threadId)) this.dispatchQueued(threadId)
+    // A turn still starting is cancelled too; its cancelled startup drains this head next.
+    if (this.active().includes(threadId)) this.stop(threadId)
+    else this.dispatchQueued(threadId)
   }
 
   private enqueueMessage(req: SendRequest): void {
@@ -312,7 +313,8 @@ export class SessionManager {
    */
   private drainQueue(threadId: string, turn: { interrupted: boolean; planned: boolean; agent: boolean }): void {
     const queue = this.queues.get(threadId)
-    if (!queue || this.shuttingDown || this.runs.has(threadId)) return
+    // A send that is still starting drains the queue when its own turn ends.
+    if (!queue || this.shuttingDown || this.active().includes(threadId)) return
     if (!this.store.thread(threadId)) {
       this.queues.delete(threadId)
       return
@@ -1046,9 +1048,10 @@ export class SessionManager {
     if (planFeedback && !this.shuttingDown && thread?.chatId === run.proc.sessionId
       && threadCli(thread) === 'codex' && !this.runs.has(threadId)) {
       // The adapter consumes only the permission option id. After declining,
-      // deliver the feedback in a new Plan turn on the same session.
+      // deliver the feedback in a new Plan turn on the same session. send() marks the
+      // thread active at once, so a user send or queue drain cannot start a second turn.
       try {
-        await this.beginSend({ ...req, attachmentIds: undefined, prompt: planFeedback, mode: 'plan', cli: 'codex', worktree: false })
+        await this.send({ ...req, delivery: undefined, attachmentIds: undefined, prompt: planFeedback, mode: 'plan', cli: 'codex', worktree: false })
       } catch (error) {
         if (!this.store.thread(threadId)) return
         const notice: Item = {

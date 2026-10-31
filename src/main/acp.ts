@@ -51,6 +51,12 @@ export class AcpConnection {
         this.onLine(line, handlers, receivedAt)
       }
     })
+    // The final message may be written without a trailing newline before the CLI exits.
+    this.child.stdout?.on('end', () => {
+      const rest = this.buffer
+      this.buffer = ''
+      if (rest.trim()) this.onLine(rest, handlers, performance.now())
+    })
     this.child.on('close', () => {
       this.closed = true
       this.child.stdin?.removeListener('error', ignoreWriteError)

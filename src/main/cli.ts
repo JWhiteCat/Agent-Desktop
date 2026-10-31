@@ -86,20 +86,19 @@ export function resolveApiKey(configured: string | undefined): string {
   return process.env.CURSOR_API_KEY?.trim() ?? ''
 }
 
-function cliEnv(apiKey: string | false | undefined, executable: string): { env: NodeJS.ProcessEnv; key?: string } {
+function cliEnv(apiKey: string | false | undefined, executable: string): NodeJS.ProcessEnv {
   const env = cliEnvironment({ CURSOR_INVOKED_AS: 'agent', NO_COLOR: '1', FORCE_COLOR: '0' }, path.dirname(executable))
-  let key: string | undefined
   if (apiKey === false) {
     delete env.CURSOR_API_KEY
     delete env.CURSOR_AUTH_TOKEN
   } else {
-    key = apiKey?.trim() || undefined
+    const key = apiKey?.trim()
     if (key) env.CURSOR_API_KEY = key
   }
   if (!env.NODE_COMPILE_CACHE && isWin && env.LOCALAPPDATA) {
     env.NODE_COMPILE_CACHE = path.join(env.LOCALAPPDATA, 'cursor-compile-cache')
   }
-  return { env, key }
+  return env
 }
 
 export function spawnCli(
@@ -109,11 +108,12 @@ export function spawnCli(
   stdin: 'ignore' | 'pipe' = 'ignore',
   apiKey?: string | false
 ): ChildProcess {
-  const auth = cliEnv(apiKey, cli.command)
-  installAcpUsagePreload(auth.env)
-  return spawnCliProcess(cli.command, [...cli.prefixArgs, ...(auth.key ? ['--api-key', auth.key] : []), ...args], {
+  const env = cliEnv(apiKey, cli.command)
+  installAcpUsagePreload(env)
+  // CURSOR_API_KEY carries the key; an --api-key argument would expose it in process listings.
+  return spawnCliProcess(cli.command, [...cli.prefixArgs, ...args], {
     cwd,
-    env: auth.env,
+    env,
     stdio: [stdin, 'pipe', 'pipe'],
     windowsHide: true
   })

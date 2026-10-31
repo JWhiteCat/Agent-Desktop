@@ -8,7 +8,7 @@ import {
 } from '@shared/attachments'
 import type { Store } from './store'
 
-type AttachmentOwner = Pick<Store, 'dataDir' | 'threads' | 'items'>
+type AttachmentOwner = Pick<Store, 'dataDir' | 'threads' | 'items'> & Partial<Pick<Store, 'peekItems'>>
 interface Manifest extends AttachmentRef {
   createdAt: number
   referenced?: boolean
@@ -168,8 +168,10 @@ export class AttachmentStore {
 
   private liveIds(): Set<string> {
     const live = new Set<string>()
+    // Loading every conversation through items() would cache all history and run its repairs.
+    const read = (id: string) => this.store.peekItems ? this.store.peekItems(id) : this.store.items(id)
     for (const thread of this.store.threads) {
-      for (const item of this.store.items(thread.id)) {
+      for (const item of read(thread.id)) {
         if (item.kind === 'user') for (const ref of item.attachments ?? []) live.add(ref.id)
         if (item.kind === 'tool') for (const ref of item.images ?? []) live.add(ref.id)
       }

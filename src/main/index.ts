@@ -67,6 +67,8 @@ function ensureMainWindow(): BrowserWindow {
   if (!win || win.isDestroyed()) {
     win = createMainWindow()
     quitConfirmation.watchWindow(win)
+    // Windows shutdown, restart and logoff end the process without emitting before-quit.
+    win.on('session-end', cleanupBeforeExit)
     win.once('closed', () => { win = null })
     taskbarBadge?.sync(getTaskCounts(snapshot()).unread)
   }
@@ -84,16 +86,18 @@ protocol.registerSchemesAsPrivileged([
   { scheme: SKIN_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true } }
 ])
 
+function cleanupBeforeExit(): void {
+  taskbarBadge?.restore()
+  sessions?.stopAll()
+  void remoteRuntime.stop()
+  store?.flush()
+  flushGrokBotCaches()
+}
+
 const quitConfirmation = new QuitConfirmation({
   getActiveCount: () => sessions?.active().length ?? 0,
   getWindow: () => win,
-  onQuit: () => {
-    taskbarBadge?.restore()
-    sessions?.stopAll()
-    void remoteRuntime.stop()
-    store?.flush()
-    flushGrokBotCaches()
-  }
+  onQuit: cleanupBeforeExit
 })
 
 app.whenReady().then(() => {

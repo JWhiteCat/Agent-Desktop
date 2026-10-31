@@ -109,8 +109,10 @@ export class VisibleStreamRecorder {
       // cumulative-count subtraction (BPE can merge tokens across chunk boundaries).
       let tail = segment.tail
       if (/^[\uDC00-\uDFFF]/.test(tail) && /[\uD800-\uDBFF]$/.test(segment.firstBatchLastChar)) tail = segment.firstBatchLastChar + tail
-      work += tokenizationWork(tail)
-      if (work > MAX_BPE_WORK) { excludedSegments++; continue }
+      // An oversized segment is skipped without using up the budget of later, cheap segments.
+      const cost = tokenizationWork(tail)
+      if (work + cost > MAX_BPE_WORK) { excludedSegments++; continue }
+      work += cost
       let count: number
       try { count = countTokens(tail) } catch { excludedSegments++; continue }
       if (!Number.isSafeInteger(count) || count <= 0) { excludedSegments++; continue }

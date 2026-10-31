@@ -55,7 +55,7 @@ CLI 的路径、版本和登录状态检测结果会按 Cursor、Codex、Claude 
 
 ### 认证
 
-Cursor 认证优先使用 [Cursor API Key](https://cursor.com/dashboard/api)。设置中的 Key 优先于环境变量 `CURSOR_API_KEY`。没有 Key 时，使用 `agent login` 保存的浏览器登录。
+Cursor 认证优先使用 [Cursor API Key](https://cursor.com/dashboard/api)。设置中的 Key 优先于环境变量 `CURSOR_API_KEY`。应用通过环境变量 `CURSOR_API_KEY` 把 Key 传给 CLI，不放在命令行参数里，因此不会出现在进程列表中。没有 Key 时，使用 `agent login` 保存的浏览器登录。
 
 Codex 认证优先使用设置中的 Key，其次是 `CODEX_API_KEY`，再次是 `OPENAI_API_KEY`。都没有时使用 ChatGPT 登录。应用会把系统对 `https://chatgpt.com` 的代理解析结果传给 Codex。环境里已经设置的 `HTTP_PROXY` / `HTTPS_PROXY` 优先。
 

@@ -4,6 +4,15 @@ Write upcoming changes under `## [Unreleased]`. `release.bat X.Y.Z` or `npm run 
 
 ## [Unreleased]
 
+### 修复
+
+- 流式回复期间不再频繁同步重写整份对话和 `state.json`；保存失败会重试，Windows 关机、重启、注销前也会保存。
+- 附件清理不再把所有历史对话载入内存，上传附件时的全量清理改为最多每小时一次。
+- Cursor API Key 改用环境变量 `CURSOR_API_KEY` 传给 CLI，不再出现在进程命令行里。
+- 「立即发送」排队消息在上一轮仍在启动时也会打断它；Codex Plan 反馈轮与同一对话的其他发送串行执行。
+- CLI 退出前写出的最后一条消息即使没有换行也会被处理。
+- 某一段输出过长超出分词预算时，不再导致其余段的输出速度统计全部丢失。
+
 ## [1.1.0] - 2026-10-23
 
 ### macOS 支持
