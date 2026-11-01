@@ -4,6 +4,15 @@ Write upcoming changes under `## [Unreleased]`. `release.bat X.Y.Z` or `npm run 
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-11-02
+
+### 图片预览与性能统计
+
+- 展开 CLI 读图工具消息即可预览 PNG、JPEG、WebP、GIF，支持放大、复制完整分辨率图片及复制来源或缓存路径；桌面和远程页面均可使用。
+- 工具图片保存在受控附件目录，重启、分叉及历史同步时保留已有快照；限制可读取路径与图片大小，并明确区分工具返回图片和本地文件快照。
+- 回复下方新增客户端首字延迟和可见输出 TPS（估算），使用本地分词统计符合条件的正文流片段；指标说明区分客户端测量、服务端计费 token 和未提供的服务端 Prefill / Decode 耗时。
+- CLI 路径、版本和登录状态检测结果按 CLI 缓存，重开设置和重启应用后可复用；配置、登录或更新变化后重新检测，也可手动刷新。
+
 ### 修复
 
 - 流式回复期间不再频繁同步重写整份对话和 `state.json`；保存失败会重试，Windows 关机、重启、注销前也会保存。
@@ -12,6 +21,17 @@ Write upcoming changes under `## [Unreleased]`. `release.bat X.Y.Z` or `npm run 
 - 「立即发送」排队消息在上一轮仍在启动时也会打断它；Codex Plan 反馈轮与同一对话的其他发送串行执行。
 - CLI 退出前写出的最后一条消息即使没有换行也会被处理。
 - 某一段输出过长超出分词预算时，不再导致其余段的输出速度统计全部丢失。
+- 停止、删除对话和退出应用也会取消仍在排队或异步启动的任务；收紧断线自动继续条件，避免把普通消息误判为可重试错误。
+- 切换 CLI 时更新历史上下文传递边界，修复空文件与删除文件的差异展示、仅含空行的未跟踪文件统计，以及自定义 Git diff 前缀下的解析。
+- 修正系统 PAC 代理中 HTTPS 与 SOCKS 的协议映射，并补齐 macOS 安装包验证所需的隔离 CLI 目录。
+
+### 发布与验证
+
+- 严格校验稳定版本号，串行发布并在发布前检查所有已发布版本，防止旧版补发覆盖 Latest；公开版本的安装包不会被重试覆盖。
+- Windows、Linux 及 macOS 双架构发布任务均运行类型检查和完整离线测试；补充 CLI 设置、草稿和工具图片的 Electron 界面回归检查。
+- 继续提供 Windows x64 便携版/安装版、Linux x64 AppImage/Debian 包及 macOS arm64/x64 DMG，`SHA256SUMS.txt` 覆盖全部六个安装包。
+
+详细操作见[使用指南](https://github.com/JWhiteCat/Agent-Desktop/blob/v1.2.0/docs/user-guide.zh-CN.md)和 [CLI 安装与配置](https://github.com/JWhiteCat/Agent-Desktop/blob/v1.2.0/docs/cli-setup.zh-CN.md)。真实模型检查需单独启用，不属于离线测试或发布 CI。
 
 ## [1.1.0] - 2026-10-23
 
