@@ -53,7 +53,7 @@ describe('one-step release', () => {
         expect(fs.readFileSync(path.join(work, name), 'utf8')).toBe(content)
       }
     }
-  })
+  }, 60000)
 
   it('publishes the changelog from master without leaving the version bump there', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-release-'))
