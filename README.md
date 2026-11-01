@@ -15,11 +15,13 @@ Agent Desktop runs the CLIs on your computer through the [Agent Client Protocol]
 - Work in Agent, Plan, or Ask mode, with question cards and one-click plan execution
 - Queue follow-ups while the agent works: Enter adds a message to the queue, rows can be dragged to reorder, and queued messages are sent in order when each turn ends; Ctrl+Enter stops the current turn and sends now
 - Stream replies and tool calls, attach images and files, open local file links, and preview or copy link destinations
+- Preview images read by CLI tools, enlarge them, and copy the image or its source/cache path
 - Use desktop right-click menus to copy selected text and paste into chat and other editable fields
 - Choose models with saved favorites, context length, reasoning effort, and Fast settings
 - Start conversations in isolated git worktrees and review changes and diffs
 - Import and resume Cursor, Codex, and Claude history
 - Manage MCP servers and skills, track usage, and receive completion notifications
+- Inspect client first-text latency and tokenizer-estimated visible output speed in each turn's results
 - Chat with your [Grok Bot](https://cursor.com/docs/grok-bot) bots, authenticated with `CURSOR_API_KEY`. The list merges the Grok Bot desktop app's cache with names you add in Settings, you can create bots by name, and files bots send are shown when the Grok Bot desktop app has cached them
 - Find text in a conversation or Grok Bot chat with Ctrl+F, with every match highlighted
 - Resize the sidebar, the changes panel, and the Grok Bot list by dragging their inner edge; the widths are remembered
