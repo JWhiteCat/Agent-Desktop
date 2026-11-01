@@ -55,6 +55,8 @@ The first toolbar command may ask permission to control Terminal. After a denial
 
 On macOS, `/var` is an alias of `/private/var`. Offline tests use the physical temporary directory so child working directories and fixture expectations agree. Separate directory-alias regressions cover worktree subdirectories, missing shared child paths and snapshot display paths, ensuring fixture normalization does not hide application bugs.
 
+Worktree tests compare physical directory identities because Windows CI may use an 8.3 temporary path while Git reports the full path. Release-script integration tests have a 60-second per-test limit for their real local Git/npm subprocesses, including invalid-version checks against an isolated checkout and bare remote.
+
 Validation record: this change was implemented on Windows. Native macOS packaging and automatic smoke checks must run in the new CI; they are not recorded as passed here. Manual acceptance is pending on both Apple Silicon and Intel for browser-download first launch, Terminal permission allow/deny, editors, attachments/clipboard, Git diffs, all three real CLI login/send/stop flows, Dock/notifications, and quit behavior. The minimum macOS 13 version also needs separate hardware acceptance.
 
 ## Linux startup and packages

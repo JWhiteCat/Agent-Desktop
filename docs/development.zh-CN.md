@@ -55,6 +55,8 @@ npm run verify:mac -- release/agent-desktop-0.1.0-mac-arm64.dmg arm64
 
 macOS 的 `/var` 是 `/private/var` 的目录别名。离线测试使用真实临时目录，避免把两种路径拼写当成不同目录；单独的目录别名回归覆盖 worktree 子目录、尚不存在的共享子路径及快照显示路径，确保测试环境统一不会掩盖应用中的别名问题。
 
+Worktree 测试比较真实目录身份，兼容 Windows CI 临时目录采用 8.3 短路径、Git 返回完整路径的情况。发布脚本集成测试会启动真实的本地 Git/npm 子进程（包括在隔离工作区和裸远端中验证无效版本无副作用），每项测试的超时为 60 秒。
+
 验证记录：本次修改在 Windows 环境实施；macOS 原生打包及自动冒烟须由新增 CI 执行，此处不表示 CI 已通过。Apple Silicon 与 Intel 的以下人工验收均待完成：从浏览器下载后的首次打开、Terminal 允许/拒绝、编辑器打开、附件和剪贴板、Git 差异、三种真实 CLI 登录/发送/停止、Dock/通知和退出行为。最低系统 macOS 13 也需单独实机验收。
 
 ## Linux 启动与打包

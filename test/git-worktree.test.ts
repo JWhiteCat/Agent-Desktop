@@ -104,7 +104,8 @@ describe('app-created worktrees', () => {
     const remaining = usedFrom === 'root' ? shared : usedFrom === 'child' ? sub : path.join(shared, 'other')
     await releaseWorktrees([{ cwd: deleted }], [{ cwd: remaining }], parent)
     expect(fs.existsSync(sub)).toBe(true)
-    expect(git(shared, 'rev-parse', '--show-toplevel').replace(/\\/g, '/')).toBe(shared.replace(/\\/g, '/'))
+    // Git expands Windows 8.3 temp paths; compare directory identities, not spellings.
+    expect(fs.realpathSync.native(git(shared, 'rev-parse', '--show-toplevel'))).toBe(fs.realpathSync.native(shared))
   })
 
   it('removes an unused worktree once when deleted threads used different subdirectories', async () => {
