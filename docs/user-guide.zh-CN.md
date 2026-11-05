@@ -69,7 +69,7 @@ macOS 上即使没有安装 `code` / `cursor` 命令，也会尝试通过系统�
 
 同一段对话里，CLI 进程在应用开着且上一轮正常结束时会保留。状态行只在真正新开进程时显示正在启动，否则显示处理中。
 
-Cursor 回合如果以 `Error: RetriableError: [unavailable] HTTP 502`、`Error: RetriableError: [unavailable] HTTP 503` 或 `Error: RetriableError: [canceled] http/2 stream closed with error code CANCEL (0x8)` 结束，应用会在同一会话里自动发送一次继续，并保留仍在运行的 CLI 进程。界面语言为英文时发送 `continue`，否则发送「继续」。进程若已经退出，则用已保存的会话重新加载后再发送。这次继续若再次失败，才显示错误。代理或 VPN 仍可能让第二次失败。
+Cursor 回合如果以一条 `RetriableError:` 开头的单句错误结束（例如 `Error: RetriableError: [unavailable] HTTP 502`、`HTTP 503`、`Error: RetriableError: [canceled] http/2 stream closed with error code CANCEL (0x8)` 或 `Error: RetriableError: Stream ended without turnEnded — connection likely dropped mid-stream`），应用会在同一会话里自动发送一次继续，并保留仍在运行的 CLI 进程。界面语言为英文时发送 `continue`，否则发送「继续」。进程若已经退出，则用已保存的会话重新加载后再发送。这次继续若再次失败，才显示错误。代理或 VPN 仍可能让第二次失败。
 
 Codex 回合如果以 `Selected model is at capacity. Please try a different model.` 结束，应用会在同一会话里自动发送一次继续，并保留仍在运行的 CLI 进程。界面语言为英文时发送 `continue`，否则发送「继续」。进程若已经退出，则用已保存的会话重新加载后再发送。这次继续若再次失败，才显示错误。
 

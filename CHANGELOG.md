@@ -4,6 +4,10 @@ Write upcoming changes under `## [Unreleased]`. `release.bat X.Y.Z` or `npm run 
 
 ## [Unreleased]
 
+### 修复
+
+- Cursor 断线自动继续改为统一识别 `RetriableError` 开头的单句错误，覆盖 `Stream ended without turnEnded` 等流中途断开的情况；解释错误的回复仍不会触发。
+
 ## [1.2.0] - 2026-11-02
 
 ### 图片预览与性能统计

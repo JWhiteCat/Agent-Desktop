@@ -31,6 +31,7 @@ vi.mock('../src/main/cli', async (original) => ({
 const HTTP_502 = 'Error: RetriableError: [unavailable] HTTP 502'
 const HTTP_503 = 'Error: RetriableError: [unavailable] HTTP 503'
 const HTTP2_CANCEL = 'Error: RetriableError: [canceled] http/2 stream closed with error code CANCEL (0x8)'
+const STREAM_DROPPED = 'Error: RetriableError: Stream ended without turnEnded — connection likely dropped mid-stream'
 const CODEX_CAPACITY = 'Selected model is at capacity. Please try a different model.'
 
 interface RpcMessage {
@@ -108,16 +109,19 @@ afterEach(() => {
 })
 
 describe('isCursorRetriableDisconnect', () => {
-  it('matches a short Cursor HTTP 502, HTTP 503, or http/2 CANCEL failure', () => {
+  it('matches any short one-clause Cursor RetriableError', () => {
     expect(isCursorRetriableDisconnect(`  ${HTTP_502}\n`)).toBe(true)
     expect(isCursorRetriableDisconnect('RetriableError: [unavailable] HTTP502')).toBe(true)
     expect(isCursorRetriableDisconnect(`  ${HTTP_503}\n`)).toBe(true)
     expect(isCursorRetriableDisconnect('RetriableError: [unavailable] HTTP503')).toBe(true)
     expect(isCursorRetriableDisconnect(HTTP2_CANCEL)).toBe(true)
     expect(isCursorRetriableDisconnect('RetriableError: [canceled] stream closed')).toBe(true)
-    expect(isCursorRetriableDisconnect('RetriableError: [unavailable]')).toBe(false)
+    expect(isCursorRetriableDisconnect(STREAM_DROPPED)).toBe(true)
+    expect(isCursorRetriableDisconnect('RetriableError: Request timed out after 1.5s')).toBe(true)
+    expect(isCursorRetriableDisconnect('RetriableError: [unavailable]')).toBe(true)
+    expect(isCursorRetriableDisconnect('RetriableError:')).toBe(false)
+    expect(isCursorRetriableDisconnect(`${HTTP_502}\n${HTTP_503}`)).toBe(false)
     expect(isCursorRetriableDisconnect('HTTP 502')).toBe(false)
-    expect(isCursorRetriableDisconnect('RetriableError: [canceled]')).toBe(false)
     expect(isCursorRetriableDisconnect(`${'已经完成了一段很长的说明。'.repeat(40)}\n${HTTP_502}`)).toBe(false)
     expect(isCursorRetriableDisconnect(`${'已经完成了一段很长的说明。'.repeat(40)}\n${HTTP2_CANCEL}`)).toBe(false)
     expect(isCursorRetriableDisconnect(undefined)).toBe(false)
@@ -125,7 +129,7 @@ describe('isCursorRetriableDisconnect', () => {
 })
 
 describe('Cursor HTTP 502 continue', () => {
-  it.each([HTTP_502, HTTP_503, HTTP2_CANCEL])('sends one 继续 on the same process after %s', async (failure) => {
+  it.each([HTTP_502, HTTP_503, HTTP2_CANCEL, STREAM_DROPPED])('sends one 继续 on the same process after %s', async (failure) => {
     const ctx = setup()
     ctx.setPrompt((id, child, index) => {
       ctx.reply(child, index === 1
@@ -172,12 +176,12 @@ describe('Cursor HTTP 502 continue', () => {
     expect(ctx.finished.map((info) => info.failed)).toEqual([false, true])
   })
 
-  it('sends 继续 when the whole assistant reply is the error', async () => {
+  it.each([HTTP_502, STREAM_DROPPED])('sends 继续 when the whole assistant reply is %s', async (failure) => {
     const ctx = setup()
     ctx.setPrompt((id, child, index) => {
       if (index === 1) {
         ctx.reply(child, { method: 'session/update', params: { sessionId: 'test-session', update: {
-          sessionUpdate: 'agent_message_chunk', content: { text: HTTP_502 }
+          sessionUpdate: 'agent_message_chunk', content: { text: failure }
         } } })
       }
       ctx.reply(child, { id, result: { stopReason: 'end_turn' } })
@@ -467,6 +471,7 @@ describe('short explanations are not automatic-continue failures', () => {
     { provider: 'cursor', text: `The log says ${HTTP_502}; retry the request manually.` },
     { provider: 'cursor', text: `${HTTP_503}. This means the service was unavailable.` },
     { provider: 'cursor', text: `${HTTP2_CANCEL}. I have fixed the connection handling.` },
+    { provider: 'cursor', text: `${STREAM_DROPPED}. Retrying should fix it.` },
     { provider: 'cursor', text: `\`${HTTP_502}\`` }
   ] as const
 

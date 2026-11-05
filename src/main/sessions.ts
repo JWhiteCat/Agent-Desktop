@@ -114,17 +114,20 @@ const AUTO_CONTINUE_TEXT_LIMIT = 240
 const CURSOR_DISCONNECT_NOTICE = 'Cursor 连接中断，正在发送「{word}」。'
 const CODEX_CAPACITY_NOTICE = 'Codex 所选模型已满载，正在发送「{word}」。'
 
+const CURSOR_RETRIABLE = /^(?:Error:\s*)?RetriableError:\s*(\S[^\r\n]*)$/
+const FOLLOWING_SENTENCE = /[.!?;。！？；]\s+\S/
+
 /**
- * Cursor reports a dropped model request as `RetriableError: [unavailable] HTTP 502`
- * or `HTTP 503`, or `RetriableError: [canceled] http/2 stream closed ... CANCEL`.
- * The whole text has to be that failure. A longer reply that merely mentions it is left alone.
+ * Cursor marks a dropped model request with the `RetriableError` class, e.g.
+ * `RetriableError: [unavailable] HTTP 502` or `RetriableError: Stream ended without turnEnded ...`.
+ * The whole text has to be that one-clause failure. A reply that explains or merely mentions it is left alone.
  */
 export function isCursorRetriableDisconnect(text: string | undefined): boolean {
   if (!text) return false
   const clean = text.trim()
   if (!clean || clean.length > AUTO_CONTINUE_TEXT_LIMIT) return false
-  return /^(?:Error:\s*)?RetriableError:\s*\[unavailable\]\s*HTTP\s*50[23]$/.test(clean)
-    || /^(?:Error:\s*)?RetriableError:\s*\[canceled\]\s*(?:http\/2\s+)?stream closed(?: with error code CANCEL(?: \(0x8\))?)?$/i.test(clean)
+  const message = CURSOR_RETRIABLE.exec(clean)?.[1]
+  return !!message && !FOLLOWING_SENTENCE.test(message)
 }
 
 /**
