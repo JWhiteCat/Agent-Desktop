@@ -54,7 +54,7 @@ export function SkinBackground() {
     return () => { active = false; player.pause() }
   }, [visible, reduced, source])
   useEffect(() => {
-    const send = () => frame.current?.contentWindow?.postMessage({ type: 'skin-properties', properties: JSON.parse(properties) }, '*')
+    const send = () => frame.current?.contentWindow?.postMessage({ type: 'skin-properties', properties: JSON.parse(properties), fit: skin.fit }, '*')
     const receive = (e: MessageEvent) => {
       if (e.source !== frame.current?.contentWindow || e.origin !== `skin-asset://${skin.sourceId}`) return
       if (e.data?.type === 'skin-ready') { ready.current = true; send() }
@@ -63,7 +63,7 @@ export function SkinBackground() {
     window.addEventListener('message', receive)
     send()
     return () => window.removeEventListener('message', receive)
-  }, [properties, skin.sourceId, t])
+  }, [properties, skin.sourceId, skin.fit, t])
   useEffect(() => {
     if (source?.kind !== 'web' || source.id !== skin.sourceId || reduced || !visible) return
     ready.current = false

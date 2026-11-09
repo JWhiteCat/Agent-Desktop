@@ -214,6 +214,8 @@ export function bridgeScript(source: SkinSource): string {
   const data = JSON.stringify(defaults).replace(/</g, '\\u003c')
   return `(() => {
     let listener; let properties = ${data};
+    const sizing = document.createElement('style');
+    (document.head || document.documentElement).appendChild(sizing);
     const apply = () => { try { listener?.applyUserProperties?.(properties); listener?.applyGeneralProperties?.({fps:30}); listener?.setPaused?.(false); } catch {} };
     Object.defineProperty(window, 'wallpaperPropertyListener', { configurable:true, get:()=>listener, set:v=>{listener=v; queueMicrotask(apply);} });
     window.wallpaperRegisterAudioListener = cb => { try { cb(new Array(128).fill(0)); } catch {} };
@@ -223,6 +225,8 @@ export function bridgeScript(source: SkinSource): string {
       if (e.source !== parent) return;
       if (e.data?.type === 'skin-paused') { try { listener?.setPaused?.(!!e.data.paused); } catch {} return; }
       if (e.data?.type !== 'skin-properties') return;
+      // Only accept CSS keywords; wallpaper properties must never become CSS.
+      if (e.data.fit === 'contain' || e.data.fit === 'cover') sizing.textContent = 'html, body { background-size: ' + e.data.fit + ' !important; }';
       for (const key of Object.keys(properties)) if (Object.hasOwn(e.data.properties || {}, key)) properties[key] = {value:e.data.properties[key]};
       apply();
     });
