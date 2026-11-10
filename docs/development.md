@@ -144,6 +144,8 @@ The first package build may download Electron and the electron-builder NSIS and 
 
 ## GitHub releases
 
+The wallpaper fixture waits for the iframe body before reading computed styles; a frame URL can become available before its document has finished parsing on slower runners.
+
 Resize test dimensions scale uniformly to the desktop work area, preserving landscape, portrait, and wide aspect ratios on small CI screens without asking macOS for an oversized visible window. Pixel assertions wait for the decoded image and compositor to paint both colored edges, rather than assuming that layout completion means the screenshot is ready.
 
 The Web wallpaper resize regression opens a visible Electron window and sets `prefers-reduced-motion: no-preference` with the Chromium `--force-prefers-no-reduced-motion` switch, because the application unloads dynamic wallpapers while hidden or when reduced motion is enabled. This keeps the active-wallpaper check independent of CI desktop accessibility settings. Fit timeouts report document visibility, reduced-motion preference, and page markup to diagnose CI failures.
