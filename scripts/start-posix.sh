@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Let Electron downloads use the configured HTTP_PROXY / HTTPS_PROXY.
+export ELECTRON_GET_USE_PROXY=1
+
 launcher_platform="${1:?Expected linux or darwin}"
 shift
 

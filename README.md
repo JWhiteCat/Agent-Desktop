@@ -50,6 +50,8 @@ npm run dev
 
 On Windows, double-click [start-dev.bat](start-dev.bat) to install dependencies and start development mode, or [start-preview.bat](start-preview.bat) to build and launch a production preview. Double-click [build-portable.bat](build-portable.bat) to package a portable executable that does not need installation. On macOS or Linux, run [start-dev.sh](start-dev.sh) or [start-preview.sh](start-preview.sh), using `bash` if executable permissions are missing. The first run needs internet access to download dependencies and Electron.
 
+The Windows startup, portable build, and release scripts, and the shared Linux/macOS startup script, set `ELECTRON_GET_USE_PROXY=1` so Electron downloads use your existing `HTTP_PROXY` / `HTTPS_PROXY` configuration. Set your proxy address before launching a script; for example, `set "HTTPS_PROXY=http://127.0.0.1:7890"` in Windows CMD or `export HTTPS_PROXY=http://127.0.0.1:7890` on Linux/macOS. Restart any download already in progress to apply the setting.
+
 Mac users can download `agent-desktop-<version>-mac-arm64.dmg` (Apple Silicon) or `agent-desktop-<version>-mac-x64.dmg` (Intel) from Releases, then drag the app into Applications. Packages use account-free ad-hoc signatures and are not notarized by Apple. If the first launch is blocked, use **Privacy & Security → Open Anyway** as described in [macOS setup](docs/development.md#macos-startup-and-packages).
 
 1. Open **Settings → CLI** and select Cursor, Codex, or Claude. Sign in or configure an API key; Cursor prefers `CURSOR_API_KEY` when no key is saved in Settings.

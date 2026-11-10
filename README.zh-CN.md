@@ -59,6 +59,8 @@ npm run dev
 - Windows：双击 `start-dev.bat` 启动开发模式，或 `start-preview.bat` 构建后启动生产预览。双击 `build-portable.bat` 打包免安装的便携程序。
 - macOS / Linux：执行 `./start-dev.sh` 或 `./start-preview.sh`；没有执行权限时使用 `bash start-dev.sh` 或 `bash start-preview.sh`。
 
+Windows 启动、便携版构建和发布脚本，以及 Linux/macOS 共用启动脚本，均设置 `ELECTRON_GET_USE_PROXY=1`，让 Electron 下载使用已有的 `HTTP_PROXY` / `HTTPS_PROXY` 配置。请在运行脚本前设置代理地址，例如 Windows CMD 中使用 `set "HTTPS_PROXY=http://127.0.0.1:7890"`，Linux/macOS 中使用 `export HTTPS_PROXY=http://127.0.0.1:7890`。已经进行中的下载需要重启才会应用此设置。
+
 脚本会检查并补齐依赖与 Electron 运行时。首次运行需要联网；Linux 桌面环境、运行库与安装包说明见 [开发指南](docs/development.zh-CN.md)。
 
 macOS 用户可从 Releases 下载对应芯片的 `agent-desktop-<version>-mac-arm64.dmg` 或 `agent-desktop-<version>-mac-x64.dmg`，将应用拖入 Applications 后启动。安装包采用无需开发者账号的 ad-hoc 临时签名，未经过 Apple 公证；首次被拦截时，按[macOS 安装说明](docs/development.zh-CN.md#macos-启动与打包)在「隐私与安全性」中选择「仍要打开」。

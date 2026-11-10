@@ -1,5 +1,7 @@
 @echo off
 setlocal EnableExtensions
+rem Let Electron downloads use the configured HTTP_PROXY / HTTPS_PROXY.
+set "ELECTRON_GET_USE_PROXY=1"
 pushd "%~dp0"
 if errorlevel 1 (
   echo [ERROR] Cannot open the project directory.
