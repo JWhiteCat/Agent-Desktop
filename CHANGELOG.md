@@ -4,9 +4,14 @@ Write upcoming changes under `## [Unreleased]`. `release.bat X.Y.Z` or `npm run 
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-11-10
+
 ### 修复
 
+- 更新 Electron 至 44.5.0，修复 Windows 键盘输入失效的问题。
 - Cursor 断线自动继续改为统一识别 `RetriableError` 开头的单句错误，覆盖 `Stream ended without turnEnded` 等流中途断开的情况；解释错误的回复仍不会触发。
+- Web 壁纸中 `html` / `body` 的 CSS 背景图遵循「背景缩放」设置，调整窗口大小时可选择完整显示或铺满裁切。
+- Windows 启动、便携版构建和发布脚本，以及 Linux/macOS 启动脚本，让 Electron 下载使用已有的 `HTTP_PROXY` / `HTTPS_PROXY` 配置。
 
 ## [1.2.0] - 2026-11-02
 
