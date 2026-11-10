@@ -35,6 +35,8 @@ it.runIf(canRunElectronUi)('keeps Web background edges visible on resize and pre
   fs.writeFileSync(runner, `
 const {app, BrowserWindow, protocol} = require('electron');
 const assert = require('node:assert/strict');
+// CI desktops may disable animations; this regression exercises an active wallpaper.
+app.commandLine.appendSwitch('force-prefers-no-reduced-motion');
 protocol.registerSchemesAsPrivileged([{scheme:'skin-asset', privileges:{standard:true,secure:true,supportFetchAPI:true}}]);
 app.setPath('userData', ${JSON.stringify(path.join(directory, 'profile'))});
 const pause = () => new Promise(resolve => setTimeout(resolve, 50));
@@ -44,6 +46,7 @@ app.whenReady().then(async () => {
   const win = new BrowserWindow({show:true, width:800, height:600, useContentSize:true, webPreferences:{backgroundThrottling:false}});
   win.webContents.on('console-message', event => console.error(event.message));
   await win.loadFile(${JSON.stringify(html)});
+  assert.equal(await win.webContents.executeJavaScript('matchMedia("(prefers-reduced-motion: reduce)").matches'), false);
   const frame = () => win.webContents.mainFrame.frames.find(f => f.url.startsWith('skin-asset:'));
   const sizing = () => frame()?.executeJavaScript('getComputedStyle(document.body).backgroundSize');
   async function waitForFit(expected) {

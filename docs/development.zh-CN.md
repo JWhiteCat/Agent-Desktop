@@ -144,7 +144,7 @@ npm run dist:win:portable
 
 ## GitHub 发布
 
-Web 壁纸缩放回归会打开可见的 Electron 窗口，因为应用在隐藏时卸载动态壁纸。缩放等待超时会报告文档可见性、减少动态效果偏好和页面内容，便于排查 CI 失败。
+Web 壁纸缩放回归会打开可见的 Electron 窗口，并通过 Chromium 的 `--force-prefers-no-reduced-motion` 开关设置 `prefers-reduced-motion: no-preference`，因为应用在隐藏或启用减少动态效果时卸载动态壁纸。这让动态壁纸检查不依赖 CI 桌面的辅助功能设置。缩放等待超时会报告文档可见性、减少动态效果偏好和页面内容，便于排查 CI 失败。
 
 把本次变更写在 [`CHANGELOG.md`](../CHANGELOG.md) 的 `## [Unreleased]` 下面。工作区里其他文件必须已经提交。`master` 不能落后于 `origin/master`，也不能和它分叉。然后用一条命令发布 `0.2.0`：
 

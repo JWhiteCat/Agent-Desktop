@@ -144,7 +144,7 @@ The first package build may download Electron and the electron-builder NSIS and 
 
 ## GitHub releases
 
-The Web wallpaper resize regression opens a visible Electron window because the application unloads dynamic wallpapers while hidden. Fit timeouts report document visibility, reduced-motion preference, and page markup to diagnose CI failures.
+The Web wallpaper resize regression opens a visible Electron window and sets `prefers-reduced-motion: no-preference` with the Chromium `--force-prefers-no-reduced-motion` switch, because the application unloads dynamic wallpapers while hidden or when reduced motion is enabled. This keeps the active-wallpaper check independent of CI desktop accessibility settings. Fit timeouts report document visibility, reduced-motion preference, and page markup to diagnose CI failures.
 
 Write the changes under `## [Unreleased]` in [`CHANGELOG.md`](../CHANGELOG.md). Other files in the working tree must already be committed. `master` must not be behind or diverged from `origin/master`. Then publish `0.2.0` with one command:
 
