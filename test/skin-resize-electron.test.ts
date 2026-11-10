@@ -48,7 +48,7 @@ app.whenReady().then(async () => {
   await win.loadFile(${JSON.stringify(html)});
   assert.equal(await win.webContents.executeJavaScript('matchMedia("(prefers-reduced-motion: reduce)").matches'), false);
   const frame = () => win.webContents.mainFrame.frames.find(f => f.url.startsWith('skin-asset:'));
-  const sizing = () => frame()?.executeJavaScript('getComputedStyle(document.body).backgroundSize');
+  const sizing = () => frame()?.executeJavaScript('document.body ? getComputedStyle(document.body).backgroundSize : undefined');
   async function waitForFit(expected) {
     for (let i=0; i<60; i++) { if (await sizing() === expected) return; await pause(); }
     const state = await win.webContents.executeJavaScript('JSON.stringify({hidden:document.hidden,reduced:matchMedia("(prefers-reduced-motion: reduce)").matches,html:document.body.innerHTML})');
