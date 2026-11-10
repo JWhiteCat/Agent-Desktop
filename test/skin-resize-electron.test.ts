@@ -40,13 +40,16 @@ app.setPath('userData', ${JSON.stringify(path.join(directory, 'profile'))});
 const pause = () => new Promise(resolve => setTimeout(resolve, 50));
 app.whenReady().then(async () => {
   protocol.handle('skin-asset', request => new Response(request.url.endsWith('bridge.js') ? ${JSON.stringify(bridge)} : ${JSON.stringify(wallpaper)}, {headers:{'content-type':request.url.endsWith('bridge.js')?'text/javascript':'text/html'}}));
-  const win = new BrowserWindow({show:false, width:800, height:600, useContentSize:true, webPreferences:{backgroundThrottling:false}});
+  // SkinBackground deliberately unloads Web wallpapers while the document is hidden.
+  const win = new BrowserWindow({show:true, width:800, height:600, useContentSize:true, webPreferences:{backgroundThrottling:false}});
+  win.webContents.on('console-message', event => console.error(event.message));
   await win.loadFile(${JSON.stringify(html)});
   const frame = () => win.webContents.mainFrame.frames.find(f => f.url.startsWith('skin-asset:'));
   const sizing = () => frame()?.executeJavaScript('getComputedStyle(document.body).backgroundSize');
   async function waitForFit(expected) {
     for (let i=0; i<60; i++) { if (await sizing() === expected) return; await pause(); }
-    throw new Error('Background fit did not become ' + expected);
+    const state = await win.webContents.executeJavaScript('JSON.stringify({hidden:document.hidden,reduced:matchMedia("(prefers-reduced-motion: reduce)").matches,html:document.body.innerHTML})');
+    throw new Error('Background fit did not become ' + expected + ': ' + state);
   }
   await waitForFit('contain');
   const originalFrame = frame();
