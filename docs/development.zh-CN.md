@@ -144,6 +144,8 @@ npm run dist:win:portable
 
 ## GitHub 发布
 
+缩放测试的窗口尺寸按桌面工作区等比缩小，在较小的 CI 屏幕上保留横向、纵向和宽窗口比例，避免 macOS 限制超出屏幕的可见窗口尺寸。像素断言会等待图片解码和合成器绘制出两侧彩色边缘，而不假设布局完成时截图已就绪。
+
 Web 壁纸缩放回归会打开可见的 Electron 窗口，并通过 Chromium 的 `--force-prefers-no-reduced-motion` 开关设置 `prefers-reduced-motion: no-preference`，因为应用在隐藏或启用减少动态效果时卸载动态壁纸。这让动态壁纸检查不依赖 CI 桌面的辅助功能设置。缩放等待超时会报告文档可见性、减少动态效果偏好和页面内容，便于排查 CI 失败。
 
 把本次变更写在 [`CHANGELOG.md`](../CHANGELOG.md) 的 `## [Unreleased]` 下面。工作区里其他文件必须已经提交。`master` 不能落后于 `origin/master`，也不能和它分叉。然后用一条命令发布 `0.2.0`：

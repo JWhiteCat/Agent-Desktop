@@ -33,7 +33,7 @@ it.runIf(canRunElectronUi)('keeps Web background edges visible on resize and pre
   fs.writeFileSync(html, '<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="style.css"><div id="root"></div><script src="fixture.js"></script>')
   const runner = path.join(directory, 'runner.cjs')
   fs.writeFileSync(runner, `
-const {app, BrowserWindow, protocol} = require('electron');
+const {app, BrowserWindow, protocol, screen} = require('electron');
 const assert = require('node:assert/strict');
 // CI desktops may disable animations; this regression exercises an active wallpaper.
 app.commandLine.appendSwitch('force-prefers-no-reduced-motion');
@@ -56,23 +56,32 @@ app.whenReady().then(async () => {
   }
   await waitForFit('contain');
   const originalFrame = frame();
-  for (const [width,height] of [[800,600],[1200,600],[600,800],[1360,880]]) {
+  // macOS constrains visible windows to the CI desktop work area.
+  const area = screen.getPrimaryDisplay().workAreaSize;
+  const windowScale = Math.min(1, (area.width-80)/1360, (area.height-100)/880);
+  const sizes = [[800,600],[1200,600],[600,800],[1360,880]].map(([w,h]) => [Math.floor(w*windowScale),Math.floor(h*windowScale)]);
+  for (const [width,height] of sizes) {
     win.setContentSize(width,height);
     for (let i=0; i<60; i++) {
       if (await frame().executeJavaScript('innerWidth + "," + innerHeight') === width+','+height) break;
       await pause();
     }
     assert.equal(await frame().executeJavaScript('innerWidth + "," + innerHeight'), width+','+height);
-    await pause();
-    const image = await win.webContents.capturePage();
-    const bitmap = image.toBitmap();
-    const size = image.getSize();
-    const scale = size.width / width;
     const paintedWidth = Math.min(width, height * 2);
     const left = (width - paintedWidth) / 2;
-    function pixel(x,y) { const offset = (Math.floor(y*scale)*size.width+Math.floor(x*scale))*4; return [...bitmap.subarray(offset,offset+3)]; }
-    assert.deepEqual(pixel(left+2,height/2), [0,0,255], 'Left edge must remain red');
-    assert.deepEqual(pixel(left+paintedWidth-3,height/2), [255,0,0], 'Right edge must remain blue');
+    // Layout can settle before the image decode/compositor finishes its next frame.
+    let edges;
+    for (let i=0; i<60; i++) {
+      await pause();
+      const image = await win.webContents.capturePage();
+      const bitmap = image.toBitmap();
+      const size = image.getSize();
+      const scale = size.width / width;
+      function pixel(x,y) { const offset = (Math.floor(y*scale)*size.width+Math.floor(x*scale))*4; return [...bitmap.subarray(offset,offset+3)]; }
+      edges = [pixel(left+2,height/2),pixel(left+paintedWidth-3,height/2)];
+      if (JSON.stringify(edges) === '[[0,0,255],[255,0,0]]') break;
+    }
+    assert.deepEqual(edges, [[0,0,255],[255,0,0]], 'Both background edges must remain visible at '+width+'x'+height);
     assert.equal(await sizing(), 'contain');
   }
   await win.webContents.executeJavaScript('SkinChecks.changeFit("cover")');
