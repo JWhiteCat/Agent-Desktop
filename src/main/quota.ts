@@ -12,6 +12,7 @@ const CURSOR_API = 'https://api2.cursor.sh'
 const CODEX_USAGE = 'https://chatgpt.com/backend-api/wham/usage'
 const CODEX_RESET_CREDITS = 'https://chatgpt.com/backend-api/wham/rate-limit-reset-credits'
 const FETCH_MS = 15_000
+const DETAIL_FETCH_MS = 3_000
 const EXPIRED_NOTE = () => translate('Codex 登录已过期，请重新登录')
 
 /** Chromium's network stack follows the system proxy. Node's fetch does not. */
@@ -26,6 +27,13 @@ export async function loadQuotas(cursorApiKey: string | undefined, codexApiKey: 
   return { cursor, codex }
 }
 
+/** Each settings card can finish without waiting for the other provider. */
+export function loadProviderQuota(provider: ProviderQuota['provider'], apiKey: string | undefined): Promise<ProviderQuota> {
+  if (provider === 'cursor') return loadCursorQuota(apiKey)
+  if (provider === 'codex') return loadCodexSettingsQuota(apiKey)
+  throw new Error('Unknown quota provider')
+}
+
 async function loadCursorQuota(apiKeySetting: string | undefined): Promise<ProviderQuota> {
   try {
     const token = await cursorAccessToken(apiKeySetting)
@@ -37,8 +45,12 @@ async function loadCursorQuota(apiKeySetting: string | undefined): Promise<Provi
     }
     const [usage, plan, aggregated] = await Promise.all([
       postJson(`${CURSOR_API}/aiserver.v1.DashboardService/GetCurrentPeriodUsage`, headers),
-      postJson(`${CURSOR_API}/aiserver.v1.DashboardService/GetPlanInfo`, headers),
-      postJson(`${CURSOR_API}/aiserver.v1.DashboardService/GetAggregatedUsageEvents`, headers).catch(() => ({
+      postJson(`${CURSOR_API}/aiserver.v1.DashboardService/GetPlanInfo`, headers, DETAIL_FETCH_MS).catch(() => ({
+        ok: false,
+        status: 0,
+        json: null
+      })),
+      postJson(`${CURSOR_API}/aiserver.v1.DashboardService/GetAggregatedUsageEvents`, headers, DETAIL_FETCH_MS).catch(() => ({
         ok: false,
         status: 0,
         json: null
@@ -69,9 +81,12 @@ export async function loadCodexQuota(apiKeySetting: string | undefined, timeoutM
 async function loadCodexSettingsQuota(apiKeySetting: string | undefined): Promise<ProviderQuota> {
   const auth = codexAuth(apiKeySetting)
   if ('quota' in auth) return auth.quota
-  const quota = await readCodexUsage(auth.headers, FETCH_MS)
+  const [quota, resetCredits] = await Promise.all([
+    readCodexUsage(auth.headers, FETCH_MS),
+    readCodexResetCredits(auth.headers)
+  ])
   if (quota.note === EXPIRED_NOTE()) return quota
-  return { ...quota, resetCredits: await readCodexResetCredits(auth.headers) }
+  return { ...quota, resetCredits }
 }
 
 /** Redeems one reset card. A new request id is used once and never retried. */
@@ -128,7 +143,7 @@ async function readCodexUsage(headers: Record<string, string>, timeoutMs: number
 
 async function readCodexResetCredits(headers: Record<string, string>): Promise<CodexResetCredit[] | null> {
   try {
-    const res = await http(CODEX_RESET_CREDITS, { headers, signal: AbortSignal.timeout(FETCH_MS) })
+    const res = await http(CODEX_RESET_CREDITS, { headers, signal: AbortSignal.timeout(DETAIL_FETCH_MS) })
     if (!res.ok) return null
     const json = (await res.json().catch(() => null)) as unknown
     return parseCodexResetCredits(json)
@@ -243,8 +258,8 @@ function jwtExpMs(token: string): number | null {
   }
 }
 
-async function postJson(url: string, headers: Record<string, string>): Promise<{ ok: boolean; status: number; json: unknown }> {
-  const res = await http(url, { method: 'POST', headers, body: '{}', signal: AbortSignal.timeout(FETCH_MS) })
+async function postJson(url: string, headers: Record<string, string>, timeoutMs = FETCH_MS): Promise<{ ok: boolean; status: number; json: unknown }> {
+  const res = await http(url, { method: 'POST', headers, body: '{}', signal: AbortSignal.timeout(timeoutMs) })
   const json = (await res.json().catch(() => null)) as unknown
   return { ok: res.ok, status: res.status, json }
 }

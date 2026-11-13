@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { consumeCodexReset, loadCodexQuota, loadQuotas } from '../src/main/quota'
+import { consumeCodexReset, loadCodexQuota, loadProviderQuota, loadQuotas } from '../src/main/quota'
 
 const { fetchMock } = vi.hoisted(() => ({ fetchMock: vi.fn() }))
 vi.mock('electron', () => ({ net: { fetch: fetchMock } }))
@@ -93,7 +93,8 @@ describe('Codex settings quota', () => {
     const codex = (await loadQuotas(undefined, undefined)).codex
     expect(codex).toMatchObject({ windows: [], note: 'Codex 登录已过期，请重新登录' })
     expect(codex.resetCredits).toBeUndefined()
-    expect(fetchMock).not.toHaveBeenCalledWith(expect.stringContaining('/rate-limit-reset-credits'), expect.anything())
+    // The parallel detail request must not expose cards for expired authentication.
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('/rate-limit-reset-credits'), expect.anything())
   })
 
   it('keeps quota windows when reset-card details fail', async () => {
@@ -140,6 +141,61 @@ describe('Codex settings quota', () => {
       String(url).includes('/rate-limit-reset-credits') ? credits : { ok: true, status: 200, json: async () => { throw new Error('invalid JSON') } }
     ))
     expect((await loadQuotas(undefined, undefined)).codex).toMatchObject({ windows: [], note: '没有可用的额度窗口' })
+  })
+})
+
+describe('settings quota latency', () => {
+  it('returns Codex while Cursor authentication is still pending', async () => {
+    let finishExchange!: (value: unknown) => void
+    fetchMock.mockImplementation((url: string) => {
+      if (url.includes('/exchange_user_api_key')) return new Promise((resolve) => { finishExchange = resolve })
+      return Promise.resolve({ ok: true, status: 200, json: async () => url.includes('/rate-limit-reset-credits') ? { credits: [] } : usage })
+    })
+    const cursor = loadProviderQuota('cursor', 'latency-test-key')
+    try {
+      const codex = await loadProviderQuota('codex', undefined)
+      expect(codex.windows).toHaveLength(2)
+      expect(codex.resetCredits).toEqual([])
+    } finally {
+      finishExchange({ ok: false, status: 401 })
+      await cursor
+    }
+  })
+
+  it('starts reset-card retrieval before the quota response arrives', async () => {
+    let finishUsage!: (value: unknown) => void
+    fetchMock.mockImplementation((url: string) => {
+      if (url.endsWith('/usage')) return new Promise((resolve) => { finishUsage = resolve })
+      return Promise.resolve({ ok: true, status: 200, json: async () => ({ credits: [] }) })
+    })
+    const pending = loadProviderQuota('codex', undefined)
+    try {
+      expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('/rate-limit-reset-credits'), expect.anything())
+    } finally {
+      finishUsage({ ok: true, status: 200, json: async () => usage })
+    }
+    expect((await pending).windows).toHaveLength(2)
+  })
+
+  it('keeps Cursor quota when optional plan and token details time out', async () => {
+    vi.spyOn(fs, 'readFileSync').mockReturnValue(JSON.stringify({ accessToken: 'cursor-token' }))
+    const timeout = vi.spyOn(AbortSignal, 'timeout')
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url.endsWith('/GetCurrentPeriodUsage')) {
+        return { ok: true, status: 200, json: async () => ({ planUsage: { autoPercentUsed: 25 } }) }
+      }
+      throw new Error('detail timeout')
+    })
+    const quota = await loadProviderQuota('cursor', undefined)
+    expect(quota.windows[0]).toMatchObject({ usedPercent: 25 })
+    expect(quota.note).toBeUndefined()
+    expect(timeout.mock.calls.map(([ms]) => ms)).toEqual([15_000, 3_000, 3_000])
+  })
+
+  it('limits reset-card waiting to three seconds without shortening the quota timeout', async () => {
+    const timeout = vi.spyOn(AbortSignal, 'timeout')
+    await loadProviderQuota('codex', undefined)
+    expect(timeout.mock.calls.map(([ms]) => ms)).toEqual([15_000, 3_000])
   })
 })
 

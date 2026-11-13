@@ -27,7 +27,7 @@ import type {
 import type { SlashCommand } from './commands'
 import type { SkinConfig, SkinSource, WallpaperEntry } from './skins'
 import type { LocalMcpReport, LocalMcpSaveRequest, LocalSkillContent, LocalSkillReport, LocalSkillSaveRequest } from './local-config'
-import type { QuotaReport } from './quota'
+import type { ProviderQuota, QuotaReport } from './quota'
 import type { UsageReport, UsageWindow } from './usage'
 import type { AttachmentData, AttachmentRef, AttachmentUpload } from './attachments'
 
@@ -80,6 +80,7 @@ export interface DesktopApi {
   skinDelete(id: string): Promise<void>
   usageSummary(period: UsageWindow): Promise<UsageReport>
   usageQuotas(): Promise<QuotaReport>
+  usageQuota(provider: ProviderQuota['provider']): Promise<ProviderQuota>
   /** Redeems one Codex reset card. The caller must already have confirmed. */
   consumeCodexReset(creditId: string): Promise<void>
   listModels(refresh?: boolean, provider?: CliProvider): Promise<ModelInfo[]>

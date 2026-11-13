@@ -52,6 +52,7 @@ const api: DesktopApi = {
   skinDelete: (id) => ipcRenderer.invoke('skin:delete', id),
   usageSummary: (period) => ipcRenderer.invoke('usage:summary', period),
   usageQuotas: () => ipcRenderer.invoke('usage:quotas'),
+  usageQuota: (provider) => ipcRenderer.invoke('usage:quota', provider),
   consumeCodexReset: (creditId) => ipcRenderer.invoke('usage:consumeCodexReset', creditId),
   listModels: (refresh, provider) => ipcRenderer.invoke('cli:models', refresh, provider),
   cliInfo: (provider, refresh) => ipcRenderer.invoke('cli:info', provider, refresh),

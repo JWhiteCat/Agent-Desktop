@@ -1,34 +1,38 @@
 import { useEffect, useState } from 'react'
 import { getLocale } from '@shared/i18n'
-import { displayQuotaText, type CodexResetCredit, type ProviderQuota, type QuotaReport, type QuotaWindow, type WindowUsage } from '@shared/quota'
+import { displayQuotaText, type CodexResetCredit, type ProviderQuota, type QuotaWindow, type WindowUsage } from '@shared/quota'
 import { useT } from '../../lib/i18n'
 import { compactNumber, formatUsd, localExpiry, resetStamp, resetsIn } from '../../lib/format'
 import { errorText } from '../../store'
 import { HoverTip } from '../HoverTip'
 
+const PROVIDERS = ['cursor', 'codex'] as const
+
 export function QuotaPanel() {
   const t = useT()
-  const [report, setReport] = useState<QuotaReport | null>(null)
-  const [error, setError] = useState('')
-  const [loading, setLoading] = useState(true)
+  const [report, setReport] = useState<Partial<Record<ProviderQuota['provider'], ProviderQuota>>>({})
+  const [errors, setErrors] = useState<Partial<Record<ProviderQuota['provider'], string>>>({})
+  const [pending, setPending] = useState({ cursor: true, codex: true })
   const [reload, setReload] = useState(0)
 
   useEffect(() => {
     let cancel = false
-    setLoading(true)
-    window.api.usageQuotas().then(
-      (next) => {
-        if (cancel) return
-        setReport(next)
-        setError('')
-        setLoading(false)
-      },
-      (err) => {
-        if (cancel) return
-        setError(errorText(err))
-        setLoading(false)
-      }
-    )
+    setPending({ cursor: true, codex: true })
+    setErrors({})
+    for (const provider of PROVIDERS) {
+      window.api.usageQuota(provider).then(
+        (next) => {
+          if (cancel) return
+          setReport((current) => ({ ...current, [provider]: next }))
+          setPending((current) => ({ ...current, [provider]: false }))
+        },
+        (err) => {
+          if (cancel) return
+          setErrors((current) => ({ ...current, [provider]: errorText(err) }))
+          setPending((current) => ({ ...current, [provider]: false }))
+        }
+      )
+    }
     return () => {
       cancel = true
     }
@@ -38,38 +42,49 @@ export function QuotaPanel() {
     <>
       <div className="quota-head">
         <h4>{t('额度')}</h4>
-        <button type="button" className="usage-period" disabled={loading} onClick={() => setReload((n) => n + 1)}>
+        <button type="button" className="usage-period" disabled={pending.cursor || pending.codex} onClick={() => setReload((n) => n + 1)}>
           {t('刷新')}
         </button>
       </div>
-      {error ? <div className="notice error">{error}</div> : null}
-      {!report && loading ? (
-        <div className="muted small">{t('正在读取额度…')}</div>
-      ) : report ? (
-        <div className="quota-grid">
-          <QuotaCard title="Cursor" quota={report.cursor} />
-          <QuotaCard title="Codex" quota={report.codex} onRedeemed={() => setReload((n) => n + 1)} />
-        </div>
-      ) : null}
+      <div className="quota-grid">
+        {PROVIDERS.map((provider) => (
+          <QuotaCard
+            key={provider}
+            title={provider === 'cursor' ? 'Cursor' : 'Codex'}
+            quota={report[provider]}
+            loading={pending[provider]}
+            error={errors[provider]}
+            onRedeemed={provider === 'codex' ? () => setReload((n) => n + 1) : undefined}
+          />
+        ))}
+      </div>
     </>
   )
 }
 
-function QuotaCard({ title, quota, onRedeemed }: { title: string; quota: ProviderQuota; onRedeemed?: () => void }) {
+function QuotaCard({ title, quota, loading, error, onRedeemed }: {
+  title: string
+  quota?: ProviderQuota
+  loading: boolean
+  error?: string
+  onRedeemed?: () => void
+}) {
   const t = useT()
-  const plan = planCaption(quota.plan)
+  const plan = planCaption(quota?.plan)
   return (
     <div className="quota-card">
       <div className="quota-card-title">
         <span>{title}</span>
         {plan ? <span className="muted">{plan}</span> : null}
       </div>
-      {quota.windows.length === 0 ? (
+      {loading ? <div className="muted small">{t('正在读取额度…')}</div> : null}
+      {error ? <div className="notice error">{error}</div> : null}
+      {!quota ? null : quota.windows.length === 0 ? (
         <div className="muted small">{quota.note ? displayQuotaText(quota.note) : t('没有额度数据')}</div>
       ) : (
         quota.windows.map((row) => <QuotaRow key={row.id} row={row} />)
       )}
-      {quota.resetCredits !== undefined ? <ResetCredits credits={quota.resetCredits} onRedeemed={onRedeemed} /> : null}
+      {quota?.resetCredits !== undefined ? <ResetCredits credits={quota.resetCredits} onRedeemed={onRedeemed} /> : null}
     </div>
   )
 }

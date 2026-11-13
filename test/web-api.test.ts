@@ -41,6 +41,16 @@ describe('remote reconnects', () => {
 
   afterEach(() => vi.unstubAllGlobals())
 
+  it('requests one provider quota without waiting for a combined report', async () => {
+    const api = createWebApi()
+    const quota = { provider: 'codex', windows: [] }
+    fetch.mockResolvedValueOnce(response(quota))
+    expect(await api.usageQuota('codex')).toEqual(quota)
+    expect(fetch).toHaveBeenCalledWith(expect.stringContaining('api/rpc/usage%3Aquota'), expect.objectContaining({
+      method: 'POST', body: JSON.stringify(['codex'])
+    }))
+  })
+
   it('announces reconnects and refreshes metadata after the initial connection', async () => {
     const api = createWebApi()
     const onState = vi.fn()
