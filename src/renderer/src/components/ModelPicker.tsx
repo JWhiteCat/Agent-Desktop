@@ -82,7 +82,7 @@ export function ModelPicker({ value, onChange, cli }: { value: string; onChange:
 
   return (
     <>
-      <HoverTip text={modelPriceTip(value, provider, pillCaption)}>
+      <HoverTip text={modelPriceTip(value, provider, pillCaption)} disabled={open}>
         <button
           ref={btn}
           className={`pill model-pill ${open ? 'active' : ''}`}

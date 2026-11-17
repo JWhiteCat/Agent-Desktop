@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
 /**
- * Hover detail that stays up while the pointer is over the trigger.
+ * Hover detail for mouse input; touch and pen input never open a bubble.
  * Native `title` tooltips are dismissed by any keydown; this one is not.
  */
 export function HoverTip({ text, children, disabled = false, interactive = false, block = false }: {
@@ -14,17 +14,38 @@ export function HoverTip({ text, children, disabled = false, interactive = false
   const [open, setOpen] = useState(false)
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
   const cancelHide = () => clearTimeout(hideTimer.current)
-  const show = () => {
+  const dismiss = () => {
     cancelHide()
+    setOpen(false)
+  }
+  const show = (event: React.PointerEvent) => {
+    cancelHide()
+    if (event.pointerType !== 'mouse') {
+      setOpen(false)
+      return
+    }
     if (!disabled) setOpen(true)
   }
-  const hide = () => {
+  const hide = (event: React.PointerEvent) => {
     cancelHide()
+    if (event.pointerType !== 'mouse') {
+      setOpen(false)
+      return
+    }
     if (interactive) hideTimer.current = setTimeout(() => setOpen(false), 150)
     else setOpen(false)
   }
 
   useEffect(() => () => clearTimeout(hideTimer.current), [])
+
+  useEffect(() => {
+    if (!open) return
+    const onDown = (event: PointerEvent) => {
+      if (event.pointerType !== 'mouse') dismiss()
+    }
+    window.addEventListener('pointerdown', onDown, true)
+    return () => window.removeEventListener('pointerdown', onDown, true)
+  }, [open])
 
   useLayoutEffect(() => {
     if (!open || disabled || !text) {
@@ -61,7 +82,7 @@ export function HoverTip({ text, children, disabled = false, interactive = false
 
   if (!text) return <>{children}</>
   return (
-    <span ref={anchor} className={`hover-tip${block ? ' block' : ''}`} onMouseEnter={show} onMouseLeave={hide}>
+    <span ref={anchor} className={`hover-tip${block ? ' block' : ''}`} onPointerEnter={show} onPointerLeave={hide}>
       <span className="hover-tip-label">{children}</span>
       <span className="hover-tip-copy">{text}</span>
       {open && !disabled &&
@@ -70,8 +91,8 @@ export function HoverTip({ text, children, disabled = false, interactive = false
             ref={bubble}
             className={`hover-tip-bubble${interactive ? ' interactive' : ''}`}
             role="tooltip"
-            onMouseEnter={interactive ? show : undefined}
-            onMouseLeave={interactive ? hide : undefined}
+            onPointerEnter={interactive ? show : undefined}
+            onPointerLeave={interactive ? hide : undefined}
             style={{ top: pos?.top ?? -9999, left: pos?.left ?? -9999, visibility: pos ? 'visible' : 'hidden' }}
           >
             {text}
