@@ -15,6 +15,7 @@ export function CliCard({
   keyValue,
   keyPlaceholder,
   keyDesc,
+  endpoint,
   missing,
   install,
   onPath,
@@ -27,6 +28,7 @@ export function CliCard({
   keyValue: string
   keyPlaceholder: string
   keyDesc: string
+  endpoint?: { value: string; onSave: (apiKey: string, endpoint: string) => void | Promise<void> }
   missing: string
   install: string
   onPath: (value: string) => void | Promise<void>
@@ -42,6 +44,7 @@ export function CliCard({
   const [updateResult, setUpdateResult] = useState<{ text: string; error: boolean } | null>(null)
   const [pathDraft, setPathDraft] = useState(pathValue)
   const [keyDraft, setKeyDraft] = useState(keyValue)
+  const [endpointDraft, setEndpointDraft] = useState(endpoint?.value ?? '')
   const checkId = useRef(0)
 
   const check = async (refresh = true) => {
@@ -57,11 +60,11 @@ export function CliCard({
     }
   }
 
-  const save = async (onSave: (value: string) => void | Promise<void>, value: string) => {
+  const save = async (onSave: () => void | Promise<void>) => {
     setSaving(true)
     setUpdateResult(null)
     try {
-      await onSave(value)
+      await onSave()
       await check()
     } catch (err) {
       toast(errorText(err), 'error')
@@ -169,12 +172,43 @@ export function CliCard({
           spellCheck={false}
           onChange={(e) => setKeyDraft(e.target.value)}
           onBlur={() => {
-            if (keyDraft !== keyValue) {
-              void save(onKey, keyDraft)
+            if (!endpoint && keyDraft !== keyValue) {
+              void save(() => onKey(keyDraft))
             }
           }}
         />
       </Field>
+      {endpoint && (
+        <Field label="API 端点" desc="填写兼容 Gemini API 的服务地址。留空时使用 GOOGLE_GEMINI_BASE_URL 或 Google 默认地址。">
+          <div className="row-gap wrap">
+            <input
+              className="input"
+              type="url"
+              aria-label={t('API 端点')}
+              value={endpointDraft}
+              placeholder="https://api.example.com"
+              autoComplete="off"
+              spellCheck={false}
+              disabled={updating || saving}
+              onChange={(e) => setEndpointDraft(e.target.value)}
+            />
+            <button
+              className="btn"
+              type="button"
+              disabled={updating || saving || loggingIn || (keyDraft.trim() === keyValue && endpointDraft.trim() === endpoint.value)}
+              onClick={() => void save(async () => {
+                const key = keyDraft.trim()
+                const url = endpointDraft.trim()
+                await endpoint.onSave(key, url)
+                setKeyDraft(key)
+                setEndpointDraft(url)
+              })}
+            >
+              {t('保存 API 配置')}
+            </button>
+          </div>
+        </Field>
+      )}
       <Field label={t('CLI 路径')} desc={pathDesc}>
         <input
           className="input"
@@ -184,7 +218,7 @@ export function CliCard({
           onChange={(e) => setPathDraft(e.target.value)}
           onBlur={() => {
             if (pathDraft !== pathValue) {
-              void save(onPath, pathDraft)
+              void save(() => onPath(pathDraft))
             }
           }}
         />

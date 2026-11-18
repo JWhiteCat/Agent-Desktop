@@ -104,7 +104,10 @@ function setup(provider: CliProvider = 'cursor') {
   const items: Item[] = []
   const dataDir = path.join(root, 'data')
   const store = {
-    settings: { ...DEFAULT_SETTINGS, codexApiKey: 'key', claudeApiKey: 'key', antigravityPath: process.execPath, antigravityApiKey: 'key' },
+    settings: {
+      ...DEFAULT_SETTINGS, codexApiKey: 'key', claudeApiKey: 'key', antigravityPath: process.execPath,
+      antigravityApiKey: 'key', antigravityApiEndpoint: 'https://gemini.example/v1beta'
+    },
     dataDir,
     thread: () => thread,
     project: () => ({ id: 'project', path: project }),
@@ -176,7 +179,7 @@ it('resumes an Antigravity conversation through native ACP and reuses the proces
     await ctx.send('continue')
     await ctx.send('follow up')
     expect(spawnAntigravity).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({ command: process.execPath }), ['acp'], ctx.worktree, 'key'
+      expect.objectContaining({ command: process.execPath }), ['acp'], ctx.worktree, 'key', 'https://gemini.example/v1beta'
     )
     expect(ctx.calls.map(({ method }) => method)).toEqual([
       'initialize', 'authenticate', 'session/resume', 'session/set_mode', 'session/prompt', 'session/set_mode', 'session/prompt'

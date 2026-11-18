@@ -33,12 +33,14 @@ function deferred() {
 export async function runCliCardChecks() {
   const calls: { provider: string | undefined; refresh: boolean | undefined }[] = []
   const saved: string[] = []
+  const savedApi: { key: string; endpoint: string }[] = []
   const logins: (CliProvider | undefined)[] = []
   const updates: (CliProvider | undefined)[] = []
   let next: Promise<CliInfo> | undefined
   let revision = 0
   let pathValue = ''
   let keyValue = ''
+  let endpointValue = ''
   let provider: CliProvider = 'cursor'
   const result = (): CliInfo => ({ found: true, version: `version-${++revision}`, path: '/agent', status: 'Signed in' })
   window.api = {
@@ -56,6 +58,12 @@ export async function runCliCardChecks() {
   const card = () => <CliCard key={provider} provider={provider} pathValue={pathValue} keyValue={keyValue}
     pathPlaceholder="auto" pathDesc="path" keyPlaceholder="key" keyDesc="key"
     missing="Missing" install="Install"
+    endpoint={provider === 'antigravity' ? { value: endpointValue, onSave: async (key, endpoint) => {
+      savedApi.push({ key, endpoint })
+      keyValue = key
+      endpointValue = endpoint
+      render()
+    } } : undefined}
     onPath={async (value) => { saved.push(value); pathValue = value; render() }}
     onKey={async (value) => { saved.push(value); keyValue = value; render() }} />
   function render() { flushSync(() => root.render(card())) }
@@ -155,6 +163,14 @@ export async function runCliCardChecks() {
   await click('Check again')
   await idle()
   check(!terminalGuide(), 'Detected standalone Antigravity hides terminal setup')
+  const previousKeySaves = saved.length
+  await edit(0, 'paired-key')
+  await edit(1, 'https://gemini.example/v1beta')
+  check(saved.length === previousKeySaves && !savedApi.length, 'Editing either API field does not apply a partial configuration')
+  await click('Save API configuration')
+  await idle()
+  check(savedApi.at(-1)?.key === 'paired-key' && savedApi.at(-1)?.endpoint === 'https://gemini.example/v1beta', 'Antigravity saves the API key and endpoint together')
+  check(button('Save API configuration').disabled, 'Saved API configuration leaves the button disabled')
   root.unmount()
   return ['cached reads', 'language changes', 'manual refresh', 'refresh errors', 'login and update', 'configuration changes', 'stale responses', 'Antigravity terminal setup']
 }

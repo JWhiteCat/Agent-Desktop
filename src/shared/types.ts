@@ -306,6 +306,7 @@ export interface Settings {
   claudeFavoriteModels: string[]
   antigravityPath: string
   antigravityApiKey: string
+  antigravityApiEndpoint: string
   antigravityDefaultModel: string
   antigravityFavoriteModels: string[]
   /** Model options indexed by CLI and model group base. */
@@ -577,6 +578,7 @@ export const DEFAULT_SETTINGS: Settings = {
   claudeFavoriteModels: [],
   antigravityPath: '',
   antigravityApiKey: '',
+  antigravityApiEndpoint: '',
   antigravityDefaultModel: '',
   antigravityFavoriteModels: [],
   modelPreferences: {},

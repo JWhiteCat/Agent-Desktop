@@ -2,7 +2,7 @@ import type { ChildProcess } from 'node:child_process'
 import { t as translate } from '@shared/i18n'
 import type { CliProvider, SendRequest, Settings } from '@shared/types'
 import { claudePlanModePrompt, codexPlanModePrompt, planModePrompt, type AcpConnection } from '../acp'
-import { antigravityConfig, resolveAntigravity, resolveAntigravityApiKey, spawnAntigravity } from '../antigravity'
+import { antigravityConfig, resolveAntigravity, resolveAntigravityApiKey, resolveAntigravityEndpoint, spawnAntigravity } from '../antigravity'
 import { resolveApiKey, resolveCli, spawnCli, type ResolvedCli } from '../cli'
 import {
   claudeAsCli, claudeModeId, CLAUDE_EFFORT_CONFIG_ID, CLAUDE_MODEL_CONFIG_ID,
@@ -25,11 +25,12 @@ export interface AgentLaunch {
   cli: ResolvedCli
   codex?: ResolvedCodex
   claude?: ResolvedClaude
+  antigravityEndpoint?: string
 }
 
 type Sandbox = 'default' | 'enabled' | 'disabled'
 
-export function resolveLaunch(provider: CliProvider, { agentPath, codexPath, claudePath, antigravityPath }: Settings): AgentLaunch | undefined {
+export function resolveLaunch(provider: CliProvider, { agentPath, codexPath, claudePath, antigravityPath, antigravityApiEndpoint }: Settings): AgentLaunch | undefined {
   if (provider === 'codex') {
     const codex = resolveCodex(codexPath)
     return codex ? { cli: codexAsCli(codex), codex } : undefined
@@ -38,7 +39,11 @@ export function resolveLaunch(provider: CliProvider, { agentPath, codexPath, cla
     const claude = resolveClaude(claudePath)
     return claude ? { cli: claudeAsCli(claude), claude } : undefined
   }
-  const cli = provider === 'antigravity' ? resolveAntigravity(antigravityPath) : resolveCli(agentPath)
+  if (provider === 'antigravity') {
+    const cli = resolveAntigravity(antigravityPath)
+    return cli ? { cli, antigravityEndpoint: resolveAntigravityEndpoint(antigravityApiEndpoint) } : undefined
+  }
+  const cli = resolveCli(agentPath)
   return cli ? { cli } : undefined
 }
 
@@ -98,9 +103,9 @@ export function procFingerprint(
   apiKey: string,
   mcpServers: unknown,
   skills: unknown,
-  proxy: NodeJS.ProcessEnv = {}
+  env: NodeJS.ProcessEnv = {}
 ): string {
-  return JSON.stringify([provider, cli.command, cli.prefixArgs, cwd, sandbox, force ? 1 : 0, apiKey, mcpServers, skills, proxy])
+  return JSON.stringify([provider, cli.command, cli.prefixArgs, cwd, sandbox, force ? 1 : 0, apiKey, mcpServers, skills, env])
 }
 
 /** Same fingerprint with another working directory, for a process whose session moved into a worktree. */
@@ -121,7 +126,7 @@ export function worktreePathFrom(line: string): string | undefined {
 }
 
 export function spawnProvider(provider: CliProvider, launch: AgentLaunch, args: string[], cwd: string, apiKey: string): ChildProcess {
-  if (provider === 'antigravity') return spawnAntigravity(launch.cli, args, cwd, apiKey)
+  if (provider === 'antigravity') return spawnAntigravity(launch.cli, args, cwd, apiKey, launch.antigravityEndpoint)
   return provider === 'codex' && launch.codex
     ? spawnCodexAcp(launch.codex, cwd, apiKey)
     : provider === 'claude' && launch.claude

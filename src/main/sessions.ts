@@ -671,7 +671,8 @@ export class SessionManager {
   ): string {
     return procFingerprint(
       launch.cli, provider, cwd, sandbox, force, apiKey, mcpServers, skills,
-      provider === 'codex' ? codexProxyOverlay() : {}
+      provider === 'codex' ? codexProxyOverlay()
+        : launch.antigravityEndpoint ? { GOOGLE_GEMINI_BASE_URL: launch.antigravityEndpoint } : {}
     )
   }
 

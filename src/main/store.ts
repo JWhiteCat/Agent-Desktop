@@ -85,6 +85,7 @@ export class Store {
         claudeApiKey: typeof loaded?.settings?.claudeApiKey === 'string' ? loaded.settings.claudeApiKey : '',
         antigravityPath: typeof loaded?.settings?.antigravityPath === 'string' ? loaded.settings.antigravityPath : '',
         antigravityApiKey: typeof loaded?.settings?.antigravityApiKey === 'string' ? loaded.settings.antigravityApiKey : '',
+        antigravityApiEndpoint: typeof loaded?.settings?.antigravityApiEndpoint === 'string' ? loaded.settings.antigravityApiEndpoint : '',
         codexDefaultModel: typeof loaded?.settings?.codexDefaultModel === 'string' ? loaded.settings.codexDefaultModel : '',
         claudeDefaultModel: typeof loaded?.settings?.claudeDefaultModel === 'string' ? loaded.settings.claudeDefaultModel : '',
         antigravityDefaultModel: typeof loaded?.settings?.antigravityDefaultModel === 'string' ? loaded.settings.antigravityDefaultModel : '',

@@ -4,18 +4,18 @@ import { parseAttachmentPrompt } from '@shared/attachment-message'
 import { t as translate } from '@shared/i18n'
 import type { CliSession, Item, Settings } from '@shared/types'
 import type { ToolImageCapture } from '@shared/tool-images'
-import { requireAntigravity, resolveAntigravity, resolveAntigravityApiKey, withAntigravityAcp } from './antigravity'
+import { requireAntigravity, resolveAntigravity, resolveAntigravityAuth, withAntigravityAcp } from './antigravity'
 import { visibleUserText } from './claude-history'
 import { createForkPromptReader, untrustedForkItems } from './fork-context'
 import { newId } from './id'
 import { StreamReducer } from './reducer'
 
-type Credentials = Pick<Settings, 'antigravityPath' | 'antigravityApiKey'>
+type Credentials = Pick<Settings, 'antigravityPath' | 'antigravityApiKey' | 'antigravityApiEndpoint'>
 
 export async function scanAntigravitySessions(settings: Credentials, imported: Set<string>): Promise<CliSession[]> {
   const cli = resolveAntigravity(settings.antigravityPath)
   if (!cli) return []
-  return withAntigravityAcp(cli, os.homedir(), resolveAntigravityApiKey(settings.antigravityApiKey), async (acp) => {
+  return withAntigravityAcp(cli, os.homedir(), resolveAntigravityAuth(settings), async (acp) => {
     const sessions = new Map<string, CliSession>()
     const seenCursors = new Set<string>()
     let cursor: string | undefined
@@ -59,7 +59,7 @@ export async function readAntigravityTranscript(settings: Credentials, sessionId
     user = undefined
   }
 
-  await withAntigravityAcp(cli, cwd, resolveAntigravityApiKey(settings.antigravityApiKey), async (acp) => {
+  await withAntigravityAcp(cli, cwd, resolveAntigravityAuth(settings), async (acp) => {
     await acp.request('session/load', { sessionId, cwd, mcpServers: [] })
   }, (method, params) => {
     if (method !== 'session/update' || params?.sessionId !== sessionId) return

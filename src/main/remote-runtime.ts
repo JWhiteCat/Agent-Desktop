@@ -19,7 +19,7 @@ import type { Store } from './store'
 
 export function remoteSafeSettings(s: Settings): Settings {
   return {
-    ...s, apiKey: '', codexApiKey: '', claudeApiKey: '', antigravityApiKey: '', remoteToken: '',
+    ...s, apiKey: '', codexApiKey: '', claudeApiKey: '', antigravityApiKey: '', antigravityApiEndpoint: '', remoteToken: '',
     skin: remoteSkin(s.skin), skins: [],
     threadToolbarButtons: normalizeToolbarButtons(s.threadToolbarButtons).filter((button) => button.kind === 'builtin')
   }
@@ -40,6 +40,8 @@ const REMOTE_BLOCKED = new Set([
   'grokbot:attachmentReveal'
 ])
 const REMOTE_ONLY_DESKTOP_SETTINGS: (keyof Settings)[] = [
+  // Changing the destination can redirect the desktop's configured Gemini API key.
+  'antigravityApiEndpoint',
   'remoteEnabled',
   'remotePort',
   'remoteToken',

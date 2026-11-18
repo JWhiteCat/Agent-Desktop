@@ -11,6 +11,7 @@ function fixture() {
     codexApiKey: 'codex-secret',
     claudeApiKey: 'claude-secret',
     antigravityApiKey: 'agy-secret',
+    antigravityApiEndpoint: 'https://private.example/v1beta',
     remoteToken: 'remote-secret'
   }
   const state: AppState = { projects: [], threads: [], running: [], settings }
@@ -74,6 +75,14 @@ describe('remote settings', () => {
     const result = await handlers['settings:update']({ claudeApiKey: 'replacement-secret' }) as Settings
     expect(update).toHaveBeenCalledExactlyOnceWith({ claudeApiKey: 'replacement-secret' })
     expect(result.claudeApiKey).toBe('')
+  })
+
+  it('keeps the Antigravity endpoint on the desktop', async () => {
+    const { state, update, handlers } = fixture()
+    expect(remoteSafeState(state).settings.antigravityApiEndpoint).toBe('')
+    const result = await handlers['settings:update']({ antigravityApiEndpoint: 'https://other.example/v1beta' }) as Settings
+    expect(update).toHaveBeenCalledExactlyOnceWith({})
+    expect(result.antigravityApiEndpoint).toBe('')
   })
 })
 

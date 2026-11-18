@@ -1,10 +1,21 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { SendRequest } from '../src/shared/types'
+import { resolveAntigravityEndpoint } from '../src/main/antigravity'
 import { antigravityArgs, applySessionOptions, cursorArgs, initializeSession, type SessionConnection } from '../src/main/session/provider'
 
 const SESSION_ID = 'codex-options-session'
 
 describe('Antigravity session options', () => {
+  it('prefers the saved Gemini endpoint and falls back to the inherited environment', () => {
+    vi.stubEnv('GOOGLE_GEMINI_BASE_URL', 'https://shell.example/v1beta')
+    try {
+      expect(resolveAntigravityEndpoint(' https://settings.example/v1beta ')).toBe('https://settings.example/v1beta')
+      expect(resolveAntigravityEndpoint('')).toBe('https://shell.example/v1beta')
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
   it('authenticates with the Gemini method only when a key is configured', async () => {
     const request = vi.fn(async () => ({}))
     await initializeSession({ request }, 'antigravity', '')

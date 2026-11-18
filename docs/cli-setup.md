@@ -75,7 +75,9 @@ Codex auth prefers the key in Settings, then `CODEX_API_KEY`, then `OPENAI_API_K
 
 Claude auth prefers the key in Settings, then `ANTHROPIC_API_KEY`. If either is set, Claude Code bills the API and does not use a Claude subscription. If neither is set, it uses the login stored in `~/.claude`. The login button runs the adapter's Claude.ai login.
 
-Antigravity uses the Gemini API key in Settings first, then `GEMINI_API_KEY`, then the credentials saved by the selected Antigravity runtime. The login button opens Google's personal account sign-in. For Gemini Enterprise or terminal sign-in, use the [Antigravity CLI authentication guide](https://antigravity.google/docs/ide/extensions/acp/#authentication).
+For a custom Gemini-compatible service, open **Settings → CLI → Antigravity CLI** in the desktop app, enter your **API Key** and **API endpoint**, then click **Save API configuration**. You can paste the address and key from the Antigravity provider card in CC Switch. The endpoint field takes precedence over `GOOGLE_GEMINI_BASE_URL`. If both are blank, `agy` uses Google's default endpoint.
+
+Antigravity uses the Gemini API key in Settings first, then `GEMINI_API_KEY`, then the credentials saved by `agy`. The login button opens Google's personal account sign-in. For Gemini Enterprise or terminal sign-in, use the [Antigravity CLI authentication guide](https://antigravity.google/docs/ide/extensions/acp/#authentication).
 
 Both app-managed and standalone installations of `agy` use the CLI’s sign-in and session store and support the CLI sandbox setting. Antigravity exposes the models and thinking levels available to your account. Use **Settings → Appearance & History → Import** to import existing `agy` conversations. The conversation menu can reload an imported transcript. Forking starts a separate session and sends the copied history with its first prompt.
 

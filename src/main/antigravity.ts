@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { t as translate } from '@shared/i18n'
-import type { CliInfo, ModelInfo } from '@shared/types'
+import type { CliInfo, ModelInfo, Settings } from '@shared/types'
 import { AcpConnection, MethodNotFound } from './acp'
 import type { ResolvedCli } from './cli'
 import { cliEnvironment, cliSearchDirectories, findCliExecutable, killCliProcessTree, normalizeCliPath, spawnCliProcess } from './cli-runtime'
@@ -30,9 +30,26 @@ export function resolveAntigravityApiKey(configured: string): string {
   return configured.trim() || process.env.GEMINI_API_KEY?.trim() || ''
 }
 
-export function spawnAntigravity(cli: ResolvedCli, args: string[], cwd: string, apiKey: string) {
+export function resolveAntigravityEndpoint(configured: string): string {
+  return configured.trim() || process.env.GOOGLE_GEMINI_BASE_URL?.trim() || ''
+}
+
+interface AntigravityAuth {
+  apiKey: string
+  endpoint?: string
+}
+
+export function resolveAntigravityAuth(settings: Pick<Settings, 'antigravityApiKey' | 'antigravityApiEndpoint'>): AntigravityAuth {
+  return {
+    apiKey: resolveAntigravityApiKey(settings.antigravityApiKey),
+    endpoint: resolveAntigravityEndpoint(settings.antigravityApiEndpoint)
+  }
+}
+
+export function spawnAntigravity(cli: ResolvedCli, args: string[], cwd: string, apiKey: string, endpoint?: string) {
   const env = cliEnvironment({
     NO_COLOR: '1', GEMINI_API_KEY: apiKey,
+    ...(endpoint === undefined ? {} : { GOOGLE_GEMINI_BASE_URL: endpoint }),
     ...(cli.managed ? { AGY_CLI_DISABLE_AUTO_UPDATE: 'true' } : {})
   }, path.dirname(cli.command))
   return spawnCliProcess(cli.command, args, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true })
@@ -71,12 +88,12 @@ export async function antigravityCliInfo(customPath: string, apiKey: string): Pr
 }
 
 export async function withAntigravityAcp<T>(
-  cli: ResolvedCli, cwd: string, apiKey: string,
+  cli: ResolvedCli, cwd: string, { apiKey, endpoint }: AntigravityAuth,
   run: (acp: AcpConnection) => Promise<T>,
   onNotification: (method: string, params: any) => void = () => undefined,
   timeout = 60_000
 ): Promise<T> {
-  const child = spawnAntigravity(cli, ['acp'], cwd, apiKey)
+  const child = spawnAntigravity(cli, ['acp'], cwd, apiKey, endpoint)
   const acp = new AcpConnection(child)
   let stderr = ''
   child.stderr?.setEncoding('utf8').on('data', (chunk: string) => { stderr = (stderr + chunk).slice(-4000) })
@@ -131,11 +148,11 @@ function choices(option: SelectOption | undefined): Choice[] {
   }).filter((choice) => typeof choice?.value === 'string' && !!choice.value)
 }
 
-export async function listAntigravityModels(customPath: string, apiKey: string): Promise<ModelInfo[]> {
+export async function listAntigravityModels(customPath: string, auth: AntigravityAuth): Promise<ModelInfo[]> {
   const cli = requireAntigravity(customPath)
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-desktop-agy-'))
   try {
-    return await withAntigravityAcp(cli, cwd, apiKey, async (acp) => {
+    return await withAntigravityAcp(cli, cwd, auth, async (acp) => {
       const created = await acp.request('session/new', { cwd, mcpServers: [] })
       const model = antigravityConfig(created?.configOptions, 'model')
       const available = choices(model)
@@ -170,7 +187,7 @@ export async function listAntigravityModels(customPath: string, apiKey: string):
 }
 
 export async function loginAntigravity(customPath: string): Promise<string> {
-  return withAntigravityAcp(requireAntigravity(customPath), os.homedir(), '', async (acp) => {
+  return withAntigravityAcp(requireAntigravity(customPath), os.homedir(), { apiKey: '' }, async (acp) => {
     await acp.request('authenticate', { methodId: 'oauth-personal' })
     return translate('Antigravity CLI 登录成功')
   }, undefined, 5 * 60_000)

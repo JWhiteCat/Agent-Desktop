@@ -17,6 +17,13 @@ export function settingsHandlers(deps: IpcDeps): Record<string, Handler> {
   return {
     'settings:update': async (patch: Partial<Settings>) => {
       const next: Partial<Settings> = { ...patch }
+      if (patch.antigravityApiEndpoint !== undefined) {
+        const endpoint = typeof patch.antigravityApiEndpoint === 'string' ? patch.antigravityApiEndpoint.trim() : undefined
+        if (endpoint === undefined || (endpoint && (!/^https?:\/\//i.test(endpoint) || !URL.canParse(endpoint)))) {
+          throw new Error(translate('请输入有效的 HTTP 或 HTTPS API 端点。'))
+        }
+        next.antigravityApiEndpoint = endpoint
+      }
       if (Object.hasOwn(patch, 'skin')) next.skin = normalizeSkin(patch.skin)
       if (Object.hasOwn(patch, 'skins')) next.skins = normalizeSkins(patch.skins)
       if (Object.hasOwn(patch, 'fontFamily')) next.fontFamily = normalizeFontFamily(patch.fontFamily)
@@ -58,7 +65,9 @@ export function settingsHandlers(deps: IpcDeps): Record<string, Handler> {
       if (patch.agentPath !== undefined || patch.apiKey !== undefined) deps.modelsCache.delete('cursor')
       if (patch.codexPath !== undefined || patch.codexApiKey !== undefined) deps.modelsCache.delete('codex')
       if (patch.claudePath !== undefined || patch.claudeApiKey !== undefined) deps.modelsCache.delete('claude')
-      if (patch.antigravityPath !== undefined || patch.antigravityApiKey !== undefined) deps.modelsCache.delete('antigravity')
+      const antigravityConfigChanged = patch.antigravityPath !== undefined || patch.antigravityApiKey !== undefined
+        || s.antigravityApiEndpoint !== previous.antigravityApiEndpoint
+      if (antigravityConfigChanged) deps.modelsCache.delete('antigravity')
       if (
         patch.agentPath !== undefined ||
         patch.apiKey !== undefined ||
@@ -66,8 +75,7 @@ export function settingsHandlers(deps: IpcDeps): Record<string, Handler> {
         patch.codexApiKey !== undefined ||
         patch.claudePath !== undefined ||
         patch.claudeApiKey !== undefined ||
-        patch.antigravityPath !== undefined ||
-        patch.antigravityApiKey !== undefined ||
+        antigravityConfigChanged ||
         patch.sandbox !== undefined ||
         patch.mcpServers !== undefined ||
         patch.skills !== undefined

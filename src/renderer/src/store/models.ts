@@ -4,6 +4,8 @@ import { pruneCrossCliFavorites } from './model-preferences'
 import { readModelCache, writeModelCache } from './persistence'
 import { getState, setState } from './state'
 
+const modelRequests = new Map<CliProvider, symbol>()
+
 function publishModels(cli: CliProvider, list: ModelInfo[]): void {
   const modelsByCli = { ...getState().modelsByCli, [cli]: list }
   const seen = new Set<string>()
@@ -26,12 +28,16 @@ export async function loadModels(refresh = false, only?: CliProvider): Promise<v
   }
   await Promise.all(
     targets.map(async (cli) => {
+      const request = Symbol()
+      modelRequests.set(cli, request)
       try {
         const models = await window.api.listModels(refresh, cli)
+        if (modelRequests.get(cli) !== request) return
         publishModels(cli, models)
         writeModelCache(cli, models)
         setModelError(cli, '')
       } catch (err) {
+        if (modelRequests.get(cli) !== request) return
         const loaded = (getState().modelsByCli[cli]?.length ?? 0) > (cli === 'cursor' ? 1 : 0)
         setModelError(cli, loaded ? '' : errorText(err))
       }

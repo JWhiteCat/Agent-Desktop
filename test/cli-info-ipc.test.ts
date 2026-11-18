@@ -94,6 +94,22 @@ describe('CLI info IPC and settings invalidation', () => {
     for (const provider of providers) expect(mocks[provider].info).toHaveBeenCalledOnce()
   })
 
+  it('persists the custom Gemini endpoint and refreshes the Antigravity model list and idle processes', async () => {
+    deps.modelsCache.set('antigravity', [{ id: 'cached', label: 'Cached' }])
+    const update = settingsHandlers(deps)['settings:update']
+    await update({ antigravityApiEndpoint: ' https://gemini.example/v1beta ' })
+    expect(store.settings.antigravityApiEndpoint).toBe('https://gemini.example/v1beta')
+    expect(deps.modelsCache.has('antigravity')).toBe(false)
+    expect(deps.sessions.dropIdle).toHaveBeenCalledOnce()
+    store.flush()
+    expect(new Store().settings.antigravityApiEndpoint).toBe('https://gemini.example/v1beta')
+
+    await expect(update({ antigravityApiEndpoint: 'file:///api' })).rejects.toThrow()
+    expect(store.settings.antigravityApiEndpoint).toBe('https://gemini.example/v1beta')
+    await update({ antigravityApiEndpoint: '' })
+    expect(store.settings.antigravityApiEndpoint).toBe('')
+  })
+
   it.each(providers)('detects %s with the saved path and API key', async (provider) => {
     store.updateSettings({
       agentPath: '/cursor', apiKey: 'cursor-key', codexPath: '/codex', codexApiKey: 'codex-key',

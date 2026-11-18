@@ -169,6 +169,10 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
             keyValue={settings.antigravityApiKey}
             keyPlaceholder={t('留空使用 GEMINI_API_KEY')}
             keyDesc={t('优先使用设置中的 Key，其次使用 GEMINI_API_KEY。都为空时使用 agy 已保存的登录。')}
+            endpoint={window.api.isRemote ? undefined : {
+              value: settings.antigravityApiEndpoint,
+              onSave: (antigravityApiKey, antigravityApiEndpoint) => saveCli({ antigravityApiKey, antigravityApiEndpoint }, 'antigravity')
+            }}
             missing={t('未找到 Antigravity CLI')}
             install={t('点击安装按钮可从官方来源下载。')}
             onPath={(antigravityPath) => saveCli({ antigravityPath }, 'antigravity')}

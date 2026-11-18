@@ -10,14 +10,20 @@ vi.mock('../src/main/antigravity', async (original) => ({
   withAntigravityAcp: withAcp
 }))
 
-const settings = { ...DEFAULT_SETTINGS, antigravityPath: process.execPath }
+const settings = {
+  ...DEFAULT_SETTINGS, antigravityPath: process.execPath,
+  antigravityApiKey: 'key', antigravityApiEndpoint: 'https://gemini.example/v1beta'
+}
 const cwd = path.dirname(process.execPath)
 
 it('follows the Antigravity list cursor and recognizes imported conversations', async () => {
   const request = vi.fn()
     .mockResolvedValueOnce({ sessions: [{ sessionId: 'first', cwd, title: 'First', updatedAt: '2026-11-16T00:00:00Z' }], nextCursor: 'page-two' })
     .mockResolvedValueOnce({ sessions: [{ sessionId: 'second', cwd }] })
-  withAcp.mockImplementationOnce((_cli, _cwd, _key, run) => run({ request }))
+  withAcp.mockImplementationOnce((_cli, _cwd, auth, run) => {
+    expect(auth).toEqual({ apiKey: 'key', endpoint: 'https://gemini.example/v1beta' })
+    return run({ request })
+  })
   expect(await scanAntigravitySessions(settings, new Set(['first']))).toMatchObject([
     { chatId: 'first', cwd, title: 'First', imported: true, cli: 'antigravity', updatedAt: Date.UTC(2026, 10, 16) },
     { chatId: 'second', cwd, titleKind: 'untitled', imported: false }

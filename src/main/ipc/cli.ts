@@ -1,6 +1,6 @@
 import { localizedMessage, t as translate } from '@shared/i18n'
 import { isCliProvider, normalizeCliProvider, type CliInstallStatus, type CliProvider, type Settings } from '@shared/types'
-import { antigravityCliInfo, listAntigravityModels, loginAntigravity, resolveAntigravityApiKey } from '../antigravity'
+import { antigravityCliInfo, listAntigravityModels, loginAntigravity, resolveAntigravityApiKey, resolveAntigravityAuth } from '../antigravity'
 import { scanAntigravitySessions } from '../antigravity-history'
 import { claudeCliInfo, claudeModelList, codexCliInfo, codexModelList, cursorCliInfo, cursorModelList, loginClaude, loginCodex, loginCursor } from '../cli-catalog'
 import { updateAntigravity, updateClaude, updateCodex, updateCursor } from '../cli-update'
@@ -25,7 +25,7 @@ function chosen(settingsCli: CliProvider, provider?: CliProvider): CliProvider {
 function modelList(cli: CliProvider, settings: Settings) {
   if (cli === 'codex') return codexModelList(settings.codexPath, settings.codexApiKey)
   if (cli === 'claude') return claudeModelList(settings.claudePath, settings.claudeApiKey)
-  if (cli === 'antigravity') return listAntigravityModels(settings.antigravityPath, resolveAntigravityApiKey(settings.antigravityApiKey))
+  if (cli === 'antigravity') return listAntigravityModels(settings.antigravityPath, resolveAntigravityAuth(settings))
   return cursorModelList(settings.agentPath, settings.apiKey)
 }
 
@@ -76,8 +76,13 @@ export function cliHandlers(deps: IpcDeps): Record<string, Handler> {
       const cli = chosen(store.settings.cliProvider, provider)
       const cached = modelsCache.get(cli)
       if (cached && !refresh) return cached
-      const models = await modelList(cli, store.settings)
-      if (models.length) modelsCache.set(cli, models)
+      const settings = store.settings
+      const models = await modelList(cli, settings)
+      const current = store.settings
+      if (models.length && (cli !== 'antigravity' || (
+        settings.antigravityPath === current.antigravityPath && settings.antigravityApiKey === current.antigravityApiKey
+          && settings.antigravityApiEndpoint === current.antigravityApiEndpoint
+      ))) modelsCache.set(cli, models)
       return models
     },
     'cli:info': async (provider?: CliProvider, refresh = false) => {
