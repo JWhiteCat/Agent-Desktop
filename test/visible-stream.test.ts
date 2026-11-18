@@ -115,13 +115,15 @@ describe('visible stream BPE estimate', () => {
     expect(cancelled.finish('cancelled').visibleStream).toBeUndefined()
   })
 
-  it('does not count subagent text as first visible main-agent output', () => {
+  it('does not count subagent text as first main-agent output', () => {
     let now = 0
     const timer = new TurnTiming(() => now)
     now = 500
     timer.observe({ ...chunk('subagent'), _meta: { claudeCode: { parentToolUseId: 'tool' } } })
     now = 1000
-    expect(timer.finish('completed').firstVisibleOutputMs).toBeUndefined()
+    const finished = timer.finish('completed')
+    expect(finished.firstTokenMs).toBeUndefined()
+    expect(finished.firstVisibleOutputMs).toBeUndefined()
   })
 })
 

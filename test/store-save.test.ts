@@ -78,4 +78,23 @@ describe('store saves', () => {
     expect(JSON.parse(fs.readFileSync(stateFile(), 'utf8')).threads[0].title).toBe('Renamed')
     error.mockRestore()
   })
+
+  it('repairs legacy first-token latency when loading a persisted thread', () => {
+    const thread = newThread()
+    fs.writeFileSync(threadFile(thread.id), JSON.stringify([
+      { id: 'u1', kind: 'user', text: 'question', createdAt: 1794989683831 },
+      { id: 'th1', kind: 'thinking', text: 'analyzing', done: true, startedAt: 1794989701794, endedAt: 1794989704759 },
+      { id: 'a1', kind: 'assistant', text: 'answer' },
+      {
+        id: 'r1', kind: 'result', isError: false, createdAt: 1794989853382, durationMs: 161135,
+        timing: { elapsedMs: 161135.4414, firstVisibleOutputMs: 147403.8979, outcome: 'completed' }
+      }
+    ]))
+    const reloaded = new Store()
+    const loaded = reloaded.items(thread.id)
+    const result = loaded.find((item) => item.kind === 'result')
+    expect(result?.kind === 'result' ? Math.round(result.timing?.firstTokenMs ?? -1) : -1).toBe(9547)
+    reloaded.flush()
+    expect(Math.round(savedItems(thread.id)[3].timing.firstTokenMs)).toBe(9547)
+  })
 })

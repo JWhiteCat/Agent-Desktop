@@ -1,9 +1,9 @@
 import { useMemo } from 'react'
 import { t } from '@shared/i18n'
 import { quoteModel } from '@shared/model-prices'
-import { visibleOutputTps } from '@shared/turn-performance'
+import { firstTokenLatencyMs, visibleOutputTps } from '@shared/turn-performance'
 import { weeklyQuotaEstimate } from '@shared/turn-quota'
-import type { CliProvider, ModelInfo, ResultItem } from '@shared/types'
+import type { CliProvider, Item, ModelInfo, ResultItem, UserItem } from '@shared/types'
 import { compactNumber, duration, formatUsd } from '../../lib/format'
 import { groupModels, modelCaption } from '../../lib/models'
 import { useT } from '../../lib/i18n'
@@ -12,13 +12,15 @@ import { CopyButton } from './primitives'
 
 export interface ResultFooterProps {
   item: ResultItem
+  steps?: readonly Item[]
+  user?: UserItem
   text?: string
   fallbackModel?: string
   cli?: CliProvider
 }
 
 /** The model catalog is supplied by the caller so rendering is independent of the store. */
-export function ResultFooter({ item, text, fallbackModel, cli = 'cursor', models }: ResultFooterProps & { models: ModelInfo[] }) {
+export function ResultFooter({ item, steps, user, text, fallbackModel, cli = 'cursor', models }: ResultFooterProps & { models: ModelInfo[] }) {
   const t = useT()
   const provider = item.cli ?? cli
   const groups = useMemo(() => groupModels(models), [models])
@@ -32,11 +34,9 @@ export function ResultFooter({ item, text, fallbackModel, cli = 'cursor', models
     read: countText(u?.cacheReadTokens), write: countText(u?.cacheWriteTokens)
   }) + '. ' + t('输入不含单列的缓存读写；输出使用服务返回的计数，可能包含隐藏思考和工具调用。缺失字段不是零。')
   const rate = visibleOutputTps(item)
-  const first = item.timing?.firstVisibleOutputMs
-  const elapsed = item.timing?.elapsedMs
-  const validFirst = validQuotaAmount(first) && validQuotaAmount(elapsed) && first <= elapsed
-  const ttft = t('首字延迟 {value}', { value: validFirst ? duration(Math.round(first)) : t('暂无数据') })
-  const ttftDetail = t('从发送本轮提示到收到第一段非空助手正文的客户端延迟；不把思考、工具事件或隐藏推理当作首字。包含网络、排队、思考和此前的工具等待，不是 prefill 耗时。历史记录或没有正文时暂无数据。')
+  const first = firstTokenLatencyMs(item, steps, user)
+  const ttft = t('首字延迟 {value}', { value: first !== undefined ? duration(Math.round(first)) : t('暂无数据') })
+  const ttftDetail = t('从发送本轮提示到收到首个主代理模型输出（非空思考、回复正文、工具调用或计划）的客户端延迟；包含此前的网络与排队等待，不包含后续多步工具执行耗时，也不是服务端 prefill 耗时。服务端隐藏且未流式下发的内部推理不计入；无模型输出或缺少计时的历史记录显示暂无数据。')
   const rateLabel = t('可见输出 TPS（估算）{value}', { value: rate === undefined ? t('暂无数据') : `${rate > 0 && rate < 0.01 ? '<0.01' : Number(rate.toFixed(2))} token/s` })
   const rateDetail = t('用 cl100k_base 估算助手正文 tokens，不使用服务计费计数。对每段首个接收批次之后拼接的正文分词，估算 tokens 除以各段首末接收时间之和；至少两个接收批次且相隔 100ms 才计入。消息、思考或工具事件分段，段间等待不计；无消息 ID 时按连续正文分段，不保证对应模型请求。受网络与 CLI 缓冲影响，不是模型原生 tokenizer 或服务端 decode TPS。取消、失败或没有足够流式样本时暂无数据；服务 usage 缺失不影响估算。')
   const backendLabel = t('服务端 Prefill / Decode：未提供')

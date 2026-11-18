@@ -8,6 +8,7 @@ import { normalizePanelWidths } from '@shared/panel-widths'
 import { normalizeFontFamily, normalizeFontSize } from '@shared/appearance'
 import { normalizeToolbarButtons } from '@shared/toolbar'
 import { normalizeSkin, normalizeSkins } from '@shared/skins'
+import { repairTurnTimings } from '@shared/turn-performance'
 import { DEFAULT_SETTINGS, normalizeCliProvider, threadCli, type Item, type Project, type ResultItem, type Settings, type ThreadMeta } from '@shared/types'
 import { restoreToolFileChanges } from './tool-file-changes'
 import { newId } from './id'
@@ -250,6 +251,7 @@ export class Store {
       const thread = this.thread(threadId)
       const cwd = thread?.cwd ?? (thread ? this.project(thread.projectId)?.path : undefined) ?? ''
       if (restoreToolFileChanges(items, cwd)) this.markItemsDirty(threadId)
+      if (repairTurnTimings(items)) this.markItemsDirty(threadId)
       if (thread?.chatId && threadCli(thread) === 'codex') {
         const repairedTools = repairCodexMcpTools(thread.chatId, items)
         const repairedMessages = repairCodexAssistantMessages(thread.chatId, items)

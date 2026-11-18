@@ -153,6 +153,8 @@ export interface ResultItem {
   /** Client-observed prompt interval, not backend prefill/decode timing. Absent in older history. */
   timing?: {
     elapsedMs: number
+    /** Prompt dispatch to first main-agent model output (thought, reply text, tool call, or plan). */
+    firstTokenMs?: number
     /** Prompt dispatch to first non-whitespace assistant text; excludes thought/tool updates. */
     firstVisibleOutputMs?: number
     /** BPE-estimated visible text after each first delivery batch; no billing/reasoning tokens. */

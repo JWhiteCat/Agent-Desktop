@@ -10,7 +10,7 @@ afterEach(() => setLanguage('system', 'zh-CN'))
 
 const complete: ResultItem = {
   id: 'result', kind: 'result', isError: false, cli: 'cursor',
-  timing: { elapsedMs: 10_000, firstVisibleOutputMs: 250, outcome: 'completed',
+  timing: { elapsedMs: 10_000, firstTokenMs: 250, firstVisibleOutputMs: 250, outcome: 'completed',
     visibleStream: { tokenizer: 'cl100k_base', tokens: 100, durationMs: 2000, segments: 2, excludedSegments: 1 } },
   usage: { inputTokens: 100, outputTokens: 200, cacheReadTokens: 300, cacheWriteTokens: 0 }
 }
@@ -74,8 +74,8 @@ describe('honest turn performance footer', () => {
     expect(html).toContain('不保证对应模型请求')
   })
 
-  it.each([NaN, Infinity, -1, 10_001])('rejects invalid first-text timing %s', (firstVisibleOutputMs) => {
-    expect(render({ timing: { ...complete.timing!, firstVisibleOutputMs } })).toContain('首字延迟 暂无数据')
+  it.each([NaN, Infinity, -1, 10_001])('rejects invalid first-token timing %s', (firstTokenMs) => {
+    expect(render({ timing: { ...complete.timing!, firstTokenMs } })).toContain('首字延迟 暂无数据')
   })
 
   it('does not round tiny positive estimated rates to zero', () => {
@@ -87,10 +87,35 @@ describe('honest turn performance footer', () => {
   it('localizes metrics and definitions in English', () => {
     setLanguage('en')
     const html = render()
-    expect(html).toContain('First visible text 250ms')
+    expect(html).toContain('First token 250ms')
     expect(html).toContain('Visible output TPS (estimated) 50 token/s')
     expect(html).toContain('Server Prefill / Decode: not provided')
     expect(html).toContain('not a model-native tokenizer or server decode TPS')
     expect(html).not.toMatch(/[\u4e00-\u9fff]/)
+  })
+
+  it('measures first-token latency from the first thought/tool step rather than final post-tool summary (session bba121c8)', () => {
+    const html = renderToStaticMarkup(createElement(ResultFooter, {
+      user: { id: 'u1', kind: 'user', text: '为什么显示远端位置', createdAt: 1794989683831 },
+      steps: [
+        { id: 'th1', kind: 'thinking', text: '**Analyzing Git Display**', done: true, startedAt: 1794989701794, endedAt: 1794989704759 },
+        { id: 'tl1', kind: 'tool', callId: 'c1', tool: 'grep', args: {}, status: 'success', startedAt: 1794989704759, endedAt: 1794989706522 },
+        { id: 'a1', kind: 'assistant', text: '原因是左上角筛选器选的是「当前分支（HEAD）」' }
+      ],
+      item: {
+        ...complete,
+        createdAt: 1794989853382,
+        durationMs: 161135,
+        timing: {
+          elapsedMs: 161135.4414,
+          firstVisibleOutputMs: 147403.8979,
+          visibleStream: { tokenizer: 'cl100k_base', tokens: 846, durationMs: 9616.2659, segments: 1, excludedSegments: 0 },
+          outcome: 'completed'
+        }
+      },
+      models: []
+    } as any))
+    expect(html).toContain('首字延迟 10s')
+    expect(html).not.toContain('首字延迟 2m 27s')
   })
 })

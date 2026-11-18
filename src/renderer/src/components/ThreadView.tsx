@@ -164,7 +164,7 @@ function TurnView({
         />
       ))}
       <TurnFiles key={threadId} steps={turn.result ? [...turn.steps, turn.result] : turn.steps} cwd={cwd} />
-      {turn.result && <ResultFooter item={turn.result} text={finalText} fallbackModel={fallbackModel} cli={cli} />}
+      {turn.result && <ResultFooter item={turn.result} steps={turn.steps} user={turn.user} text={finalText} fallbackModel={fallbackModel} cli={cli} />}
     </div>
   )
 }
