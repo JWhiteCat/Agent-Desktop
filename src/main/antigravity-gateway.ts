@@ -24,7 +24,7 @@ export function usesAntigravityGateway(endpoint: string | undefined, apiKey: str
 }
 
 export function isAntigravityGatewayModel(id: string): boolean {
-  return /^agy\/[a-z0-9][a-z0-9._-]*$/i.test(id)
+  return id.startsWith('agy/') && qualifiedModelName.test(`models/${id}`)
 }
 
 function gatewayTransport(url: URL) {
@@ -70,7 +70,16 @@ export async function listAntigravityGatewayModels(endpoint: string, apiKey: str
   const { agent } = gatewayTransport(catalog)
   try {
     const models = await readModelCatalog(catalog, agent, { 'x-goog-api-key': apiKey })
-    return models.filter(({ id }) => isAntigravityGatewayModel(id))
+    const qualified = new Map<string, ModelInfo>()
+    for (const model of models) {
+      if (!isAntigravityGatewayModel(model.id) || qualified.has(model.id)) continue
+      const name = model.id.slice('agy/'.length)
+      const effort = /^(.*)-(low|medium|high|xhigh|max)$/.exec(name)
+      // Reuse matching selections saved when the picker listed ACP IDs.
+      const legacySlug = effort ? `${effort[1]}[effort=${effort[2]}]` : name
+      qualified.set(model.id, { ...model, legacySlug })
+    }
+    return [...qualified.values()]
   } finally {
     agent.destroy()
   }

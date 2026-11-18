@@ -1,6 +1,7 @@
 import http from 'node:http'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { listAntigravityGatewayModels, openAntigravityGateway } from '../src/main/antigravity-gateway'
+import { listAntigravityModels } from '../src/main/antigravity'
+import { openAntigravityGateway } from '../src/main/antigravity-gateway'
 import { applySessionOptions, type SessionConnection } from '../src/main/session/provider'
 
 const API_PATH = '/v1beta/models/'
@@ -48,16 +49,29 @@ async function setup(allowed: string, level = 'high', models?: (string | { name:
 }
 
 describe('Antigravity custom gateway', () => {
-  it('discovers qualified AGY catalog entries with their upstream labels and API key', async () => {
+  it('lists only unique agy IDs from the authenticated gateway catalog', async () => {
     const id = 'agy/claude-opus-5-5-high'
     const label = 'Claude Opus 5.5 (High)'
+    const carbon = `agy/${CARBON}-high`
     const { endpoint, catalogs } = await setup(id, 'high', [
       { name: `models/${id}`, displayName: label },
+      `models/${id}`,
+      { name: `models/${carbon}`, displayName: 'Gemini 4 Carbon (High)' },
+      `models/${CARBON}`,
       'models/other/claude-opus-5-5-high',
+      'models/AGY/claude-opus-5-5-high',
       'models/agy/../invalid'
     ])
-    expect(await listAntigravityGatewayModels(endpoint, 'fixture-key')).toEqual([{ id, label }])
+    expect(await listAntigravityModels('./missing-agy', { endpoint, apiKey: 'fixture-key' })).toEqual([
+      { id, label, legacySlug: 'claude-opus-5-5[effort=high]' },
+      { id: carbon, label: 'Gemini 4 Carbon (High)', legacySlug: `${CARBON}[effort=high]` }
+    ])
     expect(catalogs).toEqual([{ url: '/prefix/v1beta/models', key: 'fixture-key' }])
+  })
+
+  it('keeps the gateway list empty when its catalog is unavailable', async () => {
+    const { endpoint } = await setup(CARBON)
+    expect(await listAntigravityModels('./missing-agy', { endpoint, apiKey: 'fixture-key' })).toEqual([])
   })
 
   it('routes an ACP-unlisted model to its full ID and clears the route on Auto', async () => {

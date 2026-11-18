@@ -150,12 +150,13 @@ export function antigravityChoices(option: SelectOption | undefined): Choice[] {
 }
 
 export async function listAntigravityModels(customPath: string, auth: AntigravityAuth): Promise<ModelInfo[]> {
+  if (usesAntigravityGateway(auth.endpoint, auth.apiKey)) {
+    return listAntigravityGatewayModels(auth.endpoint, auth.apiKey)
+  }
   const cli = requireAntigravity(customPath)
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-desktop-agy-'))
   try {
-    const gatewayModels = usesAntigravityGateway(auth.endpoint, auth.apiKey)
-      ? listAntigravityGatewayModels(auth.endpoint, auth.apiKey) : []
-    const nativeModels = withAntigravityAcp(cli, cwd, auth, async (acp) => {
+    return await withAntigravityAcp(cli, cwd, auth, async (acp) => {
       const created = await acp.request('session/new', { cwd, mcpServers: [] })
       const model = antigravityConfig(created?.configOptions, 'model')
       const available = antigravityChoices(model)
@@ -184,21 +185,6 @@ export async function listAntigravityModels(customPath: string, auth: Antigravit
       }
       return models
     })
-    const [native, upstream] = await Promise.all([nativeModels, gatewayModels])
-    if (!native.length || !upstream.length) return native
-
-    const seen = new Set<string>()
-    for (const { id } of native) {
-      const [base, level] = id.split('[effort=')
-      const qualified = base.startsWith('agy/') ? base : `agy/${base}`
-      seen.add(qualified)
-      if (level) seen.add(`${qualified}-${level.slice(0, -1)}`)
-    }
-    return [...native, ...upstream.filter(({ id }) => {
-      if (seen.has(id)) return false
-      seen.add(id)
-      return true
-    })]
   } finally {
     try { fs.rmdirSync(cwd) } catch { /* The CLI may still be releasing the directory. */ }
   }

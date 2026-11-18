@@ -84,6 +84,24 @@ describe('renderer store', () => {
 
   afterEach(() => vi.unstubAllGlobals())
 
+  it('discards the old mixed Antigravity cache and clears the current cache when the catalog is empty', async () => {
+    localStorage.setItem('agent-desktop:models:antigravity', JSON.stringify([{ id: 'gemini-4-carbon', label: 'Old native result' }]))
+    const request = deferred<{ id: string; label: string }[]>()
+    api.listModels.mockReturnValueOnce(request.promise)
+    const loading = store.loadModels(false, 'antigravity')
+    expect(store.getState().modelsByCli.antigravity).toEqual([])
+
+    const upstream = [{ id: 'agy/gemini-4-carbon-high', label: 'Gemini 4 Carbon (High)' }]
+    request.resolve(upstream)
+    await loading
+    expect(store.getState().modelsByCli.antigravity).toEqual(upstream)
+
+    await store.loadModels(true, 'antigravity')
+    const reloading = store.loadModels(false, 'antigravity')
+    expect(store.getState().modelsByCli.antigravity).toEqual([])
+    await reloading
+  })
+
   it.each(['cursor', 'codex', 'claude'] as const)('preserves the %s command cache on empty preparation but clears it on a live announcement', async (cli) => {
     const commands = [{ name: 'help', description: 'List commands' }]
     store.setState((s) => ({ app: { ...s.app, threads: [{ ...thread, cli }] } }))

@@ -26,6 +26,8 @@ export function writeCommandCache(cache: CommandCache): void {
 }
 
 function modelCacheKey(cli: CliProvider): string {
+  // Discard old Antigravity lists that mixed native and gateway models.
+  if (cli === 'antigravity') return `${MODELS_KEY}:antigravity:v2`
   return cli === 'cursor' ? MODELS_KEY : `${MODELS_KEY}:${cli}`
 }
 
@@ -40,4 +42,5 @@ export function readModelCache(cli: CliProvider): ModelInfo[] | null {
 
 export function writeModelCache(cli: CliProvider, models: ModelInfo[]): void {
   if (models.length > (cli === 'cursor' ? 1 : 0)) localStorage.setItem(modelCacheKey(cli), JSON.stringify(models))
+  else if (cli === 'antigravity') localStorage.removeItem(modelCacheKey(cli))
 }
