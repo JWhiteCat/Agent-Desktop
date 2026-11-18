@@ -89,17 +89,9 @@ describe('managed CLI installation', () => {
     expect(fs.existsSync(path.join(directory, 'escaped'))).toBe(false)
   })
 
-  it.each(['binary', 'tar.gz'] as const)('activates agy from a %s release and preserves the legacy ACP runtime', async (format) => {
+  it.each(['binary', 'tar.gz'] as const)('activates agy from a %s release', async (format) => {
     vi.spyOn(runtime, 'cliSearchDirectories').mockReturnValue([])
     vi.stubEnv('LOCALAPPDATA', directory)
-    const generation = '1.5.0-58faa9de-56ec-4645-9675-5a63258a8dc1'
-    const legacyRoot = path.join(directory, 'cli', 'antigravity')
-    const legacyFile = path.join(legacyRoot, 'versions', generation, 'agy_acp_server.exe')
-    fs.mkdirSync(path.dirname(legacyFile), { recursive: true })
-    fs.writeFileSync(legacyFile, 'registry-server', { mode: 0o755 })
-    fs.writeFileSync(path.join(legacyRoot, 'current.json'), JSON.stringify({
-      version: '1.5.0', generation, command: 'agy_acp_server.exe', prefixArgs: []
-    }))
     expect(resolveAntigravity('')).toBeUndefined()
     const command = process.platform === 'win32' ? 'agy.exe' : 'agy'
     const content = format === 'binary' ? Buffer.from('test-cli') : packageBytes('antigravity')
@@ -113,12 +105,10 @@ describe('managed CLI installation', () => {
     }, async () => release)
     await installer.install('antigravity')
     const installed = managedExecutable('antigravity')!
-    expect(resolveAntigravity('')).toMatchObject({ managed: true, command: installed.command, antigravityRuntime: 'cli' })
-    expect(resolveAntigravity('', 'cli')?.command).toBe(installed.command)
-    expect(resolveAntigravity('', 'registry')).toMatchObject({ command: legacyFile, antigravityRuntime: 'registry' })
+    expect(resolveAntigravity('')).toMatchObject({ managed: true, command: installed.command })
     expect(await antigravityCliInfo('', '')).toMatchObject({ path: installed.command, version: '1.5.0', source: 'managed' })
     expect(resolveAntigravity(path.join(directory, 'missing.exe'))).toBeUndefined()
-    expect(resolveAntigravity(process.execPath)).toMatchObject({ command: process.execPath, antigravityRuntime: 'cli' })
+    expect(resolveAntigravity(process.execPath)).toMatchObject({ command: process.execPath })
   })
 })
 
@@ -146,20 +136,4 @@ it.each([
   for (const change of [{ url: url.replace('storage.googleapis.com', 'other.example') }, { url: `${url}/wrong` }, { version: '2.0.0' }, { sha512: 'b'.repeat(64) }]) {
     await expect(cliArtifact('antigravity', async () => ({ ...release, ...change }), platform, arch)).rejects.toThrow('Invalid Antigravity CLI release')
   }
-})
-
-it('keeps the published ACP Registry download for old Antigravity conversations', async () => {
-  const release = {
-    id: 'antigravity-acp', version: '1.5.0', distribution: { binary: {
-      'linux-x86_64': {
-        archive: 'https://dl.google.com/agy-extensions/releases/linux/agy.zip',
-        cmd: './agy_acp_server.par', sha256: 'a'.repeat(64), args: ['--uid=']
-      }
-    } }
-  }
-  expect(await cliArtifact('antigravity-registry', async () => release, 'linux', 'x64')).toMatchObject({
-    command: 'agy_acp_server.par', prefixArgs: ['--uid=']
-  })
-  release.distribution.binary['linux-x86_64'].archive = 'https://other.example/agy.zip'
-  await expect(cliArtifact('antigravity-registry', async () => release, 'linux', 'x64')).rejects.toThrow()
 })

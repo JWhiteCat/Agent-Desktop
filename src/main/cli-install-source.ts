@@ -1,4 +1,4 @@
-import type { CliInstallTarget } from './managed-cli-location'
+import type { CliProvider } from '@shared/types'
 
 export interface CliArtifact {
   version: string
@@ -7,7 +7,6 @@ export interface CliArtifact {
   integrity: { algorithm: 'sha256' | 'sha512'; digest: string; encoding: 'hex' | 'base64' }
   command: string
   archiveEntry?: string
-  prefixArgs?: string[]
 }
 
 // Match the native packages in package-lock.json that ship with the ACP adapters.
@@ -21,7 +20,6 @@ const cursorChecksums = {
   'darwin-arm64': '2e4a679c498d98eb2706ad7d90ccd256e5eb2f6cb3fe2cb4a9dd7f2dbd3efce0',
   'linux-x64': '189ed41d8963cd22dcdafbbd62f072cc55ac08374c922dbd04aee525f4018ab6'
 }
-const registryManifest = 'https://raw.githubusercontent.com/agentclientprotocol/registry/main/antigravity-acp/agent.json'
 const agyManifests = 'https://antigravity-cli-auto-updater-974169037036.us-central1.run.app/manifests'
 const agyReleasePaths = {
   'win32-x64': 'windows-x64/cli_windows_x64.exe',
@@ -36,7 +34,7 @@ export function supportedInstallPlatform(platform = process.platform, arch = pro
 }
 
 export async function cliArtifact(
-  provider: CliInstallTarget, readJson: (url: string) => Promise<any>,
+  provider: CliProvider, readJson: (url: string) => Promise<any>,
   platform = process.platform, arch = process.arch
 ): Promise<CliArtifact> {
   if (!supportedInstallPlatform(platform, arch)) throw new Error('Unsupported CLI installation platform')
@@ -67,22 +65,6 @@ export async function cliArtifact(
       integrity: { algorithm: 'sha512', digest: sha512.toLowerCase(), encoding: 'hex' }
     }
   }
-  if (provider === 'antigravity-registry') {
-    const manifest = await readJson(registryManifest)
-    const build = manifest?.distribution?.binary?.[`${win ? 'windows' : platform}-${machine}`]
-    const command = win ? 'agy_acp_server.exe' : 'agy_acp_server.par'
-    const args = platform === 'linux' ? ['--uid='] : []
-    const version = manifest?.version
-    if (manifest?.id !== 'antigravity-acp' || typeof version !== 'string' || !/^\d+\.\d+\.\d+$/.test(version)
-      || !build || build.cmd !== `./${command}` || JSON.stringify(build.args ?? []) !== JSON.stringify(args)
-      || typeof build.archive !== 'string' || !/^https:\/\/dl\.google\.com\/agy-extensions\/releases\/[A-Za-z0-9/._-]+\.zip$/.test(build.archive)
-      || typeof build.sha256 !== 'string' || !/^[a-f0-9]{64}$/i.test(build.sha256)) throw new Error('Invalid Antigravity ACP release')
-    return {
-      version, url: build.archive, format: 'zip', command, prefixArgs: args,
-      integrity: { algorithm: 'sha256', digest: build.sha256.toLowerCase(), encoding: 'hex' }
-    }
-  }
-
   const codex = provider === 'codex'
   const version = codex ? CODEX_VERSION : CLAUDE_SDK_VERSION
   const name = codex ? '@openai/codex' : `@anthropic-ai/claude-agent-sdk-${target}`

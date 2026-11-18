@@ -73,7 +73,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
   const [text, setText] = useDraftState(props.draftScope, 'composer:text', '')
   const [opts, setOpts] = useDraftState<SendOptions>(props.draftScope, 'composer:options', props.initial)
   const activeCli = opts.cli ?? props.cli
-  const installStatus = useCliInstallStatus(activeCli, props.threadId)
+  const installStatus = useCliInstallStatus(activeCli)
   const cliMissing = !!installStatus && !installStatus.source
   const [sending, setSending] = useDraftState(props.draftScope, 'composer:sending', false)
   const [attachments, setAttachments] = useDraftState<DraftAttachment[]>(props.draftScope, 'composer:attachments', [])
@@ -366,7 +366,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
         }}
       />
       {sendError && <div className="attachment-error" role="alert">{sendError}</div>}
-      {activeCli && <CliInstallAction key={activeCli} provider={activeCli} threadId={props.threadId} status={installStatus} offerLogin />}
+      {activeCli && <CliInstallAction key={activeCli} provider={activeCli} status={installStatus} offerLogin />}
       {hint && <div className="composer-hint">{hint}</div>}
       <Popover anchor={box.current} open={menuOpen} onClose={() => setDismissed(true)} placement="top-start" className="command-popover">
         <div ref={listRef} className="menu command-menu" role="listbox">

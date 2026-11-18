@@ -12,7 +12,7 @@
 
 在聊天输入框选择 CLI，或打开 **设置 → CLI**，点击**安装**。Agent Desktop 在运行桌面应用的电脑上下载并校验发行文件，保存到应用数据目录的 `data/cli/` 下。支持 Windows x64、macOS x64 和 arm64、Linux x64。安装后可在应用内登录或填写 API Key。
 
-应用依次使用显式配置的路径、本机已有安装、应用管理版本。Codex 和 Claude 的下载版本与随包 ACP 适配器配套。Antigravity 的**安装**会下载 Google 官方 `agy`，确认 `agy acp` 能启动后再启用。从使用 Antigravity ACP Registry 服务的旧版升级后，如果本机没有 `agy`，点击**安装**即可获取。
+应用依次使用显式配置的路径、本机已有安装、应用管理版本。Codex 和 Claude 的下载版本与随包 ACP 适配器配套。Antigravity 的**安装**会下载 Google 官方 `agy`，确认 `agy acp` 能启动后再启用。
 
 ## 可选的独立安装
 
@@ -77,7 +77,7 @@ Claude 认证优先使用设置中的 Key，其次是 `ANTHROPIC_API_KEY`。只�
 
 Antigravity 优先使用设置中的 Gemini API Key，其次是 `GEMINI_API_KEY`，最后使用当前 Antigravity 运行时已保存的凭据。登录按钮打开 Google 个人账号登录。Gemini Enterprise 或终端登录请参阅 [Antigravity CLI 认证指南](https://antigravity.google/docs/ide/extensions/acp/#authentication)。
 
-应用管理版和独立安装的 `agy` 共用 CLI 的登录和历史存储，均适用 CLI 沙箱设置。通过旧版 ACP Registry 服务创建的对话仍使用原服务及其独立的登录和历史存储。应用会读取当前账号可用的模型和思考级别。在 **设置 → 外观与历史 → 导入** 可以导入已有的 Antigravity 会话。对话菜单可重新同步历史。分叉会新建独立会话，并在第一次发送时传入复制的历史。
+应用管理版和独立安装的 `agy` 共用 CLI 的登录和历史存储，均适用 CLI 沙箱设置。应用会读取当前账号可用的模型和思考级别。在 **设置 → 外观与历史 → 导入** 可以导入已有的 `agy` 会话。对话菜单可重新同步历史。分叉会新建独立会话，并在第一次发送时传入复制的历史。
 
 Antigravity 从 `~/.gemini/config/mcp_config.json` 和 `.agents/mcp_config.json` 读取 MCP 配置。本地 Skill 路径包括 `~/.gemini/antigravity-cli/skills`、`~/.gemini/skills` 和项目的 `.agents/skills`。
 

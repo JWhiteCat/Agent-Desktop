@@ -1,5 +1,5 @@
 import { localizedMessage, t as translate } from '@shared/i18n'
-import { isCliProvider, normalizeCliProvider, threadCli, type CliInstallStatus, type CliProvider, type Settings } from '@shared/types'
+import { isCliProvider, normalizeCliProvider, type CliInstallStatus, type CliProvider, type Settings } from '@shared/types'
 import { antigravityCliInfo, listAntigravityModels, loginAntigravity, resolveAntigravityApiKey } from '../antigravity'
 import { scanAntigravitySessions } from '../antigravity-history'
 import { claudeCliInfo, claudeModelList, codexCliInfo, codexModelList, cursorCliInfo, cursorModelList, loginClaude, loginCodex, loginCursor } from '../cli-catalog'
@@ -43,26 +43,20 @@ export function cliHandlers(deps: IpcDeps): Record<string, Handler> {
     ...scanCliSessions(imported), ...scanCodexSessions(imported), ...scanClaudeSessions(imported),
     ...await scanAntigravitySessions(store.settings, imported)
   ]
-  const runtimeFor = (provider: CliProvider, threadId?: string) => {
-    const thread = provider === 'antigravity' && threadId ? store.thread(threadId) : undefined
-    return thread?.chatId && threadCli(thread) === 'antigravity' ? thread.antigravityRuntime ?? 'cli' : undefined
-  }
-  const installStatus = (provider: CliProvider, threadId?: string): CliInstallStatus => {
+  const installStatus = (provider: CliProvider): CliInstallStatus => {
     const settings = store.settings
-    const runtime = runtimeFor(provider, threadId)
-    const launch = resolveLaunch(provider, settings, runtime)
+    const launch = resolveLaunch(provider, settings)
     const managed = launch && (launch.cli.managed || launch.claude?.managed || launch.codex?.managed)
     const custom = provider === 'cursor' ? settings.agentPath : settings[`${provider}Path`]
-    const unavailable = launch ? undefined : runtime !== 'registry' && normalizeCliPath(custom ?? '') ? 'invalid-path'
+    const unavailable = launch ? undefined : normalizeCliPath(custom ?? '') ? 'invalid-path'
       : !supportedInstallPlatform() ? 'platform' : undefined
-    const target = runtime === 'registry' ? 'antigravity-registry' : provider
-    return { source: launch ? managed ? 'managed' : 'external' : undefined, unavailable, ...installer.status(target) }
+    return { source: launch ? managed ? 'managed' : 'external' : undefined, unavailable, ...installer.status(provider) }
   }
-  const install = async (provider: CliProvider, threadId?: string) => {
-    const state = installStatus(provider, threadId)
+  const install = async (provider: CliProvider) => {
+    const state = installStatus(provider)
     if (state.unavailable || state.source === 'external') throw new Error(translate('当前 CLI 不能由应用安装'))
     try {
-      await installer.install(runtimeFor(provider, threadId) === 'registry' ? 'antigravity-registry' : provider)
+      await installer.install(provider)
       modelsCache.delete(provider)
       deps.sessions.dropIdle()
     } finally {
@@ -70,13 +64,13 @@ export function cliHandlers(deps: IpcDeps): Record<string, Handler> {
     }
   }
   return {
-    'cli:installStatus': (provider: CliProvider, threadId?: string) => {
+    'cli:installStatus': (provider: CliProvider) => {
       if (!isCliProvider(provider)) throw new Error(translate('请选择 CLI'))
-      return installStatus(provider, threadId)
+      return installStatus(provider)
     },
-    'cli:install': (provider: CliProvider, threadId?: string) => {
+    'cli:install': (provider: CliProvider) => {
       if (!isCliProvider(provider)) throw new Error(translate('请选择 CLI'))
-      return install(provider, threadId)
+      return install(provider)
     },
     'cli:models': async (refresh?: boolean, provider?: CliProvider) => {
       const cli = chosen(store.settings.cliProvider, provider)
@@ -96,13 +90,13 @@ export function cliHandlers(deps: IpcDeps): Record<string, Handler> {
         return cursorCliInfo(settings.agentPath, settings.apiKey)
       }, refresh)
     },
-    'cli:login': async (provider?: CliProvider, threadId?: string) => {
+    'cli:login': async (provider?: CliProvider) => {
       const cli = chosen(store.settings.cliProvider, provider)
       try {
         if (cli === 'codex') return await loginCodex(store.settings.codexPath)
         if (cli === 'claude') return await loginClaude(store.settings.claudePath)
         if (cli === 'antigravity') {
-          const message = await loginAntigravity(store.settings.antigravityPath, runtimeFor(cli, threadId))
+          const message = await loginAntigravity(store.settings.antigravityPath)
           modelsCache.delete(cli)
           deps.sessions.dropIdle()
           return message
@@ -155,7 +149,6 @@ export function cliHandlers(deps: IpcDeps): Record<string, Handler> {
           chatId: s.chatId,
           cwd: s.cwd,
           cli: s.cli,
-          antigravityRuntime: s.antigravityRuntime,
           mode: 'agent',
           source: 'cli',
           createdAt: s.createdAt || Date.now(),

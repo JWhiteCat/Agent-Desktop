@@ -240,7 +240,7 @@ export async function syncAntigravityFromCli(deps: Pick<HistoryDeps, 'store' | '
   const previous = deps.store.items(threadId)
   const before = JSON.stringify(previous)
   const { chatId } = t
-  const items = await readAntigravityTranscript(deps.store.settings, chatId, cwd, imageCapture(deps.store, cwd, previous), t.antigravityRuntime)
+  const items = await readAntigravityTranscript(deps.store.settings, chatId, cwd, imageCapture(deps.store, cwd, previous))
   const current = deps.store.thread(threadId)
   if (!current || current.chatId !== chatId || threadCli(current) !== 'antigravity' || deps.isRunning(threadId)
     || JSON.stringify(deps.store.items(threadId)) !== before) return undefined

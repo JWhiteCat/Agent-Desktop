@@ -5,14 +5,14 @@ import path from 'node:path'
 import { Readable, Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { t as translate } from '@shared/i18n'
-import type { CliInstallStatus } from '@shared/types'
+import type { CliInstallStatus, CliProvider } from '@shared/types'
 import { x as extractTar } from 'tar'
 import { Open as zip } from 'unzipper'
 import { AcpConnection, MethodNotFound } from './acp'
 import { cliArtifact, type CliArtifact } from './cli-install-source'
 import { cliEnvironment, isExecutableFile, killCliProcessTree, spawnCliProcess } from './cli-runtime'
 import { writeTextSafely } from './local-files'
-import { installPath, managedCliDirectory, managedExecutable, type CliInstallTarget } from './managed-cli-location'
+import { installPath, managedCliDirectory, managedExecutable } from './managed-cli-location'
 
 type Fetch = (url: string, init?: RequestInit) => Promise<Response>
 type Progress = Omit<CliInstallStatus, 'source' | 'unavailable'>
@@ -122,11 +122,11 @@ export async function unpackCliArchive(archive: string, directory: string, forma
   }
 }
 
-async function probe(provider: CliInstallTarget, command: string, prefixArgs: string[]): Promise<void> {
-  const usesAcp = provider === 'antigravity' || provider === 'antigravity-registry'
-  const args = usesAcp ? provider === 'antigravity' ? ['acp'] : prefixArgs
+async function probe(provider: CliProvider, command: string, prefixArgs: string[]): Promise<void> {
+  const usesAcp = provider === 'antigravity'
+  const args = usesAcp ? ['acp']
     : [...prefixArgs, ...(provider === 'cursor' ? ['--disable-auto-update'] : []), '--version']
-  const env = cliEnvironment(provider === 'antigravity' ? { AGY_CLI_DISABLE_AUTO_UPDATE: 'true' } : {}, path.dirname(command))
+  const env = cliEnvironment(usesAcp ? { AGY_CLI_DISABLE_AUTO_UPDATE: 'true' } : {}, path.dirname(command))
   const child = spawnCliProcess(command, args, {
     cwd: os.homedir(), env,
     windowsHide: true, stdio: [usesAcp ? 'pipe' : 'ignore', 'pipe', 'pipe']
@@ -160,17 +160,17 @@ async function probe(provider: CliInstallTarget, command: string, prefixArgs: st
   }
 }
 
-function payloadEntry(provider: CliInstallTarget, artifact: CliArtifact, directory: string): { command: string; prefixArgs: string[] } {
+function payloadEntry(provider: CliProvider, artifact: CliArtifact, directory: string): { command: string; prefixArgs: string[] } {
   const command = installPath(directory, artifact.command)!
   if (provider === 'cursor' && process.platform === 'win32' && !isExecutableFile(command)) {
     return { command: 'dist-package/node.exe', prefixArgs: ['dist-package/index.js'] }
   }
-  return { command: artifact.command, prefixArgs: artifact.prefixArgs ?? [] }
+  return { command: artifact.command, prefixArgs: [] }
 }
 
 export class CliInstaller {
-  private tasks = new Map<CliInstallTarget, Promise<void>>()
-  private progress = new Map<CliInstallTarget, Progress>()
+  private tasks = new Map<CliProvider, Promise<void>>()
+  private progress = new Map<CliProvider, Progress>()
 
   constructor(
     private readonly fetchResource: Fetch,
@@ -178,11 +178,11 @@ export class CliInstaller {
     private readonly artifactFor = cliArtifact
   ) {}
 
-  status(provider: CliInstallTarget): Progress {
+  status(provider: CliProvider): Progress {
     return this.progress.get(provider) ?? {}
   }
 
-  install(provider: CliInstallTarget): Promise<void> {
+  install(provider: CliProvider): Promise<void> {
     const pending = this.tasks.get(provider)
     if (pending) return pending
     const change = (status: Progress) => this.progress.set(provider, status)
@@ -197,7 +197,7 @@ export class CliInstaller {
     return task
   }
 
-  private async downloadAndActivate(provider: CliInstallTarget, change: (status: Progress) => void): Promise<void> {
+  private async downloadAndActivate(provider: CliProvider, change: (status: Progress) => void): Promise<void> {
     const root = managedCliDirectory(provider)
     if (!root) throw new Error(translate('CLI 安装目录不可用'))
     const artifact = await this.artifactFor(provider, (url) => readJson(this.fetchResource, url))

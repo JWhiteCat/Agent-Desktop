@@ -22,7 +22,6 @@ export const settingsMessages: Record<string, string> = {
   'CLI 安装目录不可用': 'The CLI installation directory is unavailable',
   '留空时自动检测本机安装，再查找应用管理的版本。': 'Leave blank to detect an existing installation, then look for an app-managed copy.',
   '点击安装按钮可从官方来源下载。': 'Use Install to download from the official source.',
-  '使用旧版 Antigravity ACP Registry 的对话无法强制开启 CLI 沙箱，请在设置中选择「遵循 CLI 配置」。': 'Conversations using the legacy Antigravity ACP Registry server cannot force the CLI sandbox on. Choose Follow CLI configuration in Settings.',
   '未找到 Antigravity CLI': 'Antigravity CLI not found',
   '请安装 Antigravity CLI 1.5.0 或更高版本。': 'Install Antigravity CLI 1.5.0 or later.',
   '请将 Antigravity CLI 更新到 1.5.0 或更高版本。': 'Update Antigravity CLI to 1.5.0 or later.',

@@ -4,8 +4,7 @@ import { readAntigravityTranscript, scanAntigravitySessions } from '../src/main/
 import { forkPrompt } from '../src/main/fork-context'
 import { DEFAULT_SETTINGS } from '../src/shared/types'
 
-const { withAcp, managedExecutable } = vi.hoisted(() => ({ withAcp: vi.fn(), managedExecutable: vi.fn() }))
-vi.mock('../src/main/managed-cli-location', () => ({ managedExecutable }))
+const withAcp = vi.hoisted(() => vi.fn())
 vi.mock('../src/main/antigravity', async (original) => ({
   ...await original<typeof import('../src/main/antigravity')>(),
   withAntigravityAcp: withAcp
@@ -46,21 +45,4 @@ it('replays only the requested session and restores copied fork context before t
     { kind: 'user', text: 'Follow up' },
     { kind: 'assistant', text: 'Reply' }
   ])
-})
-
-it('lists both Antigravity stores and loads a registry session through its recorded runtime', async () => {
-  const entry = { command: path.join(cwd, 'agy_acp_server.exe'), prefixArgs: [], version: '1.5.0' }
-  managedExecutable.mockReturnValue(entry)
-  const mockRpc = (_cli: unknown, _cwd: string, _key: string, run: (acp: unknown) => Promise<unknown>) => run({
-    request: vi.fn(async () => ({ sessions: [{ sessionId: 'imported', cwd }] }))
-  })
-  withAcp.mockImplementationOnce(mockRpc).mockImplementationOnce(mockRpc)
-  const sessions = await scanAntigravitySessions(settings, new Set())
-  expect(sessions.map((session) => session.antigravityRuntime)).toEqual(['cli', 'registry'])
-  withAcp.mockImplementationOnce((cli, _cwd, _key, run) => {
-    expect(cli).toMatchObject({ antigravityRuntime: 'registry', command: entry.command })
-    return run({ request: vi.fn(async () => ({})) })
-  })
-  await readAntigravityTranscript(settings, 'imported', cwd, undefined, 'registry')
-  managedExecutable.mockReset()
 })

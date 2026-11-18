@@ -87,9 +87,9 @@ export interface DesktopApi {
   listModels(refresh?: boolean, provider?: CliProvider): Promise<ModelInfo[]>
   /** Reuses persisted detection results unless refresh is true or the configuration changed. */
   cliInfo(provider?: CliProvider, refresh?: boolean): Promise<CliInfo>
-  login(provider?: CliProvider, threadId?: string): Promise<string>
-  cliInstallStatus(provider: CliProvider, threadId?: string): Promise<CliInstallStatus>
-  installCli(provider: CliProvider, threadId?: string): Promise<void>
+  login(provider?: CliProvider): Promise<string>
+  cliInstallStatus(provider: CliProvider): Promise<CliInstallStatus>
+  installCli(provider: CliProvider): Promise<void>
   updateCli(provider: CliProvider): Promise<string>
   scanCliSessions(): Promise<CliSession[]>
   importCliSessions(chatIds: string[]): Promise<number>

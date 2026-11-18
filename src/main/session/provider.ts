@@ -1,6 +1,6 @@
 import type { ChildProcess } from 'node:child_process'
 import { t as translate } from '@shared/i18n'
-import type { AntigravityRuntime, CliProvider, SendRequest, Settings } from '@shared/types'
+import type { CliProvider, SendRequest, Settings } from '@shared/types'
 import { claudePlanModePrompt, codexPlanModePrompt, planModePrompt, type AcpConnection } from '../acp'
 import { antigravityConfig, resolveAntigravity, resolveAntigravityApiKey, spawnAntigravity } from '../antigravity'
 import { resolveApiKey, resolveCli, spawnCli, type ResolvedCli } from '../cli'
@@ -29,7 +29,7 @@ export interface AgentLaunch {
 
 type Sandbox = 'default' | 'enabled' | 'disabled'
 
-export function resolveLaunch(provider: CliProvider, { agentPath, codexPath, claudePath, antigravityPath }: Settings, antigravityRuntime?: AntigravityRuntime): AgentLaunch | undefined {
+export function resolveLaunch(provider: CliProvider, { agentPath, codexPath, claudePath, antigravityPath }: Settings): AgentLaunch | undefined {
   if (provider === 'codex') {
     const codex = resolveCodex(codexPath)
     return codex ? { cli: codexAsCli(codex), codex } : undefined
@@ -38,7 +38,7 @@ export function resolveLaunch(provider: CliProvider, { agentPath, codexPath, cla
     const claude = resolveClaude(claudePath)
     return claude ? { cli: claudeAsCli(claude), claude } : undefined
   }
-  const cli = provider === 'antigravity' ? resolveAntigravity(antigravityPath, antigravityRuntime) : resolveCli(agentPath)
+  const cli = provider === 'antigravity' ? resolveAntigravity(antigravityPath) : resolveCli(agentPath)
   return cli ? { cli } : undefined
 }
 

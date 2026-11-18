@@ -234,7 +234,6 @@ export class Store {
     if (typeof patch.title === 'string' && !Object.hasOwn(patch, 'titleKind')) delete t.titleKind
     if (cliChanged) {
       delete t.chatId
-      delete t.antigravityRuntime
     }
     this.scheduleSave()
     return t

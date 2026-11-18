@@ -4,9 +4,8 @@ import { useT } from '../lib/i18n'
 import { errorText, loadModels, toast } from '../store'
 import { Spinner } from './icons'
 
-export function useCliInstallStatus(provider?: CliProvider, threadId?: string) {
-  const key = `${provider ?? ''}:${threadId ?? ''}`
-  const [checked, setChecked] = useState<{ key: string; status: CliInstallStatus }>()
+export function useCliInstallStatus(provider?: CliProvider) {
+  const [checked, setChecked] = useState<{ provider: CliProvider; status: CliInstallStatus }>()
   useEffect(() => {
     if (!provider || !window.api.cliInstallStatus) return
     let stopped = false
@@ -14,10 +13,10 @@ export function useCliInstallStatus(provider?: CliProvider, threadId?: string) {
     const refresh = async () => {
       let delay = 1_500
       try {
-        const status = await window.api.cliInstallStatus(provider, threadId)
+        const status = await window.api.cliInstallStatus(provider)
         if (stopped) return
         delay = status.phase ? 350 : status.source ? 4_000 : 1_500
-        setChecked((previous) => previous?.key === key && JSON.stringify(previous.status) === JSON.stringify(status) ? previous : { key, status })
+        setChecked((previous) => previous?.provider === provider && JSON.stringify(previous.status) === JSON.stringify(status) ? previous : { provider, status })
       } catch {
         // Keep the last detection across temporary remote disconnections.
       } finally {
@@ -26,13 +25,12 @@ export function useCliInstallStatus(provider?: CliProvider, threadId?: string) {
     }
     void refresh()
     return () => { stopped = true; clearTimeout(timer) }
-  }, [key, provider, threadId])
-  return checked?.key === key ? checked.status : undefined
+  }, [provider])
+  return checked && checked.provider === provider ? checked.status : undefined
 }
 
-export function CliInstallAction({ provider, threadId, status, onInstalled, offerLogin = false }: {
+export function CliInstallAction({ provider, status, onInstalled, offerLogin = false }: {
   provider: CliProvider
-  threadId?: string
   status?: CliInstallStatus
   onInstalled?: () => void
   offerLogin?: boolean
@@ -63,7 +61,7 @@ export function CliInstallAction({ provider, threadId, status, onInstalled, offe
                 setLoggingIn(true)
                 setError('')
                 try {
-                  const result = await window.api.login(provider, threadId)
+                  const result = await window.api.login(provider)
                   toast(result.split('\n').pop() || t('登录流程已结束'))
                   void loadModels(true, provider)
                   setInstalled(false)
@@ -79,7 +77,7 @@ export function CliInstallAction({ provider, threadId, status, onInstalled, offe
               setInstalling(true)
               setError('')
               try {
-                await window.api.installCli(provider, threadId)
+                await window.api.installCli(provider)
                 setInstalled(true)
                 void loadModels(true, provider)
                 onInstalled?.()

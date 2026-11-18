@@ -2,7 +2,7 @@ import type { ChildProcess } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import type { AntigravityRuntime, ModelInfo } from '@shared/types'
+import type { ModelInfo } from '@shared/types'
 import { installAcpUsagePreload } from './acp-usage'
 import { cliEnvironment, cliSearchDirectories, findCliExecutable, killCliProcessTree, normalizeCliPath, spawnCliProcess } from './cli-runtime'
 import { managedExecutable } from './managed-cli-location'
@@ -12,7 +12,6 @@ export interface ResolvedCli {
   prefixArgs: string[]
   display: string
   managed?: boolean
-  antigravityRuntime?: AntigravityRuntime
 }
 
 const isWin = process.platform === 'win32'
