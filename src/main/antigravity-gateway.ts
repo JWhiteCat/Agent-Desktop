@@ -8,6 +8,7 @@ export interface AntigravityGateway {
 }
 
 const carbonGeneration = /\/models\/gemini-4-carbon(?=:(?:streamGenerateContent|generateContent)$)/
+const qualifiedModelName = /^models\/([a-z0-9][a-z0-9._-]*(?:\/[a-z0-9][a-z0-9._-]*)*)$/i
 
 function carbonAlias(body: Buffer): string | undefined {
   try {
@@ -33,6 +34,56 @@ export async function openAntigravityGateway(endpoint: string): Promise<Antigrav
   const loopback = base.hostname === 'localhost' || base.hostname === '[::1]' || /^127(?:\.\d{1,3}){3}$/.test(base.hostname)
   const agent = new transport.Agent({ keepAlive: true, proxyEnv: loopback ? undefined : process.env })
   const prefix = `/${randomUUID()}`
+  const catalogs = new Map<string, Promise<string[]>>()
+
+  function listModels(url: URL, requestHeaders: http.IncomingHttpHeaders): Promise<string[]> {
+    const headers: http.OutgoingHttpHeaders = {}
+    for (const name of ['x-goog-api-key', 'authorization']) {
+      const value = requestHeaders[name]
+      if (value !== undefined) headers[name] = value
+    }
+    return new Promise<string[]>((resolve, reject) => {
+      const request = transport.get(url, {
+        agent, signal: AbortSignal.timeout(3000), headers
+      }, (response) => {
+        if (response.statusCode !== 200) {
+          response.resume()
+          resolve([])
+          return
+        }
+        const chunks: Buffer[] = []
+        response.on('data', (chunk: Buffer) => chunks.push(chunk))
+        response.on('error', reject)
+        response.on('end', () => {
+          try {
+            const { models } = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+            resolve(Array.isArray(models) ? models.flatMap((model) => {
+              const name = typeof model?.name === 'string' ? qualifiedModelName.exec(model.name)?.[1] : undefined
+              return name ? [name] : []
+            }) : [])
+          } catch {
+            resolve([])
+          }
+        })
+      })
+      request.on('error', reject)
+    }).catch(() => [])
+  }
+
+  async function advertisedAlias(target: URL, alias: string, headers: http.IncomingHttpHeaders): Promise<string | undefined> {
+    const catalog = new URL(base)
+    catalog.pathname = target.pathname.slice(0, target.pathname.lastIndexOf('/models/') + '/models'.length)
+    let listing = catalogs.get(catalog.href)
+    if (!listing) {
+      listing = listModels(catalog, headers)
+      catalogs.set(catalog.href, listing)
+    }
+    const models = await listing
+    return models.find((id) => id === alias)
+      ?? models.find((id) => id === `agy/${alias}`)
+      ?? models.find((id) => id.endsWith(`/${alias}`))
+  }
+
   const server = http.createServer((req, res) => {
     const path = req.url?.slice(prefix.length)
     if (!req.url?.startsWith(`${prefix}/`) || !path) {
@@ -64,7 +115,18 @@ export async function openAntigravityGateway(endpoint: string): Promise<Antigrav
       }
       if (res.destroyed) return
 
-      function forward(url: URL, retryOriginal = false): void {
+      function relay(response: http.IncomingMessage): void {
+        response.on('error', fail)
+        res.writeHead(response.statusCode ?? 502, forwardHeaders(response.headers))
+        response.pipe(res)
+      }
+
+      function forward(url: URL, retryOriginal = false, rejectedAlias?: http.IncomingMessage): void {
+        const onError = () => {
+          if (res.destroyed) return
+          if (rejectedAlias && !rejectedAlias.destroyed && !res.headersSent) relay(rejectedAlias)
+          else fail()
+        }
         const upstream = transport.request(url, {
           method: req.method, headers: { ...forwardHeaders(req.headers), host: url.host }, agent
         }, (response) => {
@@ -74,27 +136,33 @@ export async function openAntigravityGateway(endpoint: string): Promise<Antigrav
           }
           if (retryOriginal && (response.statusCode === 403 || response.statusCode === 404)) {
             // A gateway that only knows the base ID can still serve the turn.
-            response.destroy()
-            forward(target)
+            response.on('error', fail)
+            forward(target, false, response)
             return
           }
-          response.on('error', fail)
-          res.writeHead(response.statusCode ?? 502, forwardHeaders(response.headers))
-          response.pipe(res)
+          if (rejectedAlias && (response.statusCode ?? 502) >= 400) {
+            response.destroy()
+            onError()
+            return
+          }
+          rejectedAlias?.destroy()
+          relay(response)
         })
         res.once('close', () => {
           if (!res.writableFinished) upstream.destroy()
         })
-        upstream.on('error', fail)
+        upstream.on('error', onError)
         req.on('error', () => upstream.destroy())
         if (body) upstream.end(body)
         else req.pipe(upstream)
       }
 
       if (alias) {
+        const advertised = await advertisedAlias(target, alias, req.headers)
+        if (res.destroyed) return
         const aliased = new URL(target)
-        aliased.pathname = basePath + incoming.pathname.replace(carbonGeneration, `/models/${alias}`)
-        forward(aliased, true)
+        aliased.pathname = basePath + incoming.pathname.replace(carbonGeneration, `/models/${advertised ?? alias}`)
+        forward(aliased, !advertised)
       } else {
         forward(target)
       }

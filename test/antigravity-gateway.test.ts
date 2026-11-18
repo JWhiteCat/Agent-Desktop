@@ -12,15 +12,22 @@ afterEach(() => {
   for (const close of cleanups.splice(0).reverse()) close()
 })
 
-async function setup(allowed: string, level = 'high') {
+async function setup(allowed: string, level = 'high', models?: string[]) {
   const body = JSON.stringify({ generationConfig: { thinkingConfig: { thinkingLevel: level.toUpperCase() } } })
   const requests: { url?: string; key?: string | string[]; body: string }[] = []
+  const catalogs: { url?: string; key?: string | string[] }[] = []
   const upstream = http.createServer(async (req, res) => {
+    if (req.method === 'GET') {
+      catalogs.push({ url: req.url, key: req.headers['x-goog-api-key'] })
+      if (models) res.writeHead(200).end(JSON.stringify({ models: models.map((name) => ({ name })) }))
+      else res.writeHead(405).end()
+      return
+    }
     const chunks: Buffer[] = []
     for await (const chunk of req) chunks.push(chunk)
     requests.push({ url: req.url, key: req.headers['x-goog-api-key'], body: Buffer.concat(chunks).toString() })
     if (req.url !== `/prefix${API_PATH}${allowed}${STREAM_ACTION}`) {
-      res.writeHead(403).end('Model unavailable')
+      res.writeHead(403).end(`Model unavailable for ${req.url}`)
       return
     }
     res.writeHead(200, { 'content-type': 'text/event-stream' }).end(stream)
@@ -33,7 +40,7 @@ async function setup(allowed: string, level = 'high') {
   const send = (model: string) => fetch(`${gateway.endpoint}${API_PATH}${model}${STREAM_ACTION}`, {
     method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': 'fixture-key' }, body
   })
-  return { requests, send, body }
+  return { requests, catalogs, send, body }
 }
 
 describe('Antigravity custom gateway', () => {
@@ -52,6 +59,32 @@ describe('Antigravity custom gateway', () => {
     expect(requests.map(({ url }) => url)).toEqual([
       `/prefix${API_PATH}${CARBON}-high${STREAM_ACTION}`, `/prefix${API_PATH}${CARBON}${STREAM_ACTION}`
     ])
+  })
+
+  it('uses and caches the qualified alias from the authenticated model catalog', async () => {
+    const qualified = `agy/${CARBON}-high`
+    const { requests, catalogs, send } = await setup(qualified, 'high', [`models/agy/${CARBON}`, `models/${qualified}`])
+    expect(await (await send(CARBON)).text()).toBe(stream)
+    expect(await (await send(CARBON)).text()).toBe(stream)
+    expect(catalogs).toEqual([{ url: '/prefix/v1beta/models', key: 'fixture-key' }])
+    expect(requests.map(({ url }) => url)).toEqual(Array(2).fill(`/prefix${API_PATH}${qualified}${STREAM_ACTION}`))
+  })
+
+  it('returns the advertised alias error without retrying the base ID', async () => {
+    const qualified = `agy/${CARBON}-high`
+    const { requests, send } = await setup(CARBON, 'high', [`models/${qualified}`])
+    const response = await send(CARBON)
+    expect(response.status).toBe(403)
+    expect(await response.text()).toContain(qualified)
+    expect(requests).toHaveLength(1)
+  })
+
+  it('reports the alias error when neither alias nor base ID works without a catalog', async () => {
+    const { requests, send } = await setup('another-model')
+    const response = await send(CARBON)
+    expect(response.status).toBe(403)
+    expect(await response.text()).toContain(`${CARBON}-high`)
+    expect(requests).toHaveLength(2)
   })
 
   it('forwards other model IDs unchanged', async () => {
