@@ -38,7 +38,7 @@ export { leftPlanMode } from './session/provider'
 
 function checkProviderSandbox(launch: AgentLaunch, sandbox: string): void {
   if (launch.cli.antigravityRuntime === 'registry' && sandbox === 'enabled') {
-    throw new Error(translate('Antigravity 应用管理版不支持强制开启 CLI 沙箱，请在设置中选择「遵循 CLI 配置」。'))
+    throw new Error(translate('使用旧版 Antigravity ACP Registry 的对话无法强制开启 CLI 沙箱，请在设置中选择「遵循 CLI 配置」。'))
   }
 }
 

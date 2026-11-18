@@ -3,6 +3,8 @@ import path from 'node:path'
 import type { CliProvider } from '@shared/types'
 import { isExecutableFile } from './cli-runtime'
 
+export type CliInstallTarget = CliProvider | 'antigravity-registry'
+
 export interface ManagedExecutable {
   version: string
   command: string
@@ -15,8 +17,10 @@ export function configureManagedCliDirectory(dataDirectory: string): void {
   root = path.join(dataDirectory, 'cli')
 }
 
-export function managedCliDirectory(provider: CliProvider): string | undefined {
-  return root && path.join(root, provider)
+export function managedCliDirectory(target: CliInstallTarget): string | undefined {
+  // Keep the old ACP Registry activation record for conversations that still use it.
+  const directory = target === 'antigravity-registry' ? 'antigravity' : target === 'antigravity' ? 'antigravity-cli' : target
+  return root && path.join(root, directory)
 }
 
 /** Paths in the activation record are relative to a version directory. */
@@ -26,7 +30,7 @@ export function installPath(directory: string, relative: unknown): string | unde
   return path.join(directory, ...relative.split('/'))
 }
 
-export function managedExecutable(provider: CliProvider): ManagedExecutable | undefined {
+export function managedExecutable(provider: CliInstallTarget): ManagedExecutable | undefined {
   const directory = managedCliDirectory(provider)
   if (!directory) return undefined
   try {
@@ -40,7 +44,7 @@ export function managedExecutable(provider: CliProvider): ManagedExecutable | un
     // only other managed prefix is Google's published Linux runtime argument.
     const prefixArgs: string[] = []
     for (const arg of record.prefixArgs) {
-      if (provider === 'antigravity' && arg === '--uid=') prefixArgs.push(arg)
+      if (provider === 'antigravity-registry' && arg === '--uid=') prefixArgs.push(arg)
       else {
         const file = provider === 'cursor' ? installPath(payload, arg) : undefined
         if (!file || !fs.statSync(file).isFile()) return undefined

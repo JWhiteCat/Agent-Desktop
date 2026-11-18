@@ -12,7 +12,7 @@
 
 Choose a CLI in the composer or open **Settings → CLI** and click **Install**. Agent Desktop downloads and verifies the release on the host computer and stores it under `data/cli/` in the app data directory. This is available on Windows x64, macOS x64 and arm64, and Linux x64. Sign in or enter your API key after installation.
 
-The app uses the configured path first, then an existing installation, then its managed version. Codex and Claude use native versions matched to the included ACP adapters. An upgrade from a release with bundled CLIs may show **Install** again on the first use.
+The app uses the configured path first, then an existing installation, then its managed version. Codex and Claude use native versions matched to the included ACP adapters. For Antigravity, **Install** downloads Google’s official `agy` and checks that `agy acp` starts before activating it. After upgrading from a release that installed the Antigravity ACP Registry server, click **Install** to get `agy` if the app cannot find it on your system.
 
 ## Optional standalone installation
 
@@ -46,9 +46,9 @@ The app uses `@agentclientprotocol/claude-agent-acp` to run the detected Claude 
 
 ### Install Antigravity CLI
 
-Agent Desktop’s managed Antigravity installation provides the ACP server. To run `agy` in a terminal, install the standalone CLI (1.5.0 or later) using the [official installation guide](https://antigravity.google/docs/getting-started?tab=cli), also linked from **Settings → CLI → Antigravity CLI** when the app uses the managed server or cannot find an installation.
+To run the app-managed `agy` from a terminal, copy its executable path from **Settings → CLI → Antigravity CLI**. Agent Desktop keeps that copy under `data/cli/antigravity-cli/`. For regular terminal use of the managed copy, set `AGY_CLI_DISABLE_AUTO_UPDATE=true` in that shell so updates continue through Agent Desktop.
 
-Open a new terminal and run `agy --version` to verify the installation. In Agent Desktop, click **Check again** on the Antigravity card. With the CLI path left blank, new conversations use the detected `agy` through `agy acp`. Existing managed conversations continue to use the ACP server.
+To use the `agy` command by name on `PATH`, follow the [official installation guide](https://antigravity.google/docs/getting-started?tab=cli) to install version 1.5.0 or later. Open a new terminal and run `agy --version` to verify. In Agent Desktop, click **Check again** on the Antigravity card.
 
 ### CLI detection
 
@@ -77,7 +77,7 @@ Claude auth prefers the key in Settings, then `ANTHROPIC_API_KEY`. If either is 
 
 Antigravity uses the Gemini API key in Settings first, then `GEMINI_API_KEY`, then the credentials saved by the selected Antigravity runtime. The login button opens Google's personal account sign-in. For Gemini Enterprise or terminal sign-in, use the [Antigravity CLI authentication guide](https://antigravity.google/docs/ide/extensions/acp/#authentication).
 
-The managed Antigravity version runs Google’s official ACP Registry server. It uses its own sign-in and session store. Existing `agy` conversations continue through the standalone CLI. The setting that forces the CLI sandbox on is available with standalone `agy`. Antigravity exposes the models and thinking levels available to your account. Use **Settings → Appearance & History → Import** to import existing Antigravity conversations. The conversation menu can reload an imported transcript. Forking starts a separate session and sends the copied history with its first prompt.
+Both app-managed and standalone installations of `agy` use the CLI’s sign-in and session store and support the CLI sandbox setting. Conversations started with the older ACP Registry server continue to use that server and its separate sign-in and session store. Antigravity exposes the models and thinking levels available to your account. Use **Settings → Appearance & History → Import** to import existing Antigravity conversations. The conversation menu can reload an imported transcript. Forking starts a separate session and sends the copied history with its first prompt.
 
 Antigravity reads MCP from `~/.gemini/config/mcp_config.json` and `.agents/mcp_config.json`. Its local skills include `~/.gemini/antigravity-cli/skills`, `~/.gemini/skills`, and the project's `.agents/skills`.
 

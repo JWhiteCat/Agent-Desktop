@@ -21,6 +21,10 @@ import { forkThread, syncFromCli } from '../src/main/thread-history'
 const electron = vi.hoisted(() => ({ userData: '' }))
 vi.mock('electron', () => ({ app: { getPath: () => electron.userData } }))
 vi.mock('../src/main/skills', () => ({ syncAllManagedSkills: vi.fn() }))
+vi.mock('../src/main/antigravity-history', async (original) => ({
+  ...await original<typeof import('../src/main/antigravity-history')>(),
+  scanAntigravitySessions: vi.fn(async () => [])
+}))
 vi.mock('../src/main/cli', async (original) => ({
   ...await original<typeof import('../src/main/cli')>(),
   resolveCli: vi.fn(),

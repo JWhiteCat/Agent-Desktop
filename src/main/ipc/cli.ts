@@ -53,15 +53,16 @@ export function cliHandlers(deps: IpcDeps): Record<string, Handler> {
     const launch = resolveLaunch(provider, settings, runtime)
     const managed = launch && (launch.cli.managed || launch.claude?.managed || launch.codex?.managed)
     const custom = provider === 'cursor' ? settings.agentPath : settings[`${provider}Path`]
-    const unavailable = launch ? undefined : runtime === 'cli' ? 'antigravity-cli'
-      : runtime !== 'registry' && normalizeCliPath(custom ?? '') ? 'invalid-path' : !supportedInstallPlatform() ? 'platform' : undefined
-    return { source: launch ? managed ? 'managed' : 'external' : undefined, unavailable, ...installer.status(provider) }
+    const unavailable = launch ? undefined : runtime !== 'registry' && normalizeCliPath(custom ?? '') ? 'invalid-path'
+      : !supportedInstallPlatform() ? 'platform' : undefined
+    const target = runtime === 'registry' ? 'antigravity-registry' : provider
+    return { source: launch ? managed ? 'managed' : 'external' : undefined, unavailable, ...installer.status(target) }
   }
   const install = async (provider: CliProvider, threadId?: string) => {
     const state = installStatus(provider, threadId)
     if (state.unavailable || state.source === 'external') throw new Error(translate('当前 CLI 不能由应用安装'))
     try {
-      await installer.install(provider)
+      await installer.install(runtimeFor(provider, threadId) === 'registry' ? 'antigravity-registry' : provider)
       modelsCache.delete(provider)
       deps.sessions.dropIdle()
     } finally {

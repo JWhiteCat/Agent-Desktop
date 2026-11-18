@@ -50,7 +50,6 @@ export function CliInstallAction({ provider, threadId, status, onInstalled, offe
         ? t('正在下载 CLI… {percent}%', { percent: Math.min(100, Math.floor(status.received / status.total * 100)) })
         : t('正在下载 CLI…')
   const unavailable = status.unavailable === 'invalid-path' ? t('CLI 路径无效，请在「设置 → CLI」中修复或清除路径。')
-    : status.unavailable === 'antigravity-cli' ? t('此会话需要原来的 agy，请在「设置 → CLI」中指定路径。')
       : status.unavailable === 'platform' ? t('此平台暂不支持应用内安装。') : undefined
 
   return (

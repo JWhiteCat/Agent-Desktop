@@ -5,14 +5,14 @@ import path from 'node:path'
 import { Readable, Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { t as translate } from '@shared/i18n'
-import type { CliInstallStatus, CliProvider } from '@shared/types'
+import type { CliInstallStatus } from '@shared/types'
 import { x as extractTar } from 'tar'
 import { Open as zip } from 'unzipper'
 import { AcpConnection, MethodNotFound } from './acp'
 import { cliArtifact, type CliArtifact } from './cli-install-source'
 import { cliEnvironment, isExecutableFile, killCliProcessTree, spawnCliProcess } from './cli-runtime'
 import { writeTextSafely } from './local-files'
-import { installPath, managedCliDirectory, managedExecutable } from './managed-cli-location'
+import { installPath, managedCliDirectory, managedExecutable, type CliInstallTarget } from './managed-cli-location'
 
 type Fetch = (url: string, init?: RequestInit) => Promise<Response>
 type Progress = Omit<CliInstallStatus, 'source' | 'unavailable'>
@@ -81,7 +81,7 @@ async function download(fetchResource: Fetch, artifact: CliArtifact, archive: st
   if (hash.digest(artifact.integrity.encoding) !== artifact.integrity.digest) throw new Error(translate('CLI 安装包校验失败'))
 }
 
-export async function unpackCliArchive(archive: string, directory: string, format: CliArtifact['format']): Promise<void> {
+export async function unpackCliArchive(archive: string, directory: string, format: Exclude<CliArtifact['format'], 'binary'>): Promise<void> {
   let extracted = 0
   const validate = (name: string, size: number) => {
     const target = installPath(directory, name.replace(/\/$/, ''))
@@ -122,11 +122,14 @@ export async function unpackCliArchive(archive: string, directory: string, forma
   }
 }
 
-async function probe(provider: CliProvider, command: string, prefixArgs: string[]): Promise<void> {
-  const args = provider === 'antigravity' ? prefixArgs : [...prefixArgs, ...(provider === 'cursor' ? ['--disable-auto-update'] : []), '--version']
+async function probe(provider: CliInstallTarget, command: string, prefixArgs: string[]): Promise<void> {
+  const usesAcp = provider === 'antigravity' || provider === 'antigravity-registry'
+  const args = usesAcp ? provider === 'antigravity' ? ['acp'] : prefixArgs
+    : [...prefixArgs, ...(provider === 'cursor' ? ['--disable-auto-update'] : []), '--version']
+  const env = cliEnvironment(provider === 'antigravity' ? { AGY_CLI_DISABLE_AUTO_UPDATE: 'true' } : {}, path.dirname(command))
   const child = spawnCliProcess(command, args, {
-    cwd: os.homedir(), env: cliEnvironment({}, path.dirname(command)),
-    windowsHide: true, stdio: [provider === 'antigravity' ? 'pipe' : 'ignore', 'pipe', 'pipe']
+    cwd: os.homedir(), env,
+    windowsHide: true, stdio: [usesAcp ? 'pipe' : 'ignore', 'pipe', 'pipe']
   })
   child.stderr?.resume()
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -136,7 +139,7 @@ async function probe(provider: CliProvider, command: string, prefixArgs: string[
         timer = setTimeout(() => reject(new Error(translate('CLI 安装验证超时'))), 30_000)
         child.once('error', reject)
       }),
-      provider === 'antigravity'
+      usesAcp
         ? (async () => {
             const acp = new AcpConnection(child)
             acp.start({ onNotification() {}, onRequest: async (method) => { throw new MethodNotFound(method) } })
@@ -157,7 +160,7 @@ async function probe(provider: CliProvider, command: string, prefixArgs: string[
   }
 }
 
-function payloadEntry(provider: CliProvider, artifact: CliArtifact, directory: string): { command: string; prefixArgs: string[] } {
+function payloadEntry(provider: CliInstallTarget, artifact: CliArtifact, directory: string): { command: string; prefixArgs: string[] } {
   const command = installPath(directory, artifact.command)!
   if (provider === 'cursor' && process.platform === 'win32' && !isExecutableFile(command)) {
     return { command: 'dist-package/node.exe', prefixArgs: ['dist-package/index.js'] }
@@ -166,8 +169,8 @@ function payloadEntry(provider: CliProvider, artifact: CliArtifact, directory: s
 }
 
 export class CliInstaller {
-  private tasks = new Map<CliProvider, Promise<void>>()
-  private progress = new Map<CliProvider, Progress>()
+  private tasks = new Map<CliInstallTarget, Promise<void>>()
+  private progress = new Map<CliInstallTarget, Progress>()
 
   constructor(
     private readonly fetchResource: Fetch,
@@ -175,11 +178,11 @@ export class CliInstaller {
     private readonly artifactFor = cliArtifact
   ) {}
 
-  status(provider: CliProvider): Progress {
+  status(provider: CliInstallTarget): Progress {
     return this.progress.get(provider) ?? {}
   }
 
-  install(provider: CliProvider): Promise<void> {
+  install(provider: CliInstallTarget): Promise<void> {
     const pending = this.tasks.get(provider)
     if (pending) return pending
     const change = (status: Progress) => this.progress.set(provider, status)
@@ -194,7 +197,7 @@ export class CliInstaller {
     return task
   }
 
-  private async downloadAndActivate(provider: CliProvider, change: (status: Progress) => void): Promise<void> {
+  private async downloadAndActivate(provider: CliInstallTarget, change: (status: Progress) => void): Promise<void> {
     const root = managedCliDirectory(provider)
     if (!root) throw new Error(translate('CLI 安装目录不可用'))
     const artifact = await this.artifactFor(provider, (url) => readJson(this.fetchResource, url))
@@ -214,7 +217,14 @@ export class CliInstaller {
       change({ phase: 'installing' })
       await fs.promises.mkdir(versions, { recursive: true })
       await fs.promises.mkdir(versionDirectory, { mode: 0o700 })
-      await unpackCliArchive(archive, versionDirectory, artifact.format)
+      if (artifact.format === 'binary') {
+        await fs.promises.rename(archive, installPath(versionDirectory, artifact.command)!)
+      } else {
+        await unpackCliArchive(archive, versionDirectory, artifact.format)
+        if (artifact.archiveEntry) {
+          await fs.promises.rename(installPath(versionDirectory, artifact.archiveEntry)!, installPath(versionDirectory, artifact.command)!)
+        }
+      }
       const entry = payloadEntry(provider, artifact, versionDirectory)
       // Native Windows processes can hold their executable open briefly after
       // the probe. Probe at the final path, then publish the activation record.

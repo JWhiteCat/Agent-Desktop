@@ -100,13 +100,12 @@ export function CliCard({
           </>
         )}
         <CliInstallAction provider={provider} status={installation} onInstalled={() => void check()} />
-        {provider === 'antigravity' && info && (!info.found || info.source === 'managed') && (
-          <div className="muted small">
-            {info.source === 'managed' && <>{t('应用管理版是 ACP 服务。在终端运行 agy 需要安装独立版。')}{' '}</>}
+        {provider === 'antigravity' && info && (
+          info.source === 'managed' ? <div className="muted small">{t('在终端可通过上方路径运行 agy。')}</div> : !info.found && (
             <Hyperlink href="https://antigravity.google/docs/getting-started?tab=cli" target="_blank" rel="noreferrer">
               {t('终端版 agy 安装指南')}
             </Hyperlink>
-          </div>
+          )
         )}
         <div className="row-gap wrap">
           <button className="btn" onClick={() => void check()} disabled={checking || loggingIn || updating || saving}>

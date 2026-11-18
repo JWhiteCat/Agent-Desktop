@@ -8,12 +8,11 @@ import type { ResolvedCli } from './cli'
 import { cliEnvironment, cliSearchDirectories, findCliExecutable, killCliProcessTree, normalizeCliPath, spawnCliProcess } from './cli-runtime'
 import { managedExecutable } from './managed-cli-location'
 
-export function resolveAntigravity(customPath: string, runtime?: AntigravityRuntime): ResolvedCli | undefined {
-  const installed = () => {
-    const entry = managedExecutable('antigravity')
-    return entry && { ...entry, display: entry.command, managed: true, antigravityRuntime: 'registry' as const }
+export function resolveAntigravity(customPath: string, runtime: AntigravityRuntime = 'cli'): (ResolvedCli & { version?: string }) | undefined {
+  if (runtime === 'registry') {
+    const entry = managedExecutable('antigravity-registry')
+    return entry && { ...entry, display: entry.command, managed: true, antigravityRuntime: runtime }
   }
-  if (runtime === 'registry') return installed()
   const name = process.platform === 'win32' ? 'agy.exe' : 'agy'
   const custom = normalizeCliPath(customPath)
   const locations = custom ? [custom] : cliSearchDirectories().map((dir) => path.join(dir, name))
@@ -27,7 +26,8 @@ export function resolveAntigravity(customPath: string, runtime?: AntigravityRunt
       return { command, prefixArgs: [], display: command, antigravityRuntime: 'cli' }
     }
   }
-  return !custom && runtime !== 'cli' ? installed() : undefined
+  const entry = !custom && managedExecutable('antigravity')
+  return entry ? { ...entry, display: entry.command, managed: true, antigravityRuntime: runtime } : undefined
 }
 
 export function resolveAntigravityApiKey(configured: string): string {
@@ -35,7 +35,10 @@ export function resolveAntigravityApiKey(configured: string): string {
 }
 
 export function spawnAntigravity(cli: ResolvedCli, args: string[], cwd: string, apiKey: string) {
-  const env = cliEnvironment({ NO_COLOR: '1', GEMINI_API_KEY: apiKey }, path.dirname(cli.command))
+  const env = cliEnvironment({
+    NO_COLOR: '1', GEMINI_API_KEY: apiKey,
+    ...(cli.managed && cli.antigravityRuntime === 'cli' ? { AGY_CLI_DISABLE_AUTO_UPDATE: 'true' } : {})
+  }, path.dirname(cli.command))
   const runtimeArgs = cli.antigravityRuntime === 'registry' ? cli.prefixArgs : args
   return spawnCliProcess(cli.command, runtimeArgs, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true })
 }
@@ -49,7 +52,7 @@ export function requireAntigravity(customPath: string, runtime?: AntigravityRunt
 export async function antigravityCliInfo(customPath: string, apiKey: string, runtime?: AntigravityRuntime): Promise<CliInfo> {
   const cli = resolveAntigravity(customPath, runtime)
   if (!cli) return { found: false }
-  if (cli.managed) return { found: true, source: 'managed', path: cli.display, version: managedExecutable('antigravity')?.version, hasApiKey: !!apiKey }
+  if (cli.managed) return { found: true, source: 'managed', path: cli.display, version: cli.version, hasApiKey: !!apiKey }
   const child = spawnAntigravity(cli, ['--version'], os.homedir(), '')
   let version = ''
   child.stdout?.setEncoding('utf8').on('data', (chunk: string) => { version += chunk })

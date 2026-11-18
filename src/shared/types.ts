@@ -466,7 +466,7 @@ export type AntigravityRuntime = 'cli' | 'registry'
 
 export interface CliInstallStatus {
   source?: 'external' | 'managed'
-  unavailable?: 'invalid-path' | 'platform' | 'antigravity-cli'
+  unavailable?: 'invalid-path' | 'platform'
   phase?: 'downloading' | 'verifying' | 'installing'
   received?: number
   total?: number

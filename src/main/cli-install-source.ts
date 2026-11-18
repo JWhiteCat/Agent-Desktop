@@ -1,11 +1,12 @@
-import type { CliProvider } from '@shared/types'
+import type { CliInstallTarget } from './managed-cli-location'
 
 export interface CliArtifact {
   version: string
   url: string
-  format: 'zip' | 'tar.gz'
+  format: 'zip' | 'tar.gz' | 'binary'
   integrity: { algorithm: 'sha256' | 'sha512'; digest: string; encoding: 'hex' | 'base64' }
   command: string
+  archiveEntry?: string
   prefixArgs?: string[]
 }
 
@@ -20,7 +21,14 @@ const cursorChecksums = {
   'darwin-arm64': '2e4a679c498d98eb2706ad7d90ccd256e5eb2f6cb3fe2cb4a9dd7f2dbd3efce0',
   'linux-x64': '189ed41d8963cd22dcdafbbd62f072cc55ac08374c922dbd04aee525f4018ab6'
 }
-const googleManifest = 'https://raw.githubusercontent.com/agentclientprotocol/registry/main/antigravity-acp/agent.json'
+const registryManifest = 'https://raw.githubusercontent.com/agentclientprotocol/registry/main/antigravity-acp/agent.json'
+const agyManifests = 'https://antigravity-cli-auto-updater-974169037036.us-central1.run.app/manifests'
+const agyReleasePaths = {
+  'win32-x64': 'windows-x64/cli_windows_x64.exe',
+  'darwin-x64': 'darwin-x64/cli_mac_x64.tar.gz',
+  'darwin-arm64': 'darwin-arm/cli_mac_arm64.tar.gz',
+  'linux-x64': 'linux-x64/cli_linux_x64.tar.gz'
+}
 const npmRegistry = 'https://registry.npmjs.org'
 
 export function supportedInstallPlatform(platform = process.platform, arch = process.arch): boolean {
@@ -28,7 +36,7 @@ export function supportedInstallPlatform(platform = process.platform, arch = pro
 }
 
 export async function cliArtifact(
-  provider: CliProvider, readJson: (url: string) => Promise<any>,
+  provider: CliInstallTarget, readJson: (url: string) => Promise<any>,
   platform = process.platform, arch = process.arch
 ): Promise<CliArtifact> {
   if (!supportedInstallPlatform(platform, arch)) throw new Error('Unsupported CLI installation platform')
@@ -47,7 +55,20 @@ export async function cliArtifact(
     }
   }
   if (provider === 'antigravity') {
-    const manifest = await readJson(googleManifest)
+    const manifestPlatform = `${win ? 'windows' : platform}_${arch === 'arm64' ? 'arm64' : 'amd64'}`
+    const manifest = await readJson(`${agyManifests}/${manifestPlatform}.json`)
+    const { version, url, sha512 } = manifest ?? {}
+    const release = typeof url === 'string' && /^https:\/\/storage\.googleapis\.com\/antigravity-public\/antigravity-cli\/(\d+\.\d+\.\d+)-\d+\/([^?#]+)$/.exec(url)
+    if (!release || release[1] !== version || release[2] !== agyReleasePaths[target]
+      || typeof sha512 !== 'string' || !/^[a-f0-9]{128}$/i.test(sha512)) throw new Error('Invalid Antigravity CLI release')
+    return {
+      version, url, format: win ? 'binary' : 'tar.gz', command: `agy${ext}`,
+      ...(win ? {} : { archiveEntry: 'antigravity' }),
+      integrity: { algorithm: 'sha512', digest: sha512.toLowerCase(), encoding: 'hex' }
+    }
+  }
+  if (provider === 'antigravity-registry') {
+    const manifest = await readJson(registryManifest)
     const build = manifest?.distribution?.binary?.[`${win ? 'windows' : platform}-${machine}`]
     const command = win ? 'agy_acp_server.exe' : 'agy_acp_server.par'
     const args = platform === 'linux' ? ['--uid='] : []
