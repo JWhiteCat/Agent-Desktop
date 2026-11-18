@@ -179,7 +179,7 @@ it('resumes an Antigravity conversation through native ACP and reuses the proces
     await ctx.send('continue')
     await ctx.send('follow up')
     expect(spawnAntigravity).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({ command: process.execPath }), ['acp'], ctx.worktree, 'key', 'https://gemini.example/v1beta'
+      expect.objectContaining({ command: process.execPath }), ['acp'], ctx.worktree, 'key', expect.stringMatching(/^http:\/\/127\.0\.0\.1:\d+\//)
     )
     expect(ctx.calls.map(({ method }) => method)).toEqual([
       'initialize', 'authenticate', 'session/resume', 'session/set_mode', 'session/prompt', 'session/set_mode', 'session/prompt'

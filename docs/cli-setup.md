@@ -77,6 +77,8 @@ Claude auth prefers the key in Settings, then `ANTHROPIC_API_KEY`. If either is 
 
 For a custom Gemini-compatible service, open **Settings → CLI → Antigravity CLI** in the desktop app, enter your **API Key** and **API endpoint**, then click **Save API configuration**. You can paste the address and key from the Antigravity provider card in CC Switch. The endpoint field takes precedence over `GOOGLE_GEMINI_BASE_URL`. If both are blank, `agy` uses Google's default endpoint.
 
+For Gemini 4 Carbon requests to a custom gateway, the app uses the selected thinking level to send `gemini-4-carbon-high`, `gemini-4-carbon-medium`, or `gemini-4-carbon-low`. If the gateway returns `403` or `404` for the alias, the app retries once with the base ID `gemini-4-carbon`. The CLI connects directly to Google's default endpoint.
+
 Antigravity uses the Gemini API key in Settings first, then `GEMINI_API_KEY`, then the credentials saved by `agy`. The login button opens Google's personal account sign-in. For Gemini Enterprise or terminal sign-in, use the [Antigravity CLI authentication guide](https://antigravity.google/docs/ide/extensions/acp/#authentication).
 
 Both app-managed and standalone installations of `agy` use the CLI’s sign-in and session store and support the CLI sandbox setting. Antigravity exposes the models and thinking levels available to your account. Use **Settings → Appearance & History → Import** to import existing `agy` conversations. The conversation menu can reload an imported transcript. Forking starts a separate session and sends the copied history with its first prompt.

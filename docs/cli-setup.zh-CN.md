@@ -77,6 +77,8 @@ Claude 认证优先使用设置中的 Key，其次是 `ANTHROPIC_API_KEY`。只�
 
 使用兼容 Gemini API 的服务时，在桌面应用的 **设置 → CLI → Antigravity CLI** 填写 **API Key** 和 **API 端点**，然后点击**保存 API 配置**。可以粘贴 CC Switch 的 Antigravity 供应商卡片里的地址和 Key。设置中的端点优先于 `GOOGLE_GEMINI_BASE_URL`，两者都为空时使用 Google 默认地址。
 
+通过自定义网关使用 Gemini 4 Carbon 时，应用会按当前推理档位发送 `gemini-4-carbon-high`、`gemini-4-carbon-medium` 或 `gemini-4-carbon-low`。网关对别名返回 `403` 或 `404` 时，应用会用基础 ID `gemini-4-carbon` 重试一次。Google 默认端点由 CLI 直接访问。
+
 Antigravity 优先使用设置中的 Gemini API Key，其次是 `GEMINI_API_KEY`，最后使用 `agy` 已保存的凭据。登录按钮打开 Google 个人账号登录。Gemini Enterprise 或终端登录请参阅 [Antigravity CLI 认证指南](https://antigravity.google/docs/ide/extensions/acp/#authentication)。
 
 应用管理版和独立安装的 `agy` 共用 CLI 的登录和历史存储，均适用 CLI 沙箱设置。应用会读取当前账号可用的模型和思考级别。在 **设置 → 外观与历史 → 导入** 可以导入已有的 `agy` 会话。对话菜单可重新同步历史。分叉会新建独立会话，并在第一次发送时传入复制的历史。

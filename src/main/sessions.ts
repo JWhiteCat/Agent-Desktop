@@ -33,12 +33,14 @@ import {
 } from './session/provider'
 import { abandonQuestions, answerPendingQuestion, onAcpRequest, onIdleAcpRequest, settleQuestion, type InteractionRun } from './session/requests'
 import type { Store } from './store'
+import { openAntigravityGateway, type AntigravityGateway } from './antigravity-gateway'
 
 export { leftPlanMode } from './session/provider'
 
 /** One ACP process kept alive so the next message skips startup and session restoration. */
 interface AgentProc extends SessionConnection {
   child: ChildProcess
+  antigravityGateway?: AntigravityGateway
   acp: AcpConnection
   cwd: string
   /** Worktree the CLI created for `--worktree`. New sessions start there instead of `cwd`. */
@@ -531,7 +533,9 @@ export class SessionManager {
     if (!proc) {
       const args = provider === 'cursor' ? cursorArgs(req, settings.sandbox, cwd, !!thread.chatId)
         : provider === 'antigravity' ? antigravityArgs(settings.sandbox, mcpServers) : []
-      proc = this.openProc(thread.id, provider, launch, args, cwd, apiKey, fingerprint)
+      const opening = this.openTurnProc(thread.id, provider, launch, args, cwd, apiKey, fingerprint, cancelled)
+      proc = opening instanceof Promise ? await opening : opening
+      if (!proc) return false
     }
     proc.force = req.force
 
@@ -680,6 +684,25 @@ export class SessionManager {
     return proc.ready && !proc.dying && proc.child.exitCode === null && proc.fingerprint === fingerprint
   }
 
+  private openTurnProc(
+    threadId: string, provider: CliProvider, launch: AgentLaunch, args: string[], cwd: string,
+    apiKey: string, fingerprint: string, cancelled: () => boolean
+  ): AgentProc | Promise<AgentProc | undefined> {
+    const endpoint = launch.antigravityEndpoint
+    if (provider !== 'antigravity' || !apiKey || !endpoint || new URL(endpoint).hostname === 'generativelanguage.googleapis.com') {
+      return this.openProc(threadId, provider, launch, args, cwd, apiKey, fingerprint)
+    }
+    return openAntigravityGateway(endpoint).then((gateway) => {
+      try {
+        if (!cancelled()) return this.openProc(threadId, provider, launch, args, cwd, apiKey, fingerprint, true, gateway)
+      } catch (error) {
+        gateway.close()
+        throw error
+      }
+      gateway.close()
+    })
+  }
+
   private openProc(
     threadId: string,
     provider: CliProvider,
@@ -688,11 +711,14 @@ export class SessionManager {
     cwd: string,
     apiKey: string,
     fingerprint: string,
-    trackCommands = true
+    trackCommands = true,
+    antigravityGateway?: AntigravityGateway
   ): AgentProc {
-    const child = spawnProvider(provider, launch, args, cwd, apiKey)
+    const routedLaunch = antigravityGateway ? { ...launch, antigravityEndpoint: antigravityGateway.endpoint } : launch
+    const child = spawnProvider(provider, routedLaunch, args, cwd, apiKey)
     const proc: AgentProc = {
       child,
+      antigravityGateway,
       acp: undefined as unknown as AcpConnection,
       provider,
       sessionId: '',
@@ -757,6 +783,7 @@ export class SessionManager {
       if (run?.proc === proc) this.endRun(threadId, run, null, err)
     })
     child.on('close', (code) => {
+      antigravityGateway?.close()
       if (this.agents.get(threadId) === proc) this.agents.delete(threadId)
       const run = this.runs.get(threadId)
       if (run?.proc !== proc) return
@@ -776,6 +803,7 @@ export class SessionManager {
       if (kept === proc) this.agents.delete(id)
     }
     killTree(proc.child)
+    proc.antigravityGateway?.close()
   }
 
   private discard(threadId: string): void {
@@ -835,7 +863,9 @@ export class SessionManager {
       syncAllManagedSkills(settings.skills)
       const args = provider === 'cursor' ? cursorArgs(req, settings.sandbox, cwd, true)
         : provider === 'antigravity' ? antigravityArgs(settings.sandbox, mcpServers) : []
-      proc = this.openProc(threadId, provider, launch, args, cwd, apiKey, fingerprint)
+      const opening = this.openTurnProc(threadId, provider, launch, args, cwd, apiKey, fingerprint, cancelled)
+      proc = opening instanceof Promise ? await opening : opening
+      if (!proc) return []
     }
     proc.force = opts.force
     // Track startup too: deletion, settings changes, and shutdown must be able
