@@ -33,7 +33,7 @@ import {
 } from './session/provider'
 import { abandonQuestions, answerPendingQuestion, onAcpRequest, onIdleAcpRequest, settleQuestion, type InteractionRun } from './session/requests'
 import type { Store } from './store'
-import { openAntigravityGateway, type AntigravityGateway } from './antigravity-gateway'
+import { openAntigravityGateway, usesAntigravityGateway, type AntigravityGateway } from './antigravity-gateway'
 
 export { leftPlanMode } from './session/provider'
 
@@ -708,7 +708,7 @@ export class SessionManager {
     apiKey: string, fingerprint: string, cancelled: () => boolean
   ): AgentProc | Promise<AgentProc | undefined> {
     const endpoint = launch.antigravityEndpoint
-    if (provider !== 'antigravity' || !apiKey || !endpoint || new URL(endpoint).hostname === 'generativelanguage.googleapis.com') {
+    if (provider !== 'antigravity' || !usesAntigravityGateway(endpoint, apiKey)) {
       return this.openProc(threadId, provider, launch, args, cwd, apiKey, fingerprint)
     }
     return openAntigravityGateway(endpoint).then((gateway) => {

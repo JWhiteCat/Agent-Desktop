@@ -34,6 +34,7 @@ export const settingsMessages: Record<string, string> = {
   '优先使用设置中的 Key，其次使用 GEMINI_API_KEY。都为空时使用 agy 已保存的登录。': 'The key in Settings takes precedence over GEMINI_API_KEY. With neither set, agy uses its saved sign-in.',
   'Antigravity CLI 登录成功': 'Signed in to Antigravity CLI',
   'Antigravity CLI 请求超时': 'Antigravity CLI request timed out',
+  'Antigravity CLI 未返回可用于网关请求的默认模型。': 'Antigravity CLI did not return a default model for gateway requests.',
   'Antigravity CLI 只支持 stdio 和 HTTP 传输': 'Antigravity CLI supports stdio and HTTP transports',
   '未能读取 Antigravity CLI 会话历史': 'Could not read the Antigravity CLI conversation history',
   '未找到可导入的 CLI 会话': 'No CLI conversations available to import',

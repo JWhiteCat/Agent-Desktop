@@ -1,6 +1,7 @@
 import http from 'node:http'
-import { afterEach, describe, expect, it } from 'vitest'
-import { openAntigravityGateway } from '../src/main/antigravity-gateway'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { listAntigravityGatewayModels, openAntigravityGateway } from '../src/main/antigravity-gateway'
+import { applySessionOptions, type SessionConnection } from '../src/main/session/provider'
 
 const API_PATH = '/v1beta/models/'
 const STREAM_ACTION = ':streamGenerateContent?alt=sse'
@@ -12,14 +13,16 @@ afterEach(() => {
   for (const close of cleanups.splice(0).reverse()) close()
 })
 
-async function setup(allowed: string, level = 'high', models?: string[]) {
-  const body = JSON.stringify({ generationConfig: { thinkingConfig: { thinkingLevel: level.toUpperCase() } } })
+async function setup(allowed: string, level = 'high', models?: (string | { name: string; displayName: string })[]) {
+  const body = JSON.stringify({ generationConfig: { maxOutputTokens: 100, thinkingConfig: { thinkingLevel: level.toUpperCase() } } })
   const requests: { url?: string; key?: string | string[]; body: string }[] = []
   const catalogs: { url?: string; key?: string | string[] }[] = []
   const upstream = http.createServer(async (req, res) => {
     if (req.method === 'GET') {
       catalogs.push({ url: req.url, key: req.headers['x-goog-api-key'] })
-      if (models) res.writeHead(200).end(JSON.stringify({ models: models.map((name) => ({ name })) }))
+      if (models) res.writeHead(200).end(JSON.stringify({
+        models: models.map((model) => typeof model === 'string' ? { name: model } : model)
+      }))
       else res.writeHead(405).end()
       return
     }
@@ -35,15 +38,56 @@ async function setup(allowed: string, level = 'high', models?: string[]) {
   await new Promise<void>((resolve) => upstream.listen(0, '127.0.0.1', resolve))
   cleanups.push(() => { upstream.close(); upstream.closeAllConnections() })
   const address = upstream.address() as { port: number }
-  const gateway = await openAntigravityGateway(`http://127.0.0.1:${address.port}/prefix/`)
+  const endpoint = `http://127.0.0.1:${address.port}/prefix/`
+  const gateway = await openAntigravityGateway(endpoint)
   cleanups.push(gateway.close)
   const send = (model: string) => fetch(`${gateway.endpoint}${API_PATH}${model}${STREAM_ACTION}`, {
     method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': 'fixture-key' }, body
   })
-  return { requests, catalogs, send, body }
+  return { requests, catalogs, send, body, endpoint, gateway }
 }
 
 describe('Antigravity custom gateway', () => {
+  it('discovers qualified AGY catalog entries with their upstream labels and API key', async () => {
+    const id = 'agy/claude-opus-5-5-high'
+    const label = 'Claude Opus 5.5 (High)'
+    const { endpoint, catalogs } = await setup(id, 'high', [
+      { name: `models/${id}`, displayName: label },
+      'models/other/claude-opus-5-5-high',
+      'models/agy/../invalid'
+    ])
+    expect(await listAntigravityGatewayModels(endpoint, 'fixture-key')).toEqual([{ id, label }])
+    expect(catalogs).toEqual([{ url: '/prefix/v1beta/models', key: 'fixture-key' }])
+  })
+
+  it('routes an ACP-unlisted model to its full ID and clears the route on Auto', async () => {
+    const id = 'agy/claude-opus-5-5-high'
+    const cliId = 'gemini-3.1-pro'
+    const cliApiId = 'gemini-3.1-pro-preview'
+    const { gateway, send, requests, body } = await setup(id)
+    const defaults = [{
+      type: 'select', id: 'model', currentValue: cliId, options: [{ value: cliId }, { value: CARBON }]
+    }]
+    const request = vi.fn(async () => ({ configOptions: defaults }))
+    const session: SessionConnection = {
+      provider: 'antigravity', sessionId: 'agy-session', acp: { request }, antigravityGateway: gateway,
+      antigravityOptions: [{ ...defaults[0], currentValue: CARBON }], antigravityDefaults: defaults
+    }
+    const turn = { threadId: 'thread', prompt: '', mode: 'agent', force: false } as const
+    await applySessionOptions(session, { ...turn, model: id }, 'default')
+    expect(request.mock.calls).toEqual([
+      ['session/set_mode', { sessionId: 'agy-session', modeId: 'default' }],
+      ['session/set_config_option', { sessionId: 'agy-session', configId: 'model', value: cliId }]
+    ])
+    expect(await (await send(cliApiId)).text()).toBe(stream)
+    await applySessionOptions(session, { ...turn, model: 'auto' }, 'default')
+    expect((await send(cliApiId)).status).toBe(403)
+    expect(requests).toEqual([
+      { url: `/prefix${API_PATH}${id}${STREAM_ACTION}`, key: 'fixture-key', body: '{"generationConfig":{"maxOutputTokens":100}}' },
+      { url: `/prefix${API_PATH}${cliApiId}${STREAM_ACTION}`, key: 'fixture-key', body }
+    ])
+  })
+
   it.each(['low', 'medium', 'high'])('sends the Carbon %s alias with the original key, payload, and SSE query', async (level) => {
     const { requests, send, body } = await setup(`${CARBON}-${level}`, level)
     const response = await send(CARBON)

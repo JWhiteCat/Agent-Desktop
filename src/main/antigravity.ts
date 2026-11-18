@@ -4,6 +4,7 @@ import path from 'node:path'
 import { t as translate } from '@shared/i18n'
 import type { CliInfo, ModelInfo, Settings } from '@shared/types'
 import { AcpConnection, MethodNotFound } from './acp'
+import { listAntigravityGatewayModels, usesAntigravityGateway } from './antigravity-gateway'
 import type { ResolvedCli } from './cli'
 import { cliEnvironment, cliSearchDirectories, findCliExecutable, killCliProcessTree, normalizeCliPath, spawnCliProcess } from './cli-runtime'
 import { managedExecutable } from './managed-cli-location'
@@ -141,7 +142,7 @@ export function antigravityConfig(options: unknown, category: 'model' | 'thought
     && Array.isArray(option.options) && (option.category === category || option.id === category))
 }
 
-function choices(option: SelectOption | undefined): Choice[] {
+export function antigravityChoices(option: SelectOption | undefined): Choice[] {
   return (option?.options ?? []).flatMap((choice) => {
     if (choice && typeof choice === 'object' && 'options' in choice && Array.isArray(choice.options)) return choice.options as Choice[]
     return [choice]
@@ -152,10 +153,12 @@ export async function listAntigravityModels(customPath: string, auth: Antigravit
   const cli = requireAntigravity(customPath)
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-desktop-agy-'))
   try {
-    return await withAntigravityAcp(cli, cwd, auth, async (acp) => {
+    const gatewayModels = usesAntigravityGateway(auth.endpoint, auth.apiKey)
+      ? listAntigravityGatewayModels(auth.endpoint, auth.apiKey) : []
+    const nativeModels = withAntigravityAcp(cli, cwd, auth, async (acp) => {
       const created = await acp.request('session/new', { cwd, mcpServers: [] })
       const model = antigravityConfig(created?.configOptions, 'model')
-      const available = choices(model)
+      const available = antigravityChoices(model)
       if (!model || !available.length) return []
       available.sort((a, b) => Number(b.value === model.currentValue) - Number(a.value === model.currentValue))
       // The adapter can offer different thinking levels after a model change.
@@ -172,7 +175,7 @@ export async function listAntigravityModels(customPath: string, auth: Antigravit
           }
         }
         const effort = antigravityConfig(state?.configOptions, 'thought_level')
-        const levels = choices(effort)
+        const levels = antigravityChoices(effort)
         levels.sort((a, b) => Number(b.value === effort?.currentValue) - Number(a.value === effort?.currentValue))
         if (!levels.length) models.push(base)
         for (const level of levels) {
@@ -181,6 +184,21 @@ export async function listAntigravityModels(customPath: string, auth: Antigravit
       }
       return models
     })
+    const [native, upstream] = await Promise.all([nativeModels, gatewayModels])
+    if (!native.length || !upstream.length) return native
+
+    const seen = new Set<string>()
+    for (const { id } of native) {
+      const [base, level] = id.split('[effort=')
+      const qualified = base.startsWith('agy/') ? base : `agy/${base}`
+      seen.add(qualified)
+      if (level) seen.add(`${qualified}-${level.slice(0, -1)}`)
+    }
+    return [...native, ...upstream.filter(({ id }) => {
+      if (seen.has(id)) return false
+      seen.add(id)
+      return true
+    })]
   } finally {
     try { fs.rmdirSync(cwd) } catch { /* The CLI may still be releasing the directory. */ }
   }

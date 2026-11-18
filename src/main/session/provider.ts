@@ -2,7 +2,8 @@ import type { ChildProcess } from 'node:child_process'
 import { t as translate } from '@shared/i18n'
 import type { CliProvider, SendRequest, Settings } from '@shared/types'
 import { claudePlanModePrompt, codexPlanModePrompt, planModePrompt, type AcpConnection } from '../acp'
-import { antigravityConfig, resolveAntigravity, resolveAntigravityApiKey, resolveAntigravityEndpoint, spawnAntigravity } from '../antigravity'
+import { antigravityChoices, antigravityConfig, resolveAntigravity, resolveAntigravityApiKey, resolveAntigravityEndpoint, spawnAntigravity } from '../antigravity'
+import { isAntigravityGatewayModel, type AntigravityGateway } from '../antigravity-gateway'
 import { resolveApiKey, resolveCli, spawnCli, type ResolvedCli } from '../cli'
 import {
   claudeAsCli, claudeModeId, CLAUDE_EFFORT_CONFIG_ID, CLAUDE_MODEL_CONFIG_ID,
@@ -19,6 +20,7 @@ export interface SessionConnection {
   cursorModel?: string
   antigravityOptions?: unknown
   antigravityDefaults?: unknown
+  antigravityGateway?: Pick<AntigravityGateway, 'selectModel'>
 }
 
 export interface AgentLaunch {
@@ -185,7 +187,16 @@ async function applyAntigravityOptions(session: SessionConnection, req: SendRequ
   const match = /^(.*)\[effort=([^\]]+)\]$/.exec(req.model)
   const model = antigravityConfig(session.antigravityOptions, 'model')
   const defaultModel = antigravityConfig(session.antigravityDefaults, 'model')?.currentValue
-  const selected = !req.model || req.model === 'auto' ? defaultModel : match?.[1] ?? req.model
+  const requested = match?.[1] ?? req.model
+  // agy only accepts IDs in its ACP model picker. Use its default model in ACP
+  // and map that model's Gemini generation requests to the selected upstream ID.
+  const upstreamId = session.antigravityGateway && isAntigravityGatewayModel(req.model)
+    && requested !== model?.currentValue && !antigravityChoices(model).some(({ value }) => value === requested)
+    ? requested : undefined
+  if (upstreamId && (!model || !defaultModel)) {
+    throw new Error(translate('Antigravity CLI 未返回可用于网关请求的默认模型。'))
+  }
+  const selected = !req.model || req.model === 'auto' || upstreamId ? defaultModel : requested
   if (model && selected && selected !== model.currentValue) {
     const reply = await acp.request('session/set_config_option', { sessionId, configId: model.id, value: selected })
     if (Array.isArray(reply?.configOptions)) session.antigravityOptions = reply.configOptions
@@ -197,6 +208,7 @@ async function applyAntigravityOptions(session: SessionConnection, req: SendRequ
     const reply = await acp.request('session/set_config_option', { sessionId, configId: effort.id, value: level })
     if (Array.isArray(reply?.configOptions)) session.antigravityOptions = reply.configOptions
   }
+  session.antigravityGateway?.selectModel(upstreamId && selected ? { cliId: selected, upstreamId } : undefined)
 }
 
 async function applyCursorOptions(session: SessionConnection, req: SendRequest): Promise<void> {

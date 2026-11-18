@@ -77,6 +77,8 @@ Claude auth prefers the key in Settings, then `ANTHROPIC_API_KEY`. If either is 
 
 For a custom Gemini-compatible service, open **Settings → CLI → Antigravity CLI** in the desktop app, enter your **API Key** and **API endpoint**, then click **Save API configuration**. You can paste the address and key from the Antigravity provider card in CC Switch. The endpoint field takes precedence over `GOOGLE_GEMINI_BASE_URL`. If both are blank, `agy` uses Google's default endpoint.
 
+With a custom endpoint and API key, refreshing Antigravity's model list adds models under `agy/` from the gateway's Gemini model catalog. For models such as `agy/claude-opus-5-5-high` that are available only through the gateway, select the model and thinking level in the composer. The app sends generation requests to the full model ID listed by the gateway.
+
 For Gemini 4 Carbon requests to a custom gateway, the app matches the selected thinking level to a full ID in the gateway's model catalog, such as `agy/gemini-4-carbon-high`. Without a matching entry, it tries an unqualified alias such as `gemini-4-carbon-high`. If that attempt returns `403` or `404`, the app retries once with the base ID `gemini-4-carbon`. If both attempts fail, the app displays the alias error. The CLI connects directly to Google's default endpoint.
 
 Antigravity uses the Gemini API key in Settings first, then `GEMINI_API_KEY`, then the credentials saved by `agy`. The login button opens Google's personal account sign-in. For Gemini Enterprise or terminal sign-in, use the [Antigravity CLI authentication guide](https://antigravity.google/docs/ide/extensions/acp/#authentication).
