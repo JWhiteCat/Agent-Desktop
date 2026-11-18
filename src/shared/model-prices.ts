@@ -1,5 +1,7 @@
 /**
  * Cursor list prices from https://cursor.com/docs/models-and-pricing (USD per million tokens).
+ * Verified 2026-11-18. Gemini 4 Carbon uses the introductory rate through 2026-11-30
+ * ($2 input, $0.10 cache read, $10 output); from 2026-12-01 it is $4, $0.20, and $20.
  * Codex uses the separate OpenAI API price table in codex-model-prices.ts, Claude Code the Anthropic one in claude-model-prices.ts.
  * These are published API rates, not remaining included usage, and they omit the Teams token rate.
  * A cache-write cell of "-" is stored as 0.
@@ -135,6 +137,7 @@ const PRICES: ModelPrice[] = [
   },
   { keys: ['claude-fable-5'], label: 'Claude Fable 5', rates: rates(10, 1, 50, 12.5) },
   { keys: ['claude-fable-5.1', 'claude-fable-5-1'], label: 'Claude Fable 5.1', rates: rates(10, 0.25, 50, 12.5) },
+  { keys: ['claude-fable-5.2', 'claude-fable-5-2'], label: 'Claude Fable 5.2', rates: rates(8, 0.2, 40, 10) },
   {
     keys: ['claude-opus-4.8', 'claude-opus-4-8', 'claude-4.8-opus'],
     label: 'Claude Opus 4.8',
@@ -146,6 +149,8 @@ const PRICES: ModelPrice[] = [
   { keys: ['claude-sonnet-5.5', 'claude-sonnet-5-5'], label: 'Claude Sonnet 5.5', rates: rates(2, 0.1, 10, 2.5) },
   { keys: ['claude-sonnet-5'], label: 'Claude Sonnet 5', rates: rates(2, 0.2, 10, 2.5) },
 
+  { keys: ['deepseek-v4.1-flash-1017', 'deepseek-v4-1-flash-1017'], label: 'DeepSeek V4.1 Flash 1017', rates: rates(0.3, 0.006, 1.2) },
+
   { keys: ['gemini-2.5-flash', 'gemini-2-5-flash'], label: 'Gemini 2.5 Flash', rates: rates(0.3, 0.03, 2.5) },
   { keys: ['gemini-3-flash'], label: 'Gemini 3 Flash', rates: rates(0.5, 0.05, 3) },
   { keys: ['gemini-3-pro-image', 'gemini-3-pro-image-preview'], label: 'Gemini 3 Pro Image', rates: rates(2, 0.2, 12) },
@@ -156,6 +161,8 @@ const PRICES: ModelPrice[] = [
   { keys: ['gemini-3.7-flash', 'gemini-3-7-flash'], label: 'Gemini 3.7 Flash', rates: rates(0.75, 0.075, 3.75) },
   { keys: ['gemini-3.8-flash', 'gemini-3-8-flash'], label: 'Gemini 3.8 Flash', rates: rates(0.75, 0.075, 3.75) },
   { keys: ['gemini-4-argon'], label: 'Gemini 4 Argon', rates: rates(2, 0.1, 10) },
+  { keys: ['gemini-4-carbon'], label: 'Gemini 4 Carbon', rates: rates(2, 0.1, 10) },
+  { keys: ['gemini-4-hydrogen'], label: 'Gemini 4 Hydrogen', rates: rates(1.5, 0.075, 7.5) },
 
   { keys: ['glm-5.3-flash', 'glm-5-3-flash'], label: 'GLM 5.3 Flash', rates: rates(0.15, 0.029, 0.5) },
   { keys: ['glm-5.3', 'glm-5-3'], label: 'GLM 5.3', rates: rates(1.4, 0.26, 4.4) },

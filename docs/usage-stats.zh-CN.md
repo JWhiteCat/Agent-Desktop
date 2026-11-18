@@ -24,6 +24,17 @@ Codex 费用估算支持 [GPT-6.2 Astra](https://developers.openai.com/api/docs/
 
 Fast 为上述费率的两倍。单次请求的输入（含缓存）超过 272,000 token 时，输入与缓存费率乘以 2，输出费率乘以 1.5；Fast 在长上下文费率上再乘以 2。点号与连字符 id（`gpt-6.2-astra`、`gpt-6-2-astra`）和带日期的快照使用同一组价格。这些数字是 Standard API 标价，不代表 ChatGPT 订阅扣费。
 
+Cursor 对当前 [Cursor 价目](https://cursor.com/docs/models-and-pricing)新增模型的估算使用以下费率（美元 / 百万 token）：
+
+| 模型 | 输入 | 缓存读取 | 缓存写入 | 输出 |
+| --- | --- | --- | --- | --- |
+| [Claude Fable 5.2](https://cursor.com/docs/models/claude-fable-5-2) | $8 | $0.20 | $10 | $40 |
+| [Gemini 4 Carbon](https://cursor.com/docs/models/gemini-4-carbon) | $2 | $0.10 | — | $10 |
+| [Gemini 4 Hydrogen](https://cursor.com/docs/models/gemini-4-hydrogen) | $1.50 | $0.075 | — | $7.50 |
+| [DeepSeek V4.1 Flash 1017](https://cursor.com/docs/models/deepseek-v4-1-flash-1017) | $0.30 | $0.006 | — | $1.20 |
+
+Gemini 4 Carbon 在 2026 年 11 月 30 日前使用介绍价。2026 年 12 月 1 日起为输入 $4、缓存读取 $0.20、输出 $20。连字符 id（如 `claude-fable-5-2`、`deepseek-v4-1-flash-1017`）使用同一组价格。这些数字不含 Teams token 费率。
+
 Claude Code 按用量更新附带的 API 模型 id 计价，并把它记在回复的 `apiModel` 上。`opus` 这类别名本身不计价，所以别名以后指向新模型时，旧回合不会被重新计价。没有记录 API 模型的回合保持未定价。带日期的快照（如 `claude-haiku-4-5-20251001`）使用去掉日期后的价格。缓存写入按 5 分钟费率计算，因为 CLI 把 5 分钟和 1 小时写入合成一个计数。Claude 4.6 及更新版本按标准费率计算完整的 1M 上下文，上下文标记不会改用长上下文价格；Claude Haiku 5.5 除外，超过 100,000 token 的提示按 5 倍计费。Fast、Batch 和仅美国推理没有单独记录，保持未定价。
 
 ## Codex 会话额度

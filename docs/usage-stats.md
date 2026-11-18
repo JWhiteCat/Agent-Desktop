@@ -26,6 +26,17 @@ Codex estimates include [GPT-6.2 Astra](https://developers.openai.com/api/docs/m
 
 Fast doubles these rates. Each request with more than 272,000 input tokens, including cached tokens, uses twice the input/cache rates and 1.5 times the output rate; Fast also applies to these long-context rates. Dotted and hyphenated ids (`gpt-6.2-astra`, `gpt-6-2-astra`) and dated snapshots share the same price. These figures are Standard API rates, not ChatGPT subscription charges.
 
+Cursor estimates for models added to the current [Cursor price list](https://cursor.com/docs/models-and-pricing) use these rates per million tokens:
+
+| Model | Input | Cache read | Cache write | Output |
+| --- | --- | --- | --- | --- |
+| [Claude Fable 5.2](https://cursor.com/docs/models/claude-fable-5-2) | $8 | $0.20 | $10 | $40 |
+| [Gemini 4 Carbon](https://cursor.com/docs/models/gemini-4-carbon) | $2 | $0.10 | — | $10 |
+| [Gemini 4 Hydrogen](https://cursor.com/docs/models/gemini-4-hydrogen) | $1.50 | $0.075 | — | $7.50 |
+| [DeepSeek V4.1 Flash 1017](https://cursor.com/docs/models/deepseek-v4-1-flash-1017) | $0.30 | $0.006 | — | $1.20 |
+
+Gemini 4 Carbon’s rates are introductory through November 30, 2026. From December 1, 2026 they are $4 input, $0.20 cache read, and $20 output. Hyphenated ids such as `claude-fable-5-2` and `deepseek-v4-1-flash-1017` use the same rates. These figures omit the Teams token rate.
+
 Claude Code prices the API model id attached to the usage update and stores it on the reply as `apiModel`. An alias such as `opus` is not priced by itself, so a later change of that alias does not reprice older turns. A turn with no recorded API model stays unpriced. A dated snapshot such as `claude-haiku-4-5-20251001` uses the undated model’s rate. Cache writes use the 5-minute rate, because the CLI reports 5-minute and 1-hour writes as one count. Claude 4.6 and later bill the full 1M context at the standard rate, so a context hint does not select a long-context price. Claude Haiku 5.5 is the exception: a prompt over 100,000 tokens is billed at 5x. Fast mode, Batch, and US-only inference are not recorded separately and stay unpriced.
 
 ## Codex session quota
