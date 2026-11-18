@@ -3,7 +3,10 @@ import { quoteModel } from '../src/shared/model-prices'
 
 describe('Codex OpenAI API prices', () => {
   it.each([
+    ['gpt-6.2-astra', 0.584],
+    ['gpt-6.2-sol', 0.146],
     ['gpt-6.1-sol', 0.146],
+    ['gpt-6.1-terra', 0.073],
     ['gpt-6-astra', 0.735],
     ['gpt-6-sol', 0.147],
     ['gpt-6-luna', 0.00735],
@@ -17,6 +20,9 @@ describe('Codex OpenAI API prices', () => {
   })
 
   it.each([
+    { model: 'gpt-6.2-astra', standard: 0.336, longCost: 0.652016, fastLong: 1.304032 },
+    { model: 'gpt-6.2-sol', standard: 0.084, longCost: 0.163004, fastLong: 0.326008 },
+    { model: 'gpt-6.1-terra', standard: 0.042, longCost: 0.081502, fastLong: 0.163004 },
     { model: 'gpt-6-astra', standard: 0.545, longCost: 1.06502, fastLong: 2.13004 },
     { model: 'gpt-6.1-sol', standard: 0.084, longCost: 0.163004, fastLong: 0.326008 }
   ])('switches $model to long-context rates only above 272k input including cached tokens', ({ model, standard, longCost, fastLong }) => {
@@ -25,6 +31,18 @@ describe('Codex OpenAI API prices', () => {
     const long = { ...usage, inputTokens: 12_001 }
     expect(quoteModel(`${model}[max]`, long, 'codex')).toMatchObject({ costUsd: longCost, longContext: true })
     expect(quoteModel(`${model}[service_tier=priority]`, long, 'codex').costUsd).toBeCloseTo(fastLong, 8)
+  })
+
+  it.each([
+    ['gpt-6.2-astra', 'gpt-6-2-astra', 'GPT-6.2 Astra', 1.24],
+    ['gpt-6.2-sol', 'gpt-6-2-sol', 'GPT-6.2 Sol', 0.31],
+    ['gpt-6.1-terra', 'gpt-6-1-terra', 'GPT-6.1 Terra', 0.155]
+  ])('recognizes %s aliases and dated snapshots', (dotted, hyphenated, label, cost) => {
+    const usage = { inputTokens: 100_000, cacheReadTokens: 100_000, outputTokens: 10_000 }
+    for (const model of [dotted, hyphenated, `${dotted}-2026-11-17`, `${hyphenated}-2026-11-17`]) {
+      expect(quoteModel(`${model}[high]`, usage, 'codex')).toMatchObject({ label, costUsd: cost })
+      expect(quoteModel(`${model}-fast`, usage, 'codex')).toMatchObject({ label: `${label} Fast`, costUsd: cost * 2, fast: true })
+    }
   })
 
   it.each(['gpt-6.1-sol', 'gpt-6-1-sol', 'gpt-6.1-sol-2026-09-29', 'gpt-6-1-sol-2026-09-29'])('recognizes the GPT-6.1 Sol alias or snapshot %s', (model) => {
