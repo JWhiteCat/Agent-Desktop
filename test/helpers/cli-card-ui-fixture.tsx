@@ -39,6 +39,7 @@ export async function runCliCardChecks() {
   let revision = 0
   let pathValue = ''
   let keyValue = ''
+  let provider: CliProvider = 'cursor'
   const result = (): CliInfo => ({ found: true, version: `version-${++revision}`, path: '/agent', status: 'Signed in' })
   window.api = {
     cliInfo: async (provider?: CliProvider, refresh?: boolean) => {
@@ -52,7 +53,7 @@ export async function runCliCardChecks() {
     listModels: async () => [{ id: 'auto', label: 'Auto' }]
   } as unknown as typeof window.api
 
-  const card = () => <CliCard provider="cursor" pathValue={pathValue} keyValue={keyValue}
+  const card = () => <CliCard key={provider} provider={provider} pathValue={pathValue} keyValue={keyValue}
     pathPlaceholder="auto" pathDesc="path" keyPlaceholder="key" keyDesc="key"
     missing="Missing" install="Install"
     onPath={async (value) => { saved.push(value); pathValue = value; render() }}
@@ -137,6 +138,24 @@ export async function runCliCardChecks() {
   old.resolve({ found: true, version: 'obsolete-result' })
   await pause()
   check(document.querySelector('.cli-card')?.textContent === latestText, 'Superseded detection cannot overwrite the card')
+
+  const terminalGuide = () => document.querySelector<HTMLAnchorElement>('.cli-card a')
+  check(!terminalGuide(), 'Cursor card has no agy installation link')
+  provider = 'antigravity'
+  next = Promise.resolve({ found: true, source: 'managed', path: '/agy_acp_server', version: '1.5.0' })
+  render()
+  await idle()
+  check(document.querySelector('.cli-card')?.textContent?.includes('Agent Desktop manages the ACP server.'), 'Managed Antigravity explains the ACP server')
+  check(terminalGuide()?.textContent === 'Install agy for your terminal', 'Managed Antigravity links to terminal setup')
+  check(terminalGuide()?.href === 'https://antigravity.google/docs/getting-started?tab=cli', 'The link points to the official CLI guide')
+  next = Promise.resolve({ found: false })
+  await click('Check again')
+  await idle()
+  check(terminalGuide(), 'Missing Antigravity also links to terminal setup')
+  next = Promise.resolve({ found: true, source: 'external', path: '/agy', version: '1.5.11' })
+  await click('Check again')
+  await idle()
+  check(!terminalGuide(), 'Detected standalone Antigravity hides terminal setup')
   root.unmount()
-  return ['cached reads', 'language changes', 'manual refresh', 'refresh errors', 'login and update', 'configuration changes', 'stale responses']
+  return ['cached reads', 'language changes', 'manual refresh', 'refresh errors', 'login and update', 'configuration changes', 'stale responses', 'Antigravity terminal setup']
 }

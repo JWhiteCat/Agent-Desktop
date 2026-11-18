@@ -58,6 +58,6 @@ app.whenReady().then(async () => {
   })
   expect(result.code, result.output).toBe(0)
   expect(JSON.parse(fs.readFileSync(path.join(directory, 'result.json'), 'utf8'))).toEqual([
-    'cached reads', 'language changes', 'manual refresh', 'refresh errors', 'login and update', 'configuration changes', 'stale responses'
+    'cached reads', 'language changes', 'manual refresh', 'refresh errors', 'login and update', 'configuration changes', 'stale responses', 'Antigravity terminal setup'
   ])
 }, 60_000)

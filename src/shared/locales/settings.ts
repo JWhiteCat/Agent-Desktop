@@ -3,6 +3,8 @@ export const settingsMessages: Record<string, string> = {
   '请先安装选中的 CLI。': 'Install the selected CLI first.',
   '{name} 已安装': '{name} installed',
   '由应用管理': 'Managed by Agent Desktop',
+  '应用管理版是 ACP 服务。在终端运行 agy 需要安装独立版。': 'Agent Desktop manages the ACP server. Install the standalone CLI to run agy in a terminal.',
+  '终端版 agy 安装指南': 'Install agy for your terminal',
   '正在下载 CLI…': 'Downloading CLI…',
   '正在下载 CLI… {percent}%': 'Downloading CLI… {percent}%',
   '正在校验 CLI…': 'Verifying CLI…',

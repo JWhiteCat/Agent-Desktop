@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { CliInfo, CliProvider } from '@shared/types'
 import { useT } from '../../lib/i18n'
 import { errorText, loadModels, toast } from '../../store'
+import { Hyperlink } from '../Hyperlink'
 import { IconRefresh, Spinner } from '../icons'
 import { Field } from './Field'
 import { CliInstallAction, useCliInstallStatus } from '../CliInstallAction'
@@ -99,6 +100,14 @@ export function CliCard({
           </>
         )}
         <CliInstallAction provider={provider} status={installation} onInstalled={() => void check()} />
+        {provider === 'antigravity' && info && (!info.found || info.source === 'managed') && (
+          <div className="muted small">
+            {info.source === 'managed' && <>{t('应用管理版是 ACP 服务。在终端运行 agy 需要安装独立版。')}{' '}</>}
+            <Hyperlink href="https://antigravity.google/docs/getting-started?tab=cli" target="_blank" rel="noreferrer">
+              {t('终端版 agy 安装指南')}
+            </Hyperlink>
+          </div>
+        )}
         <div className="row-gap wrap">
           <button className="btn" onClick={() => void check()} disabled={checking || loggingIn || updating || saving}>
             <IconRefresh size={13} className={checking ? 'spin' : ''} /> {t('重新检测')}

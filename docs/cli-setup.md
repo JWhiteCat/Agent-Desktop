@@ -46,7 +46,9 @@ The app uses `@agentclientprotocol/claude-agent-acp` to run the detected Claude 
 
 ### Install Antigravity CLI
 
-Install `agy` 1.5.0 or later with the [official installer](https://antigravity.google/docs/cli/install/). Verify with `agy --version`, then select **Antigravity CLI** under **Settings → CLI** or in the composer. Agent Desktop launches the installed CLI with `agy acp`.
+Agent Desktop’s managed Antigravity installation provides the ACP server. To run `agy` in a terminal, install the standalone CLI (1.5.0 or later) using the [official installation guide](https://antigravity.google/docs/getting-started?tab=cli), also linked from **Settings → CLI → Antigravity CLI** when the app uses the managed server or cannot find an installation.
+
+Open a new terminal and run `agy --version` to verify the installation. In Agent Desktop, click **Check again** on the Antigravity card. With the CLI path left blank, new conversations use the detected `agy` through `agy acp`. Existing managed conversations continue to use the ACP server.
 
 ### CLI detection
 

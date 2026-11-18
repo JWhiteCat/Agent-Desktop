@@ -46,7 +46,9 @@ npm install -g @anthropic-ai/claude-code
 
 ### 安装 Antigravity CLI
 
-通过[官方安装器](https://antigravity.google/docs/cli/install/)安装 `agy` 1.5.0 或更高版本。运行 `agy --version` 确认版本，然后在 **设置 → CLI** 或聊天输入框选择 **Antigravity CLI**。应用会通过 `agy acp` 启动本机 CLI。
+Agent Desktop 的应用管理版 Antigravity 提供 ACP 服务。在终端运行 `agy` 时，请按[官方安装指南](https://antigravity.google/docs/getting-started?tab=cli)安装 1.5.0 或更高版本的独立 CLI。应用使用管理版或未找到安装时，**设置 → CLI → Antigravity CLI** 也会显示安装指南入口。
+
+打开新终端并运行 `agy --version` 确认版本。在 Agent Desktop 的 Antigravity 卡片上点击**重新检测**。CLI 路径留空时，新对话会通过 `agy acp` 启动检测到的独立 CLI。已有的应用管理版对话继续使用 ACP 服务。
 
 ### CLI 检测
 
