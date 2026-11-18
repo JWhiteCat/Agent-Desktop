@@ -213,10 +213,26 @@ export function bridgeScript(source: SkinSource): string {
   const defaults = Object.fromEntries(Object.entries(source.properties).map(([k, p]) => [k, { value: p.value }]))
   const data = JSON.stringify(defaults).replace(/</g, '\\u003c')
   return `(() => {
-    let listener; let properties = ${data};
+    let listener; let properties = ${data}; let fit;
+    const viewport = document.createElement('style');
+    viewport.textContent = 'html, body { width: 100% !important; height: 100% !important; margin: 0 !important; overflow: clip !important; }';
     const sizing = document.createElement('style');
-    (document.head || document.documentElement).appendChild(sizing);
-    const apply = () => { try { listener?.applyUserProperties?.(properties); listener?.applyGeneralProperties?.({fps:30}); listener?.setPaused?.(false); } catch {} };
+    const mount = () => {
+      const host = document.documentElement;
+      if (sizing.parentNode !== host || viewport.nextSibling !== sizing || sizing.nextSibling !== null) host.append(viewport, sizing);
+    };
+    mount();
+    const scrollWidth = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollWidth')?.get;
+    const scrollHeight = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollHeight')?.get;
+    if (scrollWidth) Object.defineProperty(Element.prototype, 'scrollWidth', { configurable: true, get() { return this === document.body || this === document.documentElement ? window.innerWidth : scrollWidth.call(this); } });
+    if (scrollHeight) Object.defineProperty(Element.prototype, 'scrollHeight', { configurable: true, get() { return this === document.body || this === document.documentElement ? window.innerHeight : scrollHeight.call(this); } });
+    const updateSizing = () => {
+      mount();
+      sizing.textContent = fit === 'contain' || fit === 'cover'
+        ? 'html, body { background-size: ' + fit + ' !important; background-position: center !important; background-repeat: no-repeat !important; } video { object-fit: ' + fit + ' !important; }'
+        : '';
+    };
+    const apply = () => { try { listener?.applyUserProperties?.(properties); listener?.applyGeneralProperties?.({fps:30}); listener?.setPaused?.(false); } catch {} updateSizing(); };
     Object.defineProperty(window, 'wallpaperPropertyListener', { configurable:true, get:()=>listener, set:v=>{listener=v; queueMicrotask(apply);} });
     window.wallpaperRegisterAudioListener = cb => { try { cb(new Array(128).fill(0)); } catch {} };
     window.addEventListener('load', () => { apply(); parent.postMessage({type:'skin-ready'}, '*'); });
@@ -226,11 +242,11 @@ export function bridgeScript(source: SkinSource): string {
       if (e.data?.type === 'skin-paused') { try { listener?.setPaused?.(!!e.data.paused); } catch {} return; }
       if (e.data?.type !== 'skin-properties') return;
       // Only accept CSS keywords; wallpaper properties must never become CSS.
-      if (e.data.fit === 'contain' || e.data.fit === 'cover') sizing.textContent = 'html, body { background-size: ' + e.data.fit + ' !important; }';
+      if (e.data.fit === 'contain' || e.data.fit === 'cover') fit = e.data.fit;
       for (const key of Object.keys(properties)) if (Object.hasOwn(e.data.properties || {}, key)) properties[key] = {value:e.data.properties[key]};
       apply();
     });
-    const mute = () => document.querySelectorAll('audio,video').forEach(m => {m.muted=true;});
+    const mute = () => { mount(); document.querySelectorAll('audio,video').forEach(m => {m.muted=true;}); };
     new MutationObserver(mute).observe(document, {childList:true, subtree:true}); mute();
   })();`
 }

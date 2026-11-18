@@ -25,9 +25,20 @@ it.runIf(canRunElectronUi)('keeps Web background edges visible on resize and pre
       rollupOptions: { external: ['mermaid'], output: { inlineDynamicImports: true } }
     }
   })
-  // A wallpaper with a hard-coded cover background, like many Workshop projects.
+  // Mirrors real Workshop Web wallpapers: no explicit html/body height, a full-screen canvas sized from
+  // client/scroll dimensions on resize, trailing markup after the canvas, and inline backgroundSize edits.
   const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="100"><path fill="white" d="M0 0h200v100H0z"/><path fill="red" d="M0 0h5v100H0z"/><path fill="blue" d="M195 0h5v100h-5z"/></svg>'
-  const wallpaper = `<html><head><style>html,body{margin:0;height:100%}body{background: center / cover no-repeat url("data:image/svg+xml,${encodeURIComponent(svg)}")}</style></head><body><script src="bridge.js"></script></body></html>`
+  const wallpaper = `<!DOCTYPE html><html><head><script src="bridge.js"></script></head><body><style>body{margin:0;overflow:hidden;background:url("data:image/svg+xml,${encodeURIComponent(svg)}") repeat;background-size:cover}canvas{opacity:0}</style><canvas id="sakura"></canvas><video></video><br><br><script>
+    const canvas = document.getElementById('sakura');
+    const resize = () => {
+      const b = document.body, d = document.documentElement;
+      canvas.width = Math.max(b.clientWidth, b.scrollWidth, d.scrollWidth, d.clientWidth);
+      canvas.height = Math.max(b.clientHeight, b.scrollHeight, d.scrollHeight, d.clientHeight);
+    };
+    window.wallpaperPropertyListener = { applyUserProperties() { document.body.style.backgroundSize = 'cover'; } };
+    window.addEventListener('load', resize);
+    window.addEventListener('resize', resize);
+  </script></body></html>`
   const bridge = bridgeScript({ id: 'a'.repeat(32), title: '', kind: 'web', root: '', entry: 'index.html', properties: {} })
   const html = path.join(directory, 'index.html')
   fs.writeFileSync(html, '<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="style.css"><div id="root"></div><script src="fixture.js"></script>')
@@ -82,10 +93,13 @@ app.whenReady().then(async () => {
       if (JSON.stringify(edges) === '[[0,0,255],[255,0,0]]') break;
     }
     assert.deepEqual(edges, [[0,0,255],[255,0,0]], 'Both background edges must remain visible at '+width+'x'+height);
+    assert.equal(await frame().executeJavaScript('document.getElementById("sakura").width + "," + document.getElementById("sakura").height'), width+','+height);
+    assert.equal(await frame().executeJavaScript('getComputedStyle(document.querySelector("video")).objectFit'), 'contain');
     assert.equal(await sizing(), 'contain');
   }
   await win.webContents.executeJavaScript('SkinChecks.changeFit("cover")');
   await waitForFit('cover');
+  assert.equal(await frame().executeJavaScript('getComputedStyle(document.querySelector("video")).objectFit'), 'cover');
   await win.webContents.executeJavaScript('SkinChecks.changeFit("contain")');
   await waitForFit('contain');
   assert.equal(frame(), originalFrame, 'Changing fit must preserve the running wallpaper');
