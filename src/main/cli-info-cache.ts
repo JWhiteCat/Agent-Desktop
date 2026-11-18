@@ -7,6 +7,7 @@ import { resolveApiKey } from './cli'
 import { resolveCodexApiKey } from './codex'
 import { resolveClaudeApiKey } from './claude'
 import { writeTextSafely } from './local-files'
+import { managedExecutable } from './managed-cli-location'
 import type { Store } from './store'
 
 interface Entry {
@@ -30,7 +31,7 @@ export function cliInfoSignature(provider: CliProvider, settings: Settings): str
       : provider === 'antigravity'
         ? [settings.antigravityPath, settings.antigravityApiKey, resolveAntigravityApiKey(settings.antigravityApiKey)]
         : [settings.agentPath, settings.apiKey, resolveApiKey(settings.apiKey)]
-  return createHash('sha256').update(JSON.stringify([provider, ...config])).digest('hex')
+  return createHash('sha256').update(JSON.stringify(['cli-source', provider, managedExecutable(provider)?.command, ...config])).digest('hex')
 }
 
 function validEntry(value: unknown): value is Entry {
@@ -42,6 +43,7 @@ function validEntry(value: unknown): value is Entry {
     || (e.stale !== undefined && typeof e.stale !== 'boolean')) return false
   return (['path', 'version', 'status'] as const).every((key) => e.info[key] === undefined || typeof e.info[key] === 'string')
     && (['hasApiKey', 'bundled'] as const).every((key) => e.info[key] === undefined || typeof e.info[key] === 'boolean')
+    && (e.info.source === undefined || e.info.source === 'external' || e.info.source === 'managed')
 }
 
 /** Load once and write atomically after a detection or invalidation. */

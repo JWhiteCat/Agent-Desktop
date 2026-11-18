@@ -18,7 +18,7 @@ Windows 一键启动（需先安装 Node.js 22.12 或更高版本，包含 npm�
 
 ## macOS 启动与打包
 
-支持 macOS 13 Ventura 或更新版本，分别构建 Apple Silicon（arm64）和 Intel（x64）应用。安装包包含 Electron 和内置 Codex/Claude，无需另装 Node.js；源码开发和打包需要上述 Node.js 环境，Git 功能还需要本机 `git`。
+支持 macOS 13 Ventura 或更新版本，分别构建 Apple Silicon（arm64）和 Intel（x64）应用。安装包包含 Electron 及 Codex、Claude 的 ACP 适配器，CLI 二进制按需下载；源码开发和打包需要上述 Node.js 环境，Git 功能还需要本机 `git`。
 
 在已登录桌面的终端中运行，兼容系统自带 Bash 3.2：
 
@@ -51,7 +51,7 @@ npm run verify:mac -- release/agent-desktop-0.1.0-mac-arm64.dmg arm64
 
 顶部命令首次运行可能请求控制 Terminal，请允许；拒绝后可在「隐私与安全性 → 自动化」重新允许 Agent Desktop 控制 Terminal，开发模式对应的名称可能是 Electron。没有安装 `code` / `cursor` 命令时，编辑器按钮会尝试打开已安装的 VS Code / Cursor 应用。应用关闭窗口后继续运行，点击 Dock 可重开窗口，点击完成通知会打开对应会话；⌘Q 退出时保留任务确认。
 
-`verify:mac` 在临时目录挂载并复制 DMG 内的应用，检查签名、三种可执行文件的架构、内置 CLI 版本、两个 ACP initialize 握手、runner 参数，以及真实窗口、preload IPC 和模拟 CLI 检测；不调用模型或读取用户登录，检查后清理进程和挂载。该检查需要 Mac 图形会话。
+`verify:mac` 在临时目录挂载并复制 DMG 内的应用，检查签名、应用可执行文件的架构、是否排除了 Codex 和 Claude 原生包、两个基于模拟 CLI 的 ACP 握手、runner 参数，以及真实窗口、preload IPC 和模拟 CLI 检测；不调用模型或读取用户登录，检查后清理进程和挂载。该检查需要 Mac 图形会话。
 
 macOS 的 `/var` 是 `/private/var` 的目录别名。离线测试使用真实临时目录，避免把两种路径拼写当成不同目录；单独的目录别名回归覆盖 worktree 子目录、尚不存在的共享子路径及快照显示路径，确保测试环境统一不会掩盖应用中的别名问题。
 
@@ -101,7 +101,7 @@ bash "/path/to/Agent-Desktop/start-dev.sh"
 bash "/path/to/Agent-Desktop/start-preview.sh"
 ```
 
-首次运行会按锁文件下载缺少的依赖，并下载 Electron 运行时。后续启动会复用完整的本地依赖与运行时，无需再次安装或联网。拉取依赖或锁文件变更后，执行 `npm run dev:linux -- --install`（或 `npm ci --include=dev --include=optional`）刷新依赖。不要省略 optional 依赖，内置代理的原生二进制按平台分发。下载失败会在终端保留错误；检查网络、代理或 `ELECTRON_MIRROR` 后重试。
+首次运行会按锁文件下载缺少的依赖，并下载 Electron 运行时。后续启动会复用完整的本地依赖与运行时，无需再次安装或联网。拉取依赖或锁文件变更后，执行 `npm run dev:linux -- --install`（或 `npm ci --include=dev --include=optional`）刷新依赖。下载失败会在终端保留错误；检查网络、代理或 `ELECTRON_MIRROR` 后重试。
 
 在 **Linux x64** 上安装本机依赖后打包：
 
@@ -129,7 +129,7 @@ chmod +x release/agent-desktop-*-linux-x86_64.AppImage
 
 ## Windows 便携包
 
-请在 **Windows x64** 上打包。内置代理的原生二进制按执行打包的机器安装，在其他架构上打包不会得到匹配的便携程序。
+Windows 便携包的目标架构为 **x64**。
 
 双击项目根目录的 `build-portable.bat`。脚本会检查 Node.js 22.12 或更高版本，安装依赖和 Electron 运行时，然后打包。在项目目录的终端中也可以执行：
 

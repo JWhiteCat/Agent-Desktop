@@ -9,13 +9,15 @@ import { AcpConnection, MethodNotFound, permissionResult } from './acp'
 import { killTree, type ResolvedCli } from './cli'
 import { cliEnvironment, cliSearchDirectories, findCliExecutable, normalizeCliPath, spawnCliProcess } from './cli-runtime'
 import { codexProxyOverlay, refreshCodexProxyEnv } from './system-proxy'
+import { managedExecutable } from './managed-cli-location'
 
 const isWin = process.platform === 'win32'
 
 export interface ResolvedCodex {
-  /** Set only when a user-installed `codex` binary was found. */
+  /** Absolute path of the native executable passed to the ACP adapter. */
   codexPath?: string
   bundled: boolean
+  managed?: boolean
   display: string
   acpEntry: string
 }
@@ -62,7 +64,8 @@ export function resolveCodex(customPath: string): ResolvedCodex | undefined {
   }
   const user = findCodexOnPath(acpEntry)
   if (user) return { codexPath: user, bundled: false, display: user, acpEntry }
-  return { codexPath: undefined, bundled: true, display: translate('内置 Codex'), acpEntry }
+  const installed = managedExecutable('codex')
+  return installed && { codexPath: installed.command, managed: true, bundled: false, display: installed.command, acpEntry }
 }
 
 export function spawnCodexAcp(codex: ResolvedCodex, cwd: string, apiKey: string): ChildProcess {
@@ -362,15 +365,7 @@ function nodeEnv(executable?: string): NodeJS.ProcessEnv {
 }
 
 function codexBinary(codex: ResolvedCodex): { command: string; args: string[] } | undefined {
-  if (codex.codexPath) return { command: codex.codexPath, args: [] }
-  const bundled = bundledCodexScript(codex.acpEntry)
-  if (!bundled) return undefined
-  return { command: process.execPath, args: [bundled] }
-}
-
-function bundledCodexScript(acpEntry: string): string | undefined {
-  const script = path.join(acpEntry, '..', '..', '..', '..', '@openai', 'codex', 'bin', 'codex.js')
-  return fs.existsSync(script) ? script : undefined
+  return codex.codexPath ? { command: codex.codexPath, args: [] } : undefined
 }
 
 async function runCodex(command: string, args: string[], timeoutMs: number): Promise<{ stdout: string; stderr: string }> {
@@ -409,7 +404,7 @@ function findCodexOnPath(acpEntry: string): string | undefined {
     : []
   const dirs = [...cliSearchDirectories(), ...extra]
   // npm prepends the app's node_modules/.bin to PATH in dev/preview mode.
-  // Those shims belong to the bundled fallback, not a user installation.
+  // Those shims belong to build dependencies, not a user installation.
   const bundledModules = realPath(path.resolve(acpEntry, '..', '..', '..', '..'))
   for (const dir of new Set(dirs)) {
     for (const name of codexFileNames()) {

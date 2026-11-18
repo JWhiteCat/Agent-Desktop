@@ -128,7 +128,7 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
             keyPlaceholder={t('留空使用 CURSOR_API_KEY')}
             keyDesc={t('有 Key 时优先使用（设置优先于环境变量 CURSOR_API_KEY）。都没有时使用浏览器登录。可在 cursor.com/dashboard/api 创建。')}
             missing={t('未找到 Cursor CLI')}
-            install={t('安装方式：Windows 在 PowerShell 执行 irm \'https://cursor.com/install?win32=true\' | iex ；macOS / Linux 执行 curl https://cursor.com/install -fsS | bash')}
+            install={t('点击安装按钮可从官方来源下载。')}
             onPath={(agentPath) => saveCli({ agentPath }, 'cursor')}
             onKey={(apiKey) => saveCli({ apiKey }, 'cursor')}
           />
@@ -136,13 +136,13 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
           <CliCard
             provider="codex"
             pathValue={settings.codexPath ?? ''}
-            pathPlaceholder={t('自动检测，否则使用内置 Codex')}
-            pathDesc={t('留空时先找本机 codex。找不到则使用应用内置的 Codex。')}
+            pathPlaceholder={t('自动检测')}
+            pathDesc={t('留空时自动检测本机安装，再查找应用管理的版本。')}
             keyValue={settings.codexApiKey ?? ''}
             keyPlaceholder={t('留空使用 CODEX_API_KEY 或 OPENAI_API_KEY')}
             keyDesc={t('有 Key 时优先使用。都没有时使用 ChatGPT 登录。')}
-            missing={t('未找到 Codex 适配器')}
-            install={t('需要安装本应用依赖里的 Codex 适配器。本机另有 codex 时会优先使用它。')}
+            missing={t('未找到 Codex CLI')}
+            install={t('点击安装按钮可从官方来源下载。')}
             onPath={(codexPath) => saveCli({ codexPath }, 'codex')}
             onKey={(codexApiKey) => saveCli({ codexApiKey }, 'codex')}
           />
@@ -150,13 +150,13 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
           <CliCard
             provider="claude"
             pathValue={settings.claudePath ?? ''}
-            pathPlaceholder={t('自动检测，否则使用内置 Claude')}
-            pathDesc={t('留空时先找本机 claude。找不到则使用适配器自带的 Claude。Windows 上会跳过 .cmd 跳转。')}
+            pathPlaceholder={t('自动检测')}
+            pathDesc={t('留空时自动检测本机安装，再查找应用管理的版本。')}
             keyValue={settings.claudeApiKey ?? ''}
             keyPlaceholder={t('留空使用 ANTHROPIC_API_KEY，再否则使用本机登录')}
             keyDesc={t('只要设置或环境变量里有 API Key，就按 API 计费，不会使用 Claude 订阅。都没有时使用 ~/.claude 的登录。')}
-            missing={t('未找到 Claude 适配器')}
-            install={t('需要安装本应用依赖里的 Claude 适配器。本机另有 claude 时会优先使用它。安装 Claude Code：npm install -g @anthropic-ai/claude-code')}
+            missing={t('未找到 Claude Code')}
+            install={t('点击安装按钮可从官方来源下载。')}
             onPath={(claudePath) => saveCli({ claudePath }, 'claude')}
             onKey={(claudeApiKey) => saveCli({ claudeApiKey }, 'claude')}
           />
@@ -170,8 +170,7 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
             keyPlaceholder={t('留空使用 GEMINI_API_KEY')}
             keyDesc={t('优先使用设置中的 Key，其次使用 GEMINI_API_KEY。都为空时使用 agy 已保存的登录。')}
             missing={t('未找到 Antigravity CLI')}
-            install={t('请安装 Antigravity CLI 1.5.0 或更高版本。')}
-            installUrl="https://antigravity.google/product/antigravity-cli/"
+            install={t('点击安装按钮可从官方来源下载。')}
             onPath={(antigravityPath) => saveCli({ antigravityPath }, 'antigravity')}
             onKey={(antigravityApiKey) => saveCli({ antigravityApiKey }, 'antigravity')}
           />

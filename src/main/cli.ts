@@ -1,15 +1,18 @@
-import { spawnSync, type ChildProcess } from 'node:child_process'
+import type { ChildProcess } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import type { ModelInfo } from '@shared/types'
+import type { AntigravityRuntime, ModelInfo } from '@shared/types'
 import { installAcpUsagePreload } from './acp-usage'
 import { cliEnvironment, cliSearchDirectories, findCliExecutable, killCliProcessTree, normalizeCliPath, spawnCliProcess } from './cli-runtime'
+import { managedExecutable } from './managed-cli-location'
 
 export interface ResolvedCli {
   command: string
   prefixArgs: string[]
   display: string
+  managed?: boolean
+  antigravityRuntime?: AntigravityRuntime
 }
 
 const isWin = process.platform === 'win32'
@@ -19,6 +22,10 @@ const isWin = process.platform === 'win32'
  * Spawning the bundled node directly keeps prompt arguments (quotes, newlines, `&`, `|`) intact.
  */
 function resolveWindowsInstall(installDir: string): ResolvedCli | undefined {
+  for (const name of ['cursor-agent.exe', 'agent.exe']) {
+    const command = findCliExecutable(path.join(installDir, name), [])
+    if (command) return { command, prefixArgs: [], display: command }
+  }
   const direct = path.join(installDir, 'index.js')
   const directNode = path.join(installDir, 'node.exe')
   if (fs.existsSync(direct) && fs.existsSync(directNode)) {
@@ -41,16 +48,21 @@ function resolveWindowsInstall(installDir: string): ResolvedCli | undefined {
   return undefined
 }
 
-function whichSync(name: string): string | undefined {
-  const r = spawnSync(isWin ? 'where' : 'which', [name], { encoding: 'utf8', windowsHide: true })
-  if (r.status !== 0) return undefined
-  return r.stdout.split(/\r?\n/).map((s) => s.trim()).find(Boolean)
+export function resolveCli(customPath: string): ResolvedCli | undefined {
+  const external = resolveExternalCli(customPath)
+  if (external || normalizeCliPath(customPath)) return external
+  const installed = managedExecutable('cursor')
+  return installed && { ...installed, display: installed.command, managed: true }
 }
 
-export function resolveCli(customPath: string): ResolvedCli | undefined {
+function resolveExternalCli(customPath: string): ResolvedCli | undefined {
   const custom = normalizeCliPath(customPath)
   if (custom) {
     if (isWin) {
+      if (/\.exe$/i.test(custom)) {
+        const command = findCliExecutable(custom, [])
+        return command ? { command, prefixArgs: [], display: command } : undefined
+      }
       const stat = fs.existsSync(custom) ? fs.statSync(custom) : undefined
       const dir = stat?.isDirectory() ? custom : path.dirname(custom)
       const win = resolveWindowsInstall(dir)
@@ -65,8 +77,10 @@ export function resolveCli(customPath: string): ResolvedCli | undefined {
     const local = process.env.LOCALAPPDATA ?? path.join(os.homedir(), 'AppData', 'Local')
     const win = resolveWindowsInstall(path.join(local, 'cursor-agent'))
     if (win) return win
-    const found = whichSync('agent.cmd') ?? whichSync('cursor-agent.cmd')
-    if (found) return resolveWindowsInstall(path.dirname(found))
+    for (const directory of cliSearchDirectories()) {
+      const cli = resolveWindowsInstall(directory)
+      if (cli) return cli
+    }
     return undefined
   }
 
@@ -111,7 +125,7 @@ export function spawnCli(
   const env = cliEnv(apiKey, cli.command)
   installAcpUsagePreload(env)
   // CURSOR_API_KEY carries the key; an --api-key argument would expose it in process listings.
-  return spawnCliProcess(cli.command, [...cli.prefixArgs, ...args], {
+  return spawnCliProcess(cli.command, [...cli.prefixArgs, ...(cli.managed ? ['--disable-auto-update'] : []), ...args], {
     cwd,
     env,
     stdio: [stdin, 'pipe', 'pipe'],

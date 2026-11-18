@@ -29,6 +29,7 @@ export async function cursorCliInfo(agentPath: string, apiKeySetting: string): P
   ])
   return {
     found: true,
+    source: cursor.managed ? 'managed' : 'external',
     path: cursor.display,
     version: version.stdout.trim() || version.stderr.trim(),
     status: (status.stdout + status.stderr).trim(),
@@ -46,7 +47,7 @@ export async function codexCliInfo(codexPath: string, codexApiKey: string): Prom
     version,
     status,
     hasApiKey: !!resolveCodexApiKey(codexApiKey),
-    bundled: codex.bundled
+    source: codex.managed ? 'managed' : 'external'
   }
 }
 
@@ -64,7 +65,7 @@ export async function claudeCliInfo(claudePath: string, claudeApiKey: string): P
     version,
     status,
     hasApiKey: !!resolveClaudeApiKey(claudeApiKey),
-    bundled: claude.bundled
+    source: claude.managed ? 'managed' : 'external'
   }
 }
 

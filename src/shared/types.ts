@@ -70,6 +70,7 @@ export interface ThreadMeta {
   forkContextThroughItemId?: string
   /** Which CLI created this thread. Omitted on threads saved before Codex support; those stay on Cursor. */
   cli?: CliProvider
+  antigravityRuntime?: AntigravityRuntime
   /** Actual working directory reported by the CLI (differs from project path for worktrees). */
   cwd?: string
   model?: string
@@ -440,6 +441,7 @@ export interface ModelInfo {
 export interface CliSession {
   chatId: string
   cli: CliProvider
+  antigravityRuntime?: AntigravityRuntime
   title: string
   /** Marks a missing CLI title without guessing from the title text. */
   titleKind?: 'default' | 'untitled'
@@ -455,8 +457,20 @@ export interface CliInfo {
   version?: string
   status?: string
   hasApiKey?: boolean
+  source?: 'external' | 'managed'
   /** The adapter package is used rather than a CLI on PATH. */
   bundled?: boolean
+}
+
+export type AntigravityRuntime = 'cli' | 'registry'
+
+export interface CliInstallStatus {
+  source?: 'external' | 'managed'
+  unavailable?: 'invalid-path' | 'platform' | 'antigravity-cli'
+  phase?: 'downloading' | 'verifying' | 'installing'
+  received?: number
+  total?: number
+  error?: string
 }
 
 export interface GitDiff {

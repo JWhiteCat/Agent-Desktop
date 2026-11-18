@@ -36,8 +36,15 @@ import type { Store } from './store'
 
 export { leftPlanMode } from './session/provider'
 
+function checkProviderSandbox(launch: AgentLaunch, sandbox: string): void {
+  if (launch.cli.antigravityRuntime === 'registry' && sandbox === 'enabled') {
+    throw new Error(translate('Antigravity 应用管理版不支持强制开启 CLI 沙箱，请在设置中选择「遵循 CLI 配置」。'))
+  }
+}
+
 /** One ACP process kept alive so the next message skips startup and session restoration. */
 interface AgentProc extends SessionConnection {
+  antigravityRuntime?: AgentLaunch['cli']['antigravityRuntime']
   child: ChildProcess
   acp: AcpConnection
   cwd: string
@@ -469,16 +476,20 @@ export class SessionManager {
     if (req.attachmentIds !== undefined && !Array.isArray(req.attachmentIds)) throw new Error(translate('附件参数无效'))
     const attachments = req.attachmentIds?.length ? attachmentsFor(this.store).resolveMany(req.attachmentIds) : []
     if (typeof req.prompt !== 'string' || (!req.prompt.trim() && !attachments.length)) throw new Error(translate('请输入消息或添加附件'))
-    if (isCliProvider(req.cli) && req.cli !== threadCli(thread)) {
-      this.store.updateThread(thread.id, { cli: req.cli })
-      this.discard(thread.id)
-    }
     const project = this.store.project(thread.projectId)
     if (!project) throw new Error(translate('项目不存在'))
     const settings = this.store.settings
-    const provider = threadCli(thread)
-    const launch = resolveLaunch(provider, settings)
+    const currentProvider = threadCli(thread)
+    const provider = isCliProvider(req.cli) ? req.cli : currentProvider
+    const runtime = provider === 'antigravity' && provider === currentProvider && thread.chatId
+      ? thread.antigravityRuntime ?? 'cli' : undefined
+    const launch = resolveLaunch(provider, settings, runtime)
     if (!launch) throw new Error(translate('未找到 {label}。请先安装，或在设置中指定路径。', { label: cliLabel(provider) }))
+    checkProviderSandbox(launch, settings.sandbox)
+    if (provider !== currentProvider) {
+      this.store.updateThread(thread.id, { cli: provider })
+      this.discard(thread.id)
+    }
     const apiKey = providerApiKey(provider, settings)
 
     let cwd = thread.cwd && (thread.worktree || fs.existsSync(thread.cwd)) ? thread.cwd : project.path
@@ -693,6 +704,7 @@ export class SessionManager {
       child,
       acp: undefined as unknown as AcpConnection,
       provider,
+      antigravityRuntime: launch.cli.antigravityRuntime,
       sessionId: '',
       cwd,
       fingerprint,
@@ -802,8 +814,9 @@ export class SessionManager {
     if (!project) throw new Error(translate('项目不存在'))
     const settings = this.store.settings
     const provider = threadCli(thread)
-    const launch = resolveLaunch(provider, settings)
+    const launch = resolveLaunch(provider, settings, provider === 'antigravity' ? thread.antigravityRuntime ?? 'cli' : undefined)
     if (!launch) throw new Error(translate('未找到 {label}。请先安装，或在设置中指定路径。', { label: cliLabel(provider) }))
+    checkProviderSandbox(launch, settings.sandbox)
     const apiKey = providerApiKey(provider, settings)
     const cwd = thread.cwd && (thread.worktree || fs.existsSync(thread.cwd)) ? thread.cwd : project.path
     if (!fs.existsSync(cwd)) throw new Error(translate('项目目录不存在：{path}', { path: cwd }))
@@ -900,7 +913,10 @@ export class SessionManager {
     const { proc } = run
     const sessionId = await this.connectSession(proc, cwd, chatId, provider, apiKey, mcpServers)
     run.reducer.init = { sessionId, cwd: proc.cwd, model: req.model }
-    this.store.updateThread(threadId, { chatId: sessionId, cwd: proc.cwd })
+    this.store.updateThread(threadId, {
+      chatId: sessionId, cwd: proc.cwd,
+      ...(proc.antigravityRuntime ? { antigravityRuntime: proc.antigravityRuntime } : {})
+    })
     this.onStateChange()
     await applySessionOptions(proc, req, this.store.settings.sandbox)
     if (!this.runs.has(threadId) || run.settled) return

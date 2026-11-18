@@ -61,6 +61,6 @@ app.whenReady().then(async () => {
   })
   expect(result.code, result.output).toBe(0)
   expect(JSON.parse(fs.readFileSync(path.join(directory, 'result.json'), 'utf8'))).toEqual([
-    'thread composers', 'project composers', 'pending sends', 'question cards', 'markdown questions'
+    'thread composers', 'project composers', 'pending sends', 'question cards', 'markdown questions', 'CLI installation preserves drafts'
   ])
 }, 60_000)

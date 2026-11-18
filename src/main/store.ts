@@ -232,7 +232,10 @@ export class Store {
     Object.assign(t, nextPatch, { id: t.id })
     // A title supplied without an explicit placeholder marker is a literal name.
     if (typeof patch.title === 'string' && !Object.hasOwn(patch, 'titleKind')) delete t.titleKind
-    if (cliChanged) delete t.chatId
+    if (cliChanged) {
+      delete t.chatId
+      delete t.antigravityRuntime
+    }
     this.scheduleSave()
     return t
   }

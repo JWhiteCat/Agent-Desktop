@@ -1,4 +1,5 @@
 import { useT } from '../lib/i18n'
+import { CliInstallAction, useCliInstallStatus } from './CliInstallAction'
 import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react'
 import { argumentHint, filterCommands, slashQuery, type SlashCommand } from '@shared/commands'
 import { cliTitle, type AgentMode, type AttachmentRef, type CliProvider, type SendDelivery } from '@shared/types'
@@ -41,6 +42,7 @@ export interface ComposerHandle {
 
 interface Props {
   projectId: string
+  threadId?: string
   draftScope: string
   initial: SendOptions
   /** Home defaults are shared with other conversations; keep this draft's choices on return. */
@@ -70,6 +72,9 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
   const { running, disabled } = props
   const [text, setText] = useDraftState(props.draftScope, 'composer:text', '')
   const [opts, setOpts] = useDraftState<SendOptions>(props.draftScope, 'composer:options', props.initial)
+  const activeCli = opts.cli ?? props.cli
+  const installStatus = useCliInstallStatus(activeCli, props.threadId)
+  const cliMissing = !!installStatus && !installStatus.source
   const [sending, setSending] = useDraftState(props.draftScope, 'composer:sending', false)
   const [attachments, setAttachments] = useDraftState<DraftAttachment[]>(props.draftScope, 'composer:attachments', [])
   const attachmentsRef = useRef(attachments)
@@ -122,6 +127,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
     send: async (value, patch) => {
       if (running || disabled || sending) throw new Error(t('当前不能发送'))
       const next = textSendOptions(opts, patch)
+      if (cliMissing && (next.cli ?? activeCli) === activeCli && value.trim() !== '/fork') throw new Error(t('请先安装选中的 CLI。'))
       if (patch) setOpts(next)
       setSending(true)
       try {
@@ -166,14 +172,13 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
   }, [menuOpen, highlighted])
 
   useEffect(() => {
-    const armed = query !== undefined
+    const armed = query !== undefined && !cliMissing
     if (armed && !slashArmed.current) props.onPrepare?.(opts)
     slashArmed.current = armed
-  }, [query, opts, props.onPrepare])
+  }, [query, opts, props.onPrepare, cliMissing])
 
-  const canSend = (!!text.trim() || attachments.length > 0) && !disabled && !sending
   const nowShortcut = sendNowShortcut()
-  const activeCli = opts.cli ?? props.cli
+  const canSend = (!!text.trim() || attachments.length > 0) && !disabled && !sending && (!cliMissing || text.trim() === '/fork')
 
   const chooseCli = (next: CliProvider) => {
     if (next === activeCli) return
@@ -222,6 +227,10 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
     }
     if (disabled || sending) return
     const value = `/${command.name}`
+    if (cliMissing && command.name !== 'fork') {
+      setText(value)
+      return
+    }
     setSending(true)
     setText('')
     try {
@@ -357,6 +366,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
         }}
       />
       {sendError && <div className="attachment-error" role="alert">{sendError}</div>}
+      {activeCli && <CliInstallAction key={activeCli} provider={activeCli} threadId={props.threadId} status={installStatus} offerLogin />}
       {hint && <div className="composer-hint">{hint}</div>}
       <Popover anchor={box.current} open={menuOpen} onClose={() => setDismissed(true)} placement="top-start" className="command-popover">
         <div ref={listRef} className="menu command-menu" role="listbox">

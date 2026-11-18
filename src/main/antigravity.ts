@@ -2,12 +2,18 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { t as translate } from '@shared/i18n'
-import type { CliInfo, ModelInfo } from '@shared/types'
+import type { AntigravityRuntime, CliInfo, ModelInfo } from '@shared/types'
 import { AcpConnection, MethodNotFound } from './acp'
 import type { ResolvedCli } from './cli'
 import { cliEnvironment, cliSearchDirectories, findCliExecutable, killCliProcessTree, normalizeCliPath, spawnCliProcess } from './cli-runtime'
+import { managedExecutable } from './managed-cli-location'
 
-export function resolveAntigravity(customPath: string): ResolvedCli | undefined {
+export function resolveAntigravity(customPath: string, runtime?: AntigravityRuntime): ResolvedCli | undefined {
+  const installed = () => {
+    const entry = managedExecutable('antigravity')
+    return entry && { ...entry, display: entry.command, managed: true, antigravityRuntime: 'registry' as const }
+  }
+  if (runtime === 'registry') return installed()
   const name = process.platform === 'win32' ? 'agy.exe' : 'agy'
   const custom = normalizeCliPath(customPath)
   const locations = custom ? [custom] : cliSearchDirectories().map((dir) => path.join(dir, name))
@@ -18,10 +24,10 @@ export function resolveAntigravity(customPath: string): ResolvedCli | undefined 
   for (const location of locations) {
     const command = findCliExecutable(location, [name])
     if (command && (process.platform !== 'win32' || /\.exe$/i.test(command))) {
-      return { command, prefixArgs: [], display: command }
+      return { command, prefixArgs: [], display: command, antigravityRuntime: 'cli' }
     }
   }
-  return undefined
+  return !custom && runtime !== 'cli' ? installed() : undefined
 }
 
 export function resolveAntigravityApiKey(configured: string): string {
@@ -30,18 +36,20 @@ export function resolveAntigravityApiKey(configured: string): string {
 
 export function spawnAntigravity(cli: ResolvedCli, args: string[], cwd: string, apiKey: string) {
   const env = cliEnvironment({ NO_COLOR: '1', GEMINI_API_KEY: apiKey }, path.dirname(cli.command))
-  return spawnCliProcess(cli.command, args, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true })
+  const runtimeArgs = cli.antigravityRuntime === 'registry' ? cli.prefixArgs : args
+  return spawnCliProcess(cli.command, runtimeArgs, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true })
 }
 
-export function requireAntigravity(customPath: string): ResolvedCli {
-  const cli = resolveAntigravity(customPath)
+export function requireAntigravity(customPath: string, runtime?: AntigravityRuntime): ResolvedCli {
+  const cli = resolveAntigravity(customPath, runtime)
   if (!cli) throw new Error(translate('未找到 Antigravity CLI'))
   return cli
 }
 
-export async function antigravityCliInfo(customPath: string, apiKey: string): Promise<CliInfo> {
-  const cli = resolveAntigravity(customPath)
+export async function antigravityCliInfo(customPath: string, apiKey: string, runtime?: AntigravityRuntime): Promise<CliInfo> {
+  const cli = resolveAntigravity(customPath, runtime)
   if (!cli) return { found: false }
+  if (cli.managed) return { found: true, source: 'managed', path: cli.display, version: managedExecutable('antigravity')?.version, hasApiKey: !!apiKey }
   const child = spawnAntigravity(cli, ['--version'], os.homedir(), '')
   let version = ''
   child.stdout?.setEncoding('utf8').on('data', (chunk: string) => { version += chunk })
@@ -56,7 +64,7 @@ export async function antigravityCliInfo(customPath: string, apiKey: string): Pr
     if (code !== 0) return { found: false }
     const [major, minor] = (version.match(/\d+\.\d+/)?.[0] ?? '').split('.').map(Number)
     return {
-      found: true, path: cli.display, version: version.trim(), hasApiKey: !!apiKey,
+      found: true, source: 'external', path: cli.display, version: version.trim(), hasApiKey: !!apiKey,
       ...(major === 1 && minor < 5 ? { status: translate('请将 Antigravity CLI 更新到 1.5.0 或更高版本。') } : {})
     }
   } finally {
@@ -125,8 +133,8 @@ function choices(option: SelectOption | undefined): Choice[] {
   }).filter((choice) => typeof choice?.value === 'string' && !!choice.value)
 }
 
-export async function listAntigravityModels(customPath: string, apiKey: string): Promise<ModelInfo[]> {
-  const cli = requireAntigravity(customPath)
+export async function listAntigravityModels(customPath: string, apiKey: string, runtime?: AntigravityRuntime): Promise<ModelInfo[]> {
+  const cli = requireAntigravity(customPath, runtime)
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-desktop-agy-'))
   try {
     return await withAntigravityAcp(cli, cwd, apiKey, async (acp) => {
@@ -163,8 +171,8 @@ export async function listAntigravityModels(customPath: string, apiKey: string):
   }
 }
 
-export async function loginAntigravity(customPath: string): Promise<string> {
-  return withAntigravityAcp(requireAntigravity(customPath), os.homedir(), '', async (acp) => {
+export async function loginAntigravity(customPath: string, runtime?: AntigravityRuntime): Promise<string> {
+  return withAntigravityAcp(requireAntigravity(customPath, runtime), os.homedir(), '', async (acp) => {
     await acp.request('authenticate', { methodId: 'oauth-personal' })
     return translate('Antigravity CLI 登录成功')
   }, undefined, 5 * 60_000)

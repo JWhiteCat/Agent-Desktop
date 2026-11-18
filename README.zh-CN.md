@@ -34,7 +34,7 @@
 - Windows（x64）、macOS 13 Ventura 或更新版本（Apple Silicon / arm64 或 Intel / x64），或 Linux（x64 / amd64，基于 glibc 且运行 X11 或 Wayland 图形会话的桌面环境）。
 - 发布包：Windows NSIS 安装程序或免安装便携程序、按架构分别提供的 macOS DMG，以及 Linux AppImage 或 `.deb`。
 - 安装包自带运行时；源码开发才需要 [Node.js 24 LTS](https://nodejs.org/en/download)（也支持 Node 22.12+ 的 22.x、26+）。
-- 至少配置一种 CLI 的 API Key 或登录。Codex 和 Claude 可以使用适配器自带版本，Antigravity 需要本机安装 `agy` 1.5.0 或更高版本。
+- 至少配置一种 CLI 的 API Key 或登录。缺少的 CLI 可以直接在聊天输入框或设置里安装。
 - 变更面板的 Git 页签需要本机可执行 `git`。
 
 CLI 安装、自动检测和认证优先级见 [CLI 安装与配置](docs/cli-setup.zh-CN.md)。Linux 的依赖和打包说明见 [Linux 启动与打包](docs/development.zh-CN.md#linux-启动与打包)。
@@ -50,7 +50,7 @@ npm run dev
 
 首次使用：
 
-1. 打开 **设置 → CLI**，确认 CLI 路径，然后登录或填写 API Key。Cursor 默认优先使用 API Key，也可读取 `CURSOR_API_KEY`。
+1. 在聊天输入框选择所需 CLI，缺少时点击**安装**。然后登录或在 **设置 → CLI** 填写 API Key。Cursor 默认优先使用 API Key，也可读取 `CURSOR_API_KEY`。
 2. 添加项目文件夹，在首页选择 CLI、模型和模式，然后输入任务并发送。
 3. 在变更面板查看文件改动；后续可从侧边栏继续、分叉或同步对话。
 

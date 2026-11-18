@@ -2,7 +2,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { parseAttachmentPrompt } from '@shared/attachment-message'
 import { t as translate } from '@shared/i18n'
-import type { CliSession, Item, Settings } from '@shared/types'
+import type { AntigravityRuntime, CliSession, Item, Settings } from '@shared/types'
 import type { ToolImageCapture } from '@shared/tool-images'
 import { requireAntigravity, resolveAntigravity, resolveAntigravityApiKey, withAntigravityAcp } from './antigravity'
 import { visibleUserText } from './claude-history'
@@ -13,7 +13,12 @@ import { StreamReducer } from './reducer'
 type Credentials = Pick<Settings, 'antigravityPath' | 'antigravityApiKey'>
 
 export async function scanAntigravitySessions(settings: Credentials, imported: Set<string>): Promise<CliSession[]> {
-  const cli = resolveAntigravity(settings.antigravityPath)
+  const sessions = await Promise.all((['cli', 'registry'] as const).map((runtime) => scanRuntime(settings, imported, runtime)))
+  return sessions.flat()
+}
+
+async function scanRuntime(settings: Credentials, imported: Set<string>, runtime: AntigravityRuntime): Promise<CliSession[]> {
+  const cli = resolveAntigravity(settings.antigravityPath, runtime)
   if (!cli) return []
   return withAntigravityAcp(cli, os.homedir(), resolveAntigravityApiKey(settings.antigravityApiKey), async (acp) => {
     const sessions = new Map<string, CliSession>()
@@ -26,7 +31,7 @@ export async function scanAntigravitySessions(settings: Credentials, imported: S
         const title = typeof entry.title === 'string' ? entry.title.trim() : ''
         const updatedAt = Date.parse(entry.updatedAt) || 0
         sessions.set(entry.sessionId, {
-          chatId: entry.sessionId, cli: 'antigravity', cwd: entry.cwd, title: title || translate('未命名会话'),
+          chatId: entry.sessionId, cli: 'antigravity', antigravityRuntime: runtime, cwd: entry.cwd, title: title || translate('未命名会话'),
           ...(!title ? { titleKind: 'untitled' as const } : {}),
           createdAt: Date.parse(entry.createdAt) || updatedAt,
           updatedAt, imported: imported.has(entry.sessionId)
@@ -40,8 +45,8 @@ export async function scanAntigravitySessions(settings: Credentials, imported: S
   }, undefined, 10_000).catch(() => [])
 }
 
-export async function readAntigravityTranscript(settings: Credentials, sessionId: string, cwd: string, capture?: ToolImageCapture): Promise<Item[]> {
-  const cli = requireAntigravity(settings.antigravityPath)
+export async function readAntigravityTranscript(settings: Credentials, sessionId: string, cwd: string, capture?: ToolImageCapture, runtime: AntigravityRuntime = 'cli'): Promise<Item[]> {
+  const cli = requireAntigravity(settings.antigravityPath, runtime)
   const items: Item[] = []
   const reducer = new StreamReducer(items, capture)
   reducer.init = { sessionId, cwd }

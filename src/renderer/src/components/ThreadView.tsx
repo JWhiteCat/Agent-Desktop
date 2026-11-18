@@ -344,6 +344,7 @@ export function ThreadView({ thread, changesOpen, onToggleChanges }: Props) {
         />
         <Composer
           key={thread.id}
+          threadId={thread.id}
           draftScope={threadDraftScope(thread.id)}
           ref={composer}
           projectId={thread.projectId}

@@ -124,10 +124,9 @@ describe.skipIf(process.platform !== 'win32')('Windows Codex installation discov
     expectInstalled(wrapper, wrapper)
   })
 
-  it('reports bundled Codex when only the app bundled shim is on PATH', () => {
+  it('reports Codex missing when only the build dependency shim is on PATH', () => {
     vi.stubEnv('PATH', [bundledBin, systemBin].join(path.delimiter))
-    expect(resolveCodex('')).toMatchObject({ bundled: true, display: '内置 Codex' })
-    expect(resolveCodex('')?.codexPath).toBeUndefined()
+    expect(resolveCodex('')).toBeUndefined()
   })
 
   it('runs version, status and login arguments through a custom cmd path containing spaces', async () => {

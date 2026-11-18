@@ -268,6 +268,29 @@ export async function runDraftChecks() {
   check(one('.question-opt.selected', cards()[1]).textContent?.includes('Second'), 'Second identical block retains its own choice')
   check(!cards()[1].querySelector('.question-other-input'), 'Identical blocks never share custom answer state')
   passed.push('markdown questions')
+
+  let installed = false
+  const installation = deferred()
+  window.api.cliInstallStatus = async () => installed ? { source: 'managed' } : {}
+  window.api.installCli = async () => {
+    await installation.promise
+    installed = true
+  }
+  window.api.listModels = async () => [{ id: model, label: 'Composer 2.5' }]
+  const beforeInstall = sent.length
+  await render(composer(projectDraftScope('install-fixture')))
+  await type('Draft survives installing Cursor')
+  await attach('install.txt')
+  await eventually(() => !!document.querySelector('.cli-install-notice button'), 'Installer appears beside the composer')
+  check(one<HTMLButtonElement>('.send-btn').disabled, 'Missing CLI prevents send')
+  await button('安装 Cursor')
+  check(document.body.textContent?.includes('正在下载 CLI…'), 'Installation shows progress')
+  installation.resolve()
+  await eventually(() => !one<HTMLButtonElement>('.send-btn').disabled, 'Installed CLI enables send')
+  check(value() === 'Draft survives installing Cursor', 'Installation preserves the draft')
+  check(document.body.textContent?.includes('install.txt'), 'Installation preserves the attachment')
+  check(sent.length === beforeInstall, 'Installation never sends a draft automatically')
+  passed.push('CLI installation preserves drafts')
   root.unmount()
   return passed
 }

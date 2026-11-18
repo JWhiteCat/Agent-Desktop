@@ -34,7 +34,7 @@ See the [user guide](docs/user-guide.md) for detailed behavior and shortcuts.
 - Windows (x64), macOS 13 Ventura or newer (Apple Silicon / arm64 or Intel / x64), or Linux (x64 / amd64, a glibc-based desktop with an active X11 or Wayland session)
 - Release packages: Windows NSIS installer or portable executable, macOS DMG for each architecture, and Linux AppImage or `.deb`
 - Packaged apps include their runtime; source development requires [Node.js 24 LTS](https://nodejs.org/en/download) (Node 22.12+ in the 22.x line and Node 26+ are also supported)
-- At least one authenticated CLI from the list above. Codex and Claude can use the binaries bundled with their adapters. Antigravity requires a local install of `agy` 1.5.0 or later.
+- An account or API key for at least one supported CLI. Install any missing CLI from the composer or Settings.
 - `git` on `PATH` for git diffs and isolated worktrees
 
 See [CLI setup](docs/cli-setup.md) for installation, automatic detection, authentication, and updates. [Linux requirements and packaging](docs/development.md#linux-startup-and-packages) are documented separately.

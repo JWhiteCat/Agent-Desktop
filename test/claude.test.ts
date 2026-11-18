@@ -29,14 +29,14 @@ describe('claude mode and models', () => {
     expect(isClaudeShellShim('/usr/local/bin/claude', 'linux')).toBe(false)
   })
 
-  it.skipIf(process.platform !== 'win32')('ignores an npm claude shim on PATH and keeps the bundled binary', () => {
+  it.skipIf(process.platform !== 'win32')('ignores an npm claude shim on PATH and reports Claude missing', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-desktop-claude-shim-'))
     roots.push(dir)
     fs.writeFileSync(path.join(dir, 'claude'), '#!/bin/sh\nexit 0\n')
     fs.writeFileSync(path.join(dir, 'claude.cmd'), '@echo off\r\n')
     vi.stubEnv('PATH', dir)
     vi.spyOn(os, 'homedir').mockReturnValue(dir)
-    expect(resolveClaude('')).toMatchObject({ bundled: true, claudePath: undefined })
+    expect(resolveClaude('')).toBeUndefined()
   })
 
   it('maps the three app modes onto Claude permission modes', () => {

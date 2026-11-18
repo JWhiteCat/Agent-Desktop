@@ -8,6 +8,14 @@
 - 至少配置一种 CLI 的 API Key 或登录。应用支持 Cursor、Codex、Claude 和 Antigravity。
 - 变更面板的 Git 页签需要本机可执行 `git`
 
+## 在应用内安装
+
+在聊天输入框选择 CLI，或打开 **设置 → CLI**，点击**安装**。Agent Desktop 在运行桌面应用的电脑上下载并校验发行文件，保存到应用数据目录的 `data/cli/` 下。支持 Windows x64、macOS x64 和 arm64、Linux x64。安装后可在应用内登录或填写 API Key。
+
+应用依次使用显式配置的路径、本机已有安装、应用管理版本。Codex 和 Claude 的下载版本与随包 ACP 适配器配套。从含内置 CLI 的版本升级后，首次使用时可能需要点一次**安装**。
+
+## 可选的独立安装
+
 ### 安装 Cursor CLI
 
 ```powershell
@@ -26,7 +34,7 @@ curl https://cursor.com/install -fsS | bash
 npm install -g @openai/codex
 ```
 
-也可以不单独安装。应用通过 `@agentclientprotocol/codex-acp` 驱动 Codex。设置里的路径为空、且 PATH 上没有 `codex` 时，使用适配器自带的 Codex。设置里会写明正在使用内置 Codex。
+应用通过 `@agentclientprotocol/codex-acp` 启动检测到的 Codex 可执行文件。
 
 ### 安装 Claude Code
 
@@ -34,7 +42,7 @@ npm install -g @openai/codex
 npm install -g @anthropic-ai/claude-code
 ```
 
-也可以不单独安装。应用通过 `@agentclientprotocol/claude-agent-acp` 驱动 Claude Code。设置里的路径为空、且 PATH 上没有 `claude` 时，使用适配器自带的 Claude。设置里会写明正在使用内置 Claude。Windows 上会跳过 `.cmd` 跳转，以便适配器启动原生程序。
+应用通过 `@agentclientprotocol/claude-agent-acp` 启动检测到的 Claude 可执行文件。Windows 上会跳过 `.cmd` 跳转，以便适配器启动原生程序。
 
 ### 安装 Antigravity CLI
 
@@ -49,9 +57,9 @@ npm install -g @anthropic-ai/claude-code
 | Windows | `%LOCALAPPDATA%\cursor-agent` | PATH 上的 `codex` | PATH 上的 `claude.exe`，或 `%USERPROFILE%\.local\bin\claude.exe` | PATH 上的 `agy.exe`，或 `%LOCALAPPDATA%\agy\bin\agy.exe` |
 | macOS / Linux | `~/.local/bin/agent`、`/usr/local/bin/agent`、`/opt/homebrew/bin/agent` | `~/.local/bin/codex`、`/usr/local/bin/codex`、`/opt/homebrew/bin/codex`，以及 PATH | `~/.local/bin/claude`、`/usr/local/bin/claude`、`/opt/homebrew/bin/claude`，以及 PATH | PATH 或 `~/.local/bin` 等常见目录中的 `agy` |
 
-找不到时，在设置里填写可执行文件或安装目录。
+使用自定义安装时，可在设置里填写可执行文件或安装目录。
 
-macOS 安装包无需另装 Node.js，内置 Codex/Claude 通过应用自带运行时启动。Finder 启动通常不会继承终端初始化后的 PATH，应用会补充 `/opt/homebrew/bin`、`/usr/local/bin`、`~/.local/bin` 等常见位置，并保留已继承 PATH 的优先级。通过 nvm 等工具安装在非标准目录的 CLI 若未被检测到，请在设置中选择可执行文件或安装前缀；支持 `~/`、带引号及含空格路径。应用不会执行 shell 初始化文件。
+macOS 安装包无需另装 Node.js，Codex 和 Claude 的 ACP 适配器使用应用自带运行时。Finder 启动通常不会继承终端初始化后的 PATH，应用会补充 `/opt/homebrew/bin`、`/usr/local/bin`、`~/.local/bin` 等常见位置，并保留已继承 PATH 的优先级。通过 nvm 等工具安装在非标准目录的 CLI 若未被检测到，请在设置中选择可执行文件或安装前缀；支持 `~/`、带引号及含空格路径。应用不会执行 shell 初始化文件。
 
 各 CLI 的检测结果分别缓存在应用数据目录的 `cli-info-cache.json`，重启后仍保留。打开设置、切换标签或切换界面语言时直接复用缓存。没有有效缓存时才自动检测，未找到 CLI 的结果也会保存。缓存不定时过期。
 
@@ -65,9 +73,9 @@ Codex 认证优先使用设置中的 Key，其次是 `CODEX_API_KEY`，再次是
 
 Claude 认证优先使用设置中的 Key，其次是 `ANTHROPIC_API_KEY`。只要其中有一个，就按 API 计费，不会使用 Claude 订阅。都没有时使用 `~/.claude` 里的登录。登录按钮走适配器的 Claude.ai 登录。
 
-Antigravity 优先使用设置中的 Gemini API Key，其次是 `GEMINI_API_KEY`，最后使用 `agy` 已保存的凭据。登录按钮打开 Google 个人账号登录。Gemini Enterprise 或终端登录请参阅 [Antigravity CLI 认证指南](https://antigravity.google/docs/ide/extensions/acp/#authentication)。
+Antigravity 优先使用设置中的 Gemini API Key，其次是 `GEMINI_API_KEY`，最后使用当前 Antigravity 运行时已保存的凭据。登录按钮打开 Google 个人账号登录。Gemini Enterprise 或终端登录请参阅 [Antigravity CLI 认证指南](https://antigravity.google/docs/ide/extensions/acp/#authentication)。
 
-应用会读取当前账号可用的模型和思考级别。在 **设置 → 外观与历史 → 导入** 可以导入已有的 Antigravity 会话。对话菜单可重新同步历史。分叉会新建独立会话，并在第一次发送时传入复制的历史。
+应用管理版 Antigravity 使用 Google 在 ACP Registry 发布的服务，有独立的登录和历史存储。已有 `agy` 对话继续通过本机独立 CLI 运行。强制开启 CLI 沙箱的设置适用于独立 `agy`。应用会读取当前账号可用的模型和思考级别。在 **设置 → 外观与历史 → 导入** 可以导入已有的 Antigravity 会话。对话菜单可重新同步历史。分叉会新建独立会话，并在第一次发送时传入复制的历史。
 
 Antigravity 从 `~/.gemini/config/mcp_config.json` 和 `.agents/mcp_config.json` 读取 MCP 配置。本地 Skill 路径包括 `~/.gemini/antigravity-cli/skills`、`~/.gemini/skills` 和项目的 `.agents/skills`。
 
@@ -75,4 +83,4 @@ Antigravity 从 `~/.gemini/config/mcp_config.json` 和 `.agents/mcp_config.json`
 
 打开「设置 → CLI」，点击对应 CLI 登录按钮右侧的「更新」。通过远程页面点击时，也在桌面应用所在电脑执行。执行期间按钮显示「更新中…」，卡片保留执行结果或错误信息；成功后刷新该 CLI 的版本与模型列表。
 
-Cursor、原生安装的 Claude Code 和 Antigravity 使用各自的 `update` 命令。通过 npm 安装的 Codex 在原有安装位置更新，通过 Homebrew 安装的版本由 Homebrew 更新。不支持的安装方式会提示处理方法。内置 Codex 和 Claude 随 Agent Desktop 更新。需要单独更新时，先安装独立 CLI 并在设置中选择。
+Cursor、原生安装的 Claude Code 和 Antigravity 使用各自的 `update` 命令。通过 npm 安装的 Codex 在原有安装位置更新，通过 Homebrew 安装的版本由 Homebrew 更新。不支持的安装方式会提示处理方法。应用管理版本沿用安装时的校验和下载流程。Codex 和 Claude 随各版 Agent Desktop 的适配器选择配套版本，Cursor 使用应用已校验的发行清单。

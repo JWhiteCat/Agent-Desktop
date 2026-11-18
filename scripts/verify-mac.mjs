@@ -141,6 +141,11 @@ async function smokeWindow(executable) {
     assert(rendered, 'Packaged renderer failed to initialize')
     const version = await evaluate('window.api.cliInfo("cursor").then(info => info.version)')
     assert.equal(version, 'mac-package-fixture', 'Packaged CLI detection did not use the isolated fixture')
+    for (const provider of ['codex', 'claude']) {
+      const status = await evaluate(`window.api.cliInstallStatus(${JSON.stringify(provider)})`)
+      assert.equal(status.source, undefined, `Unexpected ${provider} installation in clean profile`)
+      assert.equal(status.unavailable, 'invalid-path')
+    }
     console.log('Packaged window, preload IPC and mock CLI: OK')
   } finally {
     socket?.close()
@@ -159,16 +164,16 @@ try {
   const resources = path.join(application, 'Contents', 'Resources')
   const executable = path.join(application, 'Contents', 'MacOS', 'Agent Desktop')
   const modules = path.join(resources, 'app.asar.unpacked', 'node_modules')
-  const codex = path.join(modules, '@openai', `codex-darwin-${arch}`, 'vendor', `${arch === 'arm64' ? 'aarch64' : 'x86_64'}-apple-darwin`, 'bin', 'codex')
-  const claude = path.join(modules, '@anthropic-ai', `claude-agent-sdk-darwin-${arch}`, 'claude')
-  for (const file of [executable, codex, claude]) checkArchitecture(file)
-  env.CODEX_PATH = codex
-  env.CLAUDE_CODE_EXECUTABLE = claude
+  checkArchitecture(executable)
+  const asarList = run(process.execPath, [path.resolve('node_modules/@electron/asar/bin/asar.js'), 'list', path.join(resources, 'app.asar')], {
+    env: { ...env, ELECTRON_RUN_AS_NODE: undefined }
+  })
+  assert(!/\/node_modules\/(?:@openai\/codex(?:[-/]|$)|@anthropic-ai\/claude-agent-sdk-)/m.test(asarList), 'Release bundles a native CLI package')
   const codexEntry = path.join(modules, '@agentclientprotocol', 'codex-acp', 'dist', 'index.js')
   const claudeEntry = path.join(modules, '@agentclientprotocol', 'claude-agent-acp', 'dist', 'index.js')
-  assert(run(executable, [path.join(modules, '@openai', 'codex', 'bin', 'codex.js'), '--version']).trim(), 'Missing Codex version')
-  assert(run(executable, [claudeEntry, '--cli', '--version']).trim(), 'Missing Claude version')
-  await initializeAdapter(executable, codexEntry)
+  const codexFixture = path.join(root, 'mock-codex')
+  fs.writeFileSync(codexFixture, '#!/bin/sh\nexit 0\n', { mode: 0o755 })
+  await initializeAdapter(executable, codexEntry, { CODEX_PATH: codexFixture })
   // Claude's initialize probes auth status; never let a local verification read Keychain logins.
   const authFixture = path.join(root, 'mock-claude-auth')
   fs.writeFileSync(authFixture, '#!/bin/sh\nprintf \'%s\\n\' \'{"loggedIn":false,"authMethod":"none"}\'\n', { mode: 0o755 })
@@ -180,7 +185,7 @@ try {
   assert(output.includes(marker), 'Runner changed literal command arguments')
   assert.equal(JSON.parse(fs.readFileSync(path.join(root, 'status.json'), 'utf8')).kind, 'started')
   await smokeWindow(executable)
-  console.log(`DMG, signature, ${arch} binaries, ACP initialization and terminal runner: OK`)
+  console.log(`DMG, signature, ${arch} executable, ACP adapters and terminal runner: OK`)
 } finally {
   try {
     if (attached) run('/usr/bin/hdiutil', ['detach', mount])

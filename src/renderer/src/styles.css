@@ -2841,6 +2841,14 @@ select {
 .toggle:checked::after {
   transform: translateX(14px);
 }
+.cli-install-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding-block: 4px;
+}
+
 .cli-card {
   display: flex;
   flex-direction: column;

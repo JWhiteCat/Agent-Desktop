@@ -7,6 +7,7 @@ import type { AgentMode, ModelInfo } from '@shared/types'
 import { AcpConnection, MethodNotFound, permissionResult } from './acp'
 import { killTree, type ResolvedCli } from './cli'
 import { cliEnvironment, cliSearchDirectories, findCliExecutable, normalizeCliPath, spawnCliProcess } from './cli-runtime'
+import { managedExecutable } from './managed-cli-location'
 
 const isWin = process.platform === 'win32'
 
@@ -18,6 +19,7 @@ export interface ResolvedClaude {
   /** Set when a user-installed `claude` binary was found. A `.cmd` shim is not passed to the adapter. */
   claudePath?: string
   bundled: boolean
+  managed?: boolean
   display: string
   acpEntry: string
 }
@@ -59,12 +61,14 @@ export function resolveClaude(customPath: string): ResolvedClaude | undefined {
   const custom = normalizeCliPath(customPath)
   if (custom) {
     const user = findClaudeFile(custom)
-    if (!user) return undefined
-    return { claudePath: user, bundled: false, display: user, acpEntry }
+    const executable = user && claudeNativeExecutable(user)
+    if (!executable) return undefined
+    return { claudePath: executable, bundled: false, display: executable, acpEntry }
   }
   const user = findClaudeOnPath()
   if (user) return { claudePath: user, bundled: false, display: user, acpEntry }
-  return { claudePath: undefined, bundled: true, display: translate('内置 Claude'), acpEntry }
+  const installed = managedExecutable('claude')
+  return installed && { claudePath: installed.command, managed: true, bundled: false, display: installed.command, acpEntry }
 }
 
 export function spawnClaudeAcp(claude: ResolvedClaude, cwd: string, apiKey: string): ChildProcess {
@@ -280,6 +284,7 @@ export function modelsFromClaudeSession(
 
 function claudeEnv(claude: ResolvedClaude, apiKey: string): NodeJS.ProcessEnv {
   const env = nodeEnv(claude.claudePath)
+  if (claude.managed) env.DISABLE_AUTOUPDATER = '1'
   const executable = claude.claudePath && !isClaudeShellShim(claude.claudePath) ? claude.claudePath : ''
   if (executable) env.CLAUDE_CODE_EXECUTABLE = executable
   else delete env.CLAUDE_CODE_EXECUTABLE
@@ -293,27 +298,7 @@ function nodeEnv(executable?: string): NodeJS.ProcessEnv {
 }
 
 function claudeBinary(claude: ResolvedClaude): string | undefined {
-  if (claude.claudePath) return claude.claudePath
-  return bundledClaudeBinary()
-}
-
-function bundledClaudeBinary(): string | undefined {
-  const ext = isWin ? '.exe' : ''
-  const spec = `@anthropic-ai/claude-agent-sdk-${process.platform}-${process.arch}/claude${ext}`
-  const roots: string[] = []
-  if (process.resourcesPath) {
-    roots.push(path.join(process.resourcesPath, 'app.asar.unpacked', 'node_modules'))
-  }
-  let dir = __dirname
-  for (let i = 0; i < 6; i++) {
-    roots.push(path.join(dir, 'node_modules'))
-    dir = path.dirname(dir)
-  }
-  for (const root of roots) {
-    const file = path.join(root, spec)
-    if (fs.existsSync(file)) return preferUnpacked(file)
-  }
-  return undefined
+  return claude.claudePath
 }
 
 function runClaude(command: string, args: string[], timeoutMs: number): Promise<{ code: number | null; stdout: string; stderr: string }> {
@@ -339,11 +324,12 @@ function runClaude(command: string, args: string[], timeoutMs: number): Promise<
 
 function findClaudeOnPath(): string | undefined {
   // Windows `where claude` hits npm's extensionless shell script before any native binary.
-  const names = isWin ? ['claude.exe'] : ['claude']
+  const names = isWin ? ['claude.exe', 'claude.cmd', 'claude'] : ['claude']
   for (const directory of cliSearchDirectories()) {
     for (const name of names) {
       const found = findClaudeFile(path.join(directory, name))
-      if (found && !isClaudeShellShim(found)) return found
+      const executable = found && claudeNativeExecutable(found)
+      if (executable) return executable
     }
   }
   const home = os.homedir()
@@ -356,6 +342,17 @@ function findClaudeOnPath(): string | undefined {
 function findClaudeFile(custom: string): string | undefined {
   const names = isWin ? ['claude.exe', 'claude.cmd', 'claude'] : ['claude']
   return findCliExecutable(custom, names)
+}
+
+function claudeNativeExecutable(file: string): string | undefined {
+  if (!isClaudeShellShim(file)) return file
+  const modules = path.join(path.dirname(file), 'node_modules')
+  const packageName = `claude-code-win32-${process.arch}`
+  for (const root of [modules, path.join(modules, '@anthropic-ai', 'claude-code', 'node_modules')]) {
+    const executable = findCliExecutable(path.join(root, '@anthropic-ai', packageName, 'claude.exe'), [])
+    if (executable) return executable
+  }
+  return undefined
 }
 
 /**

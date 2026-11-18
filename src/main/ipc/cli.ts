@@ -1,10 +1,15 @@
 import { localizedMessage, t as translate } from '@shared/i18n'
-import { isCliProvider, normalizeCliProvider, type CliProvider, type Settings } from '@shared/types'
+import { isCliProvider, normalizeCliProvider, threadCli, type CliInstallStatus, type CliProvider, type Settings } from '@shared/types'
 import { antigravityCliInfo, listAntigravityModels, loginAntigravity, resolveAntigravityApiKey } from '../antigravity'
 import { scanAntigravitySessions } from '../antigravity-history'
 import { claudeCliInfo, claudeModelList, codexCliInfo, codexModelList, cursorCliInfo, cursorModelList, loginClaude, loginCodex, loginCursor } from '../cli-catalog'
 import { updateAntigravity, updateClaude, updateCodex, updateCursor } from '../cli-update'
 import { cliInfoCacheFor, cliInfoSignature } from '../cli-info-cache'
+import { CliInstaller } from '../cli-install'
+import { supportedInstallPlatform } from '../cli-install-source'
+import { normalizeCliPath } from '../cli-runtime'
+import { managedExecutable } from '../managed-cli-location'
+import { resolveLaunch } from '../session/provider'
 import { scanClaudeSessions } from '../claude-history'
 import { scanCodexSessions } from '../codex-history'
 import { scanCliSessions } from '../history'
@@ -27,6 +32,7 @@ function modelList(cli: CliProvider, settings: Settings) {
 export function cliHandlers(deps: IpcDeps): Record<string, Handler> {
   const { store, broadcast, modelsCache } = deps
   const updating = new Set<CliProvider>()
+  const installer = new CliInstaller((url, init) => import('electron').then(({ net }) => net.fetch(url, init)))
   const infoCache = cliInfoCacheFor(store)
   const history = {
     store,
@@ -37,7 +43,40 @@ export function cliHandlers(deps: IpcDeps): Record<string, Handler> {
     ...scanCliSessions(imported), ...scanCodexSessions(imported), ...scanClaudeSessions(imported),
     ...await scanAntigravitySessions(store.settings, imported)
   ]
+  const runtimeFor = (provider: CliProvider, threadId?: string) => {
+    const thread = provider === 'antigravity' && threadId ? store.thread(threadId) : undefined
+    return thread?.chatId && threadCli(thread) === 'antigravity' ? thread.antigravityRuntime ?? 'cli' : undefined
+  }
+  const installStatus = (provider: CliProvider, threadId?: string): CliInstallStatus => {
+    const settings = store.settings
+    const runtime = runtimeFor(provider, threadId)
+    const launch = resolveLaunch(provider, settings, runtime)
+    const managed = launch && (launch.cli.managed || launch.claude?.managed || launch.codex?.managed)
+    const custom = provider === 'cursor' ? settings.agentPath : settings[`${provider}Path`]
+    const unavailable = launch ? undefined : runtime === 'cli' ? 'antigravity-cli'
+      : runtime !== 'registry' && normalizeCliPath(custom ?? '') ? 'invalid-path' : !supportedInstallPlatform() ? 'platform' : undefined
+    return { source: launch ? managed ? 'managed' : 'external' : undefined, unavailable, ...installer.status(provider) }
+  }
+  const install = async (provider: CliProvider, threadId?: string) => {
+    const state = installStatus(provider, threadId)
+    if (state.unavailable || state.source === 'external') throw new Error(translate('当前 CLI 不能由应用安装'))
+    try {
+      await installer.install(provider)
+      modelsCache.delete(provider)
+      deps.sessions.dropIdle()
+    } finally {
+      infoCache.invalidate(provider)
+    }
+  }
   return {
+    'cli:installStatus': (provider: CliProvider, threadId?: string) => {
+      if (!isCliProvider(provider)) throw new Error(translate('请选择 CLI'))
+      return installStatus(provider, threadId)
+    },
+    'cli:install': (provider: CliProvider, threadId?: string) => {
+      if (!isCliProvider(provider)) throw new Error(translate('请选择 CLI'))
+      return install(provider, threadId)
+    },
     'cli:models': async (refresh?: boolean, provider?: CliProvider) => {
       const cli = chosen(store.settings.cliProvider, provider)
       const cached = modelsCache.get(cli)
@@ -56,13 +95,13 @@ export function cliHandlers(deps: IpcDeps): Record<string, Handler> {
         return cursorCliInfo(settings.agentPath, settings.apiKey)
       }, refresh)
     },
-    'cli:login': async (provider?: CliProvider) => {
+    'cli:login': async (provider?: CliProvider, threadId?: string) => {
       const cli = chosen(store.settings.cliProvider, provider)
       try {
         if (cli === 'codex') return await loginCodex(store.settings.codexPath)
         if (cli === 'claude') return await loginClaude(store.settings.claudePath)
         if (cli === 'antigravity') {
-          const message = await loginAntigravity(store.settings.antigravityPath)
+          const message = await loginAntigravity(store.settings.antigravityPath, runtimeFor(cli, threadId))
           modelsCache.delete(cli)
           deps.sessions.dropIdle()
           return message
@@ -74,6 +113,10 @@ export function cliHandlers(deps: IpcDeps): Record<string, Handler> {
     },
     'cli:update': async (provider: CliProvider) => {
       if (!isCliProvider(provider)) throw new Error(translate('请选择要更新的 CLI'))
+      if (managedExecutable(provider) && installStatus(provider).source === 'managed') {
+        await install(provider)
+        return translate('CLI 更新完成')
+      }
       if (updating.has(provider)) throw new Error(translate('此 CLI 正在更新，请稍候'))
       updating.add(provider)
       try {
@@ -111,6 +154,7 @@ export function cliHandlers(deps: IpcDeps): Record<string, Handler> {
           chatId: s.chatId,
           cwd: s.cwd,
           cli: s.cli,
+          antigravityRuntime: s.antigravityRuntime,
           mode: 'agent',
           source: 'cli',
           createdAt: s.createdAt || Date.now(),

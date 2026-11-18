@@ -8,6 +8,7 @@ import { skinsFor } from './skins'
 import type { AgentEvent, AppState, CliProvider, ModelInfo, Settings } from '@shared/types'
 import { grokBotFileResponse } from './grokbot-files'
 import { createIpcHandlers } from './ipc'
+import { configureManagedCliDirectory } from './managed-cli-location'
 import { isTrustedAppFrame } from './ipc/guard'
 import { flushGrokBotCaches, grokBotFiles } from './ipc/grokbot'
 import { notifyRunFinished } from './notify'
@@ -102,6 +103,7 @@ const quitConfirmation = new QuitConfirmation({
 
 app.whenReady().then(() => {
   store = new Store()
+  configureManagedCliDirectory(store.dataDir)
   setLanguage(store.settings.language, app.getLocale())
   protocol.handle(GROKBOT_FILE_SCHEME, (request) => grokBotFileResponse(grokBotFiles, request.url))
   protocol.handle(SKIN_SCHEME, (request) => skinsFor(store).response(request))
