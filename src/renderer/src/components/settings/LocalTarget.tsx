@@ -1,10 +1,10 @@
 import type { LocalTarget } from '@shared/local-config'
-import { normalizeCliProvider, type CliProvider } from '@shared/types'
+import { CLI_PROVIDERS, cliTitle, normalizeCliProvider, type CliProvider } from '@shared/types'
 import { useT } from '../../lib/i18n'
 import { useStore } from '../../store'
 
-export const CLI_ORDER: CliProvider[] = ['cursor', 'codex', 'claude']
-export const CLI_LABEL: Record<CliProvider, string> = { cursor: 'Cursor', codex: 'Codex', claude: 'Claude' }
+export const CLI_ORDER = CLI_PROVIDERS
+export const CLI_LABEL = Object.fromEntries(CLI_ORDER.map((cli) => [cli, cliTitle(cli)])) as Record<CliProvider, string>
 
 export function baseName(p: string): string {
   return p.split(/[\\/]/).filter(Boolean).pop() ?? p

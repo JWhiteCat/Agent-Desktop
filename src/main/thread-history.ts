@@ -4,6 +4,7 @@ import type { Item, ResultItem, ThreadMeta, ToolItem, UserItem } from '@shared/t
 import { isManagedMessageId } from '@shared/attachment-message'
 import { threadCli } from '@shared/types'
 import { materializeCliFork, planCliFork } from './fork'
+import { readAntigravityTranscript } from './antigravity-history'
 import { readClaudeTranscript } from './claude-history'
 import { findChatDir, readCliTranscript } from './history'
 import { readCodexTranscript } from './codex-history'
@@ -175,7 +176,7 @@ export async function forkThread(deps: HistoryDeps, id: string, throughItemId?: 
             if (made.cwd) cwd = made.cwd
           }
         }
-      } else if (!throughItemId) {
+      } else if (cli !== 'antigravity' && !throughItemId) {
         const made = await deps.forkSession(id)
         // The source may have advanced while the adapter was starting. Keep the
         // snapshot selected at click time instead of loading newer CLI history.
@@ -223,19 +224,41 @@ export function syncFromCli(deps: Pick<HistoryDeps, 'store' | 'isRunning'>, thre
   if (!t?.chatId || deps.isRunning(threadId)) return undefined
   if (t.forkContextThroughItemId) throw new Error(translate('分叉上下文尚未写入 CLI，请成功发送一条消息后再同步'))
   const cli = threadCli(t)
+  if (cli === 'antigravity') return undefined
   const previous = deps.store.items(threadId)
   const capture = imageCapture(deps.store, t.cwd ?? deps.store.project(t.projectId)?.path ?? '', previous)
   const items = cli === 'codex' ? readCodexTranscript(t.chatId, capture) : cli === 'claude' ? readClaudeTranscript(t.chatId, undefined, capture) : readCliTranscript(t.chatId, capture)
+  return saveSyncedItems(deps.store, t, previous, items)
+}
+
+export async function syncAntigravityFromCli(deps: Pick<HistoryDeps, 'store' | 'isRunning'>, threadId: string): Promise<Item[] | undefined> {
+  const t = deps.store.thread(threadId)
+  if (!t?.chatId || deps.isRunning(threadId)) return undefined
+  if (t.forkContextThroughItemId) throw new Error(translate('分叉上下文尚未写入 CLI，请成功发送一条消息后再同步'))
+  const cwd = t.cwd ?? deps.store.project(t.projectId)?.path
+  if (!cwd) return undefined
+  const previous = deps.store.items(threadId)
+  const before = JSON.stringify(previous)
+  const { chatId } = t
+  const items = await readAntigravityTranscript(deps.store.settings, chatId, cwd, imageCapture(deps.store, cwd, previous))
+  const current = deps.store.thread(threadId)
+  if (!current || current.chatId !== chatId || threadCli(current) !== 'antigravity' || deps.isRunning(threadId)
+    || JSON.stringify(deps.store.items(threadId)) !== before) return undefined
+  return saveSyncedItems(deps.store, current, previous, items)
+}
+
+function saveSyncedItems(store: Store, t: ThreadMeta, previous: Item[], items: Item[] | undefined): Item[] | undefined {
   // A CLI may have created its database before persisting any messages.
   // Keep the local transcript until there is history to replace it with.
   if (!items?.length) return undefined
+  const cli = threadCli(t)
   preserveManagedAttachments(previous, items)
   preserveTurnFiles(previous, items, cli)
   if (cli === 'codex') preserveQuotaEstimates(previous, items)
-  restoreToolFileChanges(items, t.cwd ?? deps.store.project(t.projectId)?.path ?? '')
-  deps.store.setItems(threadId, items)
+  restoreToolFileChanges(items, t.cwd ?? store.project(t.projectId)?.path ?? '')
+  store.setItems(t.id, items)
   const firstUser = items.find((i) => i.kind === 'user')
-  deps.store.updateThread(threadId, {
+  store.updateThread(t.id, {
     syncedAt: Date.now(),
     preview: previewOf(items) ?? t.preview,
     ...(t.titleKind && firstUser?.kind === 'user' ? { title: titleFrom(firstUser.text || firstUser.attachments?.[0]?.name || firstUser.text), titleKind: undefined } : {})

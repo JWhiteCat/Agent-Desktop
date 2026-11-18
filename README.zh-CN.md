@@ -2,7 +2,7 @@
 
 [English](README.md)
 
-面向 [Cursor CLI](https://cursor.com/cli)（`agent`）、[Codex CLI](https://github.com/openai/codex)（`codex`）和 [Claude Code](https://docs.anthropic.com/en/docs/claude-code)（`claude`）的桌面客户端。对话按项目分组，窗口流式展示思考、工具调用和回复，并保留本地历史。界面支持简体中文和英文。
+面向 [Cursor CLI](https://cursor.com/cli)（`agent`）、[Codex CLI](https://github.com/openai/codex)（`codex`）、[Claude Code](https://docs.anthropic.com/en/docs/claude-code)（`claude`）和 [Antigravity CLI](https://antigravity.google/product/antigravity-cli/)（`agy`）的桌面客户端。对话按项目分组，窗口流式展示思考、工具调用和回复，并保留本地历史。界面支持简体中文和英文。
 
 应用本身不调用模型，而是在本机启动 CLI，通过 [Agent Client Protocol](https://agentclientprotocol.com)（ACP）与之通信。
 
@@ -34,7 +34,7 @@
 - Windows（x64）、macOS 13 Ventura 或更新版本（Apple Silicon / arm64 或 Intel / x64），或 Linux（x64 / amd64，基于 glibc 且运行 X11 或 Wayland 图形会话的桌面环境）。
 - 发布包：Windows NSIS 安装程序或免安装便携程序、按架构分别提供的 macOS DMG，以及 Linux AppImage 或 `.deb`。
 - 安装包自带运行时；源码开发才需要 [Node.js 24 LTS](https://nodejs.org/en/download)（也支持 Node 22.12+ 的 22.x、26+）。
-- 至少一种已配置 API Key 或已登录的 CLI：Cursor CLI、Codex CLI 或 Claude Code；找不到本机 Codex / Claude 时可使用适配器自带版本。
+- 至少配置一种 CLI 的 API Key 或登录。Codex 和 Claude 可以使用适配器自带版本，Antigravity 需要本机安装 `agy` 1.5.0 或更高版本。
 - 变更面板的 Git 页签需要本机可执行 `git`。
 
 CLI 安装、自动检测和认证优先级见 [CLI 安装与配置](docs/cli-setup.zh-CN.md)。Linux 的依赖和打包说明见 [Linux 启动与打包](docs/development.zh-CN.md#linux-启动与打包)。

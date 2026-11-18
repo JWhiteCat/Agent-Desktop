@@ -28,20 +28,18 @@ import { SessionUsage } from './session/usage'
 import { loadCodexQuota } from './quota'
 import { codexProxyOverlay, isCodexRoutingTimeout, refreshCodexProxyEnv } from './system-proxy'
 import {
-  applySessionOptions, cliLabel, cursorArgs, fingerprintWithCwd, initializeSession, leftPlanMode,
-  planPrompt, procFingerprint, providerApiKey, resolveLaunch, spawnProvider, worktreePathFrom, type AgentLaunch
+  antigravityArgs, applySessionOptions, cliLabel, cursorArgs, fingerprintWithCwd, initializeSession, leftPlanMode,
+  planPrompt, procFingerprint, providerApiKey, resolveLaunch, spawnProvider, worktreePathFrom, type AgentLaunch, type SessionConnection
 } from './session/provider'
 import { abandonQuestions, answerPendingQuestion, onAcpRequest, onIdleAcpRequest, settleQuestion, type InteractionRun } from './session/requests'
 import type { Store } from './store'
 
 export { leftPlanMode } from './session/provider'
 
-/** One `agent acp` process kept alive so the next message skips startup and session/load. */
-interface AgentProc {
+/** One ACP process kept alive so the next message skips startup and session restoration. */
+interface AgentProc extends SessionConnection {
   child: ChildProcess
   acp: AcpConnection
-  provider: CliProvider
-  sessionId: string
   cwd: string
   /** Worktree the CLI created for `--worktree`. New sessions start there instead of `cwd`. */
   worktree?: string
@@ -378,7 +376,7 @@ export class SessionManager {
       const project = this.store.project(thread.projectId)
       if (!project) throw new Error(translate('项目不存在'))
       const settings = this.store.settings
-      const launch = resolveLaunch(provider, settings.agentPath, settings.codexPath, settings.claudePath)
+      const launch = resolveLaunch(provider, settings)
       if (!launch) throw new Error(translate('未找到 {label}。请先安装，或在设置中指定路径。', { label: cliLabel(provider) }))
       const cwd = thread.cwd && (thread.worktree || fs.existsSync(thread.cwd)) ? thread.cwd : project.path
       if (!fs.existsSync(cwd)) throw new Error(translate('项目目录不存在：{path}', { path: cwd }))
@@ -479,13 +477,13 @@ export class SessionManager {
     if (!project) throw new Error(translate('项目不存在'))
     const settings = this.store.settings
     const provider = threadCli(thread)
-    const launch = resolveLaunch(provider, settings.agentPath, settings.codexPath, settings.claudePath)
+    const launch = resolveLaunch(provider, settings)
     if (!launch) throw new Error(translate('未找到 {label}。请先安装，或在设置中指定路径。', { label: cliLabel(provider) }))
     const apiKey = providerApiKey(provider, settings)
 
     let cwd = thread.cwd && (thread.worktree || fs.existsSync(thread.cwd)) ? thread.cwd : project.path
     if (!fs.existsSync(cwd)) throw new Error(translate('项目目录不存在：{path}', { path: cwd }))
-    // Cursor creates its own worktree from `--worktree`; the Codex and Claude adapters have no such flag.
+    // Cursor creates its own worktree from `--worktree`; the other providers use an app-managed worktree.
     if (provider !== 'cursor' && req.worktree && !thread.chatId && !thread.cwd) {
       cwd = await createWorktree(cwd, worktreeRoot(this.store))
       if (cancelled()) return false
@@ -493,7 +491,7 @@ export class SessionManager {
     }
     this.usage.cancel(thread.id)
 
-    const mcpServers = toAcpMcpServers(settings.mcpServers)
+    const mcpServers = toAcpMcpServers(provider === 'antigravity' ? settings.mcpServers.filter((server) => server.transport !== 'sse') : settings.mcpServers)
     const skills = enabledSkillFingerprint(settings.skills)
     // Automatic「继续」must register its run before this function yields. A refresh here
     // lets the deferred queue drain, and idle observers, see the thread as already finished.
@@ -530,7 +528,8 @@ export class SessionManager {
     })
 
     if (!proc) {
-      const args = provider === 'cursor' ? cursorArgs(req, settings.sandbox, cwd, !!thread.chatId) : []
+      const args = provider === 'cursor' ? cursorArgs(req, settings.sandbox, cwd, !!thread.chatId)
+        : provider === 'antigravity' ? antigravityArgs(settings.sandbox, mcpServers) : []
       proc = this.openProc(thread.id, provider, launch, args, cwd, apiKey, fingerprint)
     }
     proc.force = req.force
@@ -715,6 +714,10 @@ export class SessionManager {
       },
       onNotification: (method, params, receivedAt) => {
         if (proc.dying) return
+        if (proc.provider === 'antigravity' && method === 'session/update' && params?.update?.sessionUpdate === 'config_option_update'
+          && params.sessionId === proc.sessionId && Array.isArray(params.update.configOptions)) {
+          proc.antigravityOptions = params.update.configOptions
+        }
         if (method === 'session/update' && params?.update?.sessionUpdate === 'available_commands_update') {
           const sessionId = typeof params?.sessionId === 'string' ? params.sessionId : ''
           if (trackCommands && (!sessionId || !proc.sessionId || sessionId === proc.sessionId)) {
@@ -731,7 +734,9 @@ export class SessionManager {
         ) {
           return
         }
-        if ((proc.provider === 'cursor' || proc.provider === 'claude') && run.mode === 'plan' && leftPlanMode(params?.update, run.switchCalls)) {
+        if ((proc.provider === 'cursor' || proc.provider === 'claude' || proc.provider === 'antigravity')
+          && (run.mode === 'plan' || (proc.provider === 'antigravity' && run.mode === 'ask'))
+          && leftPlanMode(params?.update, run.switchCalls)) {
           proc.acp.request('session/set_mode', { sessionId: proc.sessionId, modeId: 'plan' }).catch(() => undefined)
         }
         run.timing?.observe(params?.update, receivedAt)
@@ -797,13 +802,13 @@ export class SessionManager {
     if (!project) throw new Error(translate('项目不存在'))
     const settings = this.store.settings
     const provider = threadCli(thread)
-    const launch = resolveLaunch(provider, settings.agentPath, settings.codexPath, settings.claudePath)
+    const launch = resolveLaunch(provider, settings)
     if (!launch) throw new Error(translate('未找到 {label}。请先安装，或在设置中指定路径。', { label: cliLabel(provider) }))
     const apiKey = providerApiKey(provider, settings)
     const cwd = thread.cwd && (thread.worktree || fs.existsSync(thread.cwd)) ? thread.cwd : project.path
     if (!fs.existsSync(cwd)) throw new Error(translate('项目目录不存在：{path}', { path: cwd }))
 
-    const mcpServers = toAcpMcpServers(settings.mcpServers)
+    const mcpServers = toAcpMcpServers(provider === 'antigravity' ? settings.mcpServers.filter((server) => server.transport !== 'sse') : settings.mcpServers)
     const fingerprint = await this.launchFingerprint(
       provider,
       launch,
@@ -826,7 +831,8 @@ export class SessionManager {
 
     if (!proc) {
       syncAllManagedSkills(settings.skills)
-      const args = provider === 'cursor' ? cursorArgs(req, settings.sandbox, cwd, true) : []
+      const args = provider === 'cursor' ? cursorArgs(req, settings.sandbox, cwd, true)
+        : provider === 'antigravity' ? antigravityArgs(settings.sandbox, mcpServers) : []
       proc = this.openProc(threadId, provider, launch, args, cwd, apiKey, fingerprint)
     }
     proc.force = opts.force
@@ -916,17 +922,24 @@ export class SessionManager {
     proc.promptCapabilities = { image: initialized?.agentCapabilities?.promptCapabilities?.image === true }
 
     let sessionId = chatId
+    let sessionState
     if (sessionId) {
-      await acp.request('session/load', { sessionId, cwd, mcpServers })
+      const resume = provider === 'antigravity' && initialized?.agentCapabilities?.sessionCapabilities?.resume
+      sessionState = await acp.request(resume ? 'session/resume' : 'session/load', { sessionId, cwd, mcpServers })
     } else {
       const sessionCwd = proc.worktree ?? cwd
       const created = await acp.request('session/new', { cwd: sessionCwd, mcpServers })
+      sessionState = created
       sessionId = created?.sessionId
       if (!sessionId) throw new Error(translate('{label} 没有返回会话 id', { label: cliLabel(provider) }))
       if (sessionCwd !== proc.cwd) {
         proc.cwd = sessionCwd
         proc.fingerprint = fingerprintWithCwd(proc.fingerprint, sessionCwd)
       }
+    }
+    if (provider === 'antigravity') {
+      proc.antigravityOptions = sessionState?.configOptions
+      proc.antigravityDefaults = proc.antigravityOptions
     }
     proc.sessionId = sessionId
     proc.ready = true

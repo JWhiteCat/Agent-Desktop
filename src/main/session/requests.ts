@@ -88,6 +88,7 @@ async function answerPermission(run: InteractionRun, params: any, queue: QueueIt
   const kind = params?.toolCall?.kind
   const readOnlyViolation = (run.mode !== 'agent' && ['edit', 'delete', 'move'].includes(kind))
     || (run.mode === 'ask' && kind === 'switch_mode')
+    || (run.proc.provider === 'antigravity' && run.mode === 'ask' && kind === 'execute')
   if (!askFallback && readOnlyViolation) {
     return permissionResult(options, false, true)
   }

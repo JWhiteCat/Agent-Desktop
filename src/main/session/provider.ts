@@ -1,7 +1,8 @@
 import type { ChildProcess } from 'node:child_process'
 import { t as translate } from '@shared/i18n'
-import type { CliProvider, SendRequest } from '@shared/types'
+import type { CliProvider, SendRequest, Settings } from '@shared/types'
 import { claudePlanModePrompt, codexPlanModePrompt, planModePrompt, type AcpConnection } from '../acp'
+import { antigravityConfig, resolveAntigravity, resolveAntigravityApiKey, spawnAntigravity } from '../antigravity'
 import { resolveApiKey, resolveCli, spawnCli, type ResolvedCli } from '../cli'
 import {
   claudeAsCli, claudeModeId, CLAUDE_EFFORT_CONFIG_ID, CLAUDE_MODEL_CONFIG_ID,
@@ -16,6 +17,8 @@ export interface SessionConnection {
   provider: CliProvider
   /** Cursor model this app set on the session, so a later Auto turn knows a reset is required. */
   cursorModel?: string
+  antigravityOptions?: unknown
+  antigravityDefaults?: unknown
 }
 
 export interface AgentLaunch {
@@ -26,7 +29,7 @@ export interface AgentLaunch {
 
 type Sandbox = 'default' | 'enabled' | 'disabled'
 
-export function resolveLaunch(provider: CliProvider, agentPath: string, codexPath: string, claudePath: string): AgentLaunch | undefined {
+export function resolveLaunch(provider: CliProvider, { agentPath, codexPath, claudePath, antigravityPath }: Settings): AgentLaunch | undefined {
   if (provider === 'codex') {
     const codex = resolveCodex(codexPath)
     return codex ? { cli: codexAsCli(codex), codex } : undefined
@@ -35,13 +38,14 @@ export function resolveLaunch(provider: CliProvider, agentPath: string, codexPat
     const claude = resolveClaude(claudePath)
     return claude ? { cli: claudeAsCli(claude), claude } : undefined
   }
-  const cli = resolveCli(agentPath)
+  const cli = provider === 'antigravity' ? resolveAntigravity(antigravityPath) : resolveCli(agentPath)
   return cli ? { cli } : undefined
 }
 
-export function providerApiKey(provider: CliProvider, settings: { apiKey: string; codexApiKey: string; claudeApiKey: string }): string {
+export function providerApiKey(provider: CliProvider, settings: Settings): string {
   if (provider === 'codex') return resolveCodexApiKey(settings.codexApiKey)
   if (provider === 'claude') return resolveClaudeApiKey(settings.claudeApiKey)
+  if (provider === 'antigravity') return resolveAntigravityApiKey(settings.antigravityApiKey)
   return resolveApiKey(settings.apiKey)
 }
 
@@ -81,6 +85,7 @@ export function cursorArgs(req: SendRequest, sandbox: Sandbox, cwd: string, hasC
 export function cliLabel(provider: CliProvider): string {
   if (provider === 'codex') return 'Codex CLI'
   if (provider === 'claude') return 'Claude Code'
+  if (provider === 'antigravity') return 'Antigravity CLI'
   return 'Cursor CLI'
 }
 
@@ -116,6 +121,7 @@ export function worktreePathFrom(line: string): string | undefined {
 }
 
 export function spawnProvider(provider: CliProvider, launch: AgentLaunch, args: string[], cwd: string, apiKey: string): ChildProcess {
+  if (provider === 'antigravity') return spawnAntigravity(launch.cli, args, cwd, apiKey)
   return provider === 'codex' && launch.codex
     ? spawnCodexAcp(launch.codex, cwd, apiKey)
     : provider === 'claude' && launch.claude
@@ -139,6 +145,7 @@ export async function initializeSession(acp: SessionConnection['acp'], provider:
   if (provider === 'cursor' && !apiKey) await acp.request('authenticate', { methodId: 'cursor_login' })
   if (provider === 'codex' && apiKey) await acp.request('authenticate', { methodId: 'api-key' })
   if (provider === 'codex' && !apiKey) await acp.request('authenticate', { methodId: 'chat-gpt' })
+  if (provider === 'antigravity' && apiKey) await acp.request('authenticate', { methodId: 'gemini-api-key' })
   // Claude uses ANTHROPIC_API_KEY at process start, or the login already stored in ~/.claude.
   return initialized
 }
@@ -152,7 +159,39 @@ export async function applySessionOptions(session: SessionConnection, req: SendR
     await applyClaudeOptions(session, req)
     return
   }
+  if (session.provider === 'antigravity') {
+    await applyAntigravityOptions(session, req)
+    return
+  }
   await applyCursorOptions(session, req)
+}
+
+export function antigravityArgs(sandbox: Sandbox, mcpServers: Record<string, unknown>[]): string[] {
+  return [
+    'acp',
+    ...(sandbox === 'default' ? [] : [`--sandbox=${sandbox === 'enabled'}`]),
+    ...(mcpServers.some((server) => server.type === 'http') ? ['--process-per-session'] : [])
+  ]
+}
+
+async function applyAntigravityOptions(session: SessionConnection, req: SendRequest): Promise<void> {
+  const { acp, sessionId } = session
+  await acp.request('session/set_mode', { sessionId, modeId: req.mode === 'agent' ? 'default' : 'plan' })
+  const match = /^(.*)\[effort=([^\]]+)\]$/.exec(req.model)
+  const model = antigravityConfig(session.antigravityOptions, 'model')
+  const defaultModel = antigravityConfig(session.antigravityDefaults, 'model')?.currentValue
+  const selected = !req.model || req.model === 'auto' ? defaultModel : match?.[1] ?? req.model
+  if (model && selected && selected !== model.currentValue) {
+    const reply = await acp.request('session/set_config_option', { sessionId, configId: model.id, value: selected })
+    if (Array.isArray(reply?.configOptions)) session.antigravityOptions = reply.configOptions
+  }
+  const effort = antigravityConfig(session.antigravityOptions, 'thought_level')
+  const defaultEffort = selected === defaultModel ? antigravityConfig(session.antigravityDefaults, 'thought_level')?.currentValue : undefined
+  const level = match?.[2] ?? defaultEffort
+  if (effort && level && level !== effort.currentValue) {
+    const reply = await acp.request('session/set_config_option', { sessionId, configId: effort.id, value: level })
+    if (Array.isArray(reply?.configOptions)) session.antigravityOptions = reply.configOptions
+  }
 }
 
 async function applyCursorOptions(session: SessionConnection, req: SendRequest): Promise<void> {
@@ -291,6 +330,11 @@ async function applyCodexModel(session: SessionConnection, model: string): Promi
 }
 
 export function planPrompt(provider: CliProvider, mode: SendRequest['mode'], prompt: string): string {
+  if (provider === 'antigravity') {
+    return mode === 'ask'
+      ? `<agent_desktop_client>Answer this question in read-only mode. Do not make changes or ask to switch modes.</agent_desktop_client>\n\n${prompt}`
+      : prompt
+  }
   if (mode !== 'plan') return prompt
   if (provider === 'codex') return codexPlanModePrompt(prompt)
   if (provider === 'claude') return claudePlanModePrompt(prompt)

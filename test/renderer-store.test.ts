@@ -117,7 +117,7 @@ describe('renderer store', () => {
   it('preserves other providers when favorites change a project model', () => {
     store.setState({ modelsByCli: {
       cursor: [{ id: project.model!, label: 'Composer' }, { id: 'other', label: 'Other' }],
-      codex: [], claude: []
+      codex: [], claude: [], antigravity: []
     } })
 
     store.setFavoriteModels(['other'], 'cursor')
@@ -131,7 +131,7 @@ describe('renderer store', () => {
       modelsByCli: {
         cursor: [{ id: 'composer-2.5[fast=true]', label: 'Composer' }],
         codex: [{ id: 'codex-model', label: 'Codex' }, { id: 'next-codex', label: 'Next' }],
-        claude: []
+        claude: [], antigravity: []
       }
     }))
 

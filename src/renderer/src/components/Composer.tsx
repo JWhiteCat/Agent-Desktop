@@ -20,7 +20,8 @@ export const MODES: { id: AgentMode; label: string; desc: string }[] = [
 const CLIS: { id: CliProvider; label: string; desc: string }[] = [
   { id: 'cursor', label: 'Cursor', desc: 'Cursor CLI' },
   { id: 'codex', label: 'Codex', desc: 'Codex CLI' },
-  { id: 'claude', label: 'Claude', desc: 'Claude Code' }
+  { id: 'claude', label: 'Claude', desc: 'Claude Code' },
+  { id: 'antigravity', label: 'Antigravity', desc: 'Antigravity CLI' }
 ]
 
 /** Label of the shortcut that sends past the queue while the agent works. */

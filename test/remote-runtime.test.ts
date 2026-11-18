@@ -10,6 +10,7 @@ function fixture() {
     apiKey: 'cursor-secret',
     codexApiKey: 'codex-secret',
     claudeApiKey: 'claude-secret',
+    antigravityApiKey: 'agy-secret',
     remoteToken: 'remote-secret'
   }
   const state: AppState = { projects: [], threads: [], running: [], settings }
@@ -51,6 +52,7 @@ describe('remote settings', () => {
       expect(safe.apiKey).toBe('')
       expect(safe.codexApiKey).toBe('')
       expect(safe.claudeApiKey).toBe('')
+      expect(safe.antigravityApiKey).toBe('')
       expect(safe.remoteToken).toBe('')
     }
     expect(settings.claudeApiKey).toBe('claude-secret')
@@ -58,11 +60,12 @@ describe('remote settings', () => {
 
   it('preserves configured secrets when a remote client saves redacted settings', async () => {
     const { settings, update, handlers } = fixture()
-    const patch = { apiKey: '', codexApiKey: '', claudeApiKey: '', remoteToken: '', remoteEnabled: false, remotePublicSshPort: 2222, theme: 'dark' } as const
+    const patch = { apiKey: '', codexApiKey: '', claudeApiKey: '', antigravityApiKey: '', remoteToken: '', remoteEnabled: false, remotePublicSshPort: 2222, theme: 'dark' } as const
     const result = await handlers['settings:update'](patch) as Settings
     expect(update).toHaveBeenCalledExactlyOnceWith({ theme: 'dark' })
     expect(result.claudeApiKey).toBe('')
     expect(settings.claudeApiKey).toBe('claude-secret')
+    expect(settings.antigravityApiKey).toBe('agy-secret')
     expect(patch).toHaveProperty('claudeApiKey', '')
   })
 

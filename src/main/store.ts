@@ -83,8 +83,11 @@ export class Store {
         codexApiKey: typeof loaded?.settings?.codexApiKey === 'string' ? loaded.settings.codexApiKey : '',
         claudePath: typeof loaded?.settings?.claudePath === 'string' ? loaded.settings.claudePath : '',
         claudeApiKey: typeof loaded?.settings?.claudeApiKey === 'string' ? loaded.settings.claudeApiKey : '',
+        antigravityPath: typeof loaded?.settings?.antigravityPath === 'string' ? loaded.settings.antigravityPath : '',
+        antigravityApiKey: typeof loaded?.settings?.antigravityApiKey === 'string' ? loaded.settings.antigravityApiKey : '',
         codexDefaultModel: typeof loaded?.settings?.codexDefaultModel === 'string' ? loaded.settings.codexDefaultModel : '',
         claudeDefaultModel: typeof loaded?.settings?.claudeDefaultModel === 'string' ? loaded.settings.claudeDefaultModel : '',
+        antigravityDefaultModel: typeof loaded?.settings?.antigravityDefaultModel === 'string' ? loaded.settings.antigravityDefaultModel : '',
         favoriteModels: Array.isArray(loaded?.settings?.favoriteModels) ? loaded.settings.favoriteModels : [],
         codexFavoriteModels: Array.isArray(loaded?.settings?.codexFavoriteModels)
           ? loaded.settings.codexFavoriteModels
@@ -92,6 +95,7 @@ export class Store {
             ? loaded.settings.favoriteModels.slice()
             : [],
         claudeFavoriteModels: Array.isArray(loaded?.settings?.claudeFavoriteModels) ? loaded.settings.claudeFavoriteModels : [],
+        antigravityFavoriteModels: Array.isArray(loaded?.settings?.antigravityFavoriteModels) ? loaded.settings.antigravityFavoriteModels : [],
         mcpServers: normalizeMcpServers(loaded?.settings?.mcpServers),
         skills: normalizeSkills(loaded?.settings?.skills),
         grokbotBots: normalizeGrokBotNames(loaded?.settings?.grokbotBots),

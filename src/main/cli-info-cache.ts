@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
-import type { CliInfo, CliProvider, Settings } from '@shared/types'
+import { CLI_PROVIDERS, type CliInfo, type CliProvider, type Settings } from '@shared/types'
+import { resolveAntigravityApiKey } from './antigravity'
 import { resolveApiKey } from './cli'
 import { resolveCodexApiKey } from './codex'
 import { resolveClaudeApiKey } from './claude'
@@ -26,7 +27,9 @@ export function cliInfoSignature(provider: CliProvider, settings: Settings): str
     ? [settings.codexPath, settings.codexApiKey, resolveCodexApiKey(settings.codexApiKey)]
     : provider === 'claude'
       ? [settings.claudePath, settings.claudeApiKey, resolveClaudeApiKey(settings.claudeApiKey)]
-      : [settings.agentPath, settings.apiKey, resolveApiKey(settings.apiKey)]
+      : provider === 'antigravity'
+        ? [settings.antigravityPath, settings.antigravityApiKey, resolveAntigravityApiKey(settings.antigravityApiKey)]
+        : [settings.agentPath, settings.apiKey, resolveApiKey(settings.apiKey)]
   return createHash('sha256').update(JSON.stringify([provider, ...config])).digest('hex')
 }
 
@@ -41,7 +44,7 @@ function validEntry(value: unknown): value is Entry {
     && (['hasApiKey', 'bundled'] as const).every((key) => e.info[key] === undefined || typeof e.info[key] === 'boolean')
 }
 
-/** Only three entries; load once and write atomically after a detection or invalidation. */
+/** Load once and write atomically after a detection or invalidation. */
 export class CliInfoCache {
   private entries: Partial<Record<CliProvider, Entry>> | undefined
   private pending = new Map<CliProvider, Pending>()
@@ -54,7 +57,7 @@ export class CliInfoCache {
     try {
       const saved = JSON.parse(fs.readFileSync(this.file(), 'utf8'))
       if (saved?.version === 1) {
-        for (const provider of ['cursor', 'codex', 'claude'] as const) {
+        for (const provider of CLI_PROVIDERS) {
           const entry: unknown = saved.entries?.[provider]
           if (validEntry(entry)) this.entries[provider] = entry
         }

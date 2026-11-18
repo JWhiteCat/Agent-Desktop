@@ -121,7 +121,7 @@ function TurnView({
         {!streamingText && !busy && (
           <div className="working">
             <Spinner size={12} />
-            <span className="shimmer">{turn.steps.length || !starting ? t('处理中') : cli === 'codex' ? t('正在启动 codex') : cli === 'claude' ? t('正在启动 claude') : t('正在启动 agent')}</span>
+            <span className="shimmer">{turn.steps.length || !starting ? t('处理中') : cli === 'codex' ? t('正在启动 codex') : cli === 'claude' ? t('正在启动 claude') : cli === 'antigravity' ? t('正在启动 agy') : t('正在启动 agent')}</span>
           </div>
         )}
       </div>

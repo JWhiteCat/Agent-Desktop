@@ -1,13 +1,13 @@
-import { normalizeCliProvider, type CliProvider, type ModelInfo } from '@shared/types'
+import { CLI_PROVIDERS, normalizeCliProvider, type CliProvider, type ModelInfo } from '@shared/types'
 import { errorText } from './feedback'
-import { CLI_PROVIDERS, pruneCrossCliFavorites } from './model-preferences'
+import { pruneCrossCliFavorites } from './model-preferences'
 import { readModelCache, writeModelCache } from './persistence'
 import { getState, setState } from './state'
 
 function publishModels(cli: CliProvider, list: ModelInfo[]): void {
   const modelsByCli = { ...getState().modelsByCli, [cli]: list }
   const seen = new Set<string>()
-  const models = [...modelsByCli.cursor, ...modelsByCli.codex, ...modelsByCli.claude].filter((model) => {
+  const models = CLI_PROVIDERS.flatMap((provider) => modelsByCli[provider]).filter((model) => {
     if (seen.has(model.id)) return false
     seen.add(model.id)
     return true
@@ -17,7 +17,7 @@ function publishModels(cli: CliProvider, list: ModelInfo[]): void {
 }
 
 export async function loadModels(refresh = false, only?: CliProvider): Promise<void> {
-  const targets: CliProvider[] = only ? [only] : CLI_PROVIDERS
+  const targets = only ? [only] : CLI_PROVIDERS
   if (!refresh) {
     for (const cli of targets) {
       const cached = readModelCache(cli)

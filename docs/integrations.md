@@ -2,7 +2,7 @@
 
 [Documentation](README.md) · [Project home](../README.md) · [简体中文](integrations.zh-CN.md)
 
-Add MCP servers in Settings. When enabled, new and resumed sessions pass them in ACP `mcpServers` (stdio, HTTP, or SSE). The list lives in this app’s `state.json`. It does not rewrite `~/.cursor/mcp.json`.
+Add MCP servers in Settings. When enabled, new and resumed sessions pass them in ACP `mcpServers`. Antigravity accepts stdio and streamable HTTP. The list lives in this app’s `state.json`.
 
 An enabled skill is written to `~/.cursor/skills/<name>/SKILL.md`, to Codex paths `~/.agents/skills/<name>/SKILL.md` and `~/.codex/skills/<name>/SKILL.md`, and to `~/.claude/skills/<name>/SKILL.md`. The name may contain only lowercase letters, digits, and hyphens, and it needs a description. The CLI uses that description to decide whether to apply the skill. Disabling or deleting a skill removes only directories this app created. A same-named directory that this app did not create is left in place, and save reports that it could not be overwritten.
 
@@ -15,6 +15,9 @@ The All local section of the MCP and Skill pages scans each CLI's own configurat
 | Cursor | `~/.cursor/mcp.json` | `<project>/.cursor/mcp.json` | `~/.cursor/skills`, `<project>/.cursor/skills` |
 | Codex | `[mcp_servers.*]` in `~/.codex/config.toml` | `<project>/.codex/config.toml` | `~/.agents/skills`, `~/.codex/skills`, `<project>/.agents/skills`, `<project>/.codex/skills` |
 | Claude | `mcpServers` in `~/.claude.json`, plus `projects[<path>].mcpServers` (local scope) | `<project>/.mcp.json` | `~/.claude/skills`, `<project>/.claude/skills` |
+| Antigravity | `~/.gemini/config/mcp_config.json` | `<project>/.agents/mcp_config.json` | `~/.gemini/antigravity-cli/skills`, `~/.gemini/skills`, `<project>/.agents/skills` |
+
+Antigravity writes the native MCP switch as `disabled: true`. It shares project `.agents/skills` with Cursor and Codex. App-managed Antigravity skills use `~/.gemini/antigravity-cli/skills`.
 
 Projects are the ones added to the sidebar. A new entry asks for the CLI and the scope: user, or one of the projects. Cursor also loads the Codex and Claude skill folders (`.agents/skills`, `.codex/skills`, `.claude/skills`, and their user-level counterparts), so those skills are listed under Cursor too and tagged Shared with Cursor (or, in the Cursor group, Shared with Codex or Claude). Skills created by this app have one copy per CLI and are listed only under their own CLI.
 

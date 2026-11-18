@@ -6,13 +6,15 @@ import { cliHandlers } from '../src/main/ipc/cli'
 const updates = vi.hoisted(() => ({
   cursor: vi.fn<(path: string) => Promise<string>>(),
   codex: vi.fn<(path: string) => Promise<string>>(),
-  claude: vi.fn<(path: string) => Promise<string>>()
+  claude: vi.fn<(path: string) => Promise<string>>(),
+  antigravity: vi.fn<(path: string) => Promise<string>>()
 }))
 
 vi.mock('../src/main/cli-update', () => ({
   updateCursor: updates.cursor,
   updateCodex: updates.codex,
-  updateClaude: updates.claude
+  updateClaude: updates.claude,
+  updateAntigravity: updates.antigravity
 }))
 vi.mock('../src/main/cli-catalog', () => ({
   claudeCliInfo: vi.fn(), claudeModelList: vi.fn(), loginClaude: vi.fn(),
@@ -24,11 +26,12 @@ vi.mock('../src/main/codex-history', () => ({ scanCodexSessions: vi.fn() }))
 vi.mock('../src/main/history', () => ({ scanCliSessions: vi.fn() }))
 vi.mock('../src/main/thread-history', () => ({ syncFromCli: vi.fn() }))
 
-const providers: CliProvider[] = ['cursor', 'codex', 'claude']
+const providers: CliProvider[] = ['cursor', 'codex', 'claude', 'antigravity']
 const paths = {
   cursor: 'C:\\CLI tools\\cursor-agent.cmd',
   codex: 'C:\\CLI tools\\codex.cmd',
-  claude: 'C:\\CLI tools\\claude.exe'
+  claude: 'C:\\CLI tools\\claude.exe',
+  antigravity: 'C:\\CLI tools\\agy.exe'
 }
 
 function fixture(defaultProvider: CliProvider = 'cursor') {
@@ -42,7 +45,8 @@ function fixture(defaultProvider: CliProvider = 'cursor') {
         cliProvider: defaultProvider,
         agentPath: paths.cursor,
         codexPath: paths.codex,
-        claudePath: paths.claude
+        claudePath: paths.claude,
+        antigravityPath: paths.antigravity
       }
     },
     sessions: { dropIdle },
@@ -82,7 +86,7 @@ describe('CLI update IPC', () => {
 
     for (const updater of Object.values(updates)) expect(updater).not.toHaveBeenCalled()
     expect(dropIdle).not.toHaveBeenCalled()
-    expect(modelsCache.size).toBe(3)
+    expect(modelsCache.size).toBe(providers.length)
   })
 
   it('keeps the cached models while updating and clears them only after success', async () => {

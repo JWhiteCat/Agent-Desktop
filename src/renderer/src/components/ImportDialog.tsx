@@ -85,7 +85,7 @@ export function ImportDialog({ onClose }: { onClose: () => void }) {
             <Spinner />
           </div>
         )}
-        {sessions && sessions.length === 0 && <div className="empty-hint">{t('没有在 ~/.cursor/chats 或 ~/.codex/sessions 中找到 CLI 会话')}</div>}
+        {sessions && sessions.length === 0 && <div className="empty-hint">{t('未找到可导入的 CLI 会话')}</div>}
         {groups.map(([cwd, list]) => {
           const ids = list.filter((s) => !s.imported).map((s) => s.chatId)
           const allOn = ids.length > 0 && ids.every((id) => selected.has(id))

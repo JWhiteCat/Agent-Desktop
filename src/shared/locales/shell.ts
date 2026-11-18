@@ -49,7 +49,7 @@ export const shellMessages: Record<string, string> = {
   '取消归档': 'Unarchive',
   '归档': 'Archive',
   '从 CLI 同步历史': 'Sync history from CLI',
-  '用 Cursor CLI 本地保存的记录替换此对话的显示内容？\n（耗时、token 统计等本应用记录的信息会丢失）': 'Replace this conversation’s displayed content with locally saved Cursor CLI history?\nApp records such as durations and token statistics will be lost.',
+  '用 {cli} 保存的记录替换此对话的显示内容？\n耗时、token 统计等应用记录会丢失。': 'Replace this conversation’s displayed content with the history saved by {cli}?\nApp records such as durations and token statistics will be lost.',
   '复制 CLI 会话 ID': 'Copy CLI session ID',
   '已复制会话 ID，可用 agent --resume <id> 在终端继续': 'Session ID copied. Run agent --resume <id> in a terminal to continue.',
   '打开工作目录': 'Open working directory',

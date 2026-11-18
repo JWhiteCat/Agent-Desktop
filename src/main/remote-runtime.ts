@@ -19,7 +19,7 @@ import type { Store } from './store'
 
 export function remoteSafeSettings(s: Settings): Settings {
   return {
-    ...s, apiKey: '', codexApiKey: '', claudeApiKey: '', remoteToken: '',
+    ...s, apiKey: '', codexApiKey: '', claudeApiKey: '', antigravityApiKey: '', remoteToken: '',
     skin: remoteSkin(s.skin), skins: [],
     threadToolbarButtons: normalizeToolbarButtons(s.threadToolbarButtons).filter((button) => button.kind === 'builtin')
   }
@@ -71,6 +71,7 @@ export function handlersForRemote(handlers: Record<string, Handler>, snapshot: (
     if (!safe.apiKey) delete safe.apiKey
     if (!safe.codexApiKey) delete safe.codexApiKey
     if (!safe.claudeApiKey) delete safe.claudeApiKey
+    if (!safe.antigravityApiKey) delete safe.antigravityApiKey
     return remoteSafeSettings((await handlers['settings:update'](safe)) as Settings)
   }
   return out

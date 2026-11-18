@@ -30,7 +30,8 @@ export function UsageSettings() {
   const groups = useMemo(() => ({
     cursor: groupModels(modelsByCli.cursor),
     codex: groupModels(modelsByCli.codex),
-    claude: groupModels(modelsByCli.claude)
+    claude: groupModels(modelsByCli.claude),
+    antigravity: groupModels(modelsByCli.antigravity)
   }), [modelsByCli])
   const [period, setPeriod] = useState<UsageWindow>('7d')
   const [summary, setSummary] = useState<UsageSummary | null>(null)

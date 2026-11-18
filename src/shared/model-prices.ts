@@ -237,7 +237,7 @@ function roundUsd(n: number): number {
 export function quoteModel(modelId: string | undefined, usage: TokenUsage, cli: CliProvider = 'cursor'): QuotedUsage {
   const parsed = parseModelId(modelId ?? '')
   const fallback = !parsed.name ? t('未知模型') : parsed.name === 'auto' ? 'Auto' : (modelId ?? '').trim() || t('未知模型')
-  if (!parsed.name || parsed.name === 'auto') {
+  if (!parsed.name || parsed.name === 'auto' || cli === 'antigravity') {
     return { label: fallback, costUsd: null, fast: parsed.fast, longContext: false }
   }
   const entry = cli === 'codex' ? findCodexPrice(parsed.name) : cli === 'claude' ? findClaudePrice(parsed.name) : findPrice(parsed.name)
@@ -291,7 +291,7 @@ export function modelPriceTip(modelId: string | undefined, cli: CliProvider = 'c
   const lines: string[] = []
   const heading = caption?.trim()
   if (heading) lines.push(heading)
-  const entry = !parsed.name || parsed.name === 'auto'
+  const entry = !parsed.name || parsed.name === 'auto' || cli === 'antigravity'
     ? undefined
     : cli === 'codex' ? findCodexPrice(parsed.name) : cli === 'claude' ? findClaudePrice(parsed.name) : findPrice(parsed.name)
   if (!entry) {

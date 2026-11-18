@@ -144,9 +144,9 @@ describe('automatic conversation titles', () => {
     }
   })
 
-  it('persists the missing-title marker during import and forwards it through usage reports', () => {
+  it('persists the missing-title marker during import and forwards it through usage reports', async () => {
     historyFixtures()
-    expect(cliHandlers(deps)['cli:import'](['cursor-missing', 'codex-missing', 'claude-missing'])).toBe(3)
+    expect(await cliHandlers(deps)['cli:import'](['cursor-missing', 'codex-missing', 'claude-missing'])).toBe(3)
     store.flush()
     const reloaded = new Store()
     setLanguage('en')
@@ -159,9 +159,9 @@ describe('automatic conversation titles', () => {
     for (const row of report.sessions) expect(displayThreadTitle(row)).toBe('Untitled session')
   })
 
-  it('replaces a marked imported title when history gains a user message but preserves a user rename', () => {
+  it('replaces a marked imported title when history gains a user message but preserves a user rename', async () => {
     historyFixtures()
-    cliHandlers(deps)['cli:import'](['codex-missing'])
+    await cliHandlers(deps)['cli:import'](['codex-missing'])
     const thread = store.threads[0]
     const file = path.join(electron.userData, '.codex/sessions/rollout-codex-missing.jsonl')
     fs.appendFileSync(file, jsonl([{ type: 'response_item', payload: { type: 'message', role: 'user', content: 'Imported task' } }]))

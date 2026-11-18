@@ -2,7 +2,7 @@ import path from 'node:path'
 import { t as translate } from '@shared/i18n'
 import { normalizeMcpServers } from '@shared/agent-config'
 import type { LocalConfigError as ReportError, LocalMcpEntry, LocalMcpReport, LocalMcpSaveRequest, LocalMcpScope, LocalTarget } from '@shared/local-config'
-import { isCliProvider, type CliProvider, type McpServerConfig, type McpTransport, type NamedValue } from '@shared/types'
+import { CLI_PROVIDERS, isCliProvider, type CliProvider, type McpServerConfig, type McpTransport, type NamedValue } from '@shared/types'
 import { assertUnchanged, hashText, LocalConfigError, pathKey, readJson, readText, samePath, writeTextSafely, type LocalEnv } from './local-files'
 import { parseTomlSections, renderTomlTable, replaceTomlTables, type TomlTable, type TomlValue } from './toml-lite'
 
@@ -45,7 +45,8 @@ export function userMcpFiles(home: string): Record<CliProvider, string> {
   return {
     cursor: path.join(home, '.cursor', 'mcp.json'),
     codex: path.join(home, '.codex', 'config.toml'),
-    claude: path.join(home, '.claude.json')
+    claude: path.join(home, '.claude.json'),
+    antigravity: path.join(home, '.gemini', 'config', 'mcp_config.json')
   }
 }
 
@@ -56,7 +57,8 @@ function userRef(env: LocalEnv, cli: CliProvider): Ref {
 
 function projectRef(cli: CliProvider, projectPath: string): Ref {
   if (cli === 'codex') return { kind: 'toml', cli, scope: 'project', projectPath, file: path.join(projectPath, '.codex', 'config.toml') }
-  const file = cli === 'cursor' ? path.join(projectPath, '.cursor', 'mcp.json') : path.join(projectPath, '.mcp.json')
+  const file = cli === 'cursor' ? path.join(projectPath, '.cursor', 'mcp.json')
+    : cli === 'antigravity' ? path.join(projectPath, '.agents', 'mcp_config.json') : path.join(projectPath, '.mcp.json')
   return { kind: 'json', cli, scope: 'project', projectPath, file, container: ['mcpServers'] }
 }
 
@@ -103,8 +105,8 @@ function stashMatches(entry: StashEntry, ref: Ref, name?: string): boolean {
 }
 
 function allRefs(env: LocalEnv, projects: string[]): Ref[] {
-  const refs: Ref[] = (['cursor', 'codex', 'claude'] as const).map((cli) => userRef(env, cli))
-  for (const project of projects) for (const cli of ['cursor', 'codex', 'claude'] as const) refs.push(projectRef(cli, project))
+  const refs: Ref[] = CLI_PROVIDERS.map((cli) => userRef(env, cli))
+  for (const project of projects) for (const cli of CLI_PROVIDERS) refs.push(projectRef(cli, project))
   const claudeFile = userMcpFiles(env.home).claude
   const keys = new Set<string>()
   try {
@@ -147,16 +149,18 @@ function jsonTransport(raw: Raw): McpTransport {
 
 function toEntry(ref: Ref, name: string, raw: Raw, hash: string, stashed: boolean): LocalMcpEntry {
   const toml = ref.kind === 'toml'
-  const transport: McpTransport = toml ? (typeof raw.url === 'string' ? 'http' : 'stdio') : jsonTransport(raw)
+  const antigravity = ref.cli === 'antigravity'
+  const url = antigravity ? raw.serverUrl ?? raw.url : raw.url
+  const transport: McpTransport = toml || antigravity ? (typeof url === 'string' ? 'http' : 'stdio') : jsonTransport(raw)
   return {
     id: entryId(ref, name),
     name,
-    enabled: toml ? raw.enabled !== false : !stashed,
+    enabled: toml ? raw.enabled !== false : !stashed && (!antigravity || raw.disabled !== true),
     transport,
     command: typeof raw.command === 'string' ? raw.command : '',
     args: strings(raw.args),
     env: pairs(raw.env),
-    url: typeof raw.url === 'string' ? raw.url : '',
+    url: typeof url === 'string' ? url : '',
     headers: pairs(toml ? raw.http_headers : raw.headers),
     cli: ref.cli,
     scope: ref.scope,
@@ -296,6 +300,13 @@ function buildRaw(ref: Ref, prev: Raw, server: McpServerConfig): Raw {
     const rest = withoutKeys(prev, [...TOML_KNOWN, ...TOML_STDIO_ONLY])
     return { url: server.url, ...rest, ...(headers ? { http_headers: headers } : {}) }
   }
+  if (ref.cli === 'antigravity') {
+    if (server.transport === 'sse') throw new LocalConfigError(translate('Antigravity CLI 只支持 stdio 和 HTTP 传输'))
+    const rest = withoutKeys(prev, [...JSON_KNOWN, 'serverUrl', 'disabled', ...(server.transport === 'http' ? ['cwd'] : ['authProviderType', 'oauth'])])
+    return server.transport === 'stdio'
+      ? { ...rest, command: server.command, ...args, ...(env ? { env } : {}) }
+      : { ...rest, serverUrl: server.url, ...(headers ? { headers } : {}) }
+  }
   const rest = withoutKeys(prev, JSON_KNOWN)
   if (server.transport === 'stdio') {
     const type = ref.cli === 'claude' || prev.type !== undefined ? { type: 'stdio' } : {}
@@ -357,8 +368,10 @@ function writeServer(env: LocalEnv, ref: Ref, old: Found | undefined, name: stri
     }
   }
   if (Object.hasOwn(container, name) || stash.some((item) => stashMatches(item, ref, name))) throw duplicate(name)
-  if (enabled) {
-    container[name] = raw
+  if (enabled || ref.cli === 'antigravity') {
+    container[name] = ref.cli === 'antigravity'
+      ? { ...withoutKeys(raw, ['disabled']), ...(!enabled ? { disabled: true } : {}) }
+      : raw
     nativeChanged = true
   } else {
     stash.push({ file: path.resolve(ref.file), container: ref.container, name, raw })

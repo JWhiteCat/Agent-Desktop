@@ -12,7 +12,8 @@ const mocks = vi.hoisted(() => ({
   directory: '',
   cursor: { info: vi.fn(), login: vi.fn(), update: vi.fn() },
   codex: { info: vi.fn(), login: vi.fn(), update: vi.fn() },
-  claude: { info: vi.fn(), login: vi.fn(), update: vi.fn() }
+  claude: { info: vi.fn(), login: vi.fn(), update: vi.fn() },
+  antigravity: { info: vi.fn(), login: vi.fn(), update: vi.fn() }
 }))
 vi.mock('electron', () => ({ app: { getPath: () => mocks.directory } }))
 vi.mock('../src/main/cli-catalog', () => ({
@@ -21,13 +22,17 @@ vi.mock('../src/main/cli-catalog', () => ({
   claudeCliInfo: mocks.claude.info, loginClaude: mocks.claude.login, claudeModelList: vi.fn()
 }))
 vi.mock('../src/main/cli-update', () => ({
-  updateCursor: mocks.cursor.update, updateCodex: mocks.codex.update, updateClaude: mocks.claude.update
+  updateCursor: mocks.cursor.update, updateCodex: mocks.codex.update, updateClaude: mocks.claude.update, updateAntigravity: mocks.antigravity.update
+}))
+vi.mock('../src/main/antigravity', async (original) => ({
+  ...await original<typeof import('../src/main/antigravity')>(),
+  antigravityCliInfo: mocks.antigravity.info, loginAntigravity: mocks.antigravity.login
 }))
 vi.mock('../src/main/claude-history', () => ({ scanClaudeSessions: vi.fn() }))
 vi.mock('../src/main/history', () => ({ scanCliSessions: vi.fn() }))
 vi.mock('../src/main/thread-history', () => ({ syncFromCli: vi.fn() }))
 
-const providers: CliProvider[] = ['cursor', 'codex', 'claude']
+const providers: CliProvider[] = ['cursor', 'codex', 'claude', 'antigravity']
 
 describe('CLI info IPC and settings invalidation', () => {
   let store: Store
@@ -72,7 +77,8 @@ describe('CLI info IPC and settings invalidation', () => {
   it.each([
     ['cursor', 'agentPath'], ['cursor', 'apiKey'],
     ['codex', 'codexPath'], ['codex', 'codexApiKey'],
-    ['claude', 'claudePath'], ['claude', 'claudeApiKey']
+    ['claude', 'claudePath'], ['claude', 'claudeApiKey'],
+    ['antigravity', 'antigravityPath'], ['antigravity', 'antigravityApiKey']
   ] as const)('invalidates only %s when %s changes', async (provider, key) => {
     await populate()
     await settingsHandlers(deps)['settings:update']({ [key]: 'new-value' } as Partial<Settings>)
@@ -89,7 +95,10 @@ describe('CLI info IPC and settings invalidation', () => {
   })
 
   it.each(providers)('detects %s with the saved path and API key', async (provider) => {
-    store.updateSettings({ agentPath: '/cursor', apiKey: 'cursor-key', codexPath: '/codex', codexApiKey: 'codex-key', claudePath: '/claude', claudeApiKey: 'claude-key' })
+    store.updateSettings({
+      agentPath: '/cursor', apiKey: 'cursor-key', codexPath: '/codex', codexApiKey: 'codex-key',
+      claudePath: '/claude', claudeApiKey: 'claude-key', antigravityPath: '/antigravity', antigravityApiKey: 'antigravity-key'
+    })
     await handlers['cli:info'](provider)
     expect(mocks[provider].info).toHaveBeenCalledExactlyOnceWith(`/${provider}`, `${provider}-key`)
   })

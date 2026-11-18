@@ -89,7 +89,7 @@ export async function runDraftChecks() {
         .map(id => ({ id, projectId: 'fixture-project', title: id, mode: 'agent', source: 'app', createdAt: 0, updatedAt: 0 })),
       settings: { ...DEFAULT_SETTINGS, language: 'zh-CN', cliProvider: 'cursor', favoriteModels: [] }
     },
-    modelsByCli: { cursor: [{ id: 'auto', label: 'Auto' }, { id: model, label: 'Composer 2.5' }], codex: [], claude: [] }
+    modelsByCli: { cursor: [{ id: 'auto', label: 'Auto' }, { id: model, label: 'Composer 2.5' }], codex: [], claude: [], antigravity: [] }
   })
   const passed: string[] = []
   const sent: { text: string; opts: SendOptions }[] = []

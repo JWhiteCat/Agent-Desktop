@@ -20,10 +20,11 @@ export type ToolbarButton =
 export type AgentMode = 'agent' | 'plan' | 'ask'
 
 /** Which local CLI owns a thread. Missing values on older threads mean Cursor. */
-export type CliProvider = 'cursor' | 'codex' | 'claude'
+export const CLI_PROVIDERS = ['cursor', 'codex', 'claude', 'antigravity'] as const
+export type CliProvider = (typeof CLI_PROVIDERS)[number]
 
 export function isCliProvider(value: unknown): value is CliProvider {
-  return value === 'cursor' || value === 'codex' || value === 'claude'
+  return CLI_PROVIDERS.some((provider) => provider === value)
 }
 
 /** Older saved settings and threads omit the field and stay on Cursor. */
@@ -38,6 +39,7 @@ export function threadCli(thread: { cli?: CliProvider }): CliProvider {
 export function cliTitle(cli: CliProvider): string {
   if (cli === 'codex') return 'Codex'
   if (cli === 'claude') return 'Claude'
+  if (cli === 'antigravity') return 'Antigravity'
   return 'Cursor'
 }
 
@@ -53,6 +55,7 @@ export interface Project {
   codexModel?: string
   /** Last Claude model chosen in this project. Unset projects use settings.claudeDefaultModel. */
   claudeModel?: string
+  antigravityModel?: string
 }
 
 export interface ThreadMeta {
@@ -301,6 +304,10 @@ export interface Settings {
   claudeDefaultModel: string
   /** Claude model group bases shown in the chat picker. Empty means show every Claude model. */
   claudeFavoriteModels: string[]
+  antigravityPath: string
+  antigravityApiKey: string
+  antigravityDefaultModel: string
+  antigravityFavoriteModels: string[]
   /** Model options indexed by CLI and model group base. */
   modelPreferences: Partial<Record<CliProvider, Record<string, ModelPreference>>>
   defaultMode: AgentMode
@@ -558,6 +565,10 @@ export const DEFAULT_SETTINGS: Settings = {
   favoriteModels: [],
   codexFavoriteModels: [],
   claudeFavoriteModels: [],
+  antigravityPath: '',
+  antigravityApiKey: '',
+  antigravityDefaultModel: '',
+  antigravityFavoriteModels: [],
   modelPreferences: {},
   defaultMode: 'agent',
   force: false,

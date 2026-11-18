@@ -6,13 +6,14 @@ import { codexChatUpdatedAt } from '../codex-history'
 import { cliChatUpdatedAt } from '../history'
 import { releaseWorktrees } from '../git'
 import { DEFAULT_TITLE, worktreeRoot } from '../sessions'
-import { forkThread, syncFromCli, type HistoryDeps } from '../thread-history'
+import { forkThread, syncAntigravityFromCli, syncFromCli, type HistoryDeps } from '../thread-history'
 import type { Handler } from '../remote'
 import type { IpcDeps } from './deps'
 
 function missingSessionMessage(cli: CliProvider): string {
   if (cli === 'codex') return translate('未在 ~/.codex/sessions 中找到该会话')
   if (cli === 'claude') return translate('未在 ~/.claude/projects 中找到该会话')
+  if (cli === 'antigravity') return translate('未能读取 Antigravity CLI 会话历史')
   return translate('未在 ~/.cursor/chats 中找到该会话')
 }
 
@@ -55,7 +56,7 @@ export function threadHandlers(deps: IpcDeps): Record<string, Handler> {
     },
     'thread:items': (id: string) => {
       const t = store.thread(id)
-      if (t?.source === 'cli' && t.chatId && !sessions.isRunning(id)) {
+      if (t?.source === 'cli' && t.chatId && threadCli(t) !== 'antigravity' && !sessions.isRunning(id)) {
         const cli = threadCli(t)
         const cliUpdated = cli === 'codex' ? codexChatUpdatedAt(t.chatId) : cli === 'claude' ? claudeChatUpdatedAt(t.chatId) : cliChatUpdatedAt(t.chatId)
         if (cliUpdated && cliUpdated > (t.syncedAt ?? 0)) {
@@ -71,10 +72,11 @@ export function threadHandlers(deps: IpcDeps): Record<string, Handler> {
       return items
     },
     'thread:fork': (id: string, throughItemId?: string) => forkThread(history, id, throughItemId),
-    'thread:syncFromCli': (id: string) => {
+    'thread:syncFromCli': async (id: string) => {
       if (sessions.isRunning(id)) throw new Error(translate('对话正在运行，请稍后再同步'))
-      const items = syncFromCli(history, id)
-      if (!items) throw new Error(missingSessionMessage(threadCli(store.thread(id) ?? { cli: 'cursor' })))
+      const cli = threadCli(store.thread(id) ?? { cli: 'cursor' })
+      const items = cli === 'antigravity' ? await syncAntigravityFromCli(history, id) : syncFromCli(history, id)
+      if (!items) throw new Error(missingSessionMessage(cli))
       broadcast()
       return items
     },

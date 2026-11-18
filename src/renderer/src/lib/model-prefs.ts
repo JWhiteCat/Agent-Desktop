@@ -8,25 +8,28 @@ function inCatalog(models: ModelInfo[], id: string | undefined): boolean {
 }
 
 export function favoritesFor(
-  settings: Pick<Settings, 'favoriteModels' | 'codexFavoriteModels' | 'claudeFavoriteModels'>,
+  settings: Pick<Settings, 'favoriteModels' | 'codexFavoriteModels' | 'claudeFavoriteModels' | 'antigravityFavoriteModels'>,
   cli: CliProvider
 ): string[] {
   if (cli === 'codex') return settings.codexFavoriteModels ?? []
   if (cli === 'claude') return settings.claudeFavoriteModels ?? []
+  if (cli === 'antigravity') return settings.antigravityFavoriteModels ?? []
   return settings.favoriteModels ?? []
 }
 
-export function defaultModelFor(settings: Pick<Settings, 'defaultModel' | 'codexDefaultModel' | 'claudeDefaultModel'>, cli: CliProvider): string {
+export function defaultModelFor(settings: Pick<Settings, 'defaultModel' | 'codexDefaultModel' | 'claudeDefaultModel' | 'antigravityDefaultModel'>, cli: CliProvider): string {
   if (cli === 'codex') return settings.codexDefaultModel
   if (cli === 'claude') return settings.claudeDefaultModel
+  if (cli === 'antigravity') return settings.antigravityDefaultModel
   return settings.defaultModel
 }
 
 /** Last model this project used with `cli`. Codex falls back to the older shared field until it is chosen again. */
-export function projectModelFor(project: Pick<Project, 'model' | 'codexModel' | 'claudeModel'> | undefined, cli: CliProvider): string | undefined {
+export function projectModelFor(project: Pick<Project, 'model' | 'codexModel' | 'claudeModel' | 'antigravityModel'> | undefined, cli: CliProvider): string | undefined {
   if (!project) return undefined
   if (cli === 'codex') return project.codexModel ?? project.model
   if (cli === 'claude') return project.claudeModel
+  if (cli === 'antigravity') return project.antigravityModel
   return project.model
 }
 

@@ -79,6 +79,19 @@ describe('toml-lite', () => {
 })
 
 describe('local MCP configuration', () => {
+  it('uses Antigravity’s workspace path, serverUrl and native disabled switch', () => {
+    const file = path.join(project, '.agents', 'mcp_config.json')
+    const url = 'https://example.test/mcp'
+    saveLocalMcp(env, [project], {
+      target: { cli: 'antigravity', scope: 'project', projectPath: project },
+      server: server({ name: 'agy-mcp', transport: 'http', url, enabled: false })
+    })
+    expect(JSON.parse(read(file))).toEqual({ mcpServers: { 'agy-mcp': { serverUrl: url, disabled: true } } })
+    const [entry] = scanLocalMcp(env, [project]).entries
+    expect(entry).toMatchObject({ cli: 'antigravity', enabled: false, transport: 'http', url })
+    toggleLocalMcp(env, [project], entry.id, true)
+    expect(JSON.parse(read(file))).toEqual({ mcpServers: { 'agy-mcp': { serverUrl: url } } })
+  })
   it.skipIf(process.platform !== 'linux')('keeps case-distinct project configurations and disabled entries separate', () => {
     const projects = [path.join(root, 'App'), path.join(root, 'app')]
     for (const [index, dir] of projects.entries()) {

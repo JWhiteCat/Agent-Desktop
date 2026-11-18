@@ -407,7 +407,7 @@ function ThreadRow(props: {
       icon: <IconRefresh size={14} />,
       disabled: !thread.chatId || running,
       onSelect: () => {
-        if (thread.source === 'cli' || confirm(t('用 Cursor CLI 本地保存的记录替换此对话的显示内容？\n（耗时、token 统计等本应用记录的信息会丢失）'))) {
+        if (thread.source === 'cli' || confirm(t('用 {cli} 保存的记录替换此对话的显示内容？\n耗时、token 统计等应用记录会丢失。', { cli: cliTitle(threadCli(thread)) }))) {
           syncThreadFromCli(thread.id)
         }
       }

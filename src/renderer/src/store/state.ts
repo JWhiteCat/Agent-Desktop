@@ -50,8 +50,8 @@ let state: UIState = {
   skillCommands: {},
   view: { kind: 'home' },
   models: [{ id: 'auto', label: 'Auto' }],
-  modelsByCli: { cursor: [{ id: 'auto', label: 'Auto' }], codex: [], claude: [] },
-  modelErrorByCli: { cursor: '', codex: '', claude: '' }
+  modelsByCli: { cursor: [{ id: 'auto', label: 'Auto' }], codex: [], claude: [], antigravity: [] },
+  modelErrorByCli: { cursor: '', codex: '', claude: '', antigravity: '' }
 }
 const listeners = new Set<Listener>()
 

@@ -117,11 +117,11 @@ describe('local skills', () => {
     expect(entries.filter((e) => e.name === 'sys')).toHaveLength(1)
   })
 
-  it('marks project .agents skills as loaded by both Codex and Cursor', () => {
+  it('marks project .agents skills as shared by Codex, Cursor, and Antigravity', () => {
     skill(path.join(project, '.agents', 'skills', 'shared'), '---\nname: shared\ndescription: S\n---\n')
     skill(path.join(project, '.cursor', 'skills', 'own'), '---\nname: own\ndescription: O\n---\n')
     const entries = scanLocalSkills(env, [project]).entries
-    expect(entries.find((e) => e.name === 'shared')).toMatchObject({ cli: 'codex', usedBy: ['codex', 'cursor'], origin: 'project', projectPath: project })
+    expect(entries.find((e) => e.name === 'shared')).toMatchObject({ cli: 'codex', usedBy: ['codex', 'cursor', 'antigravity'], origin: 'project', projectPath: project })
     expect(entries.find((e) => e.name === 'own')).toMatchObject({ cli: 'cursor', usedBy: ['cursor'] })
   })
 

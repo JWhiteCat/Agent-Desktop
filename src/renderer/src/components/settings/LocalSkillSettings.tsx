@@ -130,7 +130,7 @@ export function LocalSkillSettings() {
   return (
     <div className="config-block">
       <div className="muted small">
-        {t('列出 ~/.cursor/skills、~/.agents/skills、~/.codex/skills、~/.claude/skills 和已添加项目里的同名目录，以及 CLI 内置和插件 Skill。Cursor 也会加载 .agents、.codex 和 .claude 下的 Skill，所以这些 Skill 同时列在 Cursor 下。停用会把目录移到本应用的暂存区，启用时移回；删除会移到回收站。内置、插件和本应用创建的 Skill 在这里只读。')}
+        {t('列出各 CLI 的用户、项目、内置和插件 Skill。共享的 Skill 会同时列在使用它的 CLI 下。停用会暂存目录，启用时移回，删除会移到回收站。内置、插件和本应用创建的 Skill 在这里只读。')}
       </div>
       {report?.errors.map((error) => (
         <div key={error.file} className="config-error">

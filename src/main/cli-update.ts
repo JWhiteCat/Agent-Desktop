@@ -5,11 +5,16 @@ import path from 'node:path'
 import { killTree, resolveCli, stripAnsi } from './cli'
 import { resolveCodex } from './codex'
 import { resolveClaude } from './claude'
+import { requireAntigravity } from './antigravity'
 import { cliEnvironment, cliSearchDirectories, spawnCliProcess } from './cli-runtime'
 
 const isWin = process.platform === 'win32'
 const UPDATE_TIMEOUT = 10 * 60_000
 const OUTPUT_LIMIT = 64 * 1024
+
+export async function updateAntigravity(customPath: string): Promise<string> {
+  return runUpdate('Antigravity CLI', requireAntigravity(customPath).command, ['update'])
+}
 
 export async function updateCursor(agentPath: string): Promise<string> {
   const cli = resolveCli(agentPath)

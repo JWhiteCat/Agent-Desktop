@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { normalizeCliProvider, type CliProvider, type Settings } from '@shared/types'
+import { CLI_PROVIDERS, cliTitle, normalizeCliProvider, type CliProvider, type Settings } from '@shared/types'
 import { useT } from '../../lib/i18n'
 import { defaultModelFor, favoritesFor, modelForChat } from '../../lib/model-prefs'
 import { loadModels, setDefaultModel, useStore } from '../../store'
@@ -115,6 +115,7 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
               <option value="cursor">Cursor CLI</option>
               <option value="codex">Codex CLI</option>
               <option value="claude">Claude Code</option>
+              <option value="antigravity">Antigravity CLI</option>
             </select>
           </Field>
           <h4>Cursor CLI</h4>
@@ -159,6 +160,21 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
             onPath={(claudePath) => saveCli({ claudePath }, 'claude')}
             onKey={(claudeApiKey) => saveCli({ claudeApiKey }, 'claude')}
           />
+          <h4>Antigravity CLI</h4>
+          <CliCard
+            provider="antigravity"
+            pathValue={settings.antigravityPath}
+            pathPlaceholder={t('自动检测')}
+            pathDesc={t('留空自动检测；可填 agy 可执行文件或安装目录。')}
+            keyValue={settings.antigravityApiKey}
+            keyPlaceholder={t('留空使用 GEMINI_API_KEY')}
+            keyDesc={t('优先使用设置中的 Key，其次使用 GEMINI_API_KEY。都为空时使用 agy 已保存的登录。')}
+            missing={t('未找到 Antigravity CLI')}
+            install={t('请安装 Antigravity CLI 1.5.0 或更高版本。')}
+            installUrl="https://antigravity.google/product/antigravity-cli/"
+            onPath={(antigravityPath) => saveCli({ antigravityPath }, 'antigravity')}
+            onKey={(antigravityApiKey) => saveCli({ antigravityApiKey }, 'antigravity')}
+          />
         </section>
       )}
 
@@ -181,7 +197,7 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
       {tab === 'models' && (
         <section className="settings-section">
           <div className="usage-periods" role="tablist" aria-label={t('模型来源')}>
-            {(['cursor', 'codex', 'claude'] as const).map((id) => (
+            {CLI_PROVIDERS.map((id) => (
               <button
                 key={id}
                 type="button"
@@ -190,7 +206,7 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
                 className={`usage-period ${modelCli === id ? 'active' : ''}`}
                 onClick={() => setModelCli(id)}
               >
-                {id === 'cursor' ? 'Cursor' : id === 'codex' ? 'Codex' : 'Claude'}
+                {cliTitle(id)}
               </button>
             ))}
           </div>

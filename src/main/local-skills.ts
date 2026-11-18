@@ -60,16 +60,19 @@ export function skillRoots(env: LocalEnv, projects: string[]): SkillRoot[] {
     { cli: 'codex', origin: 'user', dir: path.join(h, '.agents', 'skills'), sharedWith: CURSOR },
     { cli: 'codex', origin: 'user', dir: path.join(h, '.codex', 'skills'), skip: ['.system'], sharedWith: CURSOR },
     { cli: 'claude', origin: 'user', dir: path.join(h, '.claude', 'skills'), sharedWith: CURSOR },
+    { cli: 'antigravity', origin: 'user', dir: path.join(h, '.gemini', 'antigravity-cli', 'skills') },
+    { cli: 'antigravity', origin: 'user', dir: path.join(h, '.gemini', 'skills') },
     { cli: 'cursor', origin: 'builtin', dir: path.join(h, '.cursor', 'skills-cursor') },
     { cli: 'codex', origin: 'builtin', dir: path.join(h, '.codex', 'skills', '.system') },
     { cli: 'cursor', origin: 'plugin', dir: path.join(h, '.cursor', 'plugins'), walk: true },
     { cli: 'codex', origin: 'plugin', dir: path.join(h, '.codex', 'plugins'), walk: true },
-    { cli: 'claude', origin: 'plugin', dir: path.join(h, '.claude', 'plugins'), walk: true }
+    { cli: 'claude', origin: 'plugin', dir: path.join(h, '.claude', 'plugins'), walk: true },
+    { cli: 'antigravity', origin: 'plugin', dir: path.join(h, '.gemini', 'antigravity-cli', 'plugins'), walk: true }
   ]
   for (const p of projects) {
     roots.push(
       { cli: 'cursor', origin: 'project', projectPath: p, dir: path.join(p, '.cursor', 'skills') },
-      { cli: 'codex', origin: 'project', projectPath: p, dir: path.join(p, '.agents', 'skills'), sharedWith: CURSOR },
+      { cli: 'codex', origin: 'project', projectPath: p, dir: path.join(p, '.agents', 'skills'), sharedWith: ['cursor', 'antigravity'] },
       { cli: 'codex', origin: 'project', projectPath: p, dir: path.join(p, '.codex', 'skills'), skip: ['.system'], sharedWith: CURSOR },
       { cli: 'claude', origin: 'project', projectPath: p, dir: path.join(p, '.claude', 'skills'), sharedWith: CURSOR }
     )
@@ -84,7 +87,11 @@ export function skillRoots(env: LocalEnv, projects: string[]): SkillRoot[] {
 
 function targetRoot(env: LocalEnv, projects: string[], target: LocalTarget | undefined): SkillRoot {
   if (!target || !isCliProvider(target.cli)) throw new LocalConfigError(translate('请选择 CLI'))
-  const sub = target.cli === 'cursor' ? '.cursor' : target.cli === 'codex' ? '.agents' : '.claude'
+  const sub = target.cli === 'cursor' ? '.cursor'
+    : target.cli === 'codex' || target.cli === 'antigravity' ? '.agents' : '.claude'
+  if (target.cli === 'antigravity' && target.scope === 'user') {
+    return { cli: target.cli, origin: 'user', dir: path.join(env.home, '.gemini', 'antigravity-cli', 'skills') }
+  }
   if (target.scope === 'user') return { cli: target.cli, origin: 'user', dir: path.join(env.home, sub, 'skills') }
   const project = projects.find((p) => target.projectPath && samePath(p, target.projectPath))
   if (target.scope !== 'project' || !project) throw new LocalConfigError(translate('请选择一个已添加的项目'))

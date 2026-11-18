@@ -89,7 +89,7 @@ export async function runHoverTipChecks() {
       { id: 'auto', label: 'Auto' },
       { id: 'composer-2.5', label: 'Composer 2.5' },
       { id: fastModel, label: 'Composer 2.5 Fast' }
-    ], codex: [], claude: [] }
+    ], codex: [], claude: [], antigravity: [] }
   })
   await render(<Picker />)
   await pointer(one('.model-pill'), 'pointerover', 'mouse')

@@ -91,6 +91,7 @@ export function AppearanceSettings({ onOpenImport }: { onOpenImport: () => void 
             <div><span>Cursor</span><code>~/.cursor/chats</code></div>
             <div><span>Codex</span><code>~/.codex/sessions</code></div>
             <div><span>Claude Code</span><code>~/.claude/projects</code></div>
+            <div><span>Antigravity CLI</span><code>agy acp</code></div>
           </div>
           <button type="button" className="btn" onClick={onOpenImport}>{t('导入…')}</button>
         </section>

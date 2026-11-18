@@ -23,11 +23,12 @@ export function claudeSkillsDir(): string {
   return path.join(os.homedir(), '.claude', 'skills')
 }
 
-/** Writes one settings list to Cursor, both Codex skill directories, and Claude. */
+/** Writes one settings list to each CLI's skill directories. */
 export function syncAllManagedSkills(skills: SkillConfig[] | undefined): void {
   syncManagedSkills(skills, userSkillsDir())
   for (const dir of codexSkillsDirs()) syncManagedSkills(skills, dir)
   syncManagedSkills(skills, claudeSkillsDir())
+  syncManagedSkills(skills, path.join(os.homedir(), '.gemini', 'antigravity-cli', 'skills'))
 }
 
 /**

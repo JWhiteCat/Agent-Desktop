@@ -1,5 +1,5 @@
 import { t } from './i18n'
-import type { CliProvider } from './types'
+import { CLI_PROVIDERS, type CliProvider } from './types'
 
 export interface SlashCommand {
   name: string
@@ -97,18 +97,14 @@ export function sanitizeSlashCommands(raw: unknown): SlashCommand[] {
   return out
 }
 
-export interface CommandCache {
-  cursor?: SlashCommand[]
-  codex?: SlashCommand[]
-  claude?: SlashCommand[]
-}
+export type CommandCache = Partial<Record<CliProvider, SlashCommand[]>>
 
 /** Reads a persisted per-CLI command cache. An empty list is kept. */
 export function sanitizeCommandCache(raw: unknown): CommandCache {
   if (!raw || typeof raw !== 'object') return {}
   const rec = raw as Record<string, unknown>
   const out: CommandCache = {}
-  for (const cli of ['cursor', 'codex', 'claude'] as const) {
+  for (const cli of CLI_PROVIDERS) {
     if (!(cli in rec)) continue
     out[cli] = sanitizeSlashCommands(rec[cli])
   }

@@ -55,7 +55,7 @@ export function LocalMcpSettings() {
   return (
     <div className="config-block">
       <div className="muted small">
-        {t('直接读写各 CLI 自己的配置：~/.cursor/mcp.json、~/.codex/config.toml、~/.claude.json，以及已添加项目里的 .cursor/mcp.json、.codex/config.toml、.mcp.json。Codex 用原生的 enabled 开关；Cursor 和 Claude 没有开关，停用的条目暂存在本应用里，启用时写回。每个文件第一次被修改前会备份为 .agent-desktop.bak。')}
+        {t('直接读写各 CLI 的用户和项目 MCP 配置。Codex 和 Antigravity 使用原生开关。Cursor 和 Claude 停用的条目暂存在本应用里，启用时写回。首次修改文件前会创建 .agent-desktop.bak 备份。')}
       </div>
       {report?.errors.map((error) => (
         <div key={error.file} className="config-error">

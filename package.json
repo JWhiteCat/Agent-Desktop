@@ -3,7 +3,7 @@
   "productName": "Agent Desktop",
   "desktopName": "dev.agentdesktop.app.desktop",
   "version": "0.1.0",
-  "description": "A desktop client for Cursor CLI, Codex CLI, and Claude Code with multi-project history",
+  "description": "A desktop client for Cursor CLI, Codex CLI, Claude Code, and Antigravity CLI with multi-project history",
   "homepage": "https://github.com/JWhiteCat/Agent-Desktop",
   "main": "out/main/index.js",
   "scripts": {

@@ -4,6 +4,7 @@ import { useT } from '../../lib/i18n'
 import { errorText, loadModels, toast } from '../../store'
 import { IconRefresh, Spinner } from '../icons'
 import { Field } from './Field'
+import { Hyperlink } from '../Hyperlink'
 
 export function CliCard({
   provider,
@@ -15,6 +16,7 @@ export function CliCard({
   keyDesc,
   missing,
   install,
+  installUrl,
   onPath,
   onKey
 }: {
@@ -27,6 +29,7 @@ export function CliCard({
   keyDesc: string
   missing: string
   install: string
+  installUrl?: string
   onPath: (value: string) => void | Promise<void>
   onKey: (value: string) => void | Promise<void>
 }) {
@@ -93,7 +96,7 @@ export function CliCard({
             <div className="row-gap">
               <span className="err-dot" /> <strong>{missing}</strong>
             </div>
-            <div className="muted small">{install}</div>
+            <div className="muted small">{installUrl ? <Hyperlink href={installUrl} target="_blank" rel="noreferrer">{install}</Hyperlink> : install}</div>
           </>
         )}
         <div className="row-gap wrap">
@@ -108,6 +111,7 @@ export function CliCard({
               try {
                 const out = await window.api.login(provider)
                 toast(out.split('\n').pop() || t('登录流程已结束'))
+                if (provider === 'antigravity') void loadModels(true, provider)
               } catch (err) {
                 toast(errorText(err), 'error')
               } finally {

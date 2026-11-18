@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_SETTINGS, type CliProvider, type Item, type ThreadMeta } from '../src/shared/types'
 import type { Store } from '../src/main/store'
 import { spawnCli } from '../src/main/cli'
+import { spawnAntigravity } from '../src/main/antigravity'
 import { spawnClaudeAcp } from '../src/main/claude'
 import { spawnCodexAcp } from '../src/main/codex'
 import { SessionManager } from '../src/main/sessions'
@@ -17,6 +18,10 @@ import { worktreePathFrom } from '../src/main/session/provider'
 import { isolateGitEnvironment } from './helpers/git-environment'
 
 vi.mock('../src/main/skills', () => ({ syncAllManagedSkills: vi.fn() }))
+vi.mock('../src/main/antigravity', async (original) => ({
+  ...await original<typeof import('../src/main/antigravity')>(),
+  spawnAntigravity: vi.fn()
+}))
 vi.mock('../src/main/codex-history', () => ({ readCodexUsage: vi.fn() }))
 vi.mock('../src/main/cli', async (original) => ({
   ...await original<typeof import('../src/main/cli')>(),
@@ -67,9 +72,9 @@ function fakeChild(calls: Array<{ method: string; params: any }>, stdout: PassTh
           usageId: `worktree-turn-${turns.length + 1}`, startedAt: Date.now(),
           usage: {}, isError: false, completed: true, endLine: turns.length
         })
-        const result = message.method === 'session/new'
-          ? { sessionId: 'new-session' }
-          : message.method === 'session/prompt' ? { stopReason: 'end_turn' } : {}
+        const result = message.method === 'initialize' ? { agentCapabilities: { sessionCapabilities: { resume: {} } } }
+          : message.method === 'session/new' ? { sessionId: 'new-session' }
+            : message.method === 'session/prompt' ? { stopReason: 'end_turn' } : {}
         stdout.write(`${JSON.stringify({ jsonrpc: '2.0', id: message.id, result })}\n`)
         callback()
       }
@@ -94,11 +99,12 @@ function setup(provider: CliProvider = 'cursor') {
   })
   vi.mocked(spawnCodexAcp).mockReturnValue(child)
   vi.mocked(spawnClaudeAcp).mockReturnValue(child)
+  vi.mocked(spawnAntigravity).mockReturnValue(child)
   const thread = { id: 'thread', projectId: 'project', cli: provider, mode: 'agent' } as ThreadMeta
   const items: Item[] = []
   const dataDir = path.join(root, 'data')
   const store = {
-    settings: { ...DEFAULT_SETTINGS, codexApiKey: 'key', claudeApiKey: 'key' },
+    settings: { ...DEFAULT_SETTINGS, codexApiKey: 'key', claudeApiKey: 'key', antigravityPath: process.execPath, antigravityApiKey: 'key' },
     dataDir,
     thread: () => thread,
     project: () => ({ id: 'project', path: project }),
@@ -161,6 +167,27 @@ describe('Cursor worktree conversations', () => {
       ctx.manager.stopAll()
     }
   })
+})
+
+it('resumes an Antigravity conversation through native ACP and reuses the process', async () => {
+  const ctx = setup('antigravity')
+  Object.assign(ctx.thread, { chatId: 'saved-agy-session', cwd: ctx.worktree, worktree: true })
+  try {
+    await ctx.send('continue')
+    await ctx.send('follow up')
+    expect(spawnAntigravity).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ command: process.execPath }), ['acp'], ctx.worktree, 'key'
+    )
+    expect(ctx.calls.map(({ method }) => method)).toEqual([
+      'initialize', 'authenticate', 'session/resume', 'session/set_mode', 'session/prompt', 'session/set_mode', 'session/prompt'
+    ])
+    expect(ctx.calls.find((call) => call.method === 'session/resume')?.params).toEqual({
+      sessionId: 'saved-agy-session', cwd: ctx.worktree, mcpServers: []
+    })
+    expect(ctx.thread).toMatchObject({ chatId: 'saved-agy-session', cwd: ctx.worktree })
+  } finally {
+    ctx.manager.stopAll()
+  }
 })
 
 describe.each(['codex', 'claude'] as const)('%s worktree conversations', (provider) => {

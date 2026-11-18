@@ -52,11 +52,13 @@ export function settingsHandlers(deps: IpcDeps): Record<string, Handler> {
       if (s.agentPath !== previous.agentPath || s.apiKey !== previous.apiKey) infoCache.invalidate('cursor')
       if (s.codexPath !== previous.codexPath || s.codexApiKey !== previous.codexApiKey) infoCache.invalidate('codex')
       if (s.claudePath !== previous.claudePath || s.claudeApiKey !== previous.claudeApiKey) infoCache.invalidate('claude')
+      if (s.antigravityPath !== previous.antigravityPath || s.antigravityApiKey !== previous.antigravityApiKey) infoCache.invalidate('antigravity')
       if (patch.language !== undefined) setLanguage(s.language)
       if (patch.theme) deps.applyTheme(patch.theme)
       if (patch.agentPath !== undefined || patch.apiKey !== undefined) deps.modelsCache.delete('cursor')
       if (patch.codexPath !== undefined || patch.codexApiKey !== undefined) deps.modelsCache.delete('codex')
       if (patch.claudePath !== undefined || patch.claudeApiKey !== undefined) deps.modelsCache.delete('claude')
+      if (patch.antigravityPath !== undefined || patch.antigravityApiKey !== undefined) deps.modelsCache.delete('antigravity')
       if (
         patch.agentPath !== undefined ||
         patch.apiKey !== undefined ||
@@ -64,6 +66,8 @@ export function settingsHandlers(deps: IpcDeps): Record<string, Handler> {
         patch.codexApiKey !== undefined ||
         patch.claudePath !== undefined ||
         patch.claudeApiKey !== undefined ||
+        patch.antigravityPath !== undefined ||
+        patch.antigravityApiKey !== undefined ||
         patch.sandbox !== undefined ||
         patch.mcpServers !== undefined ||
         patch.skills !== undefined

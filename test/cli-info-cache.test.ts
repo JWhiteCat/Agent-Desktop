@@ -6,7 +6,7 @@ import { CliInfoCache, cliInfoSignature } from '../src/main/cli-info-cache'
 import { DEFAULT_SETTINGS, type CliInfo, type CliProvider } from '../src/shared/types'
 import * as files from '../src/main/local-files'
 
-const providers: CliProvider[] = ['cursor', 'codex', 'claude']
+const providers: CliProvider[] = ['cursor', 'codex', 'claude', 'antigravity']
 const signature = 'a'.repeat(64)
 const otherSignature = 'b'.repeat(64)
 const info: CliInfo = { found: true, path: '/tools/agent', version: '1', status: 'Signed in', hasApiKey: true }
@@ -67,8 +67,8 @@ describe('persistent CLI detection cache', () => {
     const detect = vi.fn().mockResolvedValue(info)
     for (const provider of providers) await cache.get(provider, signature, detect)
     await cache.get('cursor', otherSignature, detect)
-    for (const provider of ['codex', 'claude'] as const) await cache.get(provider, signature, detect)
-    expect(detect).toHaveBeenCalledTimes(4)
+    for (const provider of providers.filter((cli) => cli !== 'cursor')) await cache.get(provider, signature, detect)
+    expect(detect).toHaveBeenCalledTimes(providers.length + 1)
   })
 
   it('persists invalidation even when the settings page closes before rechecking', async () => {
@@ -77,7 +77,7 @@ describe('persistent CLI detection cache', () => {
     cache.invalidate('cursor')
     const restarted = new CliInfoCache(() => file)
     for (const provider of providers) await restarted.get(provider, signature, detect)
-    expect(detect).toHaveBeenCalledTimes(4)
+    expect(detect).toHaveBeenCalledTimes(providers.length + 1)
   })
 
   it('shares an in-flight request, including forced refreshes', async () => {
@@ -142,12 +142,12 @@ describe('persistent CLI detection cache', () => {
   })
 
   it.each(providers)('fingerprints %s settings and effective environment credentials without plaintext keys', async (provider) => {
-    const envKey = { cursor: 'CURSOR_API_KEY', codex: 'CODEX_API_KEY', claude: 'ANTHROPIC_API_KEY' }[provider]
+    const envKey = { cursor: 'CURSOR_API_KEY', codex: 'CODEX_API_KEY', claude: 'ANTHROPIC_API_KEY', antigravity: 'GEMINI_API_KEY' }[provider]
     vi.stubEnv(envKey, 'secret-one')
     const first = cliInfoSignature(provider, DEFAULT_SETTINGS)
     vi.stubEnv(envKey, 'secret-two')
     expect(cliInfoSignature(provider, DEFAULT_SETTINGS)).not.toBe(first)
-    const settings = { ...DEFAULT_SETTINGS, apiKey: 'configured-secret', codexApiKey: 'configured-secret', claudeApiKey: 'configured-secret' }
+    const settings = { ...DEFAULT_SETTINGS, apiKey: 'configured-secret', codexApiKey: 'configured-secret', claudeApiKey: 'configured-secret', antigravityApiKey: 'configured-secret' }
     const configured = cliInfoSignature(provider, settings)
     vi.stubEnv(envKey, 'secret-three')
     expect(cliInfoSignature(provider, settings)).toBe(configured)

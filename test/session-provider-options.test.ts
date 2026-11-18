@@ -1,8 +1,53 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { SendRequest } from '../src/shared/types'
-import { applySessionOptions, cursorArgs, initializeSession, type SessionConnection } from '../src/main/session/provider'
+import { antigravityArgs, applySessionOptions, cursorArgs, initializeSession, type SessionConnection } from '../src/main/session/provider'
 
 const SESSION_ID = 'codex-options-session'
+
+describe('Antigravity session options', () => {
+  it('authenticates with the Gemini method only when a key is configured', async () => {
+    const request = vi.fn(async () => ({}))
+    await initializeSession({ request }, 'antigravity', '')
+    expect(request).toHaveBeenCalledOnce()
+    await initializeSession({ request }, 'antigravity', 'configured-key')
+    expect(request).toHaveBeenLastCalledWith('authenticate', { methodId: 'gemini-api-key' })
+  })
+
+  it('launches the native ACP server with the sandbox preference and HTTP MCP worker', () => {
+    expect(antigravityArgs('default', [{ command: 'node' }])).toEqual(['acp'])
+    expect(antigravityArgs('enabled', [{ type: 'http' }])).toEqual(['acp', '--sandbox=true', '--process-per-session'])
+    expect(antigravityArgs('disabled', [])).toEqual(['acp', '--sandbox=false'])
+  })
+
+  it('selects the model before its thinking level and restores the session defaults for Auto', async () => {
+    const config = (model: string, level: string) => [
+      { type: 'select', id: 'model', category: 'model', currentValue: model, options: [] },
+      { type: 'select', id: 'thought_level', category: 'thought_level', currentValue: level, options: [] }
+    ]
+    const defaults = config('gemini-3.1-pro', 'low')
+    const request = vi.fn(async (_method: string, _params: unknown) => ({}))
+    request.mockResolvedValueOnce({}).mockResolvedValueOnce({ configOptions: config('gemini-4-hydrogen', 'medium') })
+      .mockResolvedValueOnce({ configOptions: config('gemini-4-hydrogen', 'xhigh') })
+    const session: SessionConnection = {
+      provider: 'antigravity', sessionId: 'agy-session', acp: { request },
+      antigravityOptions: defaults, antigravityDefaults: defaults
+    }
+    const req = { ...cursorRequest('gemini-4-hydrogen[effort=xhigh]'), mode: 'plan' as const }
+    await applySessionOptions(session, req, 'default')
+    expect(request.mock.calls).toEqual([
+      ['session/set_mode', { sessionId: 'agy-session', modeId: 'plan' }],
+      ['session/set_config_option', { sessionId: 'agy-session', configId: 'model', value: 'gemini-4-hydrogen' }],
+      ['session/set_config_option', { sessionId: 'agy-session', configId: 'thought_level', value: 'xhigh' }]
+    ])
+    request.mockClear()
+    request.mockResolvedValueOnce({}).mockResolvedValueOnce({ configOptions: defaults })
+    await applySessionOptions(session, cursorRequest('auto'), 'default')
+    expect(request.mock.calls).toEqual([
+      ['session/set_mode', { sessionId: 'agy-session', modeId: 'default' }],
+      ['session/set_config_option', { sessionId: 'agy-session', configId: 'model', value: 'gemini-3.1-pro' }]
+    ])
+  })
+})
 
 function setup(mode: SendRequest['mode'] = 'plan', force = true, model = 'auto') {
   const request = vi.fn(async (_method: string, _params: unknown) => ({}))

@@ -2,7 +2,7 @@
 
 [文档目录](README.zh-CN.md) · [项目首页](../README.zh-CN.md) · [English](integrations.md)
 
-在设置里添加 MCP 服务器。启用后，新建和续接的会话会通过 ACP 的 `mcpServers` 传入（stdio、HTTP 或 SSE）。这份列表写在本应用的 `state.json` 里，不会改写 `~/.cursor/mcp.json`。
+在设置里添加 MCP 服务器。启用后，新建和续接的会话会通过 ACP 的 `mcpServers` 传入。Antigravity 支持 stdio 和 Streamable HTTP。这份列表写在本应用的 `state.json` 里。
 
 启用的 Skill 会写成 `~/.cursor/skills/<name>/SKILL.md`，同时写到 Codex 的路径 `~/.agents/skills/<name>/SKILL.md` 和 `~/.codex/skills/<name>/SKILL.md`，以及 `~/.claude/skills/<name>/SKILL.md`。名称只能包含小写字母、数字和连字符，并且需要一段描述。CLI 凭这段描述决定是否使用该 Skill。停用或删除时，只移除本应用创建的目录。同名但不是本应用创建的目录会留在原地，保存时会提示无法覆盖。
 
@@ -15,6 +15,9 @@ MCP 和 Skill 页的「本地所有」分区扫描本机上各 CLI 自己的配�
 | Cursor | `~/.cursor/mcp.json` | `<项目>/.cursor/mcp.json` | `~/.cursor/skills`、`<项目>/.cursor/skills` |
 | Codex | `~/.codex/config.toml` 的 `[mcp_servers.*]` | `<项目>/.codex/config.toml` | `~/.agents/skills`、`~/.codex/skills`、`<项目>/.agents/skills`、`<项目>/.codex/skills` |
 | Claude | `~/.claude.json` 的 `mcpServers`，以及 `projects[<路径>].mcpServers`（本地级） | `<项目>/.mcp.json` | `~/.claude/skills`、`<项目>/.claude/skills` |
+| Antigravity | `~/.gemini/config/mcp_config.json` | `<项目>/.agents/mcp_config.json` | `~/.gemini/antigravity-cli/skills`、`~/.gemini/skills`、`<项目>/.agents/skills` |
+
+Antigravity 使用 `disabled: true` 停用 MCP 服务器，并与 Cursor、Codex 共用项目的 `.agents/skills`。本应用管理的 Antigravity Skill 写入 `~/.gemini/antigravity-cli/skills`。
 
 项目指已添加到侧边栏的项目。新增条目时选择 CLI 和作用域（用户或某个项目）。Cursor 也会加载 Codex 和 Claude 的 Skill 目录（`.agents/skills`、`.codex/skills`、`.claude/skills` 及对应的用户级目录），所以这些 Skill 同时列在 Cursor 下，并标为「与 Cursor 共用」（在 Cursor 分组里则显示与 Codex 或 Claude 共用）。本应用创建的 Skill 每个 CLI 各有一份，只列在各自的 CLI 下。
 

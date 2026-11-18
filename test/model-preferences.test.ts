@@ -53,7 +53,7 @@ describe('model parameter preferences', () => {
     setState({
       app: { projects: [], threads: [], settings: { ...DEFAULT_SETTINGS, modelPreferences: {} }, running: [] },
       models,
-      modelsByCli: { cursor: models, codex: models, claude: models }
+      modelsByCli: { cursor: models, codex: models, claude: models, antigravity: [] }
     })
   })
 

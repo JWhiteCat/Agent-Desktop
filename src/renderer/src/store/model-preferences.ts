@@ -1,4 +1,4 @@
-import { normalizeCliProvider, type CliProvider, type ModelPreference, type Project, type Settings } from '@shared/types'
+import { CLI_PROVIDERS, normalizeCliProvider, type CliProvider, type ModelPreference, type Project, type Settings } from '@shared/types'
 import { findVariant, groupModels } from '../lib/models'
 import {
   defaultModelFor,
@@ -13,8 +13,6 @@ import {
 } from '../lib/model-prefs'
 import { getState, setState } from './state'
 
-export const CLI_PROVIDERS: CliProvider[] = ['cursor', 'codex', 'claude']
-
 function cliOf(cli?: CliProvider): CliProvider {
   return cli ?? normalizeCliProvider(getState().app.settings.cliProvider)
 }
@@ -22,24 +20,28 @@ function cliOf(cli?: CliProvider): CliProvider {
 function storedProjectModel(project: Project, provider: CliProvider): string | undefined {
   if (provider === 'codex') return project.codexModel
   if (provider === 'claude') return project.claudeModel
+  if (provider === 'antigravity') return project.antigravityModel
   return project.model
 }
 
 function projectModelPatch(provider: CliProvider, model: string): Partial<Project> {
   if (provider === 'codex') return { codexModel: model }
   if (provider === 'claude') return { claudeModel: model }
+  if (provider === 'antigravity') return { antigravityModel: model }
   return { model }
 }
 
 function defaultModelPatch(provider: CliProvider, model: string): Partial<Settings> {
   if (provider === 'codex') return { codexDefaultModel: model }
   if (provider === 'claude') return { claudeDefaultModel: model }
+  if (provider === 'antigravity') return { antigravityDefaultModel: model }
   return { defaultModel: model }
 }
 
 function favoritePatch(provider: CliProvider, kept: string[]): Partial<Settings> {
   if (provider === 'codex') return { codexFavoriteModels: kept }
   if (provider === 'claude') return { claudeFavoriteModels: kept }
+  if (provider === 'antigravity') return { antigravityFavoriteModels: kept }
   return { favoriteModels: kept }
 }
 
@@ -120,6 +122,7 @@ function applyProjectPatch(project: Project, patch: Partial<Project>): Project {
   if (Object.hasOwn(patch, 'model') && patch.model === undefined) delete next.model
   if (Object.hasOwn(patch, 'codexModel') && patch.codexModel === undefined) delete next.codexModel
   if (Object.hasOwn(patch, 'claudeModel') && patch.claudeModel === undefined) delete next.claudeModel
+  if (Object.hasOwn(patch, 'antigravityModel') && patch.antigravityModel === undefined) delete next.antigravityModel
   return next
 }
 
