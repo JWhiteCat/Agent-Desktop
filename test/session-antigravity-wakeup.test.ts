@@ -1,0 +1,393 @@
+import type { ChildProcess } from 'node:child_process'
+import { EventEmitter } from 'node:events'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { PassThrough, Writable } from 'node:stream'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { killTree } from '../src/main/cli'
+import { spawnProvider } from '../src/main/session/provider'
+import { SessionManager } from '../src/main/sessions'
+import type { Store } from '../src/main/store'
+import { DEFAULT_SETTINGS, type AssistantItem, type Item, type QuestionItem, type ResultItem, type SendRequest, type ThreadMeta, type ToolItem } from '../src/shared/types'
+
+vi.mock('../src/main/system-proxy', () => ({ refreshCodexProxyEnv: vi.fn(async () => ({})), codexProxyOverlay: () => ({}), isCodexRoutingTimeout: () => false }))
+vi.mock('../src/main/skills', () => ({ syncAllManagedSkills: vi.fn() }))
+vi.mock('../src/main/git', () => ({ createWorktree: vi.fn() }))
+vi.mock('../src/main/session/provider', async (original) => ({
+  ...await original<typeof import('../src/main/session/provider')>(),
+  resolveLaunch: () => ({ cli: { command: 'mock-agy', prefixArgs: ['acp'] } }),
+  providerApiKey: () => '',
+  spawnProvider: vi.fn()
+}))
+vi.mock('../src/main/cli', async (original) => ({
+  ...await original<typeof import('../src/main/cli')>(),
+  killTree: vi.fn((child: ChildProcess) => {
+    Object.assign(child, { exitCode: 0 })
+    child.emit('close', 0)
+  })
+}))
+
+interface RpcMessage {
+  id?: number | string
+  method?: string
+  params?: any
+  result?: any
+}
+
+const managers: SessionManager[] = []
+let workspace: string
+
+function setup(force = true) {
+  const stdout = new PassThrough()
+  const incoming: RpcMessage[] = []
+  let promptId: number | string | undefined
+  let nextServerRequestId = 100
+  const serverPending = new Map<number | string, (result: any) => void>()
+
+  const sendToClient = (message: RpcMessage) => {
+    stdout.write(`${JSON.stringify({ jsonrpc: '2.0', ...message })}\n`)
+  }
+  const requestClient = (method: string, params: any): Promise<any> => {
+    const id = nextServerRequestId++
+    return new Promise((resolve) => {
+      serverPending.set(id, resolve)
+      sendToClient({ id, method, params })
+    })
+  }
+  const update = (payload: Record<string, unknown>) => {
+    sendToClient({
+      method: 'session/update',
+      params: { sessionId: 'agy-session', update: payload }
+    })
+  }
+
+  let stdinBuf = ''
+  const child = Object.assign(new EventEmitter(), {
+    stdout,
+    stderr: new PassThrough(),
+    exitCode: null,
+    stdin: new Writable({
+      write(chunk, _encoding, callback) {
+        stdinBuf += chunk.toString()
+        let nl = stdinBuf.indexOf('\n')
+        while (nl >= 0) {
+          const line = stdinBuf.slice(0, nl).trim()
+          stdinBuf = stdinBuf.slice(nl + 1)
+          nl = stdinBuf.indexOf('\n')
+          if (!line) continue
+          const message: RpcMessage = JSON.parse(line)
+          incoming.push(message)
+          if (message.method === undefined && message.id !== undefined) {
+            serverPending.get(message.id)?.(message.result)
+            serverPending.delete(message.id)
+            continue
+          }
+          if (message.method === 'session/prompt') {
+            promptId = message.id
+            continue
+          }
+          if (message.method && message.id !== undefined) {
+            const result = message.method === 'initialize'
+              ? { protocolVersion: 1, agentCapabilities: { sessionCapabilities: { resume: {} } } }
+              : message.method === 'session/new'
+                ? { sessionId: 'agy-session', configOptions: [] }
+                : {}
+            sendToClient({ id: message.id, result })
+          }
+        }
+        callback()
+      }
+    })
+  }) as unknown as ChildProcess
+
+  vi.mocked(spawnProvider).mockReturnValue(child)
+  const thread = { id: 'thread', projectId: 'project', cli: 'antigravity', mode: 'agent', force } as ThreadMeta
+  const items: Item[] = []
+  const store = {
+    dataDir: os.tmpdir(),
+    settings: { ...DEFAULT_SETTINGS },
+    thread: (id: string) => id === thread.id ? thread : undefined,
+    project: () => ({ id: 'project', path: workspace }),
+    items: () => items,
+    markItemsDirty: vi.fn(),
+    updateThread: vi.fn((_id: string, patch: Partial<ThreadMeta>) => Object.assign(thread, patch))
+  }
+  const finished = vi.fn()
+  const emit = vi.fn()
+  const stateChanged = vi.fn()
+  const manager = new SessionManager(store as unknown as Store, emit, stateChanged, finished)
+  managers.push(manager)
+  const req: SendRequest = { threadId: thread.id, prompt: 'Run checks and report', model: 'gemini-3.8-pro-high', mode: 'agent', force }
+  return {
+    manager,
+    req,
+    thread,
+    store,
+    items,
+    incoming,
+    update,
+    requestClient,
+    finished,
+    emit,
+    waitForPrompt: () => vi.waitFor(() => expect(promptId).toBeDefined()),
+    resolvePrompt: (usage?: Record<string, unknown>) => {
+      const id = promptId
+      promptId = undefined
+      sendToClient({ id, result: { stopReason: 'end_turn', ...(usage ? { usage } : {}) } })
+    }
+  }
+}
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-desktop-agy-wakeup-'))
+})
+
+afterEach(async () => {
+  const current = managers.splice(0)
+  for (const manager of current) manager.stopAll()
+  await vi.waitFor(() => expect(current.every((manager) => !manager.active().length)).toBe(true))
+  const resolved = path.resolve(workspace)
+  if (path.dirname(resolved) !== path.resolve(os.tmpdir()) || !path.basename(resolved).startsWith('agent-desktop-agy-wakeup-')) {
+    throw new Error('Unexpected test directory')
+  }
+  fs.rmSync(resolved, { recursive: true, force: true })
+})
+
+describe('Antigravity reactive wakeup continuation', () => {
+  it('keeps the turn open across early session/prompt resolution while a backgrounded tool finishes and wakes up', async () => {
+    const ctx = setup(true)
+    await ctx.manager.send(ctx.req)
+    await ctx.waitForPrompt()
+
+    // Backgrounded `run_command` stays `in_progress` when `agy acp` resolves `session/prompt`.
+    ctx.update({
+      sessionUpdate: 'tool_call',
+      toolCallId: 'bg-test',
+      kind: 'execute',
+      title: 'npm run typecheck; npm test',
+      status: 'in_progress',
+      rawInput: { CommandLine: 'npm run typecheck; npm test', WaitMsBeforeAsync: 10000 }
+    })
+    ctx.update({
+      sessionUpdate: 'agent_message_chunk',
+      content: { type: 'text', text: '正在运行完整的类型检查和回归测试套件，稍后为您汇报结果并提交更改。' }
+    })
+    ctx.resolvePrompt({ inputTokens: 11269, outputTokens: 557, cachedReadTokens: 6862 })
+
+    // Queue a follow-up while waiting for the background task; it must NOT dispatch prematurely.
+    await ctx.manager.send({ ...ctx.req, prompt: 'Queued next step', delivery: 'queue' })
+    await new Promise((resolve) => setTimeout(resolve, 60))
+
+    expect(ctx.manager.isRunning('thread')).toBe(true)
+    expect(ctx.finished).not.toHaveBeenCalled()
+    expect(ctx.items.find((it): it is ToolItem => it.kind === 'tool' && it.callId === 'bg-test')?.status).toBe('running')
+    expect(ctx.incoming.filter((m) => m.method === 'session/prompt')).toHaveLength(1)
+
+    // Background task finishes and triggers Antigravity reactive wakeup steps + permission request.
+    ctx.update({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'bg-test',
+      status: 'completed',
+      rawOutput: 'Tests passed'
+    })
+    ctx.update({
+      sessionUpdate: 'agent_thought_chunk',
+      content: { type: 'text', text: 'Inspecting results and running final check.' }
+    })
+    ctx.update({
+      sessionUpdate: 'usage_update',
+      usage: { used: 9651, size: 1048576 }
+    })
+    ctx.update({
+      sessionUpdate: 'tool_call',
+      toolCallId: 'post-wakeup-cmd',
+      kind: 'execute',
+      title: 'npx vitest run',
+      status: 'in_progress',
+      rawInput: { CommandLine: 'npx vitest run' }
+    })
+    const perm = await ctx.requestClient('session/request_permission', {
+      sessionId: 'agy-session',
+      toolCall: { toolCallId: 'post-wakeup-cmd', title: 'npx vitest run', kind: 'execute' },
+      options: [
+        { optionId: 'allow_once', kind: 'allow_once', name: 'Allow' },
+        { optionId: 'allow_always', kind: 'allow_always', name: 'Always Allow' },
+        { optionId: 'reject_once', kind: 'reject_once', name: 'Deny' }
+      ]
+    })
+    expect(perm).toEqual({ outcome: { outcome: 'selected', optionId: 'allow_always' } })
+
+    ctx.update({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'post-wakeup-cmd',
+      status: 'completed',
+      rawOutput: '1 passed'
+    })
+    ctx.update({
+      sessionUpdate: 'agent_message_chunk',
+      content: { type: 'text', text: '全部类型检查与测试均已通过，代码已提交。' }
+    })
+    ctx.update({
+      sessionUpdate: 'usage_update',
+      usage: { used: 10240, size: 1048576 }
+    })
+
+    await vi.waitFor(() => expect(ctx.finished).toHaveBeenCalledOnce(), { timeout: 2000 })
+    expect(ctx.finished).toHaveBeenCalledWith(expect.objectContaining({
+      threadId: 'thread',
+      stopped: false,
+      failed: false,
+      preview: '全部类型检查与测试均已通过，代码已提交。'
+    }))
+
+    const tools = ctx.items.filter((it): it is ToolItem => it.kind === 'tool')
+    expect(tools.map((t) => ({ id: t.callId, status: t.status }))).toEqual([
+      { id: 'bg-test', status: 'success' },
+      { id: 'post-wakeup-cmd', status: 'success' }
+    ])
+    const replies = ctx.items.filter((it): it is AssistantItem => it.kind === 'assistant').map((a) => a.text)
+    expect(replies).toEqual([
+      '正在运行完整的类型检查和回归测试套件，稍后为您汇报结果并提交更改。',
+      '全部类型检查与测试均已通过，代码已提交。'
+    ])
+    const result = ctx.items.find((it): it is ResultItem => it.kind === 'result')
+    expect(result?.isError).toBe(false)
+    expect(result?.usage).toEqual({ inputTokens: 11269, outputTokens: 557, cacheReadTokens: 6862 })
+
+    // Only after the wakeup reply settles does the queued message dispatch!
+    await vi.waitFor(() => expect(ctx.incoming.filter((m) => m.method === 'session/prompt')).toHaveLength(2))
+    ctx.resolvePrompt()
+    await vi.waitFor(() => expect(ctx.finished).toHaveBeenCalledTimes(2))
+  })
+
+  it('cancels promptly without killing the reusable CLI process when stopped during post-prompt tool wait', async () => {
+    const ctx = setup(true)
+    await ctx.manager.send(ctx.req)
+    await ctx.waitForPrompt()
+
+    ctx.update({
+      sessionUpdate: 'tool_call',
+      toolCallId: 'bg-sleep',
+      kind: 'execute',
+      status: 'in_progress',
+      rawInput: { CommandLine: 'sleep 30', WaitMsBeforeAsync: 500 }
+    })
+    ctx.resolvePrompt()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(ctx.manager.isRunning('thread')).toBe(true)
+
+    ctx.manager.stop('thread')
+    await vi.waitFor(() => expect(ctx.finished).toHaveBeenCalledOnce())
+    expect(ctx.finished).toHaveBeenCalledWith(expect.objectContaining({
+      threadId: 'thread',
+      stopped: true,
+      failed: false
+    }))
+    expect(ctx.incoming.some((m) => m.method === 'session/cancel')).toBe(true)
+    expect(killTree).not.toHaveBeenCalled()
+    expect(ctx.items.find((it): it is ToolItem => it.kind === 'tool' && it.callId === 'bg-sleep')?.status).toBe('error')
+
+    // Process stays alive and reusable for the next prompt.
+    await ctx.manager.send({ ...ctx.req, prompt: 'Follow up' })
+    await ctx.waitForPrompt()
+    expect(spawnProvider).toHaveBeenCalledOnce()
+    ctx.resolvePrompt()
+    await vi.waitFor(() => expect(ctx.finished).toHaveBeenCalledTimes(2))
+  })
+
+  it('does not block session/prompt completion on IsDaemon background commands', async () => {
+    const ctx = setup(true)
+    await ctx.manager.send(ctx.req)
+    await ctx.waitForPrompt()
+
+    ctx.update({
+      sessionUpdate: 'tool_call',
+      toolCallId: 'dev-server',
+      kind: 'execute',
+      status: 'in_progress',
+      rawInput: { CommandLine: 'npm run dev', IsDaemon: true }
+    })
+    ctx.update({
+      sessionUpdate: 'agent_message_chunk',
+      content: { type: 'text', text: 'Started dev server.' }
+    })
+    ctx.resolvePrompt()
+
+    await vi.waitFor(() => expect(ctx.finished).toHaveBeenCalledOnce())
+    expect(ctx.items.find((it): it is ToolItem => it.kind === 'tool' && it.callId === 'dev-server')?.status).toBe('running')
+  })
+
+  it('captures unsolicited subagent wakeups and interactive permissions on an idle Antigravity session', async () => {
+    const ctx = setup(false)
+    await ctx.manager.send(ctx.req)
+    await ctx.waitForPrompt()
+
+    // `invoke_subagent` completes immediately upon spawning the child conversation.
+    ctx.update({
+      sessionUpdate: 'tool_call',
+      toolCallId: 'sub-1',
+      kind: 'other',
+      title: 'Researcher',
+      status: 'completed',
+      rawInput: { TypeName: 'research', Role: 'Researcher', Prompt: 'Check docs' },
+      rawOutput: 'Created the following subagent: {"conversationId":"child-1"}'
+    })
+    ctx.update({
+      sessionUpdate: 'agent_message_chunk',
+      content: { type: 'text', text: '已启动子代理，等待返回结果。' }
+    })
+    ctx.resolvePrompt({ inputTokens: 2000, outputTokens: 120 })
+    await vi.waitFor(() => expect(ctx.finished).toHaveBeenCalledOnce())
+    expect(ctx.manager.isRunning('thread')).toBe(false)
+
+    // Later, the subagent finishes and wakes up the idle parent `agy` process!
+    ctx.update({
+      sessionUpdate: 'agent_thought_chunk',
+      content: { type: 'text', text: 'Subagent reported back.' }
+    })
+    expect(ctx.manager.isRunning('thread')).toBe(true)
+
+    // Interactive permission card (force=false) during wakeup must wait for user approval, not auto-cancel!
+    const permPromise = ctx.requestClient('session/request_permission', {
+      sessionId: 'agy-session',
+      toolCall: { toolCallId: 'wakeup-edit', title: 'Edit note.md', kind: 'edit' },
+      options: [
+        { optionId: 'allow_once', kind: 'allow_once', name: 'Allow' },
+        { optionId: 'reject_once', kind: 'reject_once', name: 'Deny' }
+      ]
+    })
+    await vi.waitFor(() => {
+      const q = ctx.items.find((it): it is QuestionItem => it.kind === 'question' && it.status === 'pending')
+      expect(q).toBeDefined()
+    })
+    const question = ctx.items.find((it): it is QuestionItem => it.kind === 'question' && it.status === 'pending')!
+    ctx.manager.answerQuestion('thread', question.id, [{ questionId: 'q', selectedOptionIds: ['allow_once'] }])
+    await expect(permPromise).resolves.toEqual({ outcome: { outcome: 'selected', optionId: 'allow_once' } })
+
+    ctx.update({
+      sessionUpdate: 'agent_message_chunk',
+      content: { type: 'text', text: '子代理调查完成，已更新笔记。' }
+    })
+    ctx.update({
+      sessionUpdate: 'usage_update',
+      usage: { used: 4200, size: 1048576 }
+    })
+
+    await vi.waitFor(() => expect(ctx.finished).toHaveBeenCalledTimes(2), { timeout: 2000 })
+    expect(ctx.manager.isRunning('thread')).toBe(false)
+    expect(ctx.finished).toHaveBeenLastCalledWith(expect.objectContaining({
+      threadId: 'thread',
+      stopped: false,
+      failed: false,
+      preview: '子代理调查完成，已更新笔记。'
+    }))
+
+    const results = ctx.items.filter((it): it is ResultItem => it.kind === 'result')
+    expect(results).toHaveLength(1)
+    expect(results[0].usage).toEqual({ inputTokens: 2000, outputTokens: 120 })
+    const replies = ctx.items.filter((it): it is AssistantItem => it.kind === 'assistant').map((a) => a.text)
+    expect(replies).toEqual(['已启动子代理，等待返回结果。', '子代理调查完成，已更新笔记。'])
+  })
+})

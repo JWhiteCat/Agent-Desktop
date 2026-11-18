@@ -55,6 +55,12 @@ interface AgentProc extends SessionConnection {
   promptCapabilities?: { image: boolean }
 }
 
+interface FollowupState {
+  phase: 'tools' | 'llm' | 'reply' | 'usage'
+  timer?: NodeJS.Timeout
+  finish: () => void
+}
+
 interface Run extends InteractionRun {
   proc: AgentProc
   reducer: StreamReducer
@@ -74,6 +80,10 @@ interface Run extends InteractionRun {
   /** This turn spawned a CLI process instead of reusing the idle one. */
   starting: boolean
   killTimer?: NodeJS.Timeout
+  /** Antigravity reactive wakeup continuation after `session/prompt` returned early. */
+  followup?: FollowupState
+  /** Attached to an unsolicited post-turn wakeup on an idle Antigravity session. */
+  wakeup?: boolean
   /** Defined only for ChatGPT-authenticated Codex turns; an empty path selects the detected CLI. */
   codexAccountPath?: string
   resultId?: string
@@ -109,6 +119,9 @@ export function titleFrom(prompt: string): string {
 const CANCEL_KILL_MS = 5000
 const COMMAND_WAIT_MS = 2000
 const FORK_TIMEOUT_MS = 60_000
+const FOLLOWUP_LLM_MS = 120_000
+const FOLLOWUP_REPLY_MS = 2000
+const FOLLOWUP_USAGE_MS = 250
 /** A real reply can mention these errors. Only a short failure text is the dropped turn. */
 const AUTO_CONTINUE_TEXT_LIMIT = 240
 const CURSOR_DISCONNECT_NOTICE = 'Cursor 连接中断，正在发送「{word}」。'
@@ -601,6 +614,10 @@ export class SessionManager {
     settleQuestion(run, 'cancel')
     if (run.proc.ready && run.proc.sessionId) {
       run.proc.acp.notify('session/cancel', { sessionId: run.proc.sessionId })
+      if (run.followup) {
+        this.finishFollowup(run)
+        return
+      }
       if (!run.killTimer) {
         run.killTimer = setTimeout(() => {
           run.killTimer = undefined
@@ -610,6 +627,7 @@ export class SessionManager {
       }
       return
     }
+    this.finishFollowup(run)
     this.killProc(run.proc)
   }
 
@@ -626,6 +644,7 @@ export class SessionManager {
         clearTimeout(run.killTimer)
         run.killTimer = undefined
       }
+      this.finishFollowup(run)
       settleQuestion(run, 'cancel')
       this.killProc(run.proc)
       return
@@ -753,7 +772,8 @@ export class SessionManager {
           }
           return
         }
-        const run = this.runs.get(threadId)
+        let run = this.runs.get(threadId)
+        if (!run && method === 'session/update') run = this.resumeAntigravityWakeup(threadId, proc, params?.sessionId, params?.update)
         if (!run || run.proc !== proc || method !== 'session/update' || !run.acceptUpdates) return
         if (
           params.sessionId &&
@@ -770,11 +790,19 @@ export class SessionManager {
         run.timing?.observe(params?.update, receivedAt)
         const changed = run.reducer.handleAcp(params?.update)
         if (changed.length) this.queue(threadId, run, changed)
+        this.observeFollowup(run, params?.update)
       },
       onRequest: (method, params) => {
-        const run = this.runs.get(threadId)
+        let run = this.runs.get(threadId)
+        if (!run && (method === 'session/request_permission' || method === 'cursor/ask_question' || Array.isArray(params?.questions))) {
+          run = this.resumeAntigravityWakeup(threadId, proc, params?.sessionId, { sessionUpdate: 'tool_call' })
+        }
         if (run?.proc === proc) run.timing?.interrupt()
-        if (run && run.proc === proc) return onAcpRequest(run, method, params, (items) => this.queue(threadId, run, items))
+        if (run && run.proc === proc) {
+          this.holdFollowupForInteraction(run)
+          return onAcpRequest(run, method, params, (items) => this.queue(threadId, run!, items))
+            .finally(() => this.resumeFollowupAfterInteraction(run!))
+        }
         return onIdleAcpRequest(proc, method, params)
       }
     })
@@ -787,6 +815,7 @@ export class SessionManager {
       if (this.agents.get(threadId) === proc) this.agents.delete(threadId)
       const run = this.runs.get(threadId)
       if (run?.proc !== proc) return
+      this.finishFollowup(run)
       // Prompt rejection records failText in a microtask. Ending the turn on this
       // close event would run first and miss an automatic「继续」from that rejection.
       setImmediate(() => {
@@ -1050,13 +1079,19 @@ export class SessionManager {
       prompt: [{ type: 'text', text }, ...images]
     })
     const stop = String(result?.stopReason ?? 'end_turn')
+    if (run.proc.provider === 'antigravity' && stop === 'end_turn' && !run.stopped
+      && !run.proc.dying && run.proc.child.exitCode === null && run.reducer.hasRunningForegroundTools()) {
+      await this.waitForFollowup(run, 'tools')
+      if (!this.runs.has(threadId) || run.settled) return
+      if (run.proc.dying || run.proc.child.exitCode !== null) return
+    }
     const failedReply = isAutomaticContinueFailure(run.proc.provider, run.reducer.lastAssistantText)
       || isAutomaticContinueFailure(run.proc.provider, run.failText)
     const timing = run.timing.finish(run.stopped || stop === 'cancelled'
       ? 'cancelled' : stop === 'end_turn' && !failedReply ? 'completed' : 'failed')
     if (!this.runs.has(threadId) || run.settled) return
     const codexUsage = run.codexUsage?.read()
-    if (contextThroughId && stop === 'end_turn') {
+    if (contextThroughId && stop === 'end_turn' && !run.stopped) {
       this.store.updateThread(threadId, { forkContextThroughItemId: undefined })
       this.onStateChange()
     }
@@ -1071,7 +1106,7 @@ export class SessionManager {
       run.reducer.push({
         id: resultId,
         kind: 'result',
-        isError: stop !== 'end_turn' && stop !== 'cancelled',
+        isError: stop !== 'end_turn' && stop !== 'cancelled' && !run.stopped,
         durationMs: Math.round(timing.elapsedMs),
         timing,
         createdAt: Date.now(),
@@ -1131,6 +1166,7 @@ export class SessionManager {
       clearTimeout(run.killTimer)
       run.killTimer = undefined
     }
+    this.finishFollowup(run)
     settleQuestion(run, 'cancel')
     if (!this.store.thread(threadId)) {
       this.runs.delete(threadId)
@@ -1170,7 +1206,13 @@ export class SessionManager {
           cli: run.proc.provider, model: r.init.model, createdAt: Date.now() })
       }
       if (result?.kind === 'result') {
-        result.fileChanges = fileChanges
+        if (run.wakeup && result.fileChanges?.length) {
+          const merged = new Map(result.fileChanges.map((change) => [change.path, change]))
+          for (const change of fileChanges) merged.set(change.path, change)
+          result.fileChanges = [...merged.values()]
+        } else {
+          result.fileChanges = fileChanges
+        }
         changed.push(result)
       }
     }
@@ -1182,8 +1224,13 @@ export class SessionManager {
           cli: run.proc.provider, model: run.model, createdAt: Date.now() })
       }
       if (result.kind === 'result') {
-        result.timing = timing
-        result.durationMs = Math.round(timing.elapsedMs)
+        if (run.wakeup && result.durationMs !== undefined) {
+          result.durationMs += Math.round(timing.elapsedMs)
+          result.timing = { ...timing, elapsedMs: result.durationMs, firstTokenMs: result.timing?.firstTokenMs ?? timing.firstTokenMs, firstVisibleOutputMs: result.timing?.firstVisibleOutputMs ?? timing.firstVisibleOutputMs }
+        } else {
+          result.timing = timing
+          result.durationMs = Math.round(timing.elapsedMs)
+        }
         changed.push(result)
       }
     }
@@ -1312,6 +1359,193 @@ export class SessionManager {
       this.store.markItemsDirty(threadId)
       this.emit({ type: 'items', threadId, items: [notice] })
     }
+  }
+
+  /**
+   * Antigravity resolves `session/prompt` before backgrounded commands, timers, or
+   * subagents finish, then streams reactive wakeup steps on the same ACP session.
+   */
+  private waitForFollowup(run: Run, initial: FollowupState['phase']): Promise<void> {
+    return new Promise((resolve) => {
+      const followup: FollowupState = {
+        phase: initial,
+        finish: () => {
+          if (run.followup !== followup) return
+          if (followup.timer) clearTimeout(followup.timer)
+          run.followup = undefined
+          resolve()
+        }
+      }
+      run.followup = followup
+      this.scheduleFollowupTimer(run)
+    })
+  }
+
+  private finishFollowup(run: Run): void {
+    run.followup?.finish()
+  }
+
+  private scheduleFollowupTimer(run: Run): void {
+    const followup = run.followup
+    if (!followup) return
+    if (followup.timer) {
+      clearTimeout(followup.timer)
+      followup.timer = undefined
+    }
+    if (run.stopped || run.settled || run.proc.dying || run.proc.child.exitCode !== null) {
+      followup.finish()
+      return
+    }
+    if (run.pendingQuestions?.size || followup.phase === 'tools') return
+    const ms = followup.phase === 'llm' ? FOLLOWUP_LLM_MS
+      : followup.phase === 'reply' ? FOLLOWUP_REPLY_MS : FOLLOWUP_USAGE_MS
+    followup.timer = setTimeout(() => followup.finish(), ms)
+  }
+
+  private holdFollowupForInteraction(run: Run): void {
+    const followup = run.followup
+    if (!followup?.timer) return
+    clearTimeout(followup.timer)
+    followup.timer = undefined
+  }
+
+  private resumeFollowupAfterInteraction(run: Run): void {
+    const followup = run.followup
+    if (!followup) return
+    followup.phase = run.reducer.hasRunningForegroundTools() ? 'tools' : 'llm'
+    this.scheduleFollowupTimer(run)
+  }
+
+  private observeFollowup(run: Run, update: any): void {
+    const followup = run.followup
+    if (!followup) return
+    switch (update?.sessionUpdate) {
+      case 'tool_call':
+      case 'tool_call_update':
+        followup.phase = run.reducer.hasRunningForegroundTools() ? 'tools' : 'llm'
+        break
+      case 'agent_thought_chunk':
+      case 'plan':
+      case 'plan_update':
+        followup.phase = 'llm'
+        break
+      case 'agent_message_chunk':
+        if (!run.reducer.hasRunningForegroundTools()) followup.phase = 'reply'
+        break
+      case 'usage_update':
+        if (!run.reducer.hasRunningForegroundTools() && followup.phase !== 'tools') {
+          followup.phase = followup.phase === 'reply' ? 'usage' : 'llm'
+        }
+        break
+      default:
+        return
+    }
+    this.scheduleFollowupTimer(run)
+  }
+
+  private resumeAntigravityWakeup(threadId: string, proc: AgentProc, sessionId: unknown, update: any): Run | undefined {
+    if (proc.provider !== 'antigravity' || this.shuttingDown || !proc.ready || !proc.sessionId) return undefined
+    if (this.agents.get(threadId) !== proc || this.runs.has(threadId) || this.pendingSends.has(threadId)) return undefined
+    if (typeof sessionId === 'string' && sessionId && sessionId !== proc.sessionId) return undefined
+    if (!['agent_thought_chunk', 'agent_message_chunk', 'tool_call', 'tool_call_update', 'plan', 'plan_update'].includes(update?.sessionUpdate)) {
+      return undefined
+    }
+    const thread = this.store.thread(threadId)
+    if (!thread || threadCli(thread) !== 'antigravity') return undefined
+    const items = this.store.items(threadId)
+    let userItemId: string | undefined
+    let resultId: string | undefined
+    for (let i = items.length - 1; i >= 0; i--) {
+      if (!resultId && items[i].kind === 'result') resultId = items[i].id
+      if (items[i].kind === 'user') { userItemId = items[i].id; break }
+    }
+    const run: Run = {
+      proc,
+      reducer: new StreamReducer(items, imageCapture(this.store, proc.cwd, items)),
+      stopped: false,
+      pending: new Map(),
+      announcedQuestions: new Set(),
+      acceptUpdates: true,
+      force: thread.force ?? proc.force,
+      mode: thread.mode ?? 'agent',
+      model: thread.model ?? '',
+      onPlanApproved: () => {
+        this.store.updateThread(threadId, { mode: 'agent' })
+        this.onStateChange()
+      },
+      switchCalls: new Set(),
+      settled: false,
+      starting: false,
+      wakeup: true,
+      resultId,
+      timing: new TurnTiming(),
+      userItemId,
+      isAttachmentReadAllowed: (filePath, expectedPath) => {
+        const refs = this.store.items(threadId).flatMap((item) => item.kind === 'user' ? item.attachments ?? [] : [])
+        return refs.length > 0 && attachmentsFor(this.store).scopedRead(filePath, proc.cwd, refs, expectedPath)
+      }
+    }
+    run.reducer.init = { sessionId: proc.sessionId, cwd: proc.cwd, model: run.model }
+    this.runs.set(threadId, run)
+    this.emit({ type: 'running', threadId, running: true })
+    this.onStateChange()
+    void this.driveAntigravityWakeup(threadId, run)
+    return run
+  }
+
+  private async driveAntigravityWakeup(threadId: string, run: Run): Promise<void> {
+    const waiting = this.waitForFollowup(run, 'llm')
+    void snapshotTurnFiles(run.proc.cwd)
+      .then((files) => { if (!run.settled) run.fileSnapshot = files })
+      .catch(() => undefined)
+    await waiting
+    if (this.runs.get(threadId) !== run || run.settled) return
+    if (run.proc.dying || run.proc.child.exitCode !== null) return
+    const timing = run.timing?.finish(run.stopped ? 'cancelled' : 'completed')
+    run.timing = undefined
+    run.reducer.gotResult = true
+    const changed = run.reducer.closeSegments()
+    if (!run.stopped) {
+      const items = this.store.items(threadId)
+      const userIndex = run.userItemId ? items.findIndex((it) => it.id === run.userItemId) : -1
+      let existing: Extract<Item, { kind: 'result' }> | undefined
+      for (let i = items.length - 1; i > userIndex; i--) {
+        const it = items[i]
+        if (it.kind === 'result') { existing = it; break }
+      }
+      const usage = preferTurnUsage(run.reducer.lastUsage, existing?.usage)
+      if (existing) {
+        run.resultId = existing.id
+        existing.isError = false
+        if (timing) {
+          existing.durationMs = (existing.durationMs ?? 0) + Math.round(timing.elapsedMs)
+          existing.timing = {
+            ...timing,
+            elapsedMs: existing.durationMs,
+            firstTokenMs: existing.timing?.firstTokenMs ?? timing.firstTokenMs,
+            firstVisibleOutputMs: existing.timing?.firstVisibleOutputMs ?? timing.firstVisibleOutputMs
+          }
+        }
+        if (usage) existing.usage = usage
+        changed.push(existing)
+      } else {
+        const resultId = newId()
+        run.resultId = resultId
+        changed.push(run.reducer.push({
+          id: resultId,
+          kind: 'result',
+          isError: false,
+          ...(timing ? { durationMs: Math.round(timing.elapsedMs), timing } : {}),
+          createdAt: Date.now(),
+          model: run.model,
+          cli: 'antigravity',
+          usageId: newId(),
+          usage
+        }))
+      }
+    }
+    this.queue(threadId, run, changed)
+    await this.endRun(threadId, run, null)
   }
 
   private queue(threadId: string, run: Run, items: Item[]): void {

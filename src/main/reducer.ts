@@ -166,17 +166,34 @@ export class StreamReducer {
     return changed
   }
 
-  /** Marks tool calls still running (e.g. after the process was killed) as failed. */
+  /** Whether a foreground tool call is still awaiting its completion update. */
+  hasRunningForegroundTools(): boolean {
+    for (const t of this.tools.values()) {
+      if (this.isRunningForegroundTool(t)) return true
+    }
+    return false
+  }
+
+  /** Marks non-daemon tool calls still running (e.g. after cancellation or exit) as failed. */
   abortRunningTools(): Item[] {
     const changed: Item[] = []
     for (const t of this.tools.values()) {
-      if (t.status === 'running') {
+      if (t.status === 'running' && !this.isDaemonTool(t)) {
         t.status = 'error'
         t.endedAt = Date.now()
         changed.push(t)
       }
     }
     return changed
+  }
+
+  private isDaemonTool(t: ToolItem): boolean {
+    const a = t.args && typeof t.args === 'object' ? (t.args as Record<string, unknown>) : undefined
+    return a?.IsDaemon === true || a?.isDaemon === true
+  }
+
+  private isRunningForegroundTool(t: ToolItem): boolean {
+    return t.status === 'running' && !isBackgroundAgentActivity(t.args) && !this.isDaemonTool(t)
   }
 
   private onPlanMarkdown(plan: any): Item[] {

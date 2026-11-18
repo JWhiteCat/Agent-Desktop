@@ -332,4 +332,44 @@ describe('StreamReducer', () => {
     expect(plans[0].args.todos).toEqual([{ id: '0', content: '读代码', status: 'pending' }])
     expect(plans[1].args).toMatchObject({ plan: '# 另一份' })
   })
+
+  it('tracks running foreground tools while ignoring background activities and daemons', () => {
+    const items: Item[] = []
+    const reducer = new StreamReducer(items)
+    expect(reducer.hasRunningForegroundTools()).toBe(false)
+
+    reducer.handleAcp({
+      sessionUpdate: 'tool_call',
+      toolCallId: 'bg-agent',
+      status: 'in_progress',
+      rawInput: { agentThreadId: 'agent-1', activityKind: 'completed' }
+    })
+    reducer.handleAcp({
+      sessionUpdate: 'tool_call',
+      toolCallId: 'daemon-cmd',
+      kind: 'execute',
+      status: 'in_progress',
+      rawInput: { CommandLine: 'npm run dev', IsDaemon: true }
+    })
+    expect(reducer.hasRunningForegroundTools()).toBe(false)
+
+    reducer.handleAcp({
+      sessionUpdate: 'tool_call',
+      toolCallId: 'bg-cmd',
+      kind: 'execute',
+      status: 'in_progress',
+      rawInput: { CommandLine: 'npm test', WaitMsBeforeAsync: 10000 }
+    })
+    expect(reducer.hasRunningForegroundTools()).toBe(true)
+
+    reducer.handleAcp({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'bg-cmd',
+      status: 'completed',
+      rawOutput: 'ok'
+    })
+    expect(reducer.hasRunningForegroundTools()).toBe(false)
+    expect(reducer.abortRunningTools().map((item) => (item as ToolItem).callId)).toEqual(['bg-agent'])
+    expect(items.find((item): item is ToolItem => item.kind === 'tool' && item.callId === 'daemon-cmd')?.status).toBe('running')
+  })
 })
