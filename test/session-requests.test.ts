@@ -70,7 +70,7 @@ function onlyQuestion(items: Item[]): QuestionItem {
 }
 
 describe('session request interactions', () => {
-  it.each(['cursor', 'codex', 'claude'] as const)('waits for an explicit %s permission decision without full access', async (provider) => {
+  it.each(['cursor', 'codex', 'claude', 'antigravity'] as const)('waits for an explicit %s permission decision without full access', async (provider) => {
     const ctx = setup({ proc: { provider } })
     let resolved = false
     const response = onAcpRequest(ctx.run, 'session/request_permission', permissionParams, ctx.queue).then((result) => {
@@ -99,7 +99,7 @@ describe('session request interactions', () => {
     await expect(response).resolves.toEqual({ outcome: { outcome: 'selected', optionId } })
   })
 
-  it.each(['cursor', 'codex'] as const)('automatically approves %s Agent permissions with full access', async (provider) => {
+  it.each(['cursor', 'codex', 'antigravity'] as const)('automatically approves %s Agent permissions with full access', async (provider) => {
     const ctx = setup({ proc: { provider }, force: true })
     await expect(onAcpRequest(ctx.run, 'session/request_permission', permissionParams, ctx.queue))
       .resolves.toEqual({ outcome: { outcome: 'selected', optionId: 'always' } })
@@ -167,7 +167,36 @@ describe('session request interactions', () => {
     await expect(response).resolves.toEqual({ outcome: { outcome: 'cancelled' } })
   })
 
-  it.each(['cursor', 'codex', 'claude'] as const)('keeps explicit write requests out of %s read-only modes', async (provider) => {
+  it('auto-approves Antigravity Plan research permissions with full access while blocking edits and asking on mode switches', async () => {
+    for (const kind of ['execute', 'read', 'search', 'other']) {
+      const ctx = setup({ proc: { provider: 'antigravity' }, force: true, mode: 'plan' })
+      await expect(onAcpRequest(ctx.run, 'session/request_permission', {
+        ...permissionParams, toolCall: { ...permissionParams.toolCall, kind }
+      }, ctx.queue)).resolves.toEqual({ outcome: { outcome: 'selected', optionId: 'always' } })
+      expect(ctx.items).toEqual([])
+    }
+
+    const switchCtx = setup({ proc: { provider: 'antigravity' }, force: true, mode: 'plan' })
+    const switchResponse = onAcpRequest(switchCtx.run, 'session/request_permission', {
+      ...permissionParams, toolCall: { ...permissionParams.toolCall, kind: 'switch_mode' }
+    }, switchCtx.queue)
+    answerPendingQuestion(switchCtx.run, onlyQuestion(switchCtx.items).id, null)
+    await expect(switchResponse).resolves.toEqual({ outcome: { outcome: 'cancelled' } })
+
+    const askCtx = setup({ proc: { provider: 'antigravity' }, force: true, mode: 'ask' })
+    await expect(onAcpRequest(askCtx.run, 'session/request_permission', permissionParams, askCtx.queue))
+      .resolves.toEqual({ outcome: { outcome: 'selected', optionId: 'deny' } })
+    expect(askCtx.items).toEqual([])
+
+    const askReadCtx = setup({ proc: { provider: 'antigravity' }, force: true, mode: 'ask' })
+    const askReadResponse = onAcpRequest(askReadCtx.run, 'session/request_permission', {
+      ...permissionParams, toolCall: { ...permissionParams.toolCall, kind: 'read' }
+    }, askReadCtx.queue)
+    answerPendingQuestion(askReadCtx.run, onlyQuestion(askReadCtx.items).id, null)
+    await expect(askReadResponse).resolves.toEqual({ outcome: { outcome: 'cancelled' } })
+  })
+
+  it.each(['cursor', 'codex', 'claude', 'antigravity'] as const)('keeps explicit write requests out of %s read-only modes', async (provider) => {
     for (const mode of ['ask', 'plan'] as const) {
       for (const kind of ['edit', 'delete', 'move']) {
         const ctx = setup({ proc: { provider }, force: true, mode })
@@ -179,7 +208,7 @@ describe('session request interactions', () => {
     }
   })
 
-  it.each(['cursor', 'codex', 'claude'] as const)('rejects %s mode switches in Ask mode', async (provider) => {
+  it.each(['cursor', 'codex', 'claude', 'antigravity'] as const)('rejects %s mode switches in Ask mode', async (provider) => {
     const ctx = setup({ proc: { provider }, mode: 'ask', force: true })
     await expect(onAcpRequest(ctx.run, 'session/request_permission', {
       ...permissionParams, toolCall: { ...permissionParams.toolCall, kind: 'switch_mode' }

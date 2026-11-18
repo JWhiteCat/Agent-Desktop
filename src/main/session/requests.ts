@@ -96,7 +96,12 @@ async function answerPermission(run: InteractionRun, params: any, queue: QueueIt
   // user; session notifications restore Plan mode after an approved switch.
   // Claude applies bypassPermissions before sending requests. Those that still
   // reach the client explicitly require user input, even with full access on.
-  if (!askFallback && !planReview && run.force && run.mode === 'agent' && run.proc.provider !== 'claude') return permissionResult(options, true)
+  // Antigravity has no ACP full-access mode; with full access on, auto-approve
+  // non-edit Plan permissions (after readOnlyViolation rejects workspace edits)
+  // while still asking before a mode switch.
+  const forceApprove = run.mode === 'agent'
+    || (run.proc.provider === 'antigravity' && run.mode === 'plan' && kind !== 'switch_mode')
+  if (!askFallback && !planReview && run.force && forceApprove && run.proc.provider !== 'claude') return permissionResult(options, true)
   const choices = options.filter((o) => o.optionId !== '__ask_question_skip__')
   if (!choices.length) return cancelledPermission()
   const decision = await waitForAnswers(run, {
