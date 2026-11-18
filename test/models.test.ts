@@ -121,6 +121,8 @@ describe('model picker', () => {
     expect(modelCaption([], GROK_47_500K_HIGH_FAST)).toBe('Grok 4.7 500K High Fast')
     expect(modelCaption([], 'grok-4.7[context=256k,reasoning_effort=high,fast=false]')).toBe('Grok 4.7 256K High')
     expect(modelCaption([], 'composer-2.5[fast=true]')).toBe('Composer 2.5 Fast')
+    expect(modelCaption([], 'gpt-oss-120b', 'antigravity')).toBe('GPT-OSS 120B')
+    expect(modelCaption([], 'gemini-4-hydrogen[effort=xhigh]', 'antigravity')).toBe('Gemini 4 Hydrogen Extra High')
     expect(modelCaption([], 'auto')).toBe('Auto')
     const codex = groupModels([
       { id: 'gpt-5.4[high]', label: '5.4 high' },

@@ -6,13 +6,13 @@ Codex 在同一次请求中批准计划并立即继续执行时，回复的 toke
 
 ## 账号额度
 
-用量页顶部显示 Cursor 与 Codex 的账号额度。Claude 的账号额度尚未接入。Cursor 显示当前账单周期里的 Cursor 模型和其他模型占用，以及下次重置时间；有按需上限时一并显示。Cursor 模型和其他模型还会带上该池的实际 token（输入、输出、缓存读、缓存写）和账号返回的价格，并按账号的池标记拆开。其他模型只显示包含的 API 用量百分比。套餐的包含金额会停在已购上限，不是这一池的消耗，所以不标在这行上。按需支出在进度旁显示已用和上限；账号若返回了按需明细，也会带上 token，但不再重复总价。Codex 显示接口返回的窗口，常见是 5 小时和每周，并写出下次重置时间。没有的窗口不显示。只用 API Key 登录的 Codex 没有订阅额度，卡片会说明原因。这些数字来自账号接口，不是下面的本机估算。
+用量页顶部显示 Cursor 与 Codex 的账号额度。Claude 与 Antigravity 的账号额度尚未接入。Cursor 显示当前账单周期里的 Cursor 模型和其他模型占用，以及下次重置时间；有按需上限时一并显示。Cursor 模型和其他模型还会带上该池的实际 token（输入、输出、缓存读、缓存写）和账号返回的价格，并按账号的池标记拆开。其他模型只显示包含的 API 用量百分比。套餐的包含金额会停在已购上限，不是这一池的消耗，所以不标在这行上。按需支出在进度旁显示已用和上限；账号若返回了按需明细，也会带上 token，但不再重复总价。Codex 显示接口返回的窗口，常见是 5 小时和每周，并写出下次重置时间。没有的窗口不显示。只用 API Key 登录的 Codex 没有订阅额度，卡片会说明原因。这些数字来自账号接口，不是下面的本机估算。
 
 Cursor 与 Codex 的额度卡片独立加载，先返回的结果先显示，不必等待另一家。刷新时保留已显示的额度，并在各卡片旁显示读取状态。Codex 额度与重置卡并行查询；Cursor 套餐、token 明细和 Codex 重置卡最多等待 3 秒，辅助请求失败不会丢弃已读取的额度。主要额度接口仍最多等待 15 秒（Cursor 首次使用 API Key 时需先交换登录令牌，该步骤也最多等待 15 秒）。
 
 ## 本机 token 与费用估算
 
-设置里的用量汇总本机对话最近 1 天、7 天、30 天的 token，并按模型列出估算费用。模型名是短名，例如「Grok 4.7 500K High Fast」，不带完整参数串。下面的会话列表包含全部历史对话。每一行显示用过的模型、累计 token 和费用，不受上面的天数限制。超过 20 行会分页。没有 token 记录的对话仍会列出，费用留空。一轮结束时，回复下方也会显示该轮的耗时、token、模型和估算费用。Codex token 根据本机日志的累计用量差统计，包含一轮内的所有模型请求，重复快照只计一次。输入排除缓存，推理 token 已包含在输出中。Codex 逐请求计价，避免多次短请求的累计输入误触发长上下文价格。其他 CLI 使用其报告的回合用量，缓存读取和写入分开计数。Cursor 使用 [Cursor 公开标价](https://cursor.com/docs/models-and-pricing)，Codex 使用 [OpenAI API 公开标价](https://developers.openai.com/api/docs/pricing)，Claude Code 使用 [Anthropic API 公开标价](https://platform.claude.com/docs/en/about-claude/pricing)，单位均为美元 / 百万 token。同一模型在不同 CLI 中按各自的价格分别统计。估算金额不代表订阅账单或剩余额度；Cursor 估算不含 Teams Token Rate。不足一美分的金额显示到四位小数。Auto、没有记录 API 模型的 Claude 别名，以及价目表里没有的模型只显示 token，费用标为未定价。模型选择器和设置里的常用模型在鼠标悬停时显示同一套标价；触摸和触控笔操作不弹出价格提示。展开模型菜单时会隐藏入口按钮的价格提示，避免遮挡选择。Claude Haiku 5.5 在单次请求的输入（含缓存读、缓存写）超过 100,000 token 时，输入、缓存和输出都按 5 倍计费。上面的汇总里，分叉复制过去的一轮只计一次。会话列表按每段对话自己的记录相加，所以同一轮会同时出现在原对话和分叉里。
+设置里的用量汇总本机对话最近 1 天、7 天、30 天的 token，并按模型列出估算费用。模型名是短名，例如「Grok 4.7 500K High Fast」，不带完整参数串。下面的会话列表包含全部历史对话。每一行显示用过的模型、累计 token 和费用，不受上面的天数限制。超过 20 行会分页。没有 token 记录的对话仍会列出，费用留空。一轮结束时，回复下方也会显示该轮的耗时、token、模型和估算费用。Codex token 根据本机日志的累计用量差统计，包含一轮内的所有模型请求，重复快照只计一次。输入排除缓存，推理 token 已包含在输出中。Codex 逐请求计价，避免多次短请求的累计输入误触发长上下文价格。其他 CLI 使用其报告的回合用量，缓存读取和写入分开计数。Cursor 使用 [Cursor 公开标价](https://cursor.com/docs/models-and-pricing)，Codex 使用 [OpenAI API 公开标价](https://developers.openai.com/api/docs/pricing)，Claude Code 使用 [Anthropic API 公开标价](https://platform.claude.com/docs/en/about-claude/pricing)，Antigravity 使用 [Gemini API 公开标价](https://ai.google.dev/gemini-api/docs/pricing)与 [Google Cloud 合作伙伴模型公开标价](https://cloud.google.com/model-garden/partner-models/pricing)，单位均为美元 / 百万 token。同一模型在不同 CLI 中按各自的价格分别统计。估算金额不代表订阅账单或剩余额度；Cursor 估算不含 Teams Token Rate。不足一美分的金额显示到四位小数。Auto、Orchestrator、没有记录 API 模型的 Claude 别名，以及价目表里没有的模型只显示 token，费用标为未定价。模型选择器和设置里的常用模型在鼠标悬停时显示同一套标价；触摸和触控笔操作不弹出价格提示。展开模型菜单时会隐藏入口按钮的价格提示，避免遮挡选择。Claude Haiku 5.5 在单次请求的输入（含缓存读、缓存写）超过 100,000 token 时，输入、缓存和输出都按 5 倍计费。上面的汇总里，分叉复制过去的一轮只计一次。会话列表按每段对话自己的记录相加，所以同一轮会同时出现在原对话和分叉里。
 
 Codex 费用估算支持 [GPT-6.2 Astra](https://developers.openai.com/api/docs/models/gpt-6.2-astra)、[GPT-6.2 Sol](https://developers.openai.com/api/docs/models/gpt-6.2-sol) 和 [GPT-6.1 Terra](https://developers.openai.com/api/docs/models/gpt-6.1-terra)，以及更早的模型，例如 [GPT-6.1 Sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol)。标准费率（美元 / 百万 token）：
 
@@ -36,6 +36,29 @@ Cursor 对当前 [Cursor 价目](https://cursor.com/docs/models-and-pricing)新�
 Gemini 4 Carbon 在 2026 年 11 月 30 日前使用介绍价。2026 年 12 月 1 日起为输入 $4、缓存读取 $0.20、输出 $20。连字符 id（如 `claude-fable-5-2`、`deepseek-v4-1-flash-1017`）使用同一组价格。这些数字不含 Teams token 费率。
 
 Claude Code 按用量更新附带的 API 模型 id 计价，并把它记在回复的 `apiModel` 上。`opus` 这类别名本身不计价，所以别名以后指向新模型时，旧回合不会被重新计价。没有记录 API 模型的回合保持未定价。带日期的快照（如 `claude-haiku-4-5-20251001`）使用去掉日期后的价格。缓存写入按 5 分钟费率计算，因为 CLI 把 5 分钟和 1 小时写入合成一个计数。Claude 4.6 及更新版本按标准费率计算完整的 1M 上下文，上下文标记不会改用长上下文价格；Claude Haiku 5.5 除外，超过 100,000 token 的提示按 5 倍计费。Fast、Batch 和仅美国推理没有单独记录，保持未定价。
+
+Antigravity 按 [Gemini API](https://ai.google.dev/gemini-api/docs/pricing)、[Google Cloud Generative AI](https://cloud.google.com/vertex-ai/generative-ai/pricing)（Global Standard）及 [Google Cloud 合作伙伴模型](https://cloud.google.com/model-garden/partner-models/pricing)公开标价估算（美元 / 百万 token）：
+
+| 模型 | 输入 | 缓存读取 | 缓存写入 | 输出 |
+| --- | --- | --- | --- | --- |
+| Gemini 4 Carbon、Gemini 4 Argon | $2 | $0.10 | — | $10 |
+| Gemini 4 Hydrogen | $1.50 | $0.075 | — | $7.50 |
+| Gemini 3.8 Flash、Gemini 3.7 Flash、Gemini 3.6 Flash | $0.75 | $0.075 | — | $3.75 |
+| Gemini 3.5 Flash | $1.50 | $0.15 | — | $9 |
+| Gemini 3.5 Flash-Lite、Gemini 2.5 Flash | $0.30 | $0.03 | — | $2.50 |
+| Gemini 3.1 Pro（`≤ 200k` / `> 200k`） | $2 / $4 | $0.20 / $0.40 | — | $12 / $18 |
+| Gemini 3.1 Flash-Lite | $0.25 | $0.025 | — | $1.50 |
+| Gemini 3 Flash | $0.50 | $0.05 | — | $3 |
+| Gemini 2.5 Pro（`≤ 200k` / `> 200k`） | $1.25 / $2.50 | $0.125 / $0.25 | — | $10 / $15 |
+| Gemini 2.5 Flash-Lite | $0.10 | $0.01 | — | $0.40 |
+| Claude Opus 5.5 | $4 | $0.20 | $5 | $20 |
+| Claude Sonnet 5.5 | $2 | $0.10 | $2.50 | $10 |
+| Claude Opus 4.6 | $5 | $0.50 | $6.25 | $25 |
+| Claude Sonnet 4.6 | $3 | $0.30 | $3.75 | $15 |
+| GPT-OSS 120B | $0.09 | — | — | $0.36 |
+| GPT-OSS 20B | $0.07 | $0.007 | — | $0.25 |
+
+Gemini 4 Carbon 与 Gemini 4 Argon 在 2026 年 11 月 30 日前使用介绍价，2026 年 12 月 1 日起为输入 $4、缓存读取 $0.20、输出 $20。Gemini 3.8 Flash、3.7 Flash、3.6 Flash 在 2026 年 12 月 31 日前使用介绍价，2027 年 1 月 1 日起为输入 $1.50、缓存读取 $0.15、输出 $7.50。Anthropic 合作伙伴模型的缓存写入按 5 分钟费率计算。带思考档位后缀的 ID（如 `gemini-4-carbon-high`、`claude-opus-5-5-max`）以及网关前缀 ID（如 `agy/gemini-4-carbon-high`）使用同一组价格。`Orchestrator (Carbon)` 和 `Orchestrator (Argon)` 在同一轮中混合规划模型与 Gemini 4 Hydrogen，回合用量未按子模型拆分 token，保持未定价。这些数字是公开 API 标价，不代表 Google AI Pro / Ultra 订阅额度或 Gemini Enterprise 席位积分。
 
 ## Codex 会话额度
 

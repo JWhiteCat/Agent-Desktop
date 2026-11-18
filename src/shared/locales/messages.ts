@@ -107,6 +107,7 @@ export const messagesMessages: Record<string, string> = {
   '子代理完成': 'Subagent finished',
   'OpenAI API 公开标价': 'OpenAI API list prices',
   'Anthropic API 公开标价': 'Anthropic API list prices',
+  'Gemini API / Google Cloud 公开标价': 'Gemini API / Google Cloud list prices',
   'Cursor 公开标价': 'Cursor list prices',
   '输入 {input} · 输出 {output} · 缓存读 {read} · 缓存写 {write}': 'Input {input} · Output {output} · Cache read {read} · Cache write {write}',
   '输入 {price}': 'Input {price}',

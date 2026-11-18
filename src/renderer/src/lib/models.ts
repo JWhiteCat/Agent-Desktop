@@ -1,6 +1,6 @@
 import { quoteModel } from '@shared/model-prices'
 import { t } from '@shared/i18n'
-import type { ModelInfo } from '@shared/types'
+import type { CliProvider, ModelInfo } from '@shared/types'
 
 export interface ModelVariant {
   id: string
@@ -207,20 +207,20 @@ export function findVariant(groups: ModelGroup[], id: string): ModelVariant | un
   return legacy.sort((a, b) => contextSize(a.context ?? '') - contextSize(b.context ?? ''))[0]
 }
 
-function captionFromId(id: string): string {
+function captionFromId(id: string, cli?: CliProvider): string {
   const parsed = parseBracket(id) ?? parseId(id)
-  const priced = quoteModel(parsed.base, {}).label
+  const priced = quoteModel(parsed.base, {}, cli).label
   const name = priced && priced !== parsed.base ? priced : parsed.base
   return [name, parsed.context, effortText(parsed.effort, parsed.thinking), parsed.fast ? 'Fast' : ''].filter(Boolean).join(' ')
 }
 
 /** Readable name for one turn: catalog label when known, otherwise the price-list name plus variant. */
-export function modelCaption(groups: ModelGroup[], id: string): string {
+export function modelCaption(groups: ModelGroup[], id: string, cli?: CliProvider): string {
   const summary = describeModel(groups, id)
   if (summary.name !== id) {
     return [summary.name, summary.context, summary.effortLabel, summary.fast ? 'Fast' : ''].filter(Boolean).join(' ')
   }
-  return captionFromId(id) || quoteModel(id, {}).label
+  return captionFromId(id, cli) || quoteModel(id, {}, cli).label
 }
 
 export function describeModel(groups: ModelGroup[], id: string): ModelSummary {

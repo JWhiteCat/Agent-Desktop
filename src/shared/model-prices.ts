@@ -2,11 +2,13 @@
  * Cursor list prices from https://cursor.com/docs/models-and-pricing (USD per million tokens).
  * Verified 2026-11-18. Gemini 4 Carbon uses the introductory rate through 2026-11-30
  * ($2 input, $0.10 cache read, $10 output); from 2026-12-01 it is $4, $0.20, and $20.
- * Codex uses the separate OpenAI API price table in codex-model-prices.ts, Claude Code the Anthropic one in claude-model-prices.ts.
+ * Codex uses the separate OpenAI API price table in codex-model-prices.ts, Claude Code the Anthropic one in claude-model-prices.ts,
+ * and Antigravity the Gemini API and Google Cloud partner price table in antigravity-model-prices.ts.
  * These are published API rates, not remaining included usage, and they omit the Teams token rate.
  * A cache-write cell of "-" is stored as 0.
  */
 
+import { findAntigravityPrice } from './antigravity-model-prices'
 import { findClaudePrice } from './claude-model-prices'
 import { findCodexPrice } from './codex-model-prices'
 import { t } from './i18n'
@@ -222,6 +224,20 @@ function findPrice(name: string): ModelPrice | undefined {
   return KEYS.find(({ key }) => name === key || name.startsWith(`${key}-`))?.entry
 }
 
+function findProviderPrice(name: string, cli: CliProvider): ModelPrice | undefined {
+  if (cli === 'codex') return findCodexPrice(name)
+  if (cli === 'claude') return findClaudePrice(name)
+  if (cli === 'antigravity') return findAntigravityPrice(name)
+  return findPrice(name)
+}
+
+export function priceSourceLabel(cli: CliProvider): string {
+  if (cli === 'codex') return t('OpenAI API 公开标价')
+  if (cli === 'claude') return t('Anthropic API 公开标价')
+  if (cli === 'antigravity') return t('Gemini API / Google Cloud 公开标价')
+  return t('Cursor 公开标价')
+}
+
 function pickRates(entry: ModelPrice, fast: boolean, long: boolean): TokenRates {
   if (fast && long) return entry.fastLong ?? entry.long ?? entry.fast ?? entry.rates
   if (long) return entry.long ?? entry.rates
@@ -237,10 +253,10 @@ function roundUsd(n: number): number {
 export function quoteModel(modelId: string | undefined, usage: TokenUsage, cli: CliProvider = 'cursor'): QuotedUsage {
   const parsed = parseModelId(modelId ?? '')
   const fallback = !parsed.name ? t('未知模型') : parsed.name === 'auto' ? 'Auto' : (modelId ?? '').trim() || t('未知模型')
-  if (!parsed.name || parsed.name === 'auto' || cli === 'antigravity') {
+  if (!parsed.name || parsed.name === 'auto') {
     return { label: fallback, costUsd: null, fast: parsed.fast, longContext: false }
   }
-  const entry = cli === 'codex' ? findCodexPrice(parsed.name) : cli === 'claude' ? findClaudePrice(parsed.name) : findPrice(parsed.name)
+  const entry = findProviderPrice(parsed.name, cli)
   if (!entry) return { label: fallback, costUsd: null, fast: parsed.fast, longContext: false }
 
   const requests = usage.requests?.length ? usage.requests : [usage]
@@ -251,7 +267,7 @@ export function quoteModel(modelId: string | undefined, usage: TokenUsage, cli: 
     const inputSide = num(request.inputTokens) + num(request.cacheReadTokens) + num(request.cacheWriteTokens)
     const requestLong = entry.longAfterTokens != null && inputSide > entry.longAfterTokens
     long ||= requestLong
-    // A tier with no published OpenAI or Anthropic price must not silently inherit Standard pricing.
+    // A tier with no published provider price must not silently inherit Standard pricing.
     if (cli !== 'cursor' && parsed.fast && !(requestLong ? entry.fastLong : entry.fast)) priced = false
     const rate = pickRates(entry, parsed.fast, requestLong)
     cost +=
@@ -291,9 +307,7 @@ export function modelPriceTip(modelId: string | undefined, cli: CliProvider = 'c
   const lines: string[] = []
   const heading = caption?.trim()
   if (heading) lines.push(heading)
-  const entry = !parsed.name || parsed.name === 'auto' || cli === 'antigravity'
-    ? undefined
-    : cli === 'codex' ? findCodexPrice(parsed.name) : cli === 'claude' ? findClaudePrice(parsed.name) : findPrice(parsed.name)
+  const entry = !parsed.name || parsed.name === 'auto' ? undefined : findProviderPrice(parsed.name, cli)
   if (!entry) {
     lines.push(t('未定价'))
     return lines.join('\n')
@@ -302,7 +316,6 @@ export function modelPriceTip(modelId: string | undefined, cli: CliProvider = 'c
   if (entry.fast) lines.push(t('Fast：{rates}', { rates: rateText(entry.fast) }))
   if (entry.long) lines.push(t('长上下文（输入 > {tokens}）：{rates}', { rates: rateText(entry.long), tokens: tokenMark(entry.longAfterTokens ?? 0) }))
   if (entry.fastLong) lines.push(t('Fast 长上下文：{rates}', { rates: rateText(entry.fastLong) }))
-  const source = cli === 'codex' ? t('OpenAI API 公开标价') : cli === 'claude' ? t('Anthropic API 公开标价') : t('Cursor 公开标价')
-  lines.push(source)
+  lines.push(priceSourceLabel(cli))
   return lines.join('\n')
 }

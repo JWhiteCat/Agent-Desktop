@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { t } from '@shared/i18n'
-import { quoteModel } from '@shared/model-prices'
+import { priceSourceLabel, quoteModel } from '@shared/model-prices'
 import { firstTokenLatencyMs, visibleOutputTps } from '@shared/turn-performance'
 import { weeklyQuotaEstimate } from '@shared/turn-quota'
 import type { CliProvider, Item, ModelInfo, ResultItem, UserItem } from '@shared/types'
@@ -42,9 +42,9 @@ export function ResultFooter({ item, steps, user, text, fallbackModel, cli = 'cu
   const backendLabel = t('服务端 Prefill / Decode：未提供')
   const backendDetail = t('当前 CLI 未提供服务端 prefill 和 decode 分阶段耗时。可见输出 TPS 是独立的客户端流式估算，不代表服务端算力；首字延迟也不能代替 prefill 耗时。缓存命中不表示重新处理了这些输入 tokens。')
   const modelId = item.model || fallbackModel || ''
-  const caption = modelId ? modelCaption(groups, modelId) : ''
+  const caption = modelId ? modelCaption(groups, modelId, provider) : ''
   const quote = modelId && u ? quoteModel(item.apiModel || modelId, u, provider) : undefined
-  const priceSource = provider === 'codex' ? t('OpenAI API 公开标价') : provider === 'claude' ? t('Anthropic API 公开标价') : t('Cursor 公开标价')
+  const priceSource = priceSourceLabel(provider)
   const sessionUsage = provider === 'codex' ? sessionConsumption(item) : undefined
   const turnEstimate = provider === 'codex' && item.weeklyQuotaEstimate !== undefined ? weeklyEstimate(item) : undefined
   return (

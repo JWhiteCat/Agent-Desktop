@@ -119,7 +119,7 @@ Markdown 中标记为 `mermaid` 的代码块会显示为图表，历史会话和
 
 桌面端支持选择图片（PNG/JPEG/WebP/GIF/BMP/SVG）、MP4/WebM 视频、Web 项目目录、HTML 入口或 Wallpaper Engine 的 `project.json`。视频静音循环播放，具体编码兼容性取决于 Electron。Windows 点击 **刷新 Wallpaper 壁纸库** 自动扫描多个 Steam 库中的已下载创意工坊、本地和内置项目；各桌面平台也可手动添加壁纸库或项目目录。列表支持搜索与类型筛选，Scene、应用壁纸、损坏或文件缺失的项目会显示原因，不能应用。
 
-**背景缩放** 同时控制图片、视频及 Web 壁纸中 `html` / `body` 的 CSS 背景图。选择 **完整显示** 可在调整窗口大小时保持整个背景可见（比例不同时会留白）；**铺满裁切** 填满窗口并裁掉超出部分。Web 项目自行绘制的 Canvas/WebGL 或内部元素仍由项目自身布局控制。
+**背景缩放** 同时控制图片、视频，以及 Web 壁纸中 `html` / `body` 的 CSS 背景图和 `<video>` 元素；Web 壁纸框架还会将 `html` 与 `body` 锁定为当前窗口视口尺寸，避免缩小或放大窗口时被旧画布尺寸撑大导致背景显示不全。选择 **完整显示** 可在调整窗口大小时保持整个背景可见（比例不同时会留白）；**铺满裁切** 填满窗口并裁掉超出部分。Web 项目自行绘制的 Canvas/WebGL 内容或内部元素仍由项目自身布局控制。
 
 无需让 Wallpaper Engine 持续运行。素材引用原文件，不复制内容；移动、删除文件或取消创意工坊订阅后，可能需要通过 **选择文件 / 重新定位** 或 **选择 Web 项目** 重新选择。移除背景引用、删除皮肤均不会删除原文件。加载失败会回退到主题底色，并显示重试按钮和设置提示。
 
@@ -201,7 +201,7 @@ Codex 在完成计划后还会询问是否执行。确认卡跟随应用语言�
 - 语言：跟随系统、简体中文、English，即时切换并在重启后保留选择
 - 字体与字号：系统默认、常用字体或输入已安装的字体名称；10–24 px（默认 13.5 px），修改立即生效并在重启后保留
 - 设置按左侧分类切换：CLI、MCP、Skill、模型、用量、默认值、通知、远程控制、外观与历史。CLI 页分别检测 Cursor、Codex 与 Claude，并填写路径、API Key 和登录；登录右侧的「更新」按钮可更新对应的独立 CLI，显示进度和执行结果，完成后刷新版本与模型列表。模型页用 Cursor / Codex / Claude 页签分别配置常用模型和默认模型。MCP 和 Skill 页可在「本应用」与「本地所有」之间切换，后者直接管理各 CLI 在本机的原生配置。导入历史在「外观与历史 → 历史」页
-- 用量：显示 Cursor 与 Codex 的账号额度（有则显示 5 小时、每周、每月窗口和下次重置时间）。Claude 的账号额度尚未接入。Cursor 模型和其他模型还会显示该池的实际 token 和账号返回的价格。其他模型只显示包含的 API 用量百分比。按需支出在同一行显示已用和上限，有明细时再显示 token，不重复总价。下面按最近 1 天、7 天、30 天汇总本机 token，分页列出全部历史会话的模型和累计消耗。本机费用中，Cursor 用 [Cursor 公开标价](https://cursor.com/docs/models-and-pricing)，Codex 用 [OpenAI API 公开标价](https://developers.openai.com/api/docs/pricing)，Claude Code 用 [Anthropic API 公开标价](https://platform.claude.com/docs/en/about-claude/pricing) 估算。Claude 按本轮记录的 API 模型 id 计价，不用选择器里的别名。估算金额不代表订阅账单。Auto、没有记录 API 模型的 Claude 别名，以及价目表没有的模型显示为未定价
+- 用量：显示 Cursor 与 Codex 的账号额度（有则显示 5 小时、每周、每月窗口和下次重置时间）。Claude 与 Antigravity 的账号额度尚未接入。Cursor 模型和其他模型还会显示该池的实际 token 和账号返回的价格。其他模型只显示包含的 API 用量百分比。按需支出在同一行显示已用和上限，有明细时再显示 token，不重复总价。下面按最近 1 天、7 天、30 天汇总本机 token，分页列出全部历史会话的模型和累计消耗。本机费用中，Cursor 用 [Cursor 公开标价](https://cursor.com/docs/models-and-pricing)，Codex 用 [OpenAI API 公开标价](https://developers.openai.com/api/docs/pricing)，Claude Code 用 [Anthropic API 公开标价](https://platform.claude.com/docs/en/about-claude/pricing)，Antigravity 用 [Gemini API 公开标价](https://ai.google.dev/gemini-api/docs/pricing)与 [Google Cloud 合作伙伴模型公开标价](https://cloud.google.com/model-garden/partner-models/pricing)估算。Claude 按本轮记录的 API 模型 id 计价，不用选择器里的别名。估算金额不代表订阅账单。Auto、Orchestrator、没有记录 API 模型的 Claude 别名，以及价目表没有的模型显示为未定价
 - 远程控制：局域网扫码，或经 SSH 反向隧道从公网打开同一页面
 
 ## CLI 已读取图片预览

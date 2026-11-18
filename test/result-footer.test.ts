@@ -7,7 +7,7 @@ import { ResultFooter } from '../src/renderer/src/components/Items'
 
 vi.mock('../src/renderer/src/store', () => ({
   answerQuestion: vi.fn(),
-  useStore: (selector: (state: unknown) => unknown) => selector({ modelsByCli: { cursor: [], codex: [], claude: [] } })
+  useStore: (selector: (state: unknown) => unknown) => selector({ modelsByCli: { cursor: [], codex: [], claude: [], antigravity: [] } })
 }))
 
 beforeEach(() => setLanguage('zh-CN', 'zh-CN'))
@@ -288,9 +288,19 @@ describe('result footer weekly turn estimate', () => {
     expect(render()).not.toContain('本轮预估周额度')
   })
 
-  it.each(['cursor', 'claude'] as const)('uses the saved result provider when a conversation switches to %s', (cli) => {
+  it.each(['cursor', 'claude', 'antigravity'] as const)('uses the saved result provider when a conversation switches to %s', (cli) => {
     expect(render(undefined, cli, { weeklyQuotaEstimate })).not.toContain('本轮预估周额度')
     expect(render(undefined, 'codex', { weeklyQuotaEstimate, cli })).not.toContain('本轮预估周额度')
     expect(render(undefined, cli, { weeklyQuotaEstimate, cli: 'codex' })).toContain('本轮预估周额度 0.5%')
+  })
+
+  it('prices Antigravity results from Gemini API / Google Cloud list rates', () => {
+    const html = render(undefined, 'antigravity', {
+      cli: 'antigravity',
+      model: 'gemini-4-carbon[effort=high]',
+      usage: { inputTokens: 100_000, cacheReadTokens: 100_000, outputTokens: 10_000 }
+    })
+    expect(html).toContain('Gemini 4 Carbon High')
+    expect(html).toContain('>$0.31</span>')
   })
 })
