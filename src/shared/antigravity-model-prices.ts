@@ -1,7 +1,7 @@
 import type { ModelPrice } from './model-prices'
 
 /**
- * Antigravity CLI public API list prices, USD per million tokens. Verified 2026-11-18.
+ * Antigravity CLI public API list prices, USD per million tokens. Verified 2026-11-19.
  * Sources:
  * - Gemini Developer API pricing: https://ai.google.dev/gemini-api/docs/pricing
  * - Google Cloud Generative AI pricing (Global Standard): https://cloud.google.com/vertex-ai/generative-ai/pricing
@@ -12,8 +12,8 @@ import type { ModelPrice } from './model-prices'
  * ($2 input, $0.10 cache read, $10 output); from 2026-12-01 they are $4, $0.20, and $20.
  * Gemini 3.8 Flash, Gemini 3.7 Flash, and Gemini 3.6 Flash use introductory rates through 2026-12-31
  * ($0.75 input, $0.075 cache read, $3.75 output); from 2027-01-01 they are $1.50, $0.15, and $7.50.
- * Explicit cache writes on Gemini 4 Hydrogen are unbilled until 2027-01-12; Gemini 4 Carbon and Argon
- * use implicit caching only. Anthropic partner models use the 5-minute cache-write rate because ACP
+ * Explicit cache writes on Gemini 4 Hydrogen are unbilled until 2027-01-12; Gemini 4 Carbon, Argon,
+ * and Neon use implicit caching only. Anthropic partner models use the 5-minute cache-write rate because ACP
  * reports cache writes as one count.
  *
  * Orchestrator options (`Orchestrator (Carbon)`, `Orchestrator (Argon)`) combine planner and
@@ -49,6 +49,7 @@ const ANTIGRAVITY_PRICES: ModelPrice[] = [
   model(['gemini-4-carbon'], 'Gemini 4 Carbon', rates(2, 0.1, 10)),
   model(['gemini-4-argon'], 'Gemini 4 Argon', rates(2, 0.1, 10)),
   model(['gemini-4-hydrogen'], 'Gemini 4 Hydrogen', rates(1.5, 0.075, 7.5)),
+  model(['gemini-4-neon'], 'Gemini 4 Neon', rates(3, 0.15, 15)),
   model(['gemini-3.8-flash'], 'Gemini 3.8 Flash', rates(0.75, 0.075, 3.75)),
   model(['gemini-3.7-flash'], 'Gemini 3.7 Flash', rates(0.75, 0.075, 3.75)),
   model(['gemini-3.6-flash'], 'Gemini 3.6 Flash', rates(0.75, 0.075, 3.75)),

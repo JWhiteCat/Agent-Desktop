@@ -31,6 +31,7 @@ Cursor 对当前 [Cursor 价目](https://cursor.com/docs/models-and-pricing)新�
 | [Claude Fable 5.2](https://cursor.com/docs/models/claude-fable-5-2) | $8 | $0.20 | $10 | $40 |
 | [Gemini 4 Carbon](https://cursor.com/docs/models/gemini-4-carbon) | $2 | $0.10 | — | $10 |
 | [Gemini 4 Hydrogen](https://cursor.com/docs/models/gemini-4-hydrogen) | $1.50 | $0.075 | — | $7.50 |
+| [Gemini 4 Neon](https://cursor.com/docs/models/gemini-4-neon) | $3 | $0.15 | — | $15 |
 | [DeepSeek V4.1 Flash 1017](https://cursor.com/docs/models/deepseek-v4-1-flash-1017) | $0.30 | $0.006 | — | $1.20 |
 
 Gemini 4 Carbon 在 2026 年 11 月 30 日前使用介绍价。2026 年 12 月 1 日起为输入 $4、缓存读取 $0.20、输出 $20。连字符 id（如 `claude-fable-5-2`、`deepseek-v4-1-flash-1017`）使用同一组价格。这些数字不含 Teams token 费率。
@@ -43,6 +44,7 @@ Antigravity 按 [Gemini API](https://ai.google.dev/gemini-api/docs/pricing)、[G
 | --- | --- | --- | --- | --- |
 | Gemini 4 Carbon、Gemini 4 Argon | $2 | $0.10 | — | $10 |
 | Gemini 4 Hydrogen | $1.50 | $0.075 | — | $7.50 |
+| Gemini 4 Neon | $3 | $0.15 | — | $15 |
 | Gemini 3.8 Flash、Gemini 3.7 Flash、Gemini 3.6 Flash | $0.75 | $0.075 | — | $3.75 |
 | Gemini 3.5 Flash | $1.50 | $0.15 | — | $9 |
 | Gemini 3.5 Flash-Lite、Gemini 2.5 Flash | $0.30 | $0.03 | — | $2.50 |

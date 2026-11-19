@@ -1,6 +1,6 @@
 /**
  * Cursor list prices from https://cursor.com/docs/models-and-pricing (USD per million tokens).
- * Verified 2026-11-18. Gemini 4 Carbon uses the introductory rate through 2026-11-30
+ * Verified 2026-11-19. Gemini 4 Carbon uses the introductory rate through 2026-11-30
  * ($2 input, $0.10 cache read, $10 output); from 2026-12-01 it is $4, $0.20, and $20.
  * Codex uses the separate OpenAI API price table in codex-model-prices.ts, Claude Code the Anthropic one in claude-model-prices.ts,
  * and Antigravity the Gemini API and Google Cloud partner price table in antigravity-model-prices.ts.
@@ -165,6 +165,7 @@ const PRICES: ModelPrice[] = [
   { keys: ['gemini-4-argon'], label: 'Gemini 4 Argon', rates: rates(2, 0.1, 10) },
   { keys: ['gemini-4-carbon'], label: 'Gemini 4 Carbon', rates: rates(2, 0.1, 10) },
   { keys: ['gemini-4-hydrogen'], label: 'Gemini 4 Hydrogen', rates: rates(1.5, 0.075, 7.5) },
+  { keys: ['gemini-4-neon'], label: 'Gemini 4 Neon', rates: rates(3, 0.15, 15) },
 
   { keys: ['glm-5.3-flash', 'glm-5-3-flash'], label: 'GLM 5.3 Flash', rates: rates(0.15, 0.029, 0.5) },
   { keys: ['glm-5.3', 'glm-5-3'], label: 'GLM 5.3', rates: rates(1.4, 0.26, 4.4) },

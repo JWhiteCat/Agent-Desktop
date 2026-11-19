@@ -63,6 +63,8 @@ describe('model prices', () => {
     expect(quoteModel('claude-fable-5-2', sample)).toMatchObject({ label: 'Claude Fable 5.2', costUsd: 0.582 })
     expect(quoteModel('gemini-4-carbon-high', { inputTokens: 1_000_000, cacheReadTokens: 1_000_000, outputTokens: 1_000_000 })).toMatchObject({ label: 'Gemini 4 Carbon', costUsd: 12.1 })
     expect(quoteModel('gemini-4-hydrogen', { inputTokens: 1_000_000, outputTokens: 1_000_000 }).costUsd).toBeCloseTo(9)
+    expect(quoteModel('gemini-4-neon', { inputTokens: 1_000_000, cacheReadTokens: 1_000_000, outputTokens: 1_000_000 })).toMatchObject({ label: 'Gemini 4 Neon', costUsd: 18.15 })
+    expect(quoteModel('gemini-4-neon-high', { inputTokens: 1_000_000 }).costUsd).toBe(3)
     expect(quoteModel('deepseek-v4.1-flash-1017', { inputTokens: 1_000_000, cacheReadTokens: 1_000_000, cacheWriteTokens: 1_000_000, outputTokens: 1_000_000 })).toMatchObject({ label: 'DeepSeek V4.1 Flash 1017', costUsd: 1.506 })
     expect(quoteModel('gemini-3.7-flash', { outputTokens: 1_000_000 }).costUsd).toBeCloseTo(3.75)
     expect(quoteModel('gemini-3.8-flash', { outputTokens: 1_000_000 }).costUsd).toBeCloseTo(3.75)

@@ -33,6 +33,7 @@ Cursor estimates for models added to the current [Cursor price list](https://cur
 | [Claude Fable 5.2](https://cursor.com/docs/models/claude-fable-5-2) | $8 | $0.20 | $10 | $40 |
 | [Gemini 4 Carbon](https://cursor.com/docs/models/gemini-4-carbon) | $2 | $0.10 | — | $10 |
 | [Gemini 4 Hydrogen](https://cursor.com/docs/models/gemini-4-hydrogen) | $1.50 | $0.075 | — | $7.50 |
+| [Gemini 4 Neon](https://cursor.com/docs/models/gemini-4-neon) | $3 | $0.15 | — | $15 |
 | [DeepSeek V4.1 Flash 1017](https://cursor.com/docs/models/deepseek-v4-1-flash-1017) | $0.30 | $0.006 | — | $1.20 |
 
 Gemini 4 Carbon’s rates are introductory through November 30, 2026. From December 1, 2026 they are $4 input, $0.20 cache read, and $20 output. Hyphenated ids such as `claude-fable-5-2` and `deepseek-v4-1-flash-1017` use the same rates. These figures omit the Teams token rate.
@@ -45,6 +46,7 @@ Antigravity estimates use published [Gemini API](https://ai.google.dev/gemini-ap
 | --- | --- | --- | --- | --- |
 | Gemini 4 Carbon, Gemini 4 Argon | $2 | $0.10 | — | $10 |
 | Gemini 4 Hydrogen | $1.50 | $0.075 | — | $7.50 |
+| Gemini 4 Neon | $3 | $0.15 | — | $15 |
 | Gemini 3.8 Flash, Gemini 3.7 Flash, Gemini 3.6 Flash | $0.75 | $0.075 | — | $3.75 |
 | Gemini 3.5 Flash | $1.50 | $0.15 | — | $9 |
 | Gemini 3.5 Flash-Lite, Gemini 2.5 Flash | $0.30 | $0.03 | — | $2.50 |
