@@ -4,6 +4,8 @@
 
 After a remote connection recovers, cached conversations reload their messages, including replies and questions received while offline. Streamed updates arriving during the reload are preserved. MCP and Skill creation also works over the default HTTP LAN link. Remote service changes are applied in order, so changing ports and then disabling remote control closes the previous listeners.
 
+The event stream sends a heartbeat every 15 seconds. The remote page opens a new stream and reloads messages when nothing arrives for 35 seconds, when it returns from the background after that limit, when a gateway error closes the stream, or when no state update arrives within 2 seconds of sending a message. Messages sent from a phone browser therefore appear right away without a manual refresh.
+
 Turn the switch on under Remote control in Settings. The app listens on the LAN (port `8765` by default) and serves the same UI as the desktop app. A phone or another computer on the same network can open it by scanning the QR code. The QR code includes the project or conversation currently open on the computer. If the computer has more than one network interface, pick another address from the dropdown.
 
 Refreshing the remote page returns to the conversation, project, or Grok Bot that was open. The address bar keeps `#thread=`, `#project=`, or `#grokbot=` in step with that page. With none of those marks, the browser reopens the page it last showed. A mark in a scanned link wins over the page remembered in the browser.

@@ -21,7 +21,12 @@ export interface RemoteServerOptions {
 }
 
 const MAX_BODY = 20 * 1024 * 1024
-const HEARTBEAT_MS = 25_000
+/** Must stay well below the browser watchdog in `web-api.ts`, which reconnects after 40s of silence. */
+const HEARTBEAT_MS = 15_000
+/** A data frame (not a comment) so `EventSource.onmessage` sees it and the page can detect dead streams. */
+const HEARTBEAT_FRAME = `data: ${JSON.stringify({ channel: 'transport:ping', payload: null })}\n\n`
+/** Some mobile browsers and proxies hold the first bytes of a stream until about 2 KB arrive. */
+const SSE_PADDING = `:${' '.repeat(2048)}\n\n`
 const PUBLIC_PREFIX = /^\/c\/[a-f0-9]{16}$/
 
 export function publicPrefixHeader(value: string | string[] | undefined): string | undefined {
@@ -180,7 +185,7 @@ export class RemoteServer {
       throw err
     }
     this.heartbeat = setInterval(() => {
-      for (const c of this.clients) c.write(': ping\n\n')
+      for (const c of this.clients) c.write(HEARTBEAT_FRAME)
     }, HEARTBEAT_MS)
   }
 
@@ -221,7 +226,7 @@ export class RemoteServer {
         connection: 'keep-alive',
         'x-accel-buffering': 'no'
       })
-      res.write(': connected\n\n')
+      res.write(': connected\n\n' + SSE_PADDING)
       this.clients.add(res)
       req.on('close', () => this.clients.delete(res))
       return

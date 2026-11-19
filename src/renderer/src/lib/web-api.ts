@@ -2,6 +2,11 @@ import { t as translate } from '@shared/i18n'
 import type { DesktopApi } from '@shared/api'
 
 const TOKEN_KEY = 'agent-desktop:remoteToken'
+/** The server sends a `transport:ping` every 15s; this much silence means the stream is dead. */
+const STALE_MS = 35_000
+const WATCHDOG_MS = 5_000
+const RETRY_MS = 2_000
+const SEND_CONFIRM_MS = 2_000
 
 type Listener = (payload: unknown) => void
 
@@ -51,24 +56,72 @@ export function createWebApi(): DesktopApi {
   let connectedOnce = false
   let connection = 0
   let stateRevision = 0
-  const events = new EventSource(remoteUrl(location.href, `api/events?token=${encodeURIComponent(token)}`))
-  events.onopen = () => {
-    const currentConnection = ++connection
-    // Events sent while disconnected are lost. Refresh history as well as metadata.
-    if (connectedOnce) {
-      const revision = stateRevision
-      void call('state:get').then((s) => {
-        // A newer event or reconnect has already supplied a more recent snapshot.
-        if (connection === currentConnection && stateRevision === revision) emit('state:changed', s)
-      }, () => {})
-      emit('transport:reconnect', undefined)
+  let received = 0
+  let lastActivity = Date.now()
+  let retry: ReturnType<typeof setTimeout> | undefined
+  let events: EventSource | undefined
+
+  /**
+   * Mobile browsers, carrier proxies and the public gateway can leave an EventSource that looks open
+   * but no longer delivers anything, or close it for good after an HTTP error. Replace it instead.
+   */
+  function connect(): void {
+    if (retry) clearTimeout(retry)
+    retry = undefined
+    events?.close?.()
+    const source = new EventSource(remoteUrl(location.href, `api/events?token=${encodeURIComponent(token)}`))
+    events = source
+    lastActivity = Date.now()
+    source.onopen = () => {
+      if (events !== source) return
+      lastActivity = Date.now()
+      const currentConnection = ++connection
+      // Events sent while disconnected are lost. Refresh history as well as metadata.
+      if (connectedOnce) {
+        const revision = stateRevision
+        void call('state:get').then((s) => {
+          // A newer event or reconnect has already supplied a more recent snapshot.
+          if (connection === currentConnection && stateRevision === revision) emit('state:changed', s)
+        }, () => {})
+        emit('transport:reconnect', undefined)
+      }
+      connectedOnce = true
     }
-    connectedOnce = true
+    source.onmessage = (e) => {
+      if (events !== source) return
+      lastActivity = Date.now()
+      received++
+      const { channel, payload } = JSON.parse(e.data) as { channel: string; payload: unknown }
+      if (channel === 'transport:ping') return
+      if (channel === 'state:changed') stateRevision++
+      emit(channel, payload)
+    }
+    source.onerror = () => {
+      // EventSource does not retry after a non-200 response such as a gateway 502.
+      if (events === source && source.readyState === 2 && !retry) retry = setTimeout(connect, RETRY_MS)
+    }
   }
-  events.onmessage = (e) => {
-    const { channel, payload } = JSON.parse(e.data) as { channel: string; payload: unknown }
-    if (channel === 'state:changed') stateRevision++
-    emit(channel, payload)
+
+  function reconnectIfStale(): void {
+    if (Date.now() - lastActivity > STALE_MS) connect()
+  }
+
+  connect()
+  setInterval(reconnectIfStale, WATCHDOG_MS)
+  // A backgrounded page loses its stream silently; check as soon as it is visible again.
+  globalThis.document?.addEventListener?.('visibilitychange', () => {
+    if (document.visibilityState === 'visible') reconnectIfStale()
+  })
+  globalThis.window?.addEventListener?.('pageshow', reconnectIfStale)
+  globalThis.window?.addEventListener?.('online', () => connect())
+
+  /** Every accepted send broadcasts a state change before replying. Without it, the stream is stuck. */
+  async function sendAndVerify(req: unknown): Promise<void> {
+    const before = received
+    await call('agent:send', req)
+    setTimeout(() => {
+      if (received === before) connect()
+    }, SEND_CONFIRM_MS)
   }
 
   function subscribe<T>(channel: string, cb: (payload: T) => void): () => void {
@@ -103,7 +156,7 @@ export function createWebApi(): DesktopApi {
     forkThread: (id, throughItemId) => call('thread:fork', id, throughItemId),
     getItems: (id) => call('thread:items', id),
     syncFromCli: (id) => call('thread:syncFromCli', id),
-    send: (req) => call('agent:send', req),
+    send: (req) => sendAndVerify(req),
     uploadAttachment: (req) => call('attachment:upload', req),
     readAttachment: (id) => call('attachment:read', id),
     prepareToolImages: (threadId, itemId) => call('tool-image:list', threadId, itemId),
