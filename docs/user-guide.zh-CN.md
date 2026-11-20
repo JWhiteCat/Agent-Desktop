@@ -200,7 +200,7 @@ Codex 在完成计划后还会询问是否执行。确认卡跟随应用语言�
 - 主题：跟随系统、深色、浅色
 - 语言：跟随系统、简体中文、English，即时切换并在重启后保留选择
 - 字体与字号：系统默认、常用字体或输入已安装的字体名称；10–24 px（默认 13.5 px），修改立即生效并在重启后保留
-- 设置按左侧分类切换：CLI、MCP、Skill、模型、用量、默认值、通知、远程控制、外观与历史。CLI 页分别检测 Cursor、Codex 与 Claude，并填写路径、API Key 和登录；登录右侧的「更新」按钮可更新对应的独立 CLI，显示进度和执行结果，完成后刷新版本与模型列表。模型页用 Cursor / Codex / Claude 页签分别配置常用模型和默认模型。MCP 和 Skill 页可在「本应用」与「本地所有」之间切换，后者直接管理各 CLI 在本机的原生配置。导入历史在「外观与历史 → 历史」页
+- 设置按左侧分类切换：CLI、MCP、Skill、模型、用量、默认值、通知、远程控制、外观与历史。CLI 页顶部可切换 Cursor、Codex、Claude 和 Antigravity，查看所选 CLI 的安装状态、配置路径和 API Key、登录或更新。下方的「新建对话使用」可单独设置默认 CLI。模型页使用相同的页签，分别配置常用模型和默认模型。MCP 和 Skill 页可在「本应用」与「本地所有」之间切换，后者直接管理各 CLI 在本机的原生配置。导入历史在「外观与历史 → 历史」页
 - 用量：显示 Cursor 与 Codex 的账号额度（有则显示 5 小时、每周、每月窗口和下次重置时间）。Claude 与 Antigravity 的账号额度尚未接入。Cursor 模型和其他模型还会显示该池的实际 token 和账号返回的价格。其他模型只显示包含的 API 用量百分比。按需支出在同一行显示已用和上限，有明细时再显示 token，不重复总价。下面按最近 1 天、7 天、30 天汇总本机 token，分页列出全部历史会话的模型和累计消耗。本机费用中，Cursor 用 [Cursor 公开标价](https://cursor.com/docs/models-and-pricing)，Codex 用 [OpenAI API 公开标价](https://developers.openai.com/api/docs/pricing)，Claude Code 用 [Anthropic API 公开标价](https://platform.claude.com/docs/en/about-claude/pricing)，Antigravity 用 [Gemini API 公开标价](https://ai.google.dev/gemini-api/docs/pricing)与 [Google Cloud 合作伙伴模型公开标价](https://cloud.google.com/model-garden/partner-models/pricing)估算。Claude 按本轮记录的 API 模型 id 计价，不用选择器里的别名。估算金额不代表订阅账单。Auto、Orchestrator、没有记录 API 模型的 Claude 别名，以及价目表没有的模型显示为未定价
 - 远程控制：局域网扫码，或经 SSH 反向隧道从公网打开同一页面
 

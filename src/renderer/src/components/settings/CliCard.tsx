@@ -8,6 +8,7 @@ import { Field } from './Field'
 import { CliInstallAction, useCliInstallStatus } from '../CliInstallAction'
 
 export function CliCard({
+  active,
   provider,
   pathValue,
   pathPlaceholder,
@@ -21,6 +22,7 @@ export function CliCard({
   onPath,
   onKey
 }: {
+  active: boolean
   provider: CliProvider
   pathValue: string
   pathPlaceholder: string
@@ -81,7 +83,7 @@ export function CliCard({
   }, [provider, pathValue, keyValue])
 
   return (
-    <>
+    <div role="tabpanel" aria-labelledby={`provider-tab-${provider}`} hidden={!active}>
       <div className="cli-card">
         {checking && !info ? (
           <div className="row-gap">
@@ -240,6 +242,6 @@ export function CliCard({
           }}
         />
       </Field>
-    </>
+    </div>
   )
 }

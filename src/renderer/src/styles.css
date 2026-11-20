@@ -2526,6 +2526,9 @@ select {
   gap: 6px;
   margin: 2px 0 10px;
 }
+.provider-tabs {
+  flex-wrap: wrap;
+}
 .usage-period {
   height: 28px;
   padding: 0 12px;

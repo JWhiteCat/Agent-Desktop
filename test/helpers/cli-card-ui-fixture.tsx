@@ -1,9 +1,10 @@
 import { createRoot } from 'react-dom/client'
 import { flushSync } from 'react-dom'
 import { setLanguage } from '../../src/shared/i18n'
-import type { CliInfo, CliProvider } from '../../src/shared/types'
+import { DEFAULT_SETTINGS, type CliInfo, type CliProvider } from '../../src/shared/types'
 import { CliCard } from '../../src/renderer/src/components/settings/CliCard'
-import { getState } from '../../src/renderer/src/store'
+import { SettingsDialog } from '../../src/renderer/src/components/settings/SettingsDialog'
+import { getState, setState } from '../../src/renderer/src/store'
 
 const root = createRoot(document.getElementById('root')!)
 const pause = () => new Promise<void>((resolve) => setTimeout(resolve, 0))
@@ -55,7 +56,7 @@ export async function runCliCardChecks() {
     listModels: async () => [{ id: 'auto', label: 'Auto' }]
   } as unknown as typeof window.api
 
-  const card = () => <CliCard key={provider} provider={provider} pathValue={pathValue} keyValue={keyValue}
+  const card = () => <CliCard active key={provider} provider={provider} pathValue={pathValue} keyValue={keyValue}
     pathPlaceholder="auto" pathDesc="path" keyPlaceholder="key" keyDesc="key"
     missing="Missing" install="Install"
     endpoint={provider === 'antigravity' ? { value: endpointValue, onSave: async (key, endpoint) => {
@@ -182,6 +183,17 @@ export async function runCliCardChecks() {
   await idle()
   check(savedApi.at(-1)?.key === 'paired-key' && savedApi.at(-1)?.endpoint === 'https://gemini.example/v1beta', 'Antigravity saves the API key and endpoint together')
   check(button('Save API configuration').disabled, 'Saved API configuration leaves the button disabled')
+  setState({ app: { ...getState().app, settings: { ...DEFAULT_SETTINGS, cliProvider: 'claude' } } })
+  flushSync(() => root.render(<SettingsDialog onClose={() => {}} onOpenImport={() => {}} />))
+  check(document.querySelector('[role="tab"][aria-selected="true"]')?.textContent === 'Claude', 'Open on the configured default CLI')
+  const defaultCli = document.querySelector('select')!.value
+  for (const name of ['Codex', 'Claude', 'Antigravity', 'Cursor']) {
+    await click(name)
+    const panels = document.querySelectorAll('[role="tabpanel"]:not([hidden])')
+    const selected = document.querySelector('[role="tab"][aria-selected="true"]')
+    check(panels.length === 1 && selected?.textContent === name && panels[0].getAttribute('aria-labelledby') === selected.id, 'Only the selected provider is displayed')
+    check(document.querySelector('select')!.value === defaultCli, 'Browsing providers preserves the default CLI')
+  }
   root.unmount()
   return ['cached reads', 'language changes', 'manual refresh', 'refresh errors', 'login and update', 'configuration changes', 'stale responses', 'Antigravity terminal setup']
 }

@@ -46,6 +46,30 @@ function ConfigSourceTabs({ value, onChange }: { value: ConfigSource; onChange: 
   )
 }
 
+function ProviderTabs({ label, value, onChange }: {
+  label: string
+  value: CliProvider
+  onChange: (value: CliProvider) => void
+}) {
+  return (
+    <div className="usage-periods provider-tabs" role="tablist" aria-label={label}>
+      {CLI_PROVIDERS.map((id) => (
+        <button
+          key={id}
+          id={`provider-tab-${id}`}
+          type="button"
+          role="tab"
+          aria-selected={value === id}
+          className={`usage-period ${value === id ? 'active' : ''}`}
+          onClick={() => onChange(id)}
+        >
+          {cliTitle(id)}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 function ModelCliSettings({ provider }: { provider: CliProvider }) {
   const t = useT()
   const settings = useStore((s) => s.app.settings)
@@ -68,6 +92,7 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
   const t = useT()
   const settings = useStore((s) => s.app.settings)
   const cli = normalizeCliProvider(settings.cliProvider)
+  const [configCli, setConfigCli] = useState<CliProvider>(cli)
   const [modelCli, setModelCli] = useState<CliProvider>(cli)
   const [tab, setTab] = useState<SettingsTab>('cli')
   const [configSource, setConfigSource] = useState<ConfigSource>('app')
@@ -101,25 +126,9 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
     >
       {tab === 'cli' && (
         <section className="settings-section">
-          <h4>CLI</h4>
-          <Field label={t('新建对话使用')} desc={t('首页和对话里的输入框也可以切换。已有对话切换后，下一条消息会用新的 CLI 另开会话。')}>
-            <select
-              className="input"
-              value={cli}
-              onChange={(e) => {
-                const next = normalizeCliProvider(e.target.value)
-                void update({ cliProvider: next })
-                void loadModels(false, next)
-              }}
-            >
-              <option value="cursor">Cursor CLI</option>
-              <option value="codex">Codex CLI</option>
-              <option value="claude">Claude Code</option>
-              <option value="antigravity">Antigravity CLI</option>
-            </select>
-          </Field>
-          <h4>Cursor CLI</h4>
+          <ProviderTabs label="CLI" value={configCli} onChange={setConfigCli} />
           <CliCard
+            active={configCli === 'cursor'}
             provider="cursor"
             pathValue={settings.agentPath}
             pathPlaceholder={t('自动检测')}
@@ -132,8 +141,8 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
             onPath={(agentPath) => saveCli({ agentPath }, 'cursor')}
             onKey={(apiKey) => saveCli({ apiKey }, 'cursor')}
           />
-          <h4>Codex CLI</h4>
           <CliCard
+            active={configCli === 'codex'}
             provider="codex"
             pathValue={settings.codexPath ?? ''}
             pathPlaceholder={t('自动检测')}
@@ -146,8 +155,8 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
             onPath={(codexPath) => saveCli({ codexPath }, 'codex')}
             onKey={(codexApiKey) => saveCli({ codexApiKey }, 'codex')}
           />
-          <h4>Claude Code</h4>
           <CliCard
+            active={configCli === 'claude'}
             provider="claude"
             pathValue={settings.claudePath ?? ''}
             pathPlaceholder={t('自动检测')}
@@ -160,8 +169,8 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
             onPath={(claudePath) => saveCli({ claudePath }, 'claude')}
             onKey={(claudeApiKey) => saveCli({ claudeApiKey }, 'claude')}
           />
-          <h4>Antigravity CLI</h4>
           <CliCard
+            active={configCli === 'antigravity'}
             provider="antigravity"
             pathValue={settings.antigravityPath}
             pathPlaceholder={t('自动检测')}
@@ -178,6 +187,23 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
             onPath={(antigravityPath) => saveCli({ antigravityPath }, 'antigravity')}
             onKey={(antigravityApiKey) => saveCli({ antigravityApiKey }, 'antigravity')}
           />
+          <Field label={t('新建对话使用')} desc={t('首页和对话里的输入框也可以切换。已有对话切换后，下一条消息会用新的 CLI 另开会话。')}>
+            <select
+              className="input"
+              aria-label={t('新建对话使用')}
+              value={cli}
+              onChange={(e) => {
+                const next = normalizeCliProvider(e.target.value)
+                void update({ cliProvider: next })
+                void loadModels(false, next)
+              }}
+            >
+              <option value="cursor">Cursor CLI</option>
+              <option value="codex">Codex CLI</option>
+              <option value="claude">Claude Code</option>
+              <option value="antigravity">Antigravity CLI</option>
+            </select>
+          </Field>
         </section>
       )}
 
@@ -199,21 +225,10 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
 
       {tab === 'models' && (
         <section className="settings-section">
-          <div className="usage-periods" role="tablist" aria-label={t('模型来源')}>
-            {CLI_PROVIDERS.map((id) => (
-              <button
-                key={id}
-                type="button"
-                role="tab"
-                aria-selected={modelCli === id}
-                className={`usage-period ${modelCli === id ? 'active' : ''}`}
-                onClick={() => setModelCli(id)}
-              >
-                {cliTitle(id)}
-              </button>
-            ))}
+          <ProviderTabs label={t('模型来源')} value={modelCli} onChange={setModelCli} />
+          <div role="tabpanel" aria-labelledby={`provider-tab-${modelCli}`}>
+            <ModelCliSettings provider={modelCli} />
           </div>
-          <ModelCliSettings provider={modelCli} />
         </section>
       )}
 
