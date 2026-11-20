@@ -1,36 +1,26 @@
 import { useT } from '../lib/i18n'
-import { forwardRef, useEffect, useMemo, useRef, useState, type Ref } from 'react'
-import type { Project, ThreadMeta } from '@shared/types'
-import { cliTitle, threadCli } from '@shared/types'
+import { forwardRef, useEffect, useMemo, useRef, useState } from 'react'
+import type { ThreadMeta } from '@shared/types'
 import { displayThreadTitle } from '@shared/thread-title'
-import { getTaskCounts, isThreadUnread } from '@shared/task-counts'
-import { relativeTime } from '../lib/format'
-import { addProjectInteractive, collapseAllProjects, forkThread, goHome, openGrokBot, openNextRunningThread, openNextUnreadThread, openThread, setState, syncThreadFromCli, toast, useStore } from '../store'
+import { getTaskCounts } from '@shared/task-counts'
+import { addProjectInteractive, collapseAllProjects, goHome, openGrokBot, openNextRunningThread, openNextUnreadThread, useStore } from '../store'
 import {
   IconArchive,
   IconBot,
-  IconBranch,
-  IconChevronDown,
   IconChevronRight,
   IconCompose,
-  IconCopy,
-  IconCursor,
-  IconEdit,
-  IconFolder,
   IconImport,
   IconMore,
-  IconPin,
   IconPlus,
-  IconRefresh,
   IconSearch,
   IconSettings,
-  IconTrash,
-  IconX,
-  Spinner
+  IconX
 } from './icons'
-import { MenuButton, type MenuEntry } from './Menu'
+import { MenuButton } from './Menu'
 import { ResizeHandle } from './ResizeHandle'
 import { TaskCounts } from './TaskCounts'
+import { ProjectRow } from './sidebar/ProjectRow'
+import { ThreadRow } from './sidebar/ThreadRow'
 
 const COLLAPSED_LIMIT = 6
 
@@ -66,8 +56,8 @@ export const Sidebar = forwardRef<HTMLInputElement, Props>(function Sidebar({ on
   const [, tick] = useState(0)
 
   useEffect(() => {
-    const t = setInterval(() => tick((n) => n + 1), 60_000)
-    return () => clearInterval(t)
+    const timer = setInterval(() => tick((n) => n + 1), 60_000)
+    return () => clearInterval(timer)
   }, [])
 
   useEffect(() => {
@@ -90,10 +80,10 @@ export const Sidebar = forwardRef<HTMLInputElement, Props>(function Sidebar({ on
 
   const byProject = useMemo(() => {
     const m = new Map<string, ThreadMeta[]>()
-    for (const t of visible) {
-      const arr = m.get(t.projectId) ?? []
-      arr.push(t)
-      m.set(t.projectId, arr)
+    for (const thread of visible) {
+      const arr = m.get(thread.projectId) ?? []
+      arr.push(thread)
+      m.set(thread.projectId, arr)
     }
     for (const [k, v] of m) m.set(k, sortThreads(v))
     return m
@@ -111,16 +101,16 @@ export const Sidebar = forwardRef<HTMLInputElement, Props>(function Sidebar({ on
     )
   }, [query, threads, projects, t])
 
-  const renderThread = (t: ThreadMeta, showProject?: string) => (
+  const renderThread = (thread: ThreadMeta, showProject?: string) => (
     <ThreadRow
-      key={t.id}
-      thread={t}
-      active={t.id === activeId}
-      running={runningSet.has(t.id)}
-      editing={editing === t.id}
+      key={thread.id}
+      thread={thread}
+      active={thread.id === activeId}
+      running={runningSet.has(thread.id)}
+      editing={editing === thread.id}
       projectName={showProject}
-      rowRef={t.id === revealThread?.id ? revealedRow : undefined}
-      onEdit={() => setEditing(t.id)}
+      rowRef={thread.id === revealThread?.id ? revealedRow : undefined}
+      onEdit={() => setEditing(thread.id)}
       onEditDone={() => setEditing(null)}
     />
   )
@@ -164,7 +154,7 @@ export const Sidebar = forwardRef<HTMLInputElement, Props>(function Sidebar({ on
               <span>{t('搜索结果 · {count}', { count: results.length })}</span>
             </div>
             {results.length === 0 && <div className="empty-hint">{t('没有匹配的对话')}</div>}
-            {results.map((t) => renderThread(t, projects.find((p) => p.id === t.projectId)?.name))}
+            {results.map((thread) => renderThread(thread, projects.find((p) => p.id === thread.projectId)?.name))}
           </div>
         ) : (
           <div className="section">
@@ -222,7 +212,7 @@ export const Sidebar = forwardRef<HTMLInputElement, Props>(function Sidebar({ on
               const isExpanded = expanded[p.id]
               const shown = isExpanded ? list : list.slice(0, COLLAPSED_LIMIT)
               if (!isExpanded && revealThread?.projectId === p.id && !shown.includes(revealThread)) shown.push(revealThread)
-              const anyRunning = list.some((t) => runningSet.has(t.id))
+              const anyRunning = list.some((thread) => runningSet.has(thread.id))
               return (
                 <div key={p.id} className="project">
                   <ProjectRow
@@ -238,7 +228,7 @@ export const Sidebar = forwardRef<HTMLInputElement, Props>(function Sidebar({ on
                   {!p.collapsed && (
                     <div className="project-threads">
                       {list.length === 0 && <div className="empty-hint small">{t('暂无对话')}</div>}
-                      {shown.map((t) => renderThread(t))}
+                      {shown.map((thread) => renderThread(thread))}
                       {(isExpanded ? list.length > COLLAPSED_LIMIT : list.length > shown.length) && (
                         <button className="show-more" onClick={() => setExpanded((e) => ({ ...e, [p.id]: !isExpanded }))}>
                           {isExpanded ? t('收起') : t('显示更多（{count}）', { count: list.length - shown.length })}
@@ -269,206 +259,3 @@ export const Sidebar = forwardRef<HTMLInputElement, Props>(function Sidebar({ on
     </aside>
   )
 })
-
-function InlineRename({ value, onDone }: { value: string; onDone: (v: string | null) => void }) {
-  const [text, setText] = useState(value)
-  const ref = useRef<HTMLInputElement>(null)
-  useEffect(() => {
-    ref.current?.focus()
-    ref.current?.select()
-  }, [])
-  return (
-    <input
-      ref={ref}
-      className="inline-rename"
-      value={text}
-      onChange={(e) => setText(e.target.value)}
-      onClick={(e) => e.stopPropagation()}
-      onBlur={() => onDone(text.trim() && text.trim() !== value ? text.trim() : null)}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
-        if (e.key === 'Escape') {
-          setText(value)
-          onDone(null)
-        }
-      }}
-    />
-  )
-}
-
-function ProjectRow(props: {
-  project: Project
-  index: number
-  total: number
-  count: number
-  running: boolean
-  editing: boolean
-  onEdit: () => void
-  onEditDone: () => void
-}) {
-  const t = useT()
-  const { project: p, index, total, editing } = props
-  const projects = useStore((s) => s.app.projects)
-  const move = (delta: number) => {
-    const ids = projects.map((x) => x.id)
-    const j = index + delta
-    ;[ids[index], ids[j]] = [ids[j], ids[index]]
-    window.api.reorderProjects(ids)
-  }
-  const menu: MenuEntry[] = [
-    { label: t('新对话'), icon: <IconCompose size={14} />, onSelect: () => goHome(p.id) },
-    ...(window.api.isRemote
-      ? []
-      : [
-          { label: t('在 Cursor 中打开'), icon: <IconCursor size={14} />, onSelect: () => window.api.openInEditor(p.path) },
-          { label: t('在文件管理器中打开'), icon: <IconFolder size={14} />, onSelect: () => window.api.openPath(p.path) }
-        ]),
-    { label: t('重命名'), icon: <IconEdit size={14} />, onSelect: props.onEdit },
-    'separator',
-    { label: t('上移'), disabled: index === 0, onSelect: () => move(-1) },
-    { label: t('下移'), disabled: index === total - 1, onSelect: () => move(1) },
-    'separator',
-    {
-      label: t('移除项目'),
-      icon: <IconTrash size={14} />,
-      danger: true,
-      onSelect: () => {
-        if (confirm(t('移除项目「{name}」？\n该项目下的 {count} 个对话记录也会从本应用中删除（不会删除磁盘上的文件）。', { name: p.name, count: props.count }))) {
-          window.api.removeProject(p.id)
-          setState((s) => (s.view.kind === 'home' && s.view.projectId === p.id ? { view: { kind: 'home' } } : {}))
-        }
-      }
-    }
-  ]
-  return (
-    <div
-      className="project-row"
-      title={p.path}
-      onClick={() => window.api.updateProject(p.id, { collapsed: !p.collapsed })}
-    >
-      <span className="chev">{p.collapsed ? <IconChevronRight size={12} /> : <IconChevronDown size={12} />}</span>
-      <IconFolder size={15} />
-      {editing ? (
-        <InlineRename
-          value={p.name}
-          onDone={(v) => {
-            if (v) window.api.updateProject(p.id, { name: v })
-            props.onEditDone()
-          }}
-        />
-      ) : (
-        <span className="project-name">{p.name}</span>
-      )}
-      {props.running && p.collapsed && <Spinner size={11} />}
-      <div className="row-tools" onClick={(e) => e.stopPropagation()}>
-        <button className="icon-btn tiny" title={t('在此项目中新建对话')} onClick={() => goHome(p.id)}>
-          <IconCompose size={13} />
-        </button>
-        <MenuButton className="icon-btn tiny" items={menu} placement="bottom-end" title={t('项目操作')}>
-          <IconMore size={14} />
-        </MenuButton>
-      </div>
-    </div>
-  )
-}
-
-function ThreadRow(props: {
-  thread: ThreadMeta
-  active: boolean
-  running: boolean
-  editing: boolean
-  projectName?: string
-  rowRef?: Ref<HTMLDivElement>
-  onEdit: () => void
-  onEditDone: () => void
-}) {
-  const t = useT()
-  const { thread, active, running, editing } = props
-  const unread = useStore((s) => isThreadUnread(thread, s.app))
-  const title = displayThreadTitle(thread, t)
-  const menu: MenuEntry[] = [
-    { label: t('重命名'), icon: <IconEdit size={14} />, onSelect: props.onEdit },
-    {
-      label: t('分叉对话'),
-      icon: <IconBranch size={14} />,
-      disabled: running,
-      hint: running ? t('运行中') : undefined,
-      onSelect: () => void forkThread(thread.id)
-    },
-    { label: thread.pinned ? t('取消置顶') : t('置顶'), icon: <IconPin size={14} />, onSelect: () => window.api.updateThread(thread.id, { pinned: !thread.pinned }) },
-    {
-      label: thread.archived ? t('取消归档') : t('归档'),
-      icon: <IconArchive size={14} />,
-      onSelect: () => window.api.updateThread(thread.id, { archived: !thread.archived })
-    },
-    'separator',
-    {
-      label: t('从 CLI 同步历史'),
-      icon: <IconRefresh size={14} />,
-      disabled: !thread.chatId || running,
-      onSelect: () => {
-        if (thread.source === 'cli' || confirm(t('用 {cli} 保存的记录替换此对话的显示内容？\n耗时、token 统计等应用记录会丢失。', { cli: cliTitle(threadCli(thread)) }))) {
-          syncThreadFromCli(thread.id)
-        }
-      }
-    },
-    {
-      label: t('复制 CLI 会话 ID'),
-      icon: <IconCopy size={14} />,
-      disabled: !thread.chatId,
-      onSelect: () => {
-        navigator.clipboard.writeText(thread.chatId!)
-        toast(t('已复制会话 ID，可用 agent --resume <id> 在终端继续'))
-      }
-    },
-    ...(thread.cwd && !window.api.isRemote ? [{ label: t('打开工作目录'), icon: <IconFolder size={14} />, onSelect: () => window.api.openPath(thread.cwd!) }] : []),
-    'separator',
-    {
-      label: t('删除对话'),
-      icon: <IconTrash size={14} />,
-      danger: true,
-      onSelect: () => {
-        if (confirm(t('删除对话「{title}」？此操作不可撤销。', { title }))) {
-          window.api.deleteThread(thread.id)
-          setState((s) => (s.view.kind === 'thread' && s.view.id === thread.id ? { view: { kind: 'home', projectId: thread.projectId } } : {}))
-        }
-      }
-    }
-  ]
-  return (
-    <div
-      ref={props.rowRef}
-      className={`thread-row ${active ? 'active' : ''} ${thread.archived ? 'archived' : ''}`}
-      onClick={() => openThread(thread.id)}
-      onDoubleClick={props.onEdit}
-      title={thread.preview ? `${title}\n\n${thread.preview}` : title}
-    >
-      <span className="thread-status">
-        {unread ? <span className="unread-dot" /> : running ? <Spinner size={11} /> : thread.pinned ? <IconPin size={11} /> : null}
-      </span>
-      {editing ? (
-        <InlineRename
-          value={title}
-          onDone={(v) => {
-            if (v) window.api.updateThread(thread.id, { title: v })
-            props.onEditDone()
-          }}
-        />
-      ) : (
-        <>
-          <span className="thread-title">
-            {title}
-            {props.projectName && <span className="thread-project"> · {props.projectName}</span>}
-          </span>
-          <span className="badge">{cliTitle(threadCli(thread))}</span>
-        </>
-      )}
-      <span className="thread-time">{relativeTime(thread.updatedAt)}</span>
-      <div className="row-tools" onClick={(e) => e.stopPropagation()}>
-        <MenuButton className="icon-btn tiny" items={menu} placement="bottom-end" title={t('对话操作')}>
-          <IconMore size={14} />
-        </MenuButton>
-      </div>
-    </div>
-  )
-}

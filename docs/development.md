@@ -241,9 +241,18 @@ src/main              Electron main process
   session/provider.ts CLI launch, authentication, session options, and Plan prompts
   session/requests.ts ACP questions and permission decisions through a turn interface
   session/usage.ts    Delayed result usage writes and cancellable account-usage retries
+  session/queue.ts    Per-thread in-memory follow-up message queue and post-turn draining
+  session/commands.ts Slash-command registry and initial-list waiters
+  session/prompt.ts   Turn prompt assembly, attachment paths, fork replay, and image checks
+  session/finalize.ts Turn finalization, result metadata reconciliation, and status notices
+  session/auto-continue.ts Cursor disconnect and Codex capacity auto-continue classifiers
+  session/antigravity-wakeup.ts Antigravity post-prompt followup and reactive wakeup state machine
   cli.ts              Find and spawn Cursor CLI
   git.ts              Create and remove worktrees for Codex and Claude conversations
   codex.ts            Codex adapter: models, login, mode ids
+  codex-rollouts.ts   Codex rollout discovery, alias indexing, and header metadata
+  codex-history.ts    Import transcripts from ~/.codex/sessions
+  codex-history-repair.ts Legacy Codex assistant message and MCP tool repairs
   claude.ts           Claude adapter: models, login, mode ids
   claude-history.ts   Import transcripts from ~/.claude/projects
   acp.ts              Newline-delimited JSON-RPC, including Plan-mode hints
@@ -265,6 +274,8 @@ src/renderer/src      React UI
   store/              State core, persistence, models, commands, threads, and initialization
   components/Items.tsx Message dispatch and adapters to the UI store
   components/items/   Markdown, messages, tools, plans, questions, and result views
+  components/composer/ CLI/mode pickers and slash-command popover used by Composer.tsx
+  components/sidebar/ Project row, thread row, and inline rename used by Sidebar.tsx
   components/settings Settings pages
   lib/model-prefs.ts  Which model is selected. The choice is not kept in UI state
   lib/find.ts         Find in conversation: matching, text indexing for highlight ranges, and find shortcuts

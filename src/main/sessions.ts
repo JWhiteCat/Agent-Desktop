@@ -1,41 +1,49 @@
 import { imageCapture } from './tool-images'
-import { getLocale, localizedMessage, t as translate } from '@shared/i18n'
+import { t as translate } from '@shared/i18n'
 import { displayThreadTitle } from '@shared/thread-title'
 import type { ChildProcess } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { enabledSkillFingerprint, toAcpMcpServers } from '@shared/agent-config'
-import { parseAvailableCommands, type SlashCommand } from '@shared/commands'
-import { attachmentPrompt } from '@shared/attachment-message'
-import { isImageAttachment, MAX_ATTACHMENTS, MAX_MESSAGE_ATTACHMENT_BYTES, type AttachmentRef } from '@shared/attachments'
-import type { AgentEvent, CliProvider, Item, MessageQueue, PrepareRequest, QuestionAnswer, QueuedMessage, SendRequest } from '@shared/types'
+import type { SlashCommand } from '@shared/commands'
+import type { AttachmentRef } from '@shared/attachments'
+import type { AgentEvent, CliProvider, Item, MessageQueue, PrepareRequest, QuestionAnswer, SendRequest } from '@shared/types'
 import { isCliProvider, threadCli } from '@shared/types'
 import { normalizeTurnUsage, preferTurnUsage } from '@shared/turn-usage'
 import type { WeeklyQuotaEstimate } from '@shared/turn-quota'
 import { AcpConnection } from './acp'
-import { exitFailureDetail, killTree, stripAnsi } from './cli'
+import { killTree, stripAnsi } from './cli'
 import { createWorktree } from './git'
 import { changedTurnFiles, snapshotTurnFiles } from './turn-files'
 import { syncAllManagedSkills } from './skills'
 import { newId } from './id'
-import { forkPrompt } from './fork-context'
 import { attachmentsFor } from './attachments'
 import { StreamReducer } from './reducer'
 import { TurnTiming } from './turn-timing'
 import { loadCodexAccountUsage } from './codex-account'
 import { CodexTurnUsageReader } from './codex-turn-usage'
-import { SessionUsage } from './session/usage'
 import { loadCodexQuota } from './quota'
-import { codexProxyOverlay, isCodexRoutingTimeout, refreshCodexProxyEnv } from './system-proxy'
+import { codexProxyOverlay, refreshCodexProxyEnv } from './system-proxy'
 import {
   antigravityArgs, applySessionOptions, cliLabel, cursorArgs, fingerprintWithCwd, initializeSession, leftPlanMode,
-  planPrompt, procFingerprint, providerApiKey, resolveLaunch, spawnProvider, worktreePathFrom, type AgentLaunch, type SessionConnection
+  procFingerprint, providerApiKey, resolveLaunch, spawnProvider, worktreePathFrom, type AgentLaunch, type SessionConnection
 } from './session/provider'
-import { abandonQuestions, answerPendingQuestion, onAcpRequest, onIdleAcpRequest, settleQuestion, type InteractionRun } from './session/requests'
+import { answerPendingQuestion, onAcpRequest, onIdleAcpRequest, settleQuestion, type InteractionRun } from './session/requests'
+import { SessionUsage } from './session/usage'
+import { isAutomaticContinueFailure } from './session/auto-continue'
+import { SessionQueue } from './session/queue'
+import { SlashCommandRegistry } from './session/commands'
+import { buildTurnPrompt } from './session/prompt'
+import {
+  finishFollowup, holdFollowupForInteraction, isAntigravityWakeupUpdate, observeFollowup,
+  resumeFollowupAfterInteraction, waitForFollowup, type FollowupState
+} from './session/antigravity-wakeup'
+import { finalizeTurnItems, mergeWakeupResult } from './session/finalize'
 import type { Store } from './store'
 import { openAntigravityGateway, usesAntigravityGateway, type AntigravityGateway } from './antigravity-gateway'
 
 export { leftPlanMode } from './session/provider'
+export { automaticContinuePrompt, isCodexModelCapacity, isCursorRetriableDisconnect } from './session/auto-continue'
 
 /** One ACP process kept alive so the next message skips startup and session restoration. */
 interface AgentProc extends SessionConnection {
@@ -55,12 +63,6 @@ interface AgentProc extends SessionConnection {
   force: boolean
   /** Retained when this ACP process is reused for later turns. */
   promptCapabilities?: { image: boolean }
-}
-
-interface FollowupState {
-  phase: 'llm' | 'reply' | 'usage'
-  timer?: NodeJS.Timeout
-  finish: () => void
 }
 
 interface Run extends InteractionRun {
@@ -119,58 +121,7 @@ export function titleFrom(prompt: string): string {
 }
 
 const CANCEL_KILL_MS = 5000
-const COMMAND_WAIT_MS = 2000
 const FORK_TIMEOUT_MS = 60_000
-const FOLLOWUP_LLM_MS = 120_000
-const FOLLOWUP_REPLY_MS = 2000
-const FOLLOWUP_USAGE_MS = 250
-/** A real reply can mention these errors. Only a short failure text is the dropped turn. */
-const AUTO_CONTINUE_TEXT_LIMIT = 240
-const CURSOR_DISCONNECT_NOTICE = 'Cursor 连接中断，正在发送「{word}」。'
-const CODEX_CAPACITY_NOTICE = 'Codex 所选模型已满载，正在发送「{word}」。'
-
-const CURSOR_RETRIABLE = /^(?:Error:\s*)?RetriableError:\s*(\S[^\r\n]*)$/
-const FOLLOWING_SENTENCE = /[.!?;。！？；]\s+\S/
-
-/**
- * Cursor marks a dropped model request with the `RetriableError` class, e.g.
- * `RetriableError: [unavailable] HTTP 502` or `RetriableError: Stream ended without turnEnded ...`.
- * The whole text has to be that one-clause failure. A reply that explains or merely mentions it is left alone.
- */
-export function isCursorRetriableDisconnect(text: string | undefined): boolean {
-  if (!text) return false
-  const clean = text.trim()
-  if (!clean || clean.length > AUTO_CONTINUE_TEXT_LIMIT) return false
-  const message = CURSOR_RETRIABLE.exec(clean)?.[1]
-  return !!message && !FOLLOWING_SENTENCE.test(message)
-}
-
-/**
- * Codex reports `server_is_overloaded` as `Selected model is at capacity. Please try a different model.`
- * The adapter often sends that sentence as the whole assistant reply and still stops with `end_turn`.
- * A longer reply that merely mentions it is left alone.
- */
-export function isCodexModelCapacity(text: string | undefined): boolean {
-  if (!text) return false
-  const clean = text.trim()
-  if (!clean || clean.length > AUTO_CONTINUE_TEXT_LIMIT) return false
-  return /^(?:Error:\s*)?Selected model is at capacity\.?(?: Please try a different model\.)?$/.test(clean)
-}
-
-function isAutomaticContinueFailure(provider: CliProvider, text: string | undefined): boolean {
-  if (provider === 'cursor') return isCursorRetriableDisconnect(text)
-  if (provider === 'codex') return isCodexModelCapacity(text)
-  return false
-}
-
-/** English interface language asks the model to continue in English. */
-export function automaticContinuePrompt(): string {
-  return getLocale() === 'en' ? 'continue' : '继续'
-}
-
-function automaticContinueNotice(provider: CliProvider): string {
-  return provider === 'codex' ? CODEX_CAPACITY_NOTICE : CURSOR_DISCONNECT_NOTICE
-}
 
 export class SessionManager {
   private runs = new Map<string, Run>()
@@ -180,15 +131,16 @@ export class SessionManager {
   private pendingSends = new Map<string, number>()
   /** Idle or preparing CLI processes, keyed by thread id. Not included in `running()`. */
   private agents = new Map<string, AgentProc>()
-  /** Last slash-command list for a thread. Kept after the process exits, until the thread is deleted. */
-  private commandLists = new Map<string, SlashCommand[]>()
-  private commandWaiters = new Map<string, Array<() => void>>()
   /** Serializes prepare and send so one thread cannot start two CLI processes. */
   private tails = new Map<string, Promise<void>>()
-  /** Follow-ups sent while a thread was active. Kept in memory only. */
-  private queues = new Map<string, MessageQueue>()
+  private readonly commands: SlashCommandRegistry
+  private readonly messageQueue: SessionQueue
   private readonly usage: SessionUsage
   private shuttingDown = false
+
+  private get commandLists(): Map<string, SlashCommand[]> {
+    return this.commands.lists
+  }
 
   constructor(
     private readonly store: Store,
@@ -198,7 +150,16 @@ export class SessionManager {
     readCodexAccount = loadCodexAccountUsage,
     readCodexQuota = loadCodexQuota
   ) {
+    this.commands = new SlashCommandRegistry(emit)
     this.usage = new SessionUsage(store, emit, (threadId) => this.isRunning(threadId), readCodexAccount, readCodexQuota)
+    this.messageQueue = new SessionQueue({
+      store,
+      isActive: (threadId) => this.active().includes(threadId),
+      isShuttingDown: () => this.shuttingDown,
+      stop: (threadId) => this.stop(threadId),
+      dispatch: (req) => this.send(req),
+      onStateChange
+    })
   }
 
   running(): string[] {
@@ -232,7 +193,7 @@ export class SessionManager {
     const id = req.threadId
     if (req.delivery && this.active().includes(id)) {
       try {
-        this.enqueueMessage(req)
+        this.messageQueue.enqueue(req)
         return Promise.resolve()
       } catch (err) {
         return Promise.reject(err)
@@ -245,131 +206,31 @@ export class SessionManager {
       else this.pendingSends.set(id, remaining)
     }).catch((err) => {
       // A send that never started a turn has no endRun to resume the queue.
-      const queue = this.queues.get(id)
-      if (queue && !this.active().includes(id) && !queue.paused) {
-        queue.paused = true
-        this.onStateChange()
-      }
+      this.messageQueue.pauseIfIdle(id)
       throw err
     })
   }
 
   queued(): Record<string, MessageQueue> {
-    const out: Record<string, MessageQueue> = {}
-    for (const [id, queue] of this.queues) out[id] = { ...queue, items: [...queue.items] }
-    return out
+    return this.messageQueue.snapshot()
   }
 
   removeQueued(threadId: string, messageId: string): void {
-    const queue = this.queues.get(threadId)
-    if (!queue) return
-    const next = queue.items.filter((item) => item.id !== messageId)
-    if (next.length === queue.items.length) return
-    this.setQueue(threadId, { items: next, paused: queue.paused, waitingForPlan: queue.waitingForPlan })
+    this.messageQueue.remove(threadId, messageId)
   }
 
   /** Drops the queue of a conversation that is being deleted. */
   clearQueue(threadId: string): void {
-    if (this.queues.delete(threadId)) this.onStateChange()
+    this.messageQueue.clear(threadId)
   }
 
   reorderQueued(threadId: string, ids: string[]): void {
-    const queue = this.queues.get(threadId)
-    if (!queue || !Array.isArray(ids)) return
-    const byId = new Map(queue.items.map((item) => [item.id, item]))
-    const ordered = ids.map((id) => byId.get(id)).filter((item): item is QueuedMessage => !!item)
-    const rest = queue.items.filter((item) => !ids.includes(item.id))
-    this.setQueue(threadId, { ...queue, items: [...ordered, ...rest] })
+    this.messageQueue.reorder(threadId, ids)
   }
 
   /** Moves a queued message to the front; a running turn is stopped so it goes next. */
   sendQueuedNow(threadId: string, messageId: string): void {
-    const queue = this.queues.get(threadId)
-    const item = queue?.items.find((it) => it.id === messageId)
-    if (!queue || !item) throw new Error(translate('排队消息不存在'))
-    const rest = queue.items.filter((it) => it.id !== messageId)
-    this.setQueue(threadId, { items: [{ ...item, immediate: true }, ...rest], paused: queue.paused, waitingForPlan: queue.waitingForPlan })
-    // A turn still starting is cancelled too; its cancelled startup drains this head next.
-    if (this.active().includes(threadId)) this.stop(threadId)
-    else this.dispatchQueued(threadId)
-  }
-
-  private enqueueMessage(req: SendRequest): void {
-    const thread = this.store.thread(req.threadId)
-    if (!thread) throw new Error(translate('对话不存在'))
-    if (req.attachmentIds !== undefined && !Array.isArray(req.attachmentIds)) throw new Error(translate('附件参数无效'))
-    const attachments = req.attachmentIds?.length ? attachmentsFor(this.store).resolveMany(req.attachmentIds) : []
-    if (typeof req.prompt !== 'string' || (!req.prompt.trim() && !attachments.length)) throw new Error(translate('请输入消息或添加附件'))
-    const immediate = req.delivery === 'now'
-    const item: QueuedMessage = {
-      id: newId(), prompt: req.prompt, attachments, model: req.model, mode: req.mode, force: req.force,
-      ...(isCliProvider(req.cli) ? { cli: req.cli } : {}),
-      ...(immediate ? { immediate } : {}),
-      createdAt: Date.now()
-    }
-    const queue = this.queues.get(req.threadId) ?? { items: [] }
-    const items = [...queue.items]
-    if (immediate) {
-      const at = items.findIndex((it) => !it.immediate)
-      items.splice(at < 0 ? items.length : at, 0, item)
-    } else {
-      items.push(item)
-    }
-    this.setQueue(req.threadId, { ...queue, items })
-    if (immediate) this.stop(req.threadId)
-  }
-
-  private setQueue(threadId: string, queue: MessageQueue): void {
-    if (queue.items.length) this.queues.set(threadId, queue)
-    else this.queues.delete(threadId)
-    this.onStateChange()
-  }
-
-  /**
-   * Called after a turn ends. A head sent with "now" always goes next. Otherwise stopped or failed turns
-   * pause the queue, and a turn that ends in Plan mode with a plan holds it until an Agent turn completes.
-   */
-  private drainQueue(threadId: string, turn: { interrupted: boolean; planned: boolean; agent: boolean }): void {
-    const queue = this.queues.get(threadId)
-    // A send that is still starting drains the queue when its own turn ends.
-    if (!queue || this.shuttingDown || this.active().includes(threadId)) return
-    if (!this.store.thread(threadId)) {
-      this.queues.delete(threadId)
-      return
-    }
-    if (!queue.items[0].immediate) {
-      if (turn.interrupted) {
-        if (!queue.paused) this.setQueue(threadId, { ...queue, paused: true })
-        return
-      }
-      if (turn.planned) {
-        if (!queue.waitingForPlan || queue.paused) this.setQueue(threadId, { ...queue, paused: undefined, waitingForPlan: true })
-        return
-      }
-      if (queue.waitingForPlan && !turn.agent) return
-    }
-    this.dispatchQueued(threadId)
-  }
-
-  private dispatchQueued(threadId: string): void {
-    const queue = this.queues.get(threadId)
-    const head = queue?.items[0]
-    if (!queue || !head) return
-    this.setQueue(threadId, { items: queue.items.slice(1) })
-    const req: SendRequest = {
-      threadId, prompt: head.prompt, model: head.model, mode: head.mode, force: head.force,
-      ...(head.attachments.length ? { attachmentIds: head.attachments.map((a) => a.id) } : {}),
-      ...(head.cli ? { cli: head.cli } : {})
-    }
-    void this.send(req).catch((err) => {
-      if (!this.store.thread(threadId)) return
-      const current = this.queues.get(threadId) ?? { items: [] }
-      this.setQueue(threadId, {
-        items: [{ ...head, immediate: undefined }, ...current.items],
-        paused: true,
-        error: err instanceof Error ? err.message : String(err)
-      })
-    })
+    this.messageQueue.sendNow(threadId, messageId)
   }
 
   /**
@@ -469,7 +330,7 @@ export class SessionManager {
         // A cancelled startup has no endRun to pause the queue or dispatch a "now" message.
         setImmediate(() => {
           if (!this.active().includes(req.threadId)) {
-            this.drainQueue(req.threadId, { interrupted: true, planned: false, agent: false })
+            this.messageQueue.drain(req.threadId, { interrupted: true, planned: false, agent: false })
           }
         })
       }
@@ -509,7 +370,7 @@ export class SessionManager {
     }
     this.usage.cancel(thread.id)
 
-    const mcpServers = toAcpMcpServers(provider === 'antigravity' ? settings.mcpServers.filter((server) => server.transport !== 'sse') : settings.mcpServers)
+    const mcpServers = this.mcpServersFor(provider)
     const skills = enabledSkillFingerprint(settings.skills)
     // Automatic「继续」must register its run before this function yields. A refresh here
     // lets the deferred queue drain, and idle observers, see the thread as already finished.
@@ -546,40 +407,24 @@ export class SessionManager {
     })
 
     if (!proc) {
-      const args = provider === 'cursor' ? cursorArgs(req, settings.sandbox, cwd, !!thread.chatId)
-        : provider === 'antigravity' ? antigravityArgs(settings.sandbox, mcpServers) : []
+      const args = this.providerArgs(provider, req, cwd, !!thread.chatId, mcpServers)
       const opening = this.openTurnProc(thread.id, provider, launch, args, cwd, apiKey, fingerprint, cancelled)
       proc = opening instanceof Promise ? await opening : opening
       if (!proc) return false
     }
     proc.force = req.force
 
-    const run: Run = {
-      proc,
-      reducer: new StreamReducer(items, imageCapture(this.store, cwd, items)),
-      stopped: false,
-      pending: new Map(),
-      announcedQuestions: new Set(),
-      acceptUpdates: false,
-      force: req.force,
-      mode: req.mode,
+    const run = this.createRun(thread.id, proc, items, {
+      cwd,
       model: req.model,
-      ...(internal?.autoContinue ? { autoContinue: true } : {}),
-      onPlanApproved: () => {
-        this.store.updateThread(thread.id, { mode: 'agent' })
-        this.onStateChange()
-      },
-      switchCalls: new Set(),
-      settled: false,
+      mode: req.mode,
+      force: req.force,
       starting: !reusable,
+      autoContinue: internal?.autoContinue,
       attachments,
       managedMessageId,
-      userItemId: userId,
-      isAttachmentReadAllowed: (filePath, expectedPath) => {
-        const refs = this.store.items(thread.id).flatMap((item) => item.kind === 'user' ? item.attachments ?? [] : [])
-        return refs.length > 0 && attachmentsFor(this.store).scopedRead(filePath, proc!.cwd, refs, expectedPath)
-      }
-    }
+      userItemId: userId
+    })
     this.runs.set(thread.id, run)
     this.queue(thread.id, run, [userItem])
     this.emit({ type: 'running', threadId: thread.id, running: true })
@@ -603,6 +448,75 @@ export class SessionManager {
     return true
   }
 
+  private createRun(
+    threadId: string,
+    proc: AgentProc,
+    items: Item[],
+    opts: {
+      cwd: string
+      model: string
+      mode: SendRequest['mode']
+      force: boolean
+      starting: boolean
+      acceptUpdates?: boolean
+      autoContinue?: boolean
+      wakeup?: boolean
+      resultId?: string
+      timing?: TurnTiming
+      attachments?: AttachmentRef[]
+      managedMessageId?: string
+      userItemId?: string
+    }
+  ): Run {
+    return {
+      proc,
+      reducer: new StreamReducer(items, imageCapture(this.store, opts.cwd, items)),
+      stopped: false,
+      pending: new Map(),
+      announcedQuestions: new Set(),
+      acceptUpdates: opts.acceptUpdates ?? false,
+      force: opts.force,
+      mode: opts.mode,
+      model: opts.model,
+      ...(opts.autoContinue ? { autoContinue: true } : {}),
+      ...(opts.wakeup ? { wakeup: true } : {}),
+      ...(opts.resultId ? { resultId: opts.resultId } : {}),
+      ...(opts.timing ? { timing: opts.timing } : {}),
+      onPlanApproved: () => {
+        this.store.updateThread(threadId, { mode: 'agent' })
+        this.onStateChange()
+      },
+      switchCalls: new Set(),
+      settled: false,
+      starting: opts.starting,
+      attachments: opts.attachments,
+      managedMessageId: opts.managedMessageId,
+      userItemId: opts.userItemId,
+      isAttachmentReadAllowed: (filePath, expectedPath) => {
+        const refs = this.store.items(threadId).flatMap((item) => (item.kind === 'user' ? item.attachments ?? [] : []))
+        return refs.length > 0 && attachmentsFor(this.store).scopedRead(filePath, proc.cwd, refs, expectedPath)
+      }
+    }
+  }
+
+  private mcpServersFor(provider: CliProvider): Record<string, unknown>[] {
+    const servers = this.store.settings.mcpServers
+    return toAcpMcpServers(provider === 'antigravity' ? servers.filter((server) => server.transport !== 'sse') : servers)
+  }
+
+  private providerArgs(
+    provider: CliProvider,
+    req: SendRequest,
+    cwd: string,
+    hasChat: boolean,
+    mcpServers: Record<string, unknown>[]
+  ): string[] {
+    const sandbox = this.store.settings.sandbox
+    if (provider === 'cursor') return cursorArgs(req, sandbox, cwd, hasChat)
+    if (provider === 'antigravity') return antigravityArgs(sandbox, mcpServers)
+    return []
+  }
+
   answerQuestion(threadId: string, questionId: string, answers: QuestionAnswer[] | null): void {
     answerPendingQuestion(this.runs.get(threadId), questionId, answers)
   }
@@ -618,7 +532,7 @@ export class SessionManager {
     if (run.proc.ready && run.proc.sessionId) {
       run.proc.acp.notify('session/cancel', { sessionId: run.proc.sessionId })
       if (run.followup) {
-        this.finishFollowup(run)
+        finishFollowup(run)
         return
       }
       if (!run.killTimer) {
@@ -630,7 +544,7 @@ export class SessionManager {
       }
       return
     }
-    this.finishFollowup(run)
+    finishFollowup(run)
     this.killProc(run.proc)
   }
 
@@ -638,8 +552,7 @@ export class SessionManager {
   dispose(threadId: string): void {
     for (const startup of this.startups.get(threadId) ?? []) startup.cancelled = true
     this.usage.cancel(threadId)
-    this.commandLists.delete(threadId)
-    this.commandWaiters.delete(threadId)
+    this.commands.delete(threadId)
     const run = this.runs.get(threadId)
     if (run) {
       run.stopped = true
@@ -647,7 +560,7 @@ export class SessionManager {
         clearTimeout(run.killTimer)
         run.killTimer = undefined
       }
-      this.finishFollowup(run)
+      finishFollowup(run)
       settleQuestion(run, 'cancel')
       this.killProc(run.proc)
       return
@@ -657,7 +570,7 @@ export class SessionManager {
 
   stopAll(): void {
     this.shuttingDown = true
-    this.queues.clear()
+    this.messageQueue.clearAll()
     this.usage.stop()
     for (const id of [...this.runs.keys()]) this.dispose(id)
     for (const id of [...this.agents.keys()]) this.discard(id)
@@ -762,65 +675,19 @@ export class SessionManager {
         const worktree = worktreePathFrom(stripAnsi(line))
         if (worktree) proc.worktree = worktree
       },
-      onNotification: (method, params, receivedAt) => {
-        if (proc.dying) return
-        if (proc.provider === 'antigravity' && method === 'session/update' && params?.update?.sessionUpdate === 'config_option_update'
-          && params.sessionId === proc.sessionId && Array.isArray(params.update.configOptions)) {
-          proc.antigravityOptions = params.update.configOptions
-        }
-        if (method === 'session/update' && params?.update?.sessionUpdate === 'available_commands_update') {
-          const sessionId = typeof params?.sessionId === 'string' ? params.sessionId : ''
-          if (trackCommands && (!sessionId || !proc.sessionId || sessionId === proc.sessionId)) {
-            this.rememberCommands(threadId, params.update.availableCommands)
-          }
-          return
-        }
-        if (proc.suppressWakeups) return
-        let run = this.runs.get(threadId)
-        if (!run && method === 'session/update') run = this.resumeAntigravityWakeup(threadId, proc, params?.sessionId, params?.update)
-        if (!run || run.proc !== proc || method !== 'session/update' || !run.acceptUpdates) return
-        if (
-          params.sessionId &&
-          proc.sessionId &&
-          params.sessionId !== proc.sessionId
-        ) {
-          return
-        }
-        if ((proc.provider === 'cursor' || proc.provider === 'claude' || proc.provider === 'antigravity')
-          && (run.mode === 'plan' || (proc.provider === 'antigravity' && run.mode === 'ask'))
-          && leftPlanMode(params?.update, run.switchCalls)) {
-          proc.acp.request('session/set_mode', { sessionId: proc.sessionId, modeId: 'plan' }).catch(() => undefined)
-        }
-        run.timing?.observe(params?.update, receivedAt)
-        const changed = run.reducer.handleAcp(params?.update)
-        if (changed.length) this.queue(threadId, run, changed)
-        this.observeFollowup(run, params?.update)
-      },
-      onRequest: (method, params) => {
-        if (proc.suppressWakeups) return onIdleAcpRequest(proc, method, params)
-        let run = this.runs.get(threadId)
-        if (!run && (method === 'session/request_permission' || method === 'cursor/ask_question' || Array.isArray(params?.questions))) {
-          run = this.resumeAntigravityWakeup(threadId, proc, params?.sessionId, { sessionUpdate: 'tool_call' })
-        }
-        if (run?.proc === proc) run.timing?.interrupt()
-        if (run && run.proc === proc) {
-          this.holdFollowupForInteraction(run)
-          return onAcpRequest(run, method, params, (items) => this.queue(threadId, run!, items))
-            .finally(() => this.resumeFollowupAfterInteraction(run!))
-        }
-        return onIdleAcpRequest(proc, method, params)
-      }
+      onNotification: (method, params, receivedAt) => this.handleProcNotification(threadId, proc, trackCommands, method, params, receivedAt),
+      onRequest: (method, params) => this.handleProcRequest(threadId, proc, method, params)
     })
     child.on('error', (err) => {
       const run = this.runs.get(threadId)
-      if (run?.proc === proc) this.endRun(threadId, run, null, err)
+      if (run?.proc === proc) void this.endRun(threadId, run, null, err)
     })
     child.on('close', (code) => {
       antigravityGateway?.close()
       if (this.agents.get(threadId) === proc) this.agents.delete(threadId)
       const run = this.runs.get(threadId)
       if (run?.proc !== proc) return
-      this.finishFollowup(run)
+      finishFollowup(run)
       // Prompt rejection records failText in a microtask. Ending the turn on this
       // close event would run first and miss an automatic「继续」from that rejection.
       setImmediate(() => {
@@ -829,6 +696,57 @@ export class SessionManager {
       })
     })
     return proc
+  }
+
+  private handleProcNotification(
+    threadId: string,
+    proc: AgentProc,
+    trackCommands: boolean,
+    method: string,
+    params: any,
+    receivedAt: number
+  ): void {
+    if (proc.dying) return
+    if (proc.provider === 'antigravity' && method === 'session/update' && params?.update?.sessionUpdate === 'config_option_update'
+      && params.sessionId === proc.sessionId && Array.isArray(params.update.configOptions)) {
+      proc.antigravityOptions = params.update.configOptions
+    }
+    if (method === 'session/update' && params?.update?.sessionUpdate === 'available_commands_update') {
+      const sessionId = typeof params?.sessionId === 'string' ? params.sessionId : ''
+      if (trackCommands && (!sessionId || !proc.sessionId || sessionId === proc.sessionId)) {
+        this.commands.remember(threadId, params.update.availableCommands)
+      }
+      return
+    }
+    if (proc.suppressWakeups) return
+    let run = this.runs.get(threadId)
+    if (!run && method === 'session/update') run = this.resumeAntigravityWakeup(threadId, proc, params?.sessionId, params?.update)
+    if (!run || run.proc !== proc || method !== 'session/update' || !run.acceptUpdates) return
+    if (params.sessionId && proc.sessionId && params.sessionId !== proc.sessionId) return
+    if ((proc.provider === 'cursor' || proc.provider === 'claude' || proc.provider === 'antigravity')
+      && (run.mode === 'plan' || (proc.provider === 'antigravity' && run.mode === 'ask'))
+      && leftPlanMode(params?.update, run.switchCalls)) {
+      proc.acp.request('session/set_mode', { sessionId: proc.sessionId, modeId: 'plan' }).catch(() => undefined)
+    }
+    run.timing?.observe(params?.update, receivedAt)
+    const changed = run.reducer.handleAcp(params?.update)
+    if (changed.length) this.queue(threadId, run, changed)
+    observeFollowup(run, params?.update)
+  }
+
+  private handleProcRequest(threadId: string, proc: AgentProc, method: string, params: any): Promise<unknown> {
+    if (proc.suppressWakeups) return onIdleAcpRequest(proc, method, params)
+    let run = this.runs.get(threadId)
+    if (!run && (method === 'session/request_permission' || method === 'cursor/ask_question' || Array.isArray(params?.questions))) {
+      run = this.resumeAntigravityWakeup(threadId, proc, params?.sessionId, { sessionUpdate: 'tool_call' })
+    }
+    if (run?.proc === proc) run.timing?.interrupt()
+    if (run && run.proc === proc) {
+      holdFollowupForInteraction(run)
+      return onAcpRequest(run, method, params, (items) => this.queue(threadId, run!, items))
+        .finally(() => resumeFollowupAfterInteraction(run!))
+    }
+    return onIdleAcpRequest(proc, method, params)
   }
 
   private killProc(proc: AgentProc): void {
@@ -856,7 +774,7 @@ export class SessionManager {
 
   private async prepareBody(threadId: string, opts: PrepareRequest, cancelled: () => boolean): Promise<SlashCommand[]> {
     if (cancelled()) return []
-    const known = this.commandLists.get(threadId)
+    const known = this.commands.get(threadId)
     if (known) return known
     if (this.runs.has(threadId)) return []
     const thread = this.store.thread(threadId)
@@ -872,16 +790,9 @@ export class SessionManager {
     const cwd = thread.cwd && (thread.worktree || fs.existsSync(thread.cwd)) ? thread.cwd : project.path
     if (!fs.existsSync(cwd)) throw new Error(translate('项目目录不存在：{path}', { path: cwd }))
 
-    const mcpServers = toAcpMcpServers(provider === 'antigravity' ? settings.mcpServers.filter((server) => server.transport !== 'sse') : settings.mcpServers)
+    const mcpServers = this.mcpServersFor(provider)
     const fingerprint = await this.launchFingerprint(
-      provider,
-      launch,
-      cwd,
-      settings.sandbox,
-      opts.force,
-      apiKey,
-      mcpServers,
-      enabledSkillFingerprint(settings.skills)
+      provider, launch, cwd, settings.sandbox, opts.force, apiKey, mcpServers, enabledSkillFingerprint(settings.skills)
     )
     if (cancelled()) return []
     const req: SendRequest = { threadId, prompt: '', model: opts.model, mode: opts.mode, force: opts.force }
@@ -891,12 +802,11 @@ export class SessionManager {
       this.discard(threadId)
       proc = undefined
     }
-    if (reusable && proc) return this.finishCommandWait(threadId)
+    if (reusable && proc) return this.commands.wait(threadId)
 
     if (!proc) {
       syncAllManagedSkills(settings.skills)
-      const args = provider === 'cursor' ? cursorArgs(req, settings.sandbox, cwd, true)
-        : provider === 'antigravity' ? antigravityArgs(settings.sandbox, mcpServers) : []
+      const args = this.providerArgs(provider, req, cwd, true, mcpServers)
       const opening = this.openTurnProc(threadId, provider, launch, args, cwd, apiKey, fingerprint, cancelled)
       proc = opening instanceof Promise ? await opening : opening
       if (!proc) return []
@@ -916,41 +826,7 @@ export class SessionManager {
       this.killProc(proc)
       throw err
     }
-    return this.finishCommandWait(threadId)
-  }
-
-  private rememberCommands(threadId: string, raw: unknown): void {
-    const commands = parseAvailableCommands(raw)
-    this.commandLists.set(threadId, commands)
-    this.emit({ type: 'commands', threadId, commands })
-    const waiters = this.commandWaiters.get(threadId)
-    if (!waiters) return
-    this.commandWaiters.delete(threadId)
-    for (const wake of waiters) wake()
-  }
-
-  private finishCommandWait(threadId: string): Promise<SlashCommand[]> {
-    const known = this.commandLists.get(threadId)
-    if (known) return Promise.resolve(known)
-    return new Promise((resolve) => {
-      let settled = false
-      let timer: ReturnType<typeof setTimeout> | undefined
-      const finish = () => {
-        if (settled) return
-        settled = true
-        if (timer) clearTimeout(timer)
-        const left = (this.commandWaiters.get(threadId) ?? []).filter((waiter) => waiter !== wake)
-        if (left.length) this.commandWaiters.set(threadId, left)
-        else this.commandWaiters.delete(threadId)
-        if (!this.commandLists.has(threadId)) this.commandLists.set(threadId, [])
-        resolve(this.commandLists.get(threadId) ?? [])
-      }
-      const wake = () => finish()
-      timer = setTimeout(finish, COMMAND_WAIT_MS)
-      const waiting = this.commandWaiters.get(threadId) ?? []
-      waiting.push(wake)
-      this.commandWaiters.set(threadId, waiting)
-    })
+    return this.commands.wait(threadId)
   }
 
   private async drive(
@@ -1015,58 +891,27 @@ export class SessionManager {
   private async runPrompt(threadId: string, run: Run, req: SendRequest): Promise<void> {
     if (this.runs.get(threadId) !== run || run.settled) return
     if (run.stopped) {
-      this.endRun(threadId, run, null)
+      await this.endRun(threadId, run, null)
       return
     }
-    const contextThroughId = this.store.thread(threadId)?.forkContextThroughItemId
-    let prompt = req.prompt
-    let copied: Item[] = []
-    const currentAttachments = run.attachments ?? []
-    if (contextThroughId) {
-      const items = this.store.items(threadId)
-      const cut = items.findIndex((item) => item.id === contextThroughId)
-      if (cut < 0) throw new Error(translate('分叉历史缺失，无法恢复上下文'))
-      copied = items.slice(0, cut + 1)
-    }
-    // Native forks already retain their image inputs. Only our fallback replay
-    // needs to restore bytes from the trusted, persisted prefix of the fork.
-    const historicalMessages = copied.filter((item) => item.kind === 'user')
-      .map((item) => item.attachments?.length
-        ? attachmentsFor(this.store).resolveMany(item.attachments.map((attachment) => attachment.id)) : [])
-    const historicalAttachments = historicalMessages.flat()
-    if (currentAttachments.length) prompt = this.withAttachmentPaths(prompt, currentAttachments)
-    if (historicalAttachments.length) prompt = this.withAttachmentPaths(prompt, historicalAttachments, true)
-    if (historicalAttachments.length && !run.managedMessageId && run.userItemId) {
-      const item = this.store.items(threadId).find((item) => item.kind === 'user' && item.id === run.userItemId)
-      if (item?.kind === 'user') {
-        item.managedMessageId = run.managedMessageId = item.id
-        this.queue(threadId, run, [item])
-      }
-    }
-    if (run.managedMessageId) prompt = attachmentPrompt(prompt, run.managedMessageId)
-    if (contextThroughId) prompt = forkPrompt(copied, prompt)
-    const imageRefs = [...new Map([...historicalAttachments, ...currentAttachments]
-      .filter(isImageAttachment).map((attachment) => [attachment.id, attachment])).values()]
-    if (imageRefs.length > MAX_ATTACHMENTS || imageRefs.reduce((size, attachment) => size + attachment.size, 0) > MAX_MESSAGE_ATTACHMENT_BYTES) {
-      throw new Error(translate('分叉历史与本条消息的图片合计超出附件限制，请减少图片或从更早的消息分叉后重试'))
-    }
-    if (imageRefs.length && !run.proc.promptCapabilities?.image) {
-      throw new Error(translate('{label} 未声明支持图片输入，请更新 CLI 或移除图片后重试', { label: cliLabel(run.proc.provider) }))
-    }
-    const text = planPrompt(run.proc.provider, req.mode, prompt)
-    const images = imageRefs.flatMap<{ type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string }>((attachment) => [
-      { type: 'text', text: `Attached image: ${JSON.stringify({
-        id: attachment.id, name: attachment.name,
-        copiedUserMessages: historicalMessages.flatMap((refs, index) => refs.some((ref) => ref.id === attachment.id) ? [index + 1] : []),
-        currentMessage: currentAttachments.some((ref) => ref.id === attachment.id)
-      })}. Copied user message numbers are one-based within the replayed conversation history.` },
-      { type: 'image', ...attachmentsFor(this.store).read(attachment.id) }
-    ])
+    const built = buildTurnPrompt({
+      store: this.store,
+      threadId,
+      req,
+      provider: run.proc.provider,
+      supportsImage: !!run.proc.promptCapabilities?.image,
+      attachments: run.attachments ?? [],
+      managedMessageId: run.managedMessageId,
+      userItemId: run.userItemId
+    })
+    run.managedMessageId = built.managedMessageId
+    if (built.updatedUserItem) this.queue(threadId, run, [built.updatedUserItem])
+
     if (run.codexAccountPath !== undefined) {
       const start = await this.usage.sampleQuota()
       if (this.runs.get(threadId) !== run || run.settled) return
       if (run.stopped) {
-        this.endRun(threadId, run, null)
+        await this.endRun(threadId, run, null)
         return
       }
       run.weeklyQuotaEstimate = start ? { start } : {}
@@ -1082,12 +927,12 @@ export class SessionManager {
     run.proc.suppressWakeups = false
     const result = await run.proc.acp.request('session/prompt', {
       sessionId: run.proc.sessionId,
-      prompt: [{ type: 'text', text }, ...images]
+      prompt: built.blocks
     })
     const stop = String(result?.stopReason ?? 'end_turn')
     if (run.proc.provider === 'antigravity' && stop === 'end_turn' && !run.stopped
       && !run.proc.dying && run.proc.child.exitCode === null && run.reducer.hasRunningForegroundTools()) {
-      await this.waitForFollowup(run)
+      await waitForFollowup(run)
       if (!this.runs.has(threadId) || run.settled) return
       if (run.proc.dying || run.proc.child.exitCode !== null) return
     }
@@ -1097,7 +942,7 @@ export class SessionManager {
       ? 'cancelled' : stop === 'end_turn' && !failedReply ? 'completed' : 'failed')
     if (!this.runs.has(threadId) || run.settled) return
     const codexUsage = run.codexUsage?.read()
-    if (contextThroughId && stop === 'end_turn' && !run.stopped) {
+    if (built.contextThroughId && stop === 'end_turn' && !run.stopped) {
       this.store.updateThread(threadId, { forkContextThroughItemId: undefined })
       this.onStateChange()
     }
@@ -1142,24 +987,9 @@ export class SessionManager {
       try {
         await this.send({ ...req, delivery: undefined, attachmentIds: undefined, prompt: planFeedback, mode: 'plan', cli: 'codex', worktree: false })
       } catch (error) {
-        if (!this.store.thread(threadId)) return
-        const notice: Item = {
-          id: newId(), kind: 'notice', level: 'error',
-          text: error instanceof Error ? error.message : String(error)
-        }
-        this.store.items(threadId).push(notice)
-        this.store.markItemsDirty(threadId)
-        this.emit({ type: 'items', threadId, items: [notice] })
+        this.emitErrorNotice(threadId, error)
       }
     }
-  }
-
-  /** Original files remain outside the project and are read through normal CLI tools. */
-  private withAttachmentPaths(prompt: string, refs: AttachmentRef[], historical = false): string {
-    const files = [...new Map(refs.map((attachment) => [attachment.id, attachment])).values()]
-      .map((attachment) => JSON.stringify({ name: attachment.name, path: attachmentsFor(this.store).pathFor(attachment.id), mimeType: attachment.mimeType, size: attachment.size }))
-    const label = historical ? 'Files attached in the copied conversation history:' : 'Files attached to this user message:'
-    return `${prompt}\n\n${label}\nRead the original files at these exact local paths when needed.\n${files.join('\n')}`
   }
 
   private async endRun(threadId: string, run: Run, code: number | null, spawnError?: Error): Promise<void> {
@@ -1172,7 +1002,7 @@ export class SessionManager {
       clearTimeout(run.killTimer)
       run.killTimer = undefined
     }
-    this.finishFollowup(run)
+    finishFollowup(run)
     settleQuestion(run, 'cancel')
     if (!this.store.thread(threadId)) {
       this.runs.delete(threadId)
@@ -1189,101 +1019,30 @@ export class SessionManager {
       this.killProc(run.proc)
       return
     }
-    const r = run.reducer
+
     const items = this.store.items(threadId)
-    const changed: Item[] = [...r.closeSegments(), ...r.abortRunningTools(), ...abandonQuestions(items)]
-    if (!r.gotResult) {
-      const recorded = run.codexUsage?.read()
-      if (recorded) {
-        run.resultId = newId()
-        changed.push(r.push({
-          id: run.resultId, kind: 'result', isError: !run.stopped,
-          cli: 'codex', model: r.init.model || recorded.model,
-          createdAt: Date.now(), usageId: recorded.usageId, usage: recorded.usage, usageComplete: recorded.completed,
-          ...(recorded.quotaSnapshot ? { quotaSnapshot: recorded.quotaSnapshot } : {})
-        }))
-      }
-    }
-    if (fileChanges !== undefined) {
-      let result = items.find((item) => item.kind === 'result' && item.id === run.resultId)
-      if (!result) {
-        run.resultId = newId()
-        result = r.push({ id: run.resultId, kind: 'result', isError: !r.gotResult && !run.stopped,
-          cli: run.proc.provider, model: r.init.model, createdAt: Date.now() })
-      }
-      if (result?.kind === 'result') {
-        if (run.wakeup && result.fileChanges?.length) {
-          const merged = new Map(result.fileChanges.map((change) => [change.path, change]))
-          for (const change of fileChanges) merged.set(change.path, change)
-          result.fileChanges = [...merged.values()]
-        } else {
-          result.fileChanges = fileChanges
-        }
-        changed.push(result)
-      }
-    }
-    if (timing) {
-      let result = items.find((item) => item.kind === 'result' && item.id === run.resultId)
-      if (!result) {
-        run.resultId = newId()
-        result = r.push({ id: run.resultId, kind: 'result', isError: !run.stopped,
-          cli: run.proc.provider, model: run.model, createdAt: Date.now() })
-      }
-      if (result.kind === 'result') {
-        if (run.wakeup && result.durationMs !== undefined) {
-          result.durationMs += Math.round(timing.elapsedMs)
-          result.timing = { ...timing, elapsedMs: result.durationMs, firstTokenMs: result.timing?.firstTokenMs ?? timing.firstTokenMs, firstVisibleOutputMs: result.timing?.firstVisibleOutputMs ?? timing.firstVisibleOutputMs }
-        } else {
-          result.timing = timing
-          result.durationMs = Math.round(timing.elapsedMs)
-        }
-        changed.push(result)
-      }
-    }
-    const recover = this.canAutoContinue(threadId, run)
-    const continuePrompt = recover ? automaticContinuePrompt() : undefined
-    const recoverNotice = continuePrompt ? automaticContinueNotice(run.proc.provider) : undefined
-    if (run.stopped) {
-      changed.push(r.push({ id: newId(), kind: 'notice', level: 'info', ...localizedMessage('已停止') }))
-    } else if (spawnError) {
-      changed.push(r.push({ id: newId(), kind: 'notice', level: 'error', ...localizedMessage('无法启动 {label}：{error}', { label: cliLabel(run.proc.provider), error: spawnError.message }) }))
-    } else if (continuePrompt && recoverNotice) {
-      const existing = [...items].reverse().find((item) => item.kind === 'result')
-      if (existing?.kind === 'result' && existing.isError) {
-        existing.isError = false
-        changed.push(existing)
-      }
-      changed.push(r.push({ id: newId(), kind: 'notice', level: 'info', ...localizedMessage(recoverNotice, { word: continuePrompt }) }))
-    } else if (run.autoContinue && r.gotResult && isAutomaticContinueFailure(run.proc.provider, r.lastAssistantText)) {
-      const existing = [...items].reverse().find((item) => item.kind === 'result')
-      if (existing?.kind === 'result') {
-        existing.isError = true
-        changed.push(existing)
-      }
-      changed.push(r.push({ id: newId(), kind: 'notice', level: 'error', text: r.lastAssistantText.trim() }))
-    } else if (!r.gotResult) {
-      const detail = exitFailureDetail(run.failText, run.proc.stderr)
-      changed.push(
-        r.push({
-          id: newId(),
-          kind: 'notice',
-          level: 'error',
-          ...(isCodexRoutingTimeout(detail)
-            ? localizedMessage('Codex 工作区路由超时，请确认代理或 VPN 已启动后重试。')
-            : detail
-              ? { text: detail }
-              : localizedMessage('{label} 意外退出（退出码 {code}）', { label: cliLabel(run.proc.provider), code: code ?? 'unknown' }))
-        })
-      )
-    }
-    if (run.resultId && run.weeklyQuotaEstimate) {
-      const result = items.find((item) => item.kind === 'result' && item.id === run.resultId)
-      if (result?.kind === 'result') {
-        result.weeklyQuotaEstimate = run.weeklyQuotaEstimate
-        changed.push(result)
-      }
-    }
-    this.queue(threadId, run, changed)
+    const finalized = finalizeTurnItems({
+      items,
+      reducer: run.reducer,
+      provider: run.proc.provider,
+      model: run.model,
+      stopped: run.stopped,
+      autoContinue: run.autoContinue,
+      wakeup: run.wakeup,
+      failText: run.failText,
+      stderr: run.proc.stderr,
+      code,
+      spawnError,
+      resultId: run.resultId,
+      timing,
+      fileChanges,
+      codexUsage: run.codexUsage,
+      weeklyQuotaEstimate: run.weeklyQuotaEstimate,
+      recover: this.canAutoContinue(threadId, run)
+    })
+    run.resultId = finalized.resultId
+
+    this.queue(threadId, run, finalized.changed)
     this.flushPending(threadId, run)
     this.runs.delete(threadId)
 
@@ -1291,48 +1050,40 @@ export class SessionManager {
       void this.usage.saveQuotaEstimate(threadId, run.resultId, run.proc.sessionId)
     }
 
-    const keep = !run.proc.dying && !spawnError && run.proc.child.exitCode === null && (r.gotResult || recover)
+    const keep = !run.proc.dying && !spawnError && run.proc.child.exitCode === null && (run.reducer.gotResult || finalized.recover)
     if (keep) this.agents.set(threadId, run.proc)
     else this.killProc(run.proc)
 
-    const preview = (recoverNotice && continuePrompt ? translate(recoverNotice, { word: continuePrompt }) : r.lastAssistantText).replace(/\s+/g, ' ').trim().slice(0, 120)
     const updated = this.store.updateThread(threadId, {
       updatedAt: Date.now(),
       syncedAt: Date.now(),
       unread: true,
-      ...(preview ? { preview } : {})
+      ...(finalized.preview ? { preview: finalized.preview } : {})
     })
     this.store.markItemsDirty(threadId)
     this.emit({ type: 'running', threadId, running: false })
     this.onStateChange()
-    const result = [...items].reverse().find((it) => it.kind === 'result')
-    const failed = !recover && (!!spawnError || !r.gotResult || (result?.kind === 'result' && result.isError))
-    let summary = preview
-    if (failed && !summary) {
-      const notice = [...items].reverse().find((it) => it.kind === 'notice' && it.level === 'error')
-      if (notice?.kind === 'notice') summary = notice.text.replace(/\s+/g, ' ').trim().slice(0, 120)
-    }
     this.onFinished({
       threadId,
       title: updated ? displayThreadTitle(updated) : translate(DEFAULT_TITLE),
       stopped: run.stopped,
-      failed,
-      preview: summary
+      failed: finalized.failed,
+      preview: finalized.summary
     })
     // Deferred so a follow-up turn that drive() starts right after endRun (Codex plan feedback) goes first.
-    if (this.queues.has(threadId)) {
+    if (this.messageQueue.has(threadId)) {
       const userIndex = items.findIndex((it) => it.id === run.userItemId)
       const turn = {
-        interrupted: run.stopped || failed,
+        interrupted: run.stopped || finalized.failed,
         planned: run.mode === 'plan' && userIndex >= 0 && items.slice(userIndex + 1).some((it) => it.kind === 'tool' && it.tool === 'createPlan'),
         agent: run.mode === 'agent'
       }
-      setImmediate(() => this.drainQueue(threadId, turn))
+      setImmediate(() => this.messageQueue.drain(threadId, turn))
     }
     if (run.resultId && run.codexAccountPath !== undefined) {
       void this.usage.saveAccountUsage(threadId, run.resultId, run.proc.sessionId, run.codexAccountPath)
     }
-    if (recover && continuePrompt) void this.sendAutoContinue(threadId, run, continuePrompt)
+    if (finalized.recover && finalized.continuePrompt) void this.sendAutoContinue(threadId, run, finalized.continuePrompt)
   }
 
   /** Cursor disconnects and Codex model-capacity failures get one automatic continue. A repeat shows the error. */
@@ -1356,104 +1107,28 @@ export class SessionManager {
         worktree: false
       }, { autoContinue: true })
     } catch (error) {
-      if (!this.store.thread(threadId)) return
-      const notice: Item = {
-        id: newId(), kind: 'notice', level: 'error',
-        text: error instanceof Error ? error.message : String(error)
-      }
-      this.store.items(threadId).push(notice)
-      this.store.markItemsDirty(threadId)
-      this.emit({ type: 'items', threadId, items: [notice] })
+      this.emitErrorNotice(threadId, error)
     }
   }
 
-  /**
-   * Antigravity resolves `session/prompt` before backgrounded commands, timers, or
-   * subagents finish, then streams reactive wakeup steps on the same ACP session.
-   */
-  private waitForFollowup(run: Run): Promise<void> {
-    return new Promise((resolve) => {
-      const followup: FollowupState = {
-        phase: 'llm',
-        finish: () => {
-          if (run.followup !== followup) return
-          if (followup.timer) clearTimeout(followup.timer)
-          run.followup = undefined
-          resolve()
-        }
-      }
-      run.followup = followup
-      this.scheduleFollowupTimer(run)
-    })
-  }
-
-  private finishFollowup(run: Run): void {
-    run.followup?.finish()
-  }
-
-  private scheduleFollowupTimer(run: Run): void {
-    const followup = run.followup
-    if (!followup) return
-    if (followup.timer) {
-      clearTimeout(followup.timer)
-      followup.timer = undefined
+  private emitErrorNotice(threadId: string, error: unknown): void {
+    if (!this.store.thread(threadId)) return
+    const notice: Item = {
+      id: newId(),
+      kind: 'notice',
+      level: 'error',
+      text: error instanceof Error ? error.message : String(error)
     }
-    if (run.stopped || run.settled || run.proc.dying || run.proc.child.exitCode !== null) {
-      followup.finish()
-      return
-    }
-    if (run.pendingQuestions?.size || run.reducer.hasRunningForegroundTools()) return
-    const ms = followup.phase === 'llm' ? FOLLOWUP_LLM_MS
-      : followup.phase === 'reply' ? FOLLOWUP_REPLY_MS : FOLLOWUP_USAGE_MS
-    followup.timer = setTimeout(() => followup.finish(), ms)
-  }
-
-  private holdFollowupForInteraction(run: Run): void {
-    const followup = run.followup
-    if (!followup?.timer) return
-    clearTimeout(followup.timer)
-    followup.timer = undefined
-  }
-
-  private resumeFollowupAfterInteraction(run: Run): void {
-    const followup = run.followup
-    if (!followup) return
-    followup.phase = 'llm'
-    this.scheduleFollowupTimer(run)
-  }
-
-  private observeFollowup(run: Run, update: any): void {
-    const followup = run.followup
-    if (!followup) return
-    switch (update?.sessionUpdate) {
-      case 'tool_call':
-      case 'tool_call_update':
-      case 'agent_thought_chunk':
-      case 'plan':
-      case 'plan_update':
-        followup.phase = 'llm'
-        break
-      case 'agent_message_chunk':
-        if (!run.reducer.hasRunningForegroundTools()) followup.phase = 'reply'
-        break
-      case 'usage_update':
-        if (!run.reducer.hasRunningForegroundTools()) {
-          followup.phase = followup.phase === 'reply' ? 'usage' : 'llm'
-        }
-        break
-      default:
-        return
-    }
-    this.scheduleFollowupTimer(run)
+    this.store.items(threadId).push(notice)
+    this.store.markItemsDirty(threadId)
+    this.emit({ type: 'items', threadId, items: [notice] })
   }
 
   private resumeAntigravityWakeup(threadId: string, proc: AgentProc, sessionId: unknown, update: any): Run | undefined {
     if (proc.provider !== 'antigravity' || this.shuttingDown || !proc.ready || !proc.sessionId) return undefined
     if (this.agents.get(threadId) !== proc || this.runs.has(threadId) || this.pendingSends.has(threadId)) return undefined
     if (typeof sessionId === 'string' && sessionId && sessionId !== proc.sessionId) return undefined
-    if (!['agent_thought_chunk', 'agent_message_chunk', 'tool_call', 'tool_call_update', 'plan', 'plan_update'].includes(update?.sessionUpdate)) {
-      return undefined
-    }
+    if (!isAntigravityWakeupUpdate(update)) return undefined
     const thread = this.store.thread(threadId)
     if (!thread || threadCli(thread) !== 'antigravity') return undefined
     const items = this.store.items(threadId)
@@ -1463,32 +1138,18 @@ export class SessionManager {
       if (!resultId && items[i].kind === 'result') resultId = items[i].id
       if (items[i].kind === 'user') { userItemId = items[i].id; break }
     }
-    const run: Run = {
-      proc,
-      reducer: new StreamReducer(items, imageCapture(this.store, proc.cwd, items)),
-      stopped: false,
-      pending: new Map(),
-      announcedQuestions: new Set(),
-      acceptUpdates: true,
-      force: thread.force ?? proc.force,
-      mode: thread.mode ?? 'agent',
+    const run = this.createRun(threadId, proc, items, {
+      cwd: proc.cwd,
       model: thread.model ?? '',
-      onPlanApproved: () => {
-        this.store.updateThread(threadId, { mode: 'agent' })
-        this.onStateChange()
-      },
-      switchCalls: new Set(),
-      settled: false,
+      mode: thread.mode ?? 'agent',
+      force: thread.force ?? proc.force,
       starting: false,
+      acceptUpdates: true,
       wakeup: true,
       resultId,
       timing: new TurnTiming(),
-      userItemId,
-      isAttachmentReadAllowed: (filePath, expectedPath) => {
-        const refs = this.store.items(threadId).flatMap((item) => item.kind === 'user' ? item.attachments ?? [] : [])
-        return refs.length > 0 && attachmentsFor(this.store).scopedRead(filePath, proc.cwd, refs, expectedPath)
-      }
-    }
+      userItemId
+    })
     run.reducer.init = { sessionId: proc.sessionId, cwd: proc.cwd, model: run.model }
     this.runs.set(threadId, run)
     this.emit({ type: 'running', threadId, running: true })
@@ -1498,7 +1159,7 @@ export class SessionManager {
   }
 
   private async driveAntigravityWakeup(threadId: string, run: Run): Promise<void> {
-    const waiting = this.waitForFollowup(run)
+    const waiting = waitForFollowup(run)
     void snapshotTurnFiles(run.proc.cwd)
       .then((files) => { if (!run.settled) run.fileSnapshot = files })
       .catch(() => undefined)
@@ -1510,43 +1171,16 @@ export class SessionManager {
     run.reducer.gotResult = true
     const changed = run.reducer.closeSegments()
     if (!run.stopped) {
-      const items = this.store.items(threadId)
-      const userIndex = run.userItemId ? items.findIndex((it) => it.id === run.userItemId) : -1
-      let existing: Extract<Item, { kind: 'result' }> | undefined
-      for (let i = items.length - 1; i > userIndex; i--) {
-        const it = items[i]
-        if (it.kind === 'result') { existing = it; break }
-      }
-      const usage = preferTurnUsage(run.reducer.lastUsage, existing?.usage)
-      if (existing) {
-        run.resultId = existing.id
-        existing.isError = false
-        if (timing) {
-          existing.durationMs = (existing.durationMs ?? 0) + Math.round(timing.elapsedMs)
-          existing.timing = {
-            ...timing,
-            elapsedMs: existing.durationMs,
-            firstTokenMs: existing.timing?.firstTokenMs ?? timing.firstTokenMs,
-            firstVisibleOutputMs: existing.timing?.firstVisibleOutputMs ?? timing.firstVisibleOutputMs
-          }
-        }
-        if (usage) existing.usage = usage
-        changed.push(existing)
-      } else {
-        const resultId = newId()
-        run.resultId = resultId
-        changed.push(run.reducer.push({
-          id: resultId,
-          kind: 'result',
-          isError: false,
-          ...(timing ? { durationMs: Math.round(timing.elapsedMs), timing } : {}),
-          createdAt: Date.now(),
-          model: run.model,
-          cli: 'antigravity',
-          usageId: newId(),
-          usage
-        }))
-      }
+      const merged = mergeWakeupResult({
+        items: this.store.items(threadId),
+        reducer: run.reducer,
+        userItemId: run.userItemId,
+        model: run.model,
+        timing,
+        preferUsage: preferTurnUsage
+      })
+      run.resultId = merged.resultId
+      changed.push(merged.item)
     }
     this.queue(threadId, run, changed)
     await this.endRun(threadId, run, null)

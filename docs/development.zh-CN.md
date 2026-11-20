@@ -241,9 +241,18 @@ src/main              Electron 主进程
   session/provider.ts CLI 启动、认证、会话选项和 Plan 提示词
   session/requests.ts 通过轮次接口处理 ACP 问答和权限请求
   session/usage.ts    延迟用量写回及可取消的账号用量重试
+  session/queue.ts    按对话维护的内存排队消息及轮次结束后派发
+  session/commands.ts 斜杠命令缓存与首次列表等待
+  session/prompt.ts   轮次提示词组装、附件路径、分叉回放与图片校验
+  session/finalize.ts 轮次收尾、结果元数据合并与状态提示
+  session/auto-continue.ts Cursor 断连与 Codex 满载自动继续判定
+  session/antigravity-wakeup.ts Antigravity 后台工具续接与响应式唤醒状态机
   cli.ts              查找并启动 Cursor CLI
   git.ts              为 Codex 和 Claude 对话创建和移除 worktree
   codex.ts            Codex 适配器：模型、登录、模式 id
+  codex-rollouts.ts   Codex rollout 文件查找、别名索引与头部元数据读取
+  codex-history.ts    从 ~/.codex/sessions 导入对话记录
+  codex-history-repair.ts Codex 历史消息分隔与旧 MCP 工具记录修复
   claude.ts           Claude 适配器：模型、登录、模式 id
   claude-history.ts   从 ~/.claude/projects 导入记录
   acp.ts              按行分隔的 JSON-RPC，含 Plan 模式提示
@@ -265,6 +274,8 @@ src/renderer/src      React 界面
   store/              状态内核、持久化、模型、命令、对话和初始化
   components/Items.tsx 消息分派和界面状态适配
   components/items/   Markdown、消息、工具、计划、问答和结果展示
+  components/composer/ Composer.tsx 使用的 CLI/模式选择器与斜杠命令弹层
+  components/sidebar/ Sidebar.tsx 使用的项目行、对话行和行内重命名组件
   components/settings 设置各页
   lib/model-prefs.ts  决定选中哪个模型，不放在界面状态里
   lib/find.ts         对话内查找：文字匹配、用于高亮范围的文本索引和查找快捷键

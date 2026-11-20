@@ -2,28 +2,18 @@ import { useT } from '../lib/i18n'
 import { CliInstallAction, useCliInstallStatus } from './CliInstallAction'
 import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react'
 import { argumentHint, filterCommands, slashQuery, type SlashCommand } from '@shared/commands'
-import { cliTitle, type AgentMode, type AttachmentRef, type CliProvider, type SendDelivery } from '@shared/types'
+import type { AttachmentRef, CliProvider, SendDelivery } from '@shared/types'
 import { rememberModel, type SendOptions } from '../store'
 import { errorText, toast } from '../store/feedback'
 import { useDraftState } from '../store/drafts'
 import { appendDraftAttachments, restoreDraftAttachments, textSendOptions, uploadDraftAttachments, type DraftAttachment } from '../lib/attachments'
-import { IconArrowUp, IconBranch, IconChevronDown, IconFolder, IconList, IconPlus, IconShield, IconSparkle, IconStop } from './icons'
-import { MenuList, Popover } from './Menu'
+import { IconArrowUp, IconBranch, IconFolder, IconPlus, IconShield, IconStop } from './icons'
 import { ModelPicker } from './ModelPicker'
 import { DraftAttachmentCard } from './items/AttachmentCards'
+import { CliPicker, ModePicker } from './composer/Pickers'
+import { SlashCommandPopover } from './composer/SlashCommandPopover'
 
-export const MODES: { id: AgentMode; label: string; desc: string }[] = [
-  { id: 'agent', label: 'Agent', desc: '可读写文件、执行命令' },
-  { id: 'plan', label: 'Plan', desc: '只读分析，先给出方案' },
-  { id: 'ask', label: 'Ask', desc: '只读问答，不做修改' }
-]
-
-const CLIS: { id: CliProvider; label: string; desc: string }[] = [
-  { id: 'cursor', label: 'Cursor', desc: 'Cursor CLI' },
-  { id: 'codex', label: 'Codex', desc: 'Codex CLI' },
-  { id: 'claude', label: 'Claude', desc: 'Claude Code' },
-  { id: 'antigravity', label: 'Antigravity', desc: 'Antigravity CLI' }
-]
+export { MODES } from './composer/Pickers'
 
 /** Label of the shortcut that sends past the queue while the agent works. */
 export function sendNowShortcut(): string {
@@ -120,8 +110,8 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
 
   useImperativeHandle(ref, () => ({
     focus: () => ta.current?.focus(),
-    setText: (t) => {
-      setText(t)
+    setText: (value) => {
+      setText(value)
       requestAnimationFrame(() => ta.current?.focus())
     },
     send: async (value, patch) => {
@@ -368,26 +358,16 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
       {sendError && <div className="attachment-error" role="alert">{sendError}</div>}
       {activeCli && <CliInstallAction key={activeCli} provider={activeCli} status={installStatus} offerLogin />}
       {hint && <div className="composer-hint">{hint}</div>}
-      <Popover anchor={box.current} open={menuOpen} onClose={() => setDismissed(true)} placement="top-start" className="command-popover">
-        <div ref={listRef} className="menu command-menu" role="listbox">
-          {matches.map((command, i) => (
-            <button
-              key={`${command.local ? 'local' : 'cli'}:${command.name}`}
-              type="button"
-              role="option"
-              aria-selected={i === highlighted}
-              data-index={i}
-              className={`menu-item ${i === highlighted ? 'active' : ''}`}
-              onMouseDown={(e) => e.preventDefault()}
-              onMouseEnter={() => setActive(i)}
-              onClick={() => void choose(command)}
-            >
-              <span className="menu-label">/{command.name}</span>
-              <span className="menu-hint">{command.local ? t(command.description) : command.description}</span>
-            </button>
-          ))}
-        </div>
-      </Popover>
+      <SlashCommandPopover
+        anchor={box.current}
+        listRef={listRef}
+        open={menuOpen}
+        matches={matches}
+        highlighted={highlighted}
+        onClose={() => setDismissed(true)}
+        onHover={setActive}
+        onSelect={(command) => void choose(command)}
+      />
       <div className="composer-bar">
         <div className="composer-left">
           <button
@@ -460,66 +440,3 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
     </div>
   )
 })
-
-function CliPicker({
-  value,
-  note,
-  disabled,
-  onChange
-}: {
-  value: CliProvider
-  note?: string
-  disabled?: boolean
-  onChange: (cli: CliProvider) => void
-}) {
-  const [open, setOpen] = useState(false)
-  const btn = useRef<HTMLButtonElement>(null)
-  return (
-    <>
-      <button
-        ref={btn}
-        className={`pill ${open ? 'active' : ''}`}
-        disabled={disabled}
-        title={note ?? `${cliTitle(value)} CLI`}
-        onClick={() => setOpen((o) => !o)}
-      >
-        <span>{cliTitle(value)}</span>
-        <IconChevronDown size={12} />
-      </button>
-      <Popover anchor={btn.current} open={open && !disabled} onClose={() => setOpen(false)} placement="top-start">
-        <MenuList
-          onClose={() => setOpen(false)}
-          items={CLIS.map((cli) => ({
-            label: cli.label,
-            hint: cli.desc,
-            checked: cli.id === value,
-            onSelect: () => onChange(cli.id)
-          }))}
-        />
-      </Popover>
-    </>
-  )
-}
-
-function ModePicker({ value, onChange }: { value: AgentMode; onChange: (m: AgentMode) => void }) {
-  const [open, setOpen] = useState(false)
-  const btn = useRef<HTMLButtonElement>(null)
-  const t = useT()
-  const current = MODES.find((m) => m.id === value) ?? MODES[0]
-  return (
-    <>
-      <button ref={btn} className={`pill ${open ? 'active' : ''}`} onClick={() => setOpen((o) => !o)} title={t(current.desc)}>
-        {value === 'agent' ? <IconSparkle size={13} /> : <IconList size={13} />}
-        <span>{t(current.label)}</span>
-        <IconChevronDown size={12} />
-      </button>
-      <Popover anchor={btn.current} open={open} onClose={() => setOpen(false)} placement="top-start">
-        <MenuList
-          onClose={() => setOpen(false)}
-          items={MODES.map((m) => ({ label: t(m.label), hint: t(m.desc), checked: m.id === value, onSelect: () => onChange(m.id) }))}
-        />
-      </Popover>
-    </>
-  )
-}
-
