@@ -9,12 +9,12 @@ npm ci --include=dev --include=optional
 npm run dev
 ```
 
-Windows one-click startup requires Node.js 22.12 or newer, including npm:
+Windows one-click startup requires Node.js 24 LTS (or 22.12+ in the 22.x line / 26+), including npm:
 
-- Double-click `start-dev.bat` to install dependencies, ensure the Electron runtime is installed, and start development mode with hot reload.
-- Double-click `start-preview.bat` to install dependencies, ensure the Electron runtime is installed, build, and launch the production preview.
+- Double-click `start-dev.bat` to install missing/changed dependencies, ensure the Electron runtime is installed, and start development mode with hot reload. Pass `--install` to refresh dependencies.
+- Double-click `start-preview.bat` to verify dependencies, Electron runtime, and build freshness; when sources, configs, and outputs are unchanged it skips `npm install` and `build` and launches Electron directly. Pass `--rebuild` to force a fresh build or `--install` to refresh dependencies.
 
-The first run needs internet access to download dependencies and Electron. Later runs reuse installed dependencies and the runtime. Both scripts work from any working directory and keep the window open on failure. If the Electron download fails, check your network, proxy, or `ELECTRON_MIRROR` environment variable and retry.
+The first run needs internet access to download dependencies and Electron. Later runs reuse installed dependencies, the runtime, and up-to-date production builds offline. Production builds copy Mermaid's prebuilt ESM bundle into `out/renderer/vendor/mermaid/` instead of re-bundling it on every build, cutting rebuild times significantly. Both scripts work from any working directory and keep the window open on failure. If the Electron download fails, check your network, proxy, or `ELECTRON_MIRROR` environment variable and retry.
 
 ## macOS startup and packages
 

@@ -1,8 +1,52 @@
+import fs from 'node:fs'
 import { resolve } from 'node:path'
 import { builtinModules } from 'node:module'
 import { defineConfig } from 'electron-vite'
 import react from '@vitejs/plugin-react'
-import { build as viteBuild } from 'vite'
+import { build as viteBuild, type Plugin } from 'vite'
+
+/** Copy Mermaid's prebuilt ESM bundle directly so Vite/Rollup skips re-bundling its 2k+ modules on every build. */
+function prebuiltMermaidPlugin(): Plugin {
+  const mermaidDist = resolve('node_modules/mermaid/dist')
+  const entryName = 'mermaid.esm.min.mjs'
+  const chunksSubdir = 'chunks/mermaid.esm.min'
+  const virtualId = 'virtual:mermaid-prebuilt'
+  const resolvedVirtualId = `\0${virtualId}`
+  let isBuild = false
+
+  return {
+    name: 'prebuilt-mermaid',
+    enforce: 'pre',
+    configResolved(config) {
+      isBuild = config.command === 'build'
+    },
+    resolveId(source) {
+      if (isBuild && source === 'mermaid') return resolvedVirtualId
+      return null
+    },
+    load(id) {
+      if (id !== resolvedVirtualId) return null
+      // Load the copied prebuilt ESM entry relative to the built index.html (works over file://, LAN, and /c/<id>/).
+      return [
+        `const entryUrl = new URL('./vendor/mermaid/${entryName}', document.baseURI).href`,
+        'const load = () => import(/* @vite-ignore */ entryUrl)',
+        'export default load'
+      ].join('\n')
+    },
+    closeBundle() {
+      if (!isBuild) return
+      const targetRoot = resolve('out/renderer/vendor/mermaid')
+      const targetChunks = resolve(targetRoot, chunksSubdir)
+      fs.mkdirSync(targetChunks, { recursive: true })
+      fs.copyFileSync(resolve(mermaidDist, entryName), resolve(targetRoot, entryName))
+      fs.cpSync(resolve(mermaidDist, chunksSubdir), targetChunks, {
+        recursive: true,
+        force: true,
+        filter: (src) => !src.endsWith('.map')
+      })
+    }
+  }
+}
 
 export default defineConfig(({ command }) => ({
   main: {
@@ -38,6 +82,6 @@ export default defineConfig(({ command }) => ({
         '@renderer': resolve('src/renderer/src')
       }
     },
-    plugins: [react()]
+    plugins: [react(), prebuiltMermaidPlugin()]
   }
 }))

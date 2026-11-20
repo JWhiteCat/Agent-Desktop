@@ -9,12 +9,12 @@ npm ci --include=dev --include=optional
 npm run dev
 ```
 
-Windows 一键启动（需先安装 Node.js 22.12 或更高版本，包含 npm）：
+Windows 一键启动（需先安装 Node.js 24 LTS，或 Node 22.12+ 的 22.x / 26+，包含 npm）：
 
-- 双击 `start-dev.bat`：自动安装依赖、补齐 Electron 运行时，再启动开发模式（支持热更新）。
-- 双击 `start-preview.bat`：自动安装依赖、补齐 Electron 运行时，构建后启动生产预览。
+- 双击 `start-dev.bat`：首次或锁文件变更时安装依赖并补齐 Electron 运行时，随后直接复用本地依赖启动开发模式（支持热更新）；传入 `--install` 可强制重装依赖。
+- 双击 `start-preview.bat`：按需检查依赖、Electron 运行时和源码变更指纹；源码与配置未变更且产物完整时会直接跳过重装和构建，秒开生产预览。传入 `--rebuild` 强制重新构建，传入 `--install` 强制刷新依赖。
 
-首次运行需要联网下载依赖和 Electron；之后会复用已安装的依赖与运行时。脚本可从任意工作目录启动，失败时会保留窗口显示错误。Electron 下载失败时，检查网络、代理或 `ELECTRON_MIRROR` 环境变量后重试。
+首次运行需要联网下载依赖和 Electron；之后可离线复用已安装的依赖、运行时与最新构建产物。生产构建会直接复用 Mermaid 官方预构建的 ESM 产物（位于 `out/renderer/vendor/mermaid/`），大幅缩短源码修改后的重新构建耗时。脚本可从任意工作目录启动，失败时会保留窗口显示错误。Electron 下载失败时，检查网络、代理或 `ELECTRON_MIRROR` 环境变量后重试。
 
 ## macOS 启动与打包
 

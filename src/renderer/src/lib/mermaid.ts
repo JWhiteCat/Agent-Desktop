@@ -1,14 +1,22 @@
 export type DiagramTheme = 'light' | 'dark'
 
-let mermaidModule: Promise<typeof import('mermaid')> | undefined
+type MermaidApi = typeof import('mermaid')['default']
+type MermaidLoader = () => Promise<{ default: MermaidApi }>
+
+let mermaidApi: Promise<MermaidApi> | undefined
 let renderQueue: Promise<unknown> = Promise.resolve()
 let nextDiagramId = 0
 
-function loadMermaid() {
-  return mermaidModule ??= import('mermaid').catch((error) => {
-    mermaidModule = undefined
-    throw error
-  })
+function loadMermaid(): Promise<MermaidApi> {
+  return mermaidApi ??= import('mermaid')
+    .then(async (mod) => {
+      const value = mod.default as MermaidApi | MermaidLoader
+      return typeof value === 'function' ? (await value()).default : value
+    })
+    .catch((error) => {
+      mermaidApi = undefined
+      throw error
+    })
 }
 
 /** Mermaid shares configuration and a render queue; keep initialization in that same queue. */
@@ -19,7 +27,7 @@ export function renderMermaid(
 ): Promise<string | undefined> {
   const result = renderQueue.then(async () => {
     if (!isCurrent()) return
-    const { default: mermaid } = await loadMermaid()
+    const mermaid = await loadMermaid()
     if (!isCurrent()) return
     mermaid.initialize({
       startOnLoad: false,

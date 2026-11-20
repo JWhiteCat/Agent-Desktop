@@ -158,6 +158,23 @@ describe('Mermaid rendering', () => {
     expect(dom.nodes.every((node) => node.remove.mock.calls.length === 1)).toBe(true)
     expect(dom.attached.size).toBe(0)
   })
+  it('supports a prebuilt lazy loader returned as the default export', async () => {
+    const dom = fakeDocument()
+    let factoryCalls = 0
+    vi.doMock('mermaid', () => ({
+      default: async () => {
+        factoryCalls++
+        return { default: { initialize, render } }
+      }
+    }))
+    const { renderMermaid } = await import('../src/renderer/src/lib/mermaid')
+
+    expect(await renderMermaid('graph TD; A-->B', 'light')).toBe('<svg>diagram</svg>')
+    expect(await renderMermaid('graph TD; B-->C', 'dark')).toBe('<svg>diagram</svg>')
+    expect(factoryCalls).toBe(1)
+    expect(render).toHaveBeenCalledTimes(2)
+    expect(dom.attached.size).toBe(0)
+  })
 })
 
 describe('Markdown Mermaid fences', () => {
