@@ -2,6 +2,7 @@ import { createRoot } from 'react-dom/client'
 import { flushSync } from 'react-dom'
 import { setLanguage } from '../../src/shared/i18n'
 import { DEFAULT_SETTINGS, type CliInfo, type CliProvider } from '../../src/shared/types'
+import { listSessionUsage, summarizeUsage } from '../../src/shared/usage'
 import { CliCard } from '../../src/renderer/src/components/settings/CliCard'
 import { SettingsDialog } from '../../src/renderer/src/components/settings/SettingsDialog'
 import { getState, setState } from '../../src/renderer/src/store'
@@ -29,6 +30,56 @@ function deferred() {
   let resolve!: (info: CliInfo) => void
   const promise = new Promise<CliInfo>((yes) => { resolve = yes })
   return { promise, resolve }
+}
+
+async function checkUsageTabs(click: (label: string) => Promise<void>) {
+  const reports: string[] = []
+  const quotas: string[] = []
+  let finishPeriod!: () => void
+  const waitForPeriod = new Promise<void>((resolve) => { finishPeriod = resolve })
+  let finishCursor!: () => void
+  const waitForCursor = new Promise<void>((resolve) => { finishCursor = resolve })
+  window.api.usageSummary = async (period, cli) => {
+    check(cli, 'Usage requests specify a CLI')
+    reports.push(`${cli}/${period}`)
+    if (cli === 'claude' && period === '30d') await waitForPeriod
+    if (cli === 'cursor') await waitForCursor
+    const threads = Array.from({ length: 21 }, (_, i) => ({
+      id: String(i), cli, title: `${cli} session #${i + 1}#`, items: []
+    }))
+    return { summary: summarizeUsage(threads, period), sessions: listSessionUsage(threads) }
+  }
+  window.api.usageQuota = async (provider) => {
+    quotas.push(provider)
+    if (provider === 'cursor') await waitForCursor
+    return { provider, windows: [], note: `${provider} account quota` }
+  }
+  const shows = (text: string) => document.body.textContent?.includes(text) === true
+  const selected = () => document.querySelector('[role="tab"][aria-selected="true"]')?.textContent
+
+  await click('Usage')
+  await eventually(() => shows('claude session #1#'), 'Usage opens for the configured CLI')
+  check(selected() === 'Claude' && reports.at(-1) === 'claude/7d' && !quotas.length, 'Default period and scoped quota')
+  await click('30 days')
+  await click('Next')
+  check(shows('claude session #21#'), 'Lifetime history is available while the new period loads')
+  finishPeriod()
+  await click('Cursor')
+  check(!shows('claude session #21#'), 'Switching CLI clears the previous history immediately')
+  await click('Codex')
+  await eventually(() => shows('codex session #1#') && shows('codex account quota'), 'CLI switch opens the first page')
+  check(reports.at(-1) === 'codex/30d' && !shows('codex session #21#'), 'CLI switch preserves the usage period')
+  finishCursor()
+  await pause()
+  check(!shows('cursor session #1#') && !shows('cursor account quota'), 'Late results stay out of the selected tab')
+  await click('Refresh')
+  check(quotas.join(',') === 'cursor,codex,codex', 'Quota refresh targets only the selected provider')
+  await click('Antigravity')
+  check(!document.querySelector('.quota-card') && quotas.length === 3, 'Antigravity only displays local usage')
+  await click('Models')
+  check(selected() === 'Claude', 'Models keeps an independent CLI selection')
+  await click('Usage')
+  check(selected() === 'Antigravity', 'Usage remembers its CLI when revisited')
 }
 
 export async function runCliCardChecks() {
@@ -183,7 +234,7 @@ export async function runCliCardChecks() {
   await idle()
   check(savedApi.at(-1)?.key === 'paired-key' && savedApi.at(-1)?.endpoint === 'https://gemini.example/v1beta', 'Antigravity saves the API key and endpoint together')
   check(button('Save API configuration').disabled, 'Saved API configuration leaves the button disabled')
-  setState({ app: { ...getState().app, settings: { ...DEFAULT_SETTINGS, cliProvider: 'claude' } } })
+  setState({ app: { ...getState().app, settings: { ...DEFAULT_SETTINGS, cliProvider: 'claude', language: 'en' } } })
   flushSync(() => root.render(<SettingsDialog onClose={() => {}} onOpenImport={() => {}} />))
   check(document.querySelector('[role="tab"][aria-selected="true"]')?.textContent === 'Claude', 'Open on the configured default CLI')
   const defaultCli = document.querySelector('select')!.value
@@ -194,6 +245,7 @@ export async function runCliCardChecks() {
     check(panels.length === 1 && selected?.textContent === name && panels[0].getAttribute('aria-labelledby') === selected.id, 'Only the selected provider is displayed')
     check(document.querySelector('select')!.value === defaultCli, 'Browsing providers preserves the default CLI')
   }
+  await checkUsageTabs(click)
   root.unmount()
-  return ['cached reads', 'language changes', 'manual refresh', 'refresh errors', 'login and update', 'configuration changes', 'stale responses', 'Antigravity terminal setup']
+  return ['cached reads', 'language changes', 'manual refresh', 'refresh errors', 'login and update', 'configuration changes', 'stale responses', 'Antigravity terminal setup', 'per-CLI usage tabs']
 }

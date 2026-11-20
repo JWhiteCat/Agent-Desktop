@@ -108,6 +108,14 @@ describe('remote reconnects', () => {
     }))
   })
 
+  it('requests a usage report for the selected period and CLI', async () => {
+    const api = createWebApi()
+    await api.usageSummary('30d', 'antigravity')
+    expect(fetch).toHaveBeenCalledWith(expect.stringContaining('api/rpc/usage%3Asummary'), expect.objectContaining({
+      method: 'POST', body: JSON.stringify(['30d', 'antigravity'])
+    }))
+  })
+
   it('announces reconnects and refreshes metadata after the initial connection', async () => {
     const api = createWebApi()
     const onState = vi.fn()

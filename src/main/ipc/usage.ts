@@ -1,4 +1,5 @@
 import { listSessionUsage, summarizeUsage, type UsageWindow } from '@shared/usage'
+import type { CliProvider } from '@shared/types'
 import { consumeCodexReset, loadProviderQuota, loadQuotas } from '../quota'
 import type { ProviderQuota } from '@shared/quota'
 import { newRemoteToken, type Handler } from '../remote'
@@ -6,7 +7,7 @@ import type { IpcDeps } from './deps'
 
 export function usageHandlers(deps: IpcDeps): Record<string, Handler> {
   return {
-    'usage:summary': (period: UsageWindow) => {
+    'usage:summary': (period: UsageWindow, cli?: CliProvider) => {
       const threads = deps.store.threads.map((t) => ({
         id: t.id,
         cli: t.cli,
@@ -17,7 +18,7 @@ export function usageHandlers(deps: IpcDeps): Record<string, Handler> {
         updatedAt: t.updatedAt,
         items: deps.store.items(t.id)
       }))
-      return { summary: summarizeUsage(threads, period), sessions: listSessionUsage(threads) }
+      return { summary: summarizeUsage(threads, period, Date.now(), cli), sessions: listSessionUsage(threads, cli) }
     },
     'usage:quotas': () => loadQuotas(deps.store.settings.apiKey, deps.store.settings.codexApiKey),
     'usage:quota': (provider: ProviderQuota['provider']) => loadProviderQuota(provider,

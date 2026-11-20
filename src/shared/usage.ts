@@ -144,13 +144,16 @@ function sessionModels(turns: { model: string; cli: CliProvider }[]): UsageSessi
   return models
 }
 
-/** Lifetime totals for every saved session. Not filtered by the summary window. */
-export function listSessionUsage(threads: UsageThread[]): UsageSessionRow[] {
+/** Lifetime totals for each session, optionally limited to turns from one CLI. */
+export function listSessionUsage(threads: UsageThread[], provider?: CliProvider): UsageSessionRow[] {
   const rows: UsageSessionRow[] = []
   for (const thread of threads) {
     if (!thread.id) continue
-    const cli = threadCli(thread)
-    const turns = turnsOf(thread)
+    const sessionCli = threadCli(thread)
+    const recorded = turnsOf(thread)
+    const turns = provider ? recorded.filter((turn) => turn.cli === provider) : recorded
+    if (provider && !turns.length && (recorded.length || sessionCli !== provider)) continue
+    const cli = provider ?? sessionCli
     const row: UsageSessionRow = {
       threadId: thread.id,
       cli,
@@ -158,7 +161,7 @@ export function listSessionUsage(threads: UsageThread[]): UsageSessionRow[] {
       ...(thread.titleKind ? { titleKind: thread.titleKind } : {}),
       project: thread.project?.trim() || undefined,
       models: [],
-      at: thread.updatedAt ?? 0,
+      at: provider && turns.length ? turns[0].at : thread.updatedAt ?? 0,
       turns: 0,
       inputTokens: 0,
       outputTokens: 0,
@@ -189,13 +192,14 @@ export function listSessionUsage(threads: UsageThread[]): UsageSessionRow[] {
 }
 
 /** Rolls up local turns. Forks that share a `usageId` (or the same user time and tokens) count once. */
-export function summarizeUsage(threads: UsageThread[], period: UsageWindow, now = Date.now()): UsageSummary {
+export function summarizeUsage(threads: UsageThread[], period: UsageWindow, now = Date.now(), provider?: CliProvider): UsageSummary {
   const span = WINDOWS[period]
   if (!span) throw new Error(t('未知的统计范围'))
   const from = now - span
   const rows = new Map<string, UsageModelRow>()
 
   for (const turn of collectTurns(threads)) {
+    if (provider && turn.cli !== provider) continue
     if (turn.at < from || turn.at > now) continue
     const quote = quoteModel(turn.priceModel, turn.usage, turn.cli)
     const group = `${turn.cli}\n${turn.model}\n${quote.label}`

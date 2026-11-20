@@ -16,7 +16,7 @@ afterAll(() => {
   fs.rmSync(resolved, { recursive: true, force: true })
 })
 
-it.runIf(canRunElectronUi)('checks cached detection, refresh actions and stale responses in real React', async () => {
+it.runIf(canRunElectronUi)('checks CLI settings, usage tabs and stale responses in real React', async () => {
   await build({ configFile: false, publicDir: false, logLevel: 'silent',
     define: { 'process.env.NODE_ENV': '"development"' },
     resolve: { alias: { '@shared': path.resolve('src/shared') } },
@@ -58,6 +58,6 @@ app.whenReady().then(async () => {
   })
   expect(result.code, result.output).toBe(0)
   expect(JSON.parse(fs.readFileSync(path.join(directory, 'result.json'), 'utf8'))).toEqual([
-    'cached reads', 'language changes', 'manual refresh', 'refresh errors', 'login and update', 'configuration changes', 'stale responses', 'Antigravity terminal setup'
+    'cached reads', 'language changes', 'manual refresh', 'refresh errors', 'login and update', 'configuration changes', 'stale responses', 'Antigravity terminal setup', 'per-CLI usage tabs'
   ])
 }, 60_000)

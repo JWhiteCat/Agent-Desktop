@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { CLI_PROVIDERS, cliTitle, normalizeCliProvider, type CliProvider, type Settings } from '@shared/types'
+import type { UsageWindow } from '@shared/usage'
 import { useT } from '../../lib/i18n'
 import { defaultModelFor, favoritesFor, modelForChat } from '../../lib/model-prefs'
 import { loadModels, setDefaultModel, useStore } from '../../store'
@@ -94,6 +95,8 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
   const cli = normalizeCliProvider(settings.cliProvider)
   const [configCli, setConfigCli] = useState<CliProvider>(cli)
   const [modelCli, setModelCli] = useState<CliProvider>(cli)
+  const [usageCli, setUsageCli] = useState<CliProvider>(cli)
+  const [usagePeriod, setUsagePeriod] = useState<UsageWindow>('7d')
   const [tab, setTab] = useState<SettingsTab>('cli')
   const [configSource, setConfigSource] = useState<ConfigSource>('app')
   const tabs = SETTINGS_TABS.filter((item) => item.id !== 'remote' || !window.api.isRemote)
@@ -232,7 +235,14 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
         </section>
       )}
 
-      {tab === 'usage' && <UsageSettings />}
+      {tab === 'usage' && (
+        <section className="settings-section">
+          <ProviderTabs label={t('用量来源')} value={usageCli} onChange={setUsageCli} />
+          <div role="tabpanel" aria-labelledby={`provider-tab-${usageCli}`}>
+            <UsageSettings key={usageCli} provider={usageCli} period={usagePeriod} onPeriodChange={setUsagePeriod} />
+          </div>
+        </section>
+      )}
 
       {tab === 'defaults' && (
         <section className="settings-section">

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { getLocale } from '@shared/i18n'
 import type { UsageSessionRow, UsageSummary, UsageWindow } from '@shared/usage'
-import { cliTitle, type CliProvider } from '@shared/types'
+import type { CliProvider } from '@shared/types'
 import { useT } from '../../lib/i18n'
 import { displayThreadTitle } from '@shared/thread-title'
 import { compactNumber, formatUsd, relativeTime } from '../../lib/format'
@@ -19,55 +19,65 @@ const USAGE_PERIODS: { id: UsageWindow; label: string }[] = [
 
 const USAGE_PAGE_SIZE = 20
 
+const PRICE_SOURCES: Record<CliProvider, { label: string; href: string }[]> = {
+  cursor: [{ label: 'Cursor 公开标价', href: 'https://cursor.com/docs/models-and-pricing' }],
+  codex: [{ label: 'OpenAI API 价格', href: 'https://developers.openai.com/api/docs/pricing' }],
+  claude: [{ label: 'Anthropic API 价格', href: 'https://platform.claude.com/docs/en/about-claude/pricing' }],
+  antigravity: [
+    { label: 'Gemini API 价格', href: 'https://ai.google.dev/gemini-api/docs/pricing' },
+    { label: 'Google Cloud 合作伙伴模型价格', href: 'https://cloud.google.com/model-garden/partner-models/pricing' }
+  ]
+}
+
+type SummaryResult =
+  | { period: UsageWindow; summary: UsageSummary }
+  | { period: UsageWindow; error: string }
+
 function UsageToken({ n }: { n: number }) {
   useT()
   return <HoverTip text={n.toLocaleString(getLocale())}>{compactNumber(n)}</HoverTip>
 }
 
-export function UsageSettings() {
+export function UsageSettings({ provider, period, onPeriodChange }: {
+  provider: CliProvider
+  period: UsageWindow
+  onPeriodChange: (period: UsageWindow) => void
+}) {
   const t = useT()
-  const modelsByCli = useStore((s) => s.modelsByCli)
-  const groups = useMemo(() => ({
-    cursor: groupModels(modelsByCli.cursor),
-    codex: groupModels(modelsByCli.codex),
-    claude: groupModels(modelsByCli.claude),
-    antigravity: groupModels(modelsByCli.antigravity)
-  }), [modelsByCli])
-  const [period, setPeriod] = useState<UsageWindow>('7d')
-  const [summary, setSummary] = useState<UsageSummary | null>(null)
+  const models = useStore((s) => s.modelsByCli[provider])
+  const groups = useMemo(() => groupModels(models), [models])
+  const [result, setResult] = useState<SummaryResult | null>(null)
   const [sessions, setSessions] = useState<UsageSessionRow[] | null>(null)
   const [page, setPage] = useState(1)
-  const [error, setError] = useState('')
-  const modelName = (cli: CliProvider, id: string, fallback = '') => (id ? modelCaption(groups[cli], id, cli) : t(fallback))
+  const modelName = (id: string, fallback: string) => id ? modelCaption(groups, id, provider) : t(fallback)
 
   useEffect(() => {
     let cancel = false
-    setSummary(null)
-    setError('')
-    window.api.usageSummary(period).then(
-      (next) => {
+    window.api.usageSummary(period, provider).then(
+      (report) => {
         if (cancel) return
-        setSummary(next.summary)
-        setSessions(next.sessions)
+        setResult({ period, summary: report.summary })
+        setSessions(report.sessions)
       },
       (err) => {
-        if (cancel) return
-        setSummary(null)
-        setError(errorText(err))
+        if (!cancel) setResult({ period, error: errorText(err) })
       }
     )
     return () => {
       cancel = true
     }
-  }, [period, t])
+  }, [period, provider, t])
 
+  const current = result?.period === period ? result : null
+  const summary = current && 'summary' in current ? current.summary : null
+  const error = current && 'error' in current ? current.error : ''
   const pageCount = Math.max(1, Math.ceil((sessions?.length ?? 0) / USAGE_PAGE_SIZE))
   const currentPage = Math.min(page, pageCount)
   const visibleSessions = sessions?.slice((currentPage - 1) * USAGE_PAGE_SIZE, currentPage * USAGE_PAGE_SIZE) ?? []
 
   return (
-    <section className="settings-section">
-      <QuotaPanel />
+    <>
+      {(provider === 'cursor' || provider === 'codex') && <QuotaPanel provider={provider} />}
       <h4>{t('本机用量')}</h4>
       <div className="usage-periods" role="group" aria-label={t('统计范围')}>
         {USAGE_PERIODS.map((item) => (
@@ -76,7 +86,7 @@ export function UsageSettings() {
             type="button"
             className={`usage-period ${period === item.id ? 'active' : ''}`}
             aria-pressed={period === item.id}
-            onClick={() => setPeriod(item.id)}
+            onClick={() => onPeriodChange(item.id)}
           >
             {t(item.label)}
           </button>
@@ -143,10 +153,7 @@ export function UsageSettings() {
               <tbody>
                 {summary.models.map((row) => (
                   <tr key={`${row.cli}\n${row.model}\n${row.label}`}>
-                    <td>
-                      <div>{modelName(row.cli, row.model, row.label)}</div>
-                      <div className="muted small">{cliTitle(row.cli)}</div>
-                    </td>
+                    <td>{modelName(row.model, row.label)}</td>
                     <td>{row.turns}</td>
                     <td>
                       <UsageToken n={row.inputTokens} />
@@ -195,14 +202,13 @@ export function UsageSettings() {
                   <tr key={row.threadId}>
                     <td>
                       <div>{displayThreadTitle(row, t)}</div>
-                      <div className="muted small">{cliTitle(row.cli)}</div>
                       {row.project && <div className="muted small">{row.project}</div>}
                     </td>
                     <td className="usage-model">
                       {row.models.length === 0 ? (
                         '—'
                       ) : (
-                        row.models.map((model) => <div key={model.id}>{modelName(row.cli, model.id, model.label)}</div>)
+                        row.models.map((model) => <div key={model.id}>{modelName(model.id, model.label)}</div>)
                       )}
                     </td>
                     <td>{row.at ? relativeTime(row.at) : '—'}</td>
@@ -244,12 +250,13 @@ export function UsageSettings() {
         </>
       )}
       <p className="usage-note">
-        {t('Cursor 按 Cursor 公开标价估算，Codex 按 OpenAI API 公开标价估算，Claude Code 按 Anthropic API 公开标价估算，Antigravity 按 Gemini API 与 Google Cloud 公开标价估算（美元 / 百万 token）。')}{' '}
-        <Hyperlink href="https://developers.openai.com/api/docs/pricing" target="_blank" rel="noreferrer">{t('OpenAI API 价格')}</Hyperlink>{' '}
-        <Hyperlink href="https://claude.com/pricing#api" target="_blank" rel="noreferrer">{t('Anthropic API 价格')}</Hyperlink>{' '}
-        <Hyperlink href="https://ai.google.dev/gemini-api/docs/pricing" target="_blank" rel="noreferrer">{t('Gemini API 价格')}</Hyperlink>{' '}
-        {t('这些金额是用量估算，不代表订阅账单或套餐剩余额度；Cursor 估算不含 Teams 的 Token Rate。Auto、Orchestrator 和价目表没有的模型只计 token。上方合计里，分叉复制的同一轮只计一次。会话列表包含全部历史对话，按各对话自己的记录累计，不受上面的天数限制；没有 token 记录的对话费用留空。')}
+        {t('费用按公开标价估算，单位为美元 / 百万 token。')}{' '}
+        {PRICE_SOURCES[provider].map(({ label, href }) => (
+          <span key={href}><Hyperlink href={href} target="_blank" rel="noreferrer">{t(label)}</Hyperlink>{' '}</span>
+        ))}
+        {provider === 'cursor' && <>{t('Cursor 的费用估算不含 Teams Token Rate。')}{' '}</>}
+        {t('未定价的模型只计 token。汇总中，同一回合的分叉副本只计一次。会话列表按当前 CLI 的全部历史回合累计。')}
       </p>
-    </section>
+    </>
   )
 }

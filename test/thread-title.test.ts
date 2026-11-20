@@ -161,6 +161,8 @@ describe('automatic conversation titles', () => {
     const report = usageHandlers(deps)['usage:summary']('7d') as UsageReport
     expect(report.sessions).toHaveLength(3)
     for (const row of report.sessions) expect(displayThreadTitle(row)).toBe('Untitled session')
+    const filtered = usageHandlers(deps)['usage:summary']('7d', 'codex') as UsageReport
+    expect(filtered.sessions).toEqual(report.sessions.filter((row) => row.cli === 'codex'))
   })
 
   it('replaces a marked imported title when history gains a user message but preserves a user rename', async () => {

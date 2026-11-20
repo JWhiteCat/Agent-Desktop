@@ -170,7 +170,7 @@ export function createWebApi(): DesktopApi {
     sendQueuedNow: (threadId, messageId) => call('agent:queueSendNow', threadId, messageId),
     answerQuestion: (threadId, questionId, answers) => call('agent:answerQuestion', threadId, questionId, answers),
     updateSettings: (patch) => call('settings:update', patch),
-    usageSummary: (period) => call('usage:summary', period),
+    usageSummary: (period, cli) => call('usage:summary', period, cli),
     usageQuotas: () => call('usage:quotas'),
     usageQuota: (provider) => call('usage:quota', provider),
     consumeCodexReset: (creditId) => call('usage:consumeCodexReset', creditId),

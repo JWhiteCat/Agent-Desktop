@@ -2,17 +2,23 @@
 
 [文档目录](README.zh-CN.md) · [项目首页](../README.zh-CN.md) · [English](usage-stats.md)
 
+打开**设置 → 用量**，选择 Cursor、Codex、Claude 或 Antigravity 页签。默认选中当前配置的 CLI。在同一个设置窗口中，「用量」和「模型」分别记住各自选中的 CLI。
+
 Codex 在同一次请求中批准计划并立即继续执行时，回复的 token 和 API 费用估算包含计划、执行两个阶段。日志读取会识别适配器的计划转执行流程，保留每次模型请求用于计价，并等待执行阶段结束。重启应用后重新打开历史对话，会补回这类回复缺失的用量；从 CLI 同步历史也使用相同的合并统计。旧版导入中已经分开保存的计划和执行结果，修复时继续分别统计。
 
 ## 账号额度
 
-用量页顶部显示 Cursor 与 Codex 的账号额度。Claude 与 Antigravity 的账号额度尚未接入。Cursor 显示当前账单周期里的 Cursor 模型和其他模型占用，以及下次重置时间；有按需上限时一并显示。Cursor 模型和其他模型还会带上该池的实际 token（输入、输出、缓存读、缓存写）和账号返回的价格，并按账号的池标记拆开。其他模型只显示包含的 API 用量百分比。套餐的包含金额会停在已购上限，不是这一池的消耗，所以不标在这行上。按需支出在进度旁显示已用和上限；账号若返回了按需明细，也会带上 token，但不再重复总价。Codex 显示接口返回的窗口，常见是 5 小时和每周，并写出下次重置时间。没有的窗口不显示。只用 API Key 登录的 Codex 没有订阅额度，卡片会说明原因。这些数字来自账号接口，不是下面的本机估算。
+Cursor 和 Codex 页签在本机用量上方显示各自的账号额度。Claude 和 Antigravity 页签直接显示本机用量。Cursor 显示当前账单周期里的 Cursor 模型和其他模型占用，以及下次重置时间；有按需上限时一并显示。Cursor 模型和其他模型还会带上该池的实际 token（输入、输出、缓存读、缓存写）和账号返回的价格，并按账号的池标记拆开。其他模型只显示包含的 API 用量百分比。套餐的包含金额会停在已购上限，不是这一池的消耗，所以不标在这行上。按需支出在进度旁显示已用和上限；账号若返回了按需明细，也会带上 token，但不再重复总价。Codex 显示接口返回的窗口，常见是 5 小时和每周，并写出下次重置时间。没有的窗口不显示。只用 API Key 登录的 Codex 没有订阅额度，卡片会说明原因。这些数字来自账号接口，不是下面的本机估算。
 
-Cursor 与 Codex 的额度卡片独立加载，先返回的结果先显示，不必等待另一家。刷新时保留已显示的额度，并在各卡片旁显示读取状态。Codex 额度与重置卡并行查询；Cursor 套餐、token 明细和 Codex 重置卡最多等待 3 秒，辅助请求失败不会丢弃已读取的额度。主要额度接口仍最多等待 15 秒（Cursor 首次使用 API Key 时需先交换登录令牌，该步骤也最多等待 15 秒）。
+进入 Cursor 或 Codex 页签时只读取所选 CLI 的额度。点击「刷新」更新当前卡片，读取期间保留上次的数值。Codex 额度与重置卡并行查询；Cursor 套餐、token 明细和 Codex 重置卡最多等待 3 秒，辅助请求失败不会丢弃已读取的额度。主要额度接口仍最多等待 15 秒（Cursor 首次使用 API Key 时需先交换登录令牌，该步骤也最多等待 15 秒）。
 
 ## 本机 token 与费用估算
 
-设置里的用量汇总本机对话最近 1 天、7 天、30 天的 token，并按模型列出估算费用。模型名是短名，例如「Grok 4.7 500K High Fast」，不带完整参数串。下面的会话列表包含全部历史对话。每一行显示用过的模型、累计 token 和费用，不受上面的天数限制。超过 20 行会分页。没有 token 记录的对话仍会列出，费用留空。一轮结束时，回复下方也会显示该轮的耗时、token、模型和估算费用。Codex token 根据本机日志的累计用量差统计，包含一轮内的所有模型请求，重复快照只计一次。输入排除缓存，推理 token 已包含在输出中。Codex 逐请求计价，避免多次短请求的累计输入误触发长上下文价格。其他 CLI 使用其报告的回合用量，缓存读取和写入分开计数。Cursor 使用 [Cursor 公开标价](https://cursor.com/docs/models-and-pricing)，Codex 使用 [OpenAI API 公开标价](https://developers.openai.com/api/docs/pricing)，Claude Code 使用 [Anthropic API 公开标价](https://platform.claude.com/docs/en/about-claude/pricing)，Antigravity 使用 [Gemini API 公开标价](https://ai.google.dev/gemini-api/docs/pricing)与 [Google Cloud 合作伙伴模型公开标价](https://cloud.google.com/model-garden/partner-models/pricing)，单位均为美元 / 百万 token。同一模型在不同 CLI 中按各自的价格分别统计。估算金额不代表订阅账单或剩余额度；Cursor 估算不含 Teams Token Rate。不足一美分的金额显示到四位小数。Auto、Orchestrator、没有记录 API 模型的 Claude 别名，以及价目表里没有的模型只显示 token，费用标为未定价。模型选择器和设置里的常用模型在鼠标悬停时显示同一套标价；触摸和触控笔操作不弹出价格提示。展开模型菜单时会隐藏入口按钮的价格提示，避免遮挡选择。Claude Haiku 5.5 在单次请求的输入（含缓存读、缓存写）超过 100,000 token 时，输入、缓存和输出都按 5 倍计费。上面的汇总里，分叉复制过去的一轮只计一次。会话列表按每段对话自己的记录相加，所以同一轮会同时出现在原对话和分叉里。
+本机用量默认统计所选 CLI 最近 7 天的回合、token 和费用，并按模型列出明细。也可以选择最近 1 天或 30 天，切换 CLI 时保留所选天数。每一轮按结果记录的 CLI 归属。旧回合缺少 CLI 标记时沿用会话的 CLI，更早的无标记会话归入 Cursor。
+
+下方的会话列表展示所选 CLI 的全部历史，每页 20 条，切换 CLI 时回到第一页。一个会话若用过两个 CLI，会出现在两个页签中，每处只列出该 CLI 对应回合的模型、token 和费用。完全没有用量记录的会话列在会话所属的 CLI 页签，费用显示为「—」。模型使用「Grok 4.7 500K High Fast」这样的短名。
+
+一轮结束时，回复下方也会显示该轮的耗时、token、模型和估算费用。Codex token 根据本机日志的累计用量差统计，包含一轮内的所有模型请求，重复快照只计一次。输入排除缓存，推理 token 已包含在输出中。Codex 逐请求计价，避免多次短请求的累计输入误触发长上下文价格。其他 CLI 使用其报告的回合用量，缓存读取和写入分开计数。Cursor 使用 [Cursor 公开标价](https://cursor.com/docs/models-and-pricing)，Codex 使用 [OpenAI API 公开标价](https://developers.openai.com/api/docs/pricing)，Claude Code 使用 [Anthropic API 公开标价](https://platform.claude.com/docs/en/about-claude/pricing)，Antigravity 使用 [Gemini API 公开标价](https://ai.google.dev/gemini-api/docs/pricing)与 [Google Cloud 合作伙伴模型公开标价](https://cloud.google.com/model-garden/partner-models/pricing)，单位均为美元 / 百万 token。同一模型在不同 CLI 中按各自的价格分别统计。估算金额不代表订阅账单或剩余额度；Cursor 估算不含 Teams Token Rate。不足一美分的金额显示到四位小数。Auto、Orchestrator、没有记录 API 模型的 Claude 别名，以及价目表里没有的模型只显示 token，费用标为未定价。模型选择器和设置里的常用模型在鼠标悬停时显示同一套标价；触摸和触控笔操作不弹出价格提示。展开模型菜单时会隐藏入口按钮的价格提示，避免遮挡选择。Claude Haiku 5.5 在单次请求的输入（含缓存读、缓存写）超过 100,000 token 时，输入、缓存和输出都按 5 倍计费。上面的汇总里，分叉复制过去的一轮只计一次。会话列表按每段对话自己的记录相加，所以同一轮会同时出现在原对话和分叉里。
 
 Codex 费用估算支持 [GPT-6.2 Astra](https://developers.openai.com/api/docs/models/gpt-6.2-astra)、[GPT-6.2 Sol](https://developers.openai.com/api/docs/models/gpt-6.2-sol) 和 [GPT-6.1 Terra](https://developers.openai.com/api/docs/models/gpt-6.1-terra)，以及更早的模型，例如 [GPT-6.1 Sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol)。标准费率（美元 / 百万 token）：
 

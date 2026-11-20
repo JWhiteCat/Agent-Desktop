@@ -113,16 +113,19 @@ describe('usage summary', () => {
   it('counts a stable usage id once even when a copied thread switches CLI', () => {
     const at = now - hour
     const items = [user(at), result({ id: 'r', usageId: 'same', model: 'gpt-5.4', createdAt: at, usage })]
-    const summary = summarizeUsage([
+    const threads: UsageThread[] = [
       { items },
       { cli: 'cursor', items },
       { cli: 'codex', items },
       { cli: 'codex', items }
-    ], '1d', now)
+    ]
+    const summary = summarizeUsage(threads, '1d', now)
 
     expect(summary.turns).toBe(1)
     expect(summary.models.map((row) => row.cli)).toEqual(['cursor'])
     expect(summary.models.every((row) => row.turns === 1)).toBe(true)
+    expect(summarizeUsage(threads, '1d', now, 'cursor').turns).toBe(1)
+    expect(summarizeUsage(threads, '1d', now, 'codex').turns).toBe(0)
   })
 
   it('keeps each recorded turn on its original CLI after the conversation switches CLI', () => {
@@ -219,6 +222,42 @@ describe('usage summary', () => {
 
 describe('session usage', () => {
   const usage = { inputTokens: 1000, outputTokens: 10 }
+
+  it('reports just the selected CLI in mixed conversations, including forks and older turns', () => {
+    const recent = now - hour
+    const older = now - 40 * day
+    const items = [
+      result({ id: 'old', usageId: 'old', cli: 'codex', model: 'gpt-5.4', createdAt: older, usage }),
+      result({ id: 'new', usageId: 'new', cli: 'cursor', model: 'grok-4.7', createdAt: recent, usage }),
+      result({ id: 'auto', usageId: 'auto', cli: 'cursor', model: 'auto', createdAt: recent, usage })
+    ]
+    const threads: UsageThread[] = [
+      { id: 'switched', cli: 'claude', updatedAt: now, items },
+      { id: 'fork', cli: 'antigravity', updatedAt: now, items },
+      { id: 'empty', items: [], updatedAt: now }
+    ]
+
+    const cursor = summarizeUsage(threads, '7d', now, 'cursor')
+    expect(cursor).toMatchObject({ turns: 2, inputTokens: 2000, outputTokens: 20, unpricedTurns: 1 })
+    expect(cursor.models.map((row) => row.cli)).toEqual(['cursor', 'cursor'])
+    expect(cursor.costUsd).toBe(quoteModel('grok-4.7', usage, 'cursor').costUsd)
+    expect(summarizeUsage(threads, '30d', now, 'codex')).toMatchObject({ turns: 0, costUsd: null, models: [] })
+
+    const codexRows = listSessionUsage(threads, 'codex')
+    expect(codexRows.map((row) => row.threadId).sort()).toEqual(['fork', 'switched'])
+    for (const row of codexRows) {
+      expect(row).toMatchObject({
+        cli: 'codex', at: older, turns: 1, inputTokens: 1000, outputTokens: 10,
+        models: [{ id: 'gpt-5.4' }], costUsd: quoteModel('gpt-5.4', usage, 'codex').costUsd
+      })
+    }
+    const cursorRows = listSessionUsage(threads, 'cursor')
+    expect(cursorRows).toHaveLength(3)
+    expect(cursorRows[0]).toMatchObject({ threadId: 'empty', cli: 'cursor', turns: 0, costUsd: null, at: now })
+    expect(cursorRows[1]).toMatchObject({ cli: 'cursor', turns: 2, at: recent, costUsd: cursor.costUsd })
+    expect(listSessionUsage(threads, 'claude')).toEqual([])
+    expect(listSessionUsage(threads, 'antigravity')).toEqual([])
+  })
 
   it('uses the session CLI for costs and model labels, including sessions with no usage', () => {
     const at = now - hour

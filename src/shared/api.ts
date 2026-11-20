@@ -79,7 +79,7 @@ export interface DesktopApi {
   skinSource(id: string): Promise<SkinSource>
   skinSave(skin: SkinConfig): Promise<SkinConfig>
   skinDelete(id: string): Promise<void>
-  usageSummary(period: UsageWindow): Promise<UsageReport>
+  usageSummary(period: UsageWindow, cli?: CliProvider): Promise<UsageReport>
   usageQuotas(): Promise<QuotaReport>
   usageQuota(provider: ProviderQuota['provider']): Promise<ProviderQuota>
   /** Redeems one Codex reset card. The caller must already have confirmed. */

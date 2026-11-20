@@ -6,58 +6,51 @@ import { compactNumber, formatUsd, localExpiry, resetStamp, resetsIn } from '../
 import { errorText } from '../../store'
 import { HoverTip } from '../HoverTip'
 
-const PROVIDERS = ['cursor', 'codex'] as const
-
-export function QuotaPanel() {
+export function QuotaPanel({ provider }: { provider: ProviderQuota['provider'] }) {
   const t = useT()
-  const [report, setReport] = useState<Partial<Record<ProviderQuota['provider'], ProviderQuota>>>({})
-  const [errors, setErrors] = useState<Partial<Record<ProviderQuota['provider'], string>>>({})
-  const [pending, setPending] = useState({ cursor: true, codex: true })
+  const [quota, setQuota] = useState<ProviderQuota>()
+  const [error, setError] = useState('')
+  const [pending, setPending] = useState(true)
   const [reload, setReload] = useState(0)
 
   useEffect(() => {
     let cancel = false
-    setPending({ cursor: true, codex: true })
-    setErrors({})
-    for (const provider of PROVIDERS) {
-      window.api.usageQuota(provider).then(
-        (next) => {
-          if (cancel) return
-          setReport((current) => ({ ...current, [provider]: next }))
-          setPending((current) => ({ ...current, [provider]: false }))
-        },
-        (err) => {
-          if (cancel) return
-          setErrors((current) => ({ ...current, [provider]: errorText(err) }))
-          setPending((current) => ({ ...current, [provider]: false }))
-        }
-      )
-    }
+    setPending(true)
+    setError('')
+    window.api.usageQuota(provider).then(
+      (next) => {
+        if (cancel) return
+        setQuota(next)
+        setPending(false)
+      },
+      (err) => {
+        if (cancel) return
+        setError(errorText(err))
+        setPending(false)
+      }
+    )
     return () => {
       cancel = true
     }
-  }, [reload, t])
+  }, [provider, reload, t])
+
+  const refresh = () => setReload((n) => n + 1)
 
   return (
     <>
       <div className="quota-head">
         <h4>{t('额度')}</h4>
-        <button type="button" className="usage-period" disabled={pending.cursor || pending.codex} onClick={() => setReload((n) => n + 1)}>
+        <button type="button" className="usage-period" disabled={pending} onClick={refresh}>
           {t('刷新')}
         </button>
       </div>
-      <div className="quota-grid">
-        {PROVIDERS.map((provider) => (
-          <QuotaCard
-            key={provider}
-            title={provider === 'cursor' ? 'Cursor' : 'Codex'}
-            quota={report[provider]}
-            loading={pending[provider]}
-            error={errors[provider]}
-            onRedeemed={provider === 'codex' ? () => setReload((n) => n + 1) : undefined}
-          />
-        ))}
-      </div>
+      <QuotaCard
+        title={provider === 'cursor' ? 'Cursor' : 'Codex'}
+        quota={quota}
+        loading={pending}
+        error={error}
+        onRedeemed={provider === 'codex' ? refresh : undefined}
+      />
     </>
   )
 }
