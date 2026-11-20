@@ -13,7 +13,7 @@ const mocks = vi.hoisted(() => ({
   cursor: { info: vi.fn(), login: vi.fn(), update: vi.fn() },
   codex: { info: vi.fn(), login: vi.fn(), update: vi.fn() },
   claude: { info: vi.fn(), login: vi.fn(), update: vi.fn() },
-  antigravity: { info: vi.fn(), login: vi.fn(), update: vi.fn() }
+  antigravity: { info: vi.fn(), login: vi.fn(), update: vi.fn(), models: vi.fn() }
 }))
 vi.mock('electron', () => ({ app: { getPath: () => mocks.directory } }))
 vi.mock('../src/main/cli-catalog', () => ({
@@ -26,7 +26,7 @@ vi.mock('../src/main/cli-update', () => ({
 }))
 vi.mock('../src/main/antigravity', async (original) => ({
   ...await original<typeof import('../src/main/antigravity')>(),
-  antigravityCliInfo: mocks.antigravity.info, loginAntigravity: mocks.antigravity.login
+  antigravityCliInfo: mocks.antigravity.info, loginAntigravity: mocks.antigravity.login, listAntigravityModels: mocks.antigravity.models
 }))
 vi.mock('../src/main/claude-history', () => ({ scanClaudeSessions: vi.fn() }))
 vi.mock('../src/main/history', () => ({ scanCliSessions: vi.fn() }))
@@ -61,6 +61,21 @@ describe('CLI info IPC and settings invalidation', () => {
   async function populate() {
     for (const provider of providers) await handlers['cli:info'](provider)
   }
+
+  it('evicts an empty Antigravity catalog and ignores an older refresh that finishes later', async () => {
+    const old = [{ id: 'agy/old', label: 'Old' }]
+    const fresh = [{ id: 'agy/new', label: 'New' }]
+    const deferred = Promise.withResolvers<typeof old>()
+    mocks.antigravity.models.mockResolvedValueOnce(old).mockReturnValueOnce(deferred.promise)
+      .mockResolvedValueOnce([]).mockResolvedValueOnce(fresh)
+    const list = handlers['cli:models']
+    expect(await list(false, 'antigravity')).toEqual(old)
+    const earlier = list(true, 'antigravity')
+    expect(await list(true, 'antigravity')).toEqual([])
+    deferred.resolve(old)
+    await earlier
+    expect(await list(false, 'antigravity')).toEqual(fresh)
+  })
 
   it.each(providers)('uses cached %s info unless forced, including after restart', async (provider) => {
     await handlers['cli:info'](provider)

@@ -14,17 +14,22 @@ afterEach(() => {
   for (const close of cleanups.splice(0).reverse()) close()
 })
 
-async function setup(allowed: string, level = 'high', models?: (string | { name: string; displayName: string })[]) {
+type CatalogModel = string | { name: string; displayName: string }
+async function setup(allowed: string, level = 'high', models?: CatalogModel[] | ((url: URL) => {
+  models: CatalogModel[]; nextPageToken?: string
+}), endpointSuffix = '') {
   const body = JSON.stringify({ generationConfig: { maxOutputTokens: 100, thinkingConfig: { thinkingLevel: level.toUpperCase() } } })
   const requests: { url?: string; key?: string | string[]; body: string }[] = []
   const catalogs: { url?: string; key?: string | string[] }[] = []
   const upstream = http.createServer(async (req, res) => {
     if (req.method === 'GET') {
       catalogs.push({ url: req.url, key: req.headers['x-goog-api-key'] })
-      if (models) res.writeHead(200).end(JSON.stringify({
-        models: models.map((model) => typeof model === 'string' ? { name: model } : model)
-      }))
-      else res.writeHead(405).end()
+      if (models) {
+        const page = typeof models === 'function' ? models(new URL(req.url!, 'http://localhost')) : { models }
+        res.writeHead(200).end(JSON.stringify({
+          ...page, models: page.models.map((model) => typeof model === 'string' ? { name: model } : model)
+        }))
+      } else res.writeHead(405).end()
       return
     }
     const chunks: Buffer[] = []
@@ -39,7 +44,7 @@ async function setup(allowed: string, level = 'high', models?: (string | { name:
   await new Promise<void>((resolve) => upstream.listen(0, '127.0.0.1', resolve))
   cleanups.push(() => { upstream.close(); upstream.closeAllConnections() })
   const address = upstream.address() as { port: number }
-  const endpoint = `http://127.0.0.1:${address.port}/prefix/`
+  const endpoint = `http://127.0.0.1:${address.port}/prefix/${endpointSuffix}`
   const gateway = await openAntigravityGateway(endpoint)
   cleanups.push(gateway.close)
   const send = (model: string) => fetch(`${gateway.endpoint}${API_PATH}${model}${STREAM_ACTION}`, {
@@ -49,6 +54,24 @@ async function setup(allowed: string, level = 'high', models?: (string | { name:
 }
 
 describe('Antigravity custom gateway', () => {
+  it.each(['v1beta', 'v1beta/'])('reads later catalog pages and routes generation with a %s endpoint', async (suffix) => {
+    const id = `agy/${CARBON}-high`
+    const token = 'next +/'
+    const { endpoint, send, catalogs } = await setup(id, 'high', (url) => ({
+      models: url.searchParams.get('pageToken') === token ? [`models/${id}`] : ['models/plain'],
+      nextPageToken: token // A repeated token must end the traversal.
+    }), suffix)
+    expect(await listAntigravityModels('', { endpoint, apiKey: 'fixture-key' })).toEqual([
+      { id, label: id, legacySlug: `${CARBON}[effort=high]` }
+    ])
+    expect(await (await send(CARBON)).text()).toBe(stream)
+    const pages = [
+      { url: '/prefix/v1beta/models', key: 'fixture-key' },
+      { url: '/prefix/v1beta/models?pageToken=next+%2B%2F', key: 'fixture-key' }
+    ]
+    expect(catalogs).toEqual([...pages, ...pages])
+  })
+
   it('lists only unique agy IDs from the authenticated gateway catalog', async () => {
     const id = 'agy/claude-opus-5-5-high'
     const label = 'Claude Opus 5.5 (High)'

@@ -185,6 +185,17 @@ describe('Antigravity reactive wakeup continuation', () => {
     expect(ctx.items.find((it): it is ToolItem => it.kind === 'tool' && it.callId === 'bg-test')?.status).toBe('running')
     expect(ctx.incoming.filter((m) => m.method === 'session/prompt')).toHaveLength(1)
 
+    // Thought and plan updates can arrive while the foreground command still owns the turn.
+    vi.useFakeTimers()
+    try {
+      ctx.update({ sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: 'Still waiting.' } })
+      ctx.update({ sessionUpdate: 'plan', entries: [] })
+      await vi.advanceTimersByTimeAsync(121_000)
+      expect(ctx.items.some((item) => item.kind === 'result')).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+
     // Background task finishes and triggers Antigravity reactive wakeup steps + permission request.
     ctx.update({
       sessionUpdate: 'tool_call_update',
@@ -289,12 +300,23 @@ describe('Antigravity reactive wakeup continuation', () => {
     expect(killTree).not.toHaveBeenCalled()
     expect(ctx.items.find((it): it is ToolItem => it.kind === 'tool' && it.callId === 'bg-sleep')?.status).toBe('error')
 
+    ctx.update({ sessionUpdate: 'tool_call_update', toolCallId: 'bg-sleep', status: 'completed' })
+    const latePermission = await ctx.requestClient('session/request_permission', {
+      sessionId: 'agy-session', toolCall: { toolCallId: 'late', kind: 'execute' },
+      options: [{ optionId: 'allow_once', kind: 'allow_once', name: 'Allow' }]
+    })
+    expect(latePermission).toEqual({ outcome: { outcome: 'cancelled' } })
+    expect(ctx.manager.isRunning('thread')).toBe(false)
+    expect(ctx.items.find((it): it is ToolItem => it.kind === 'tool' && it.callId === 'bg-sleep')?.status).toBe('error')
+
     // Process stays alive and reusable for the next prompt.
     await ctx.manager.send({ ...ctx.req, prompt: 'Follow up' })
     await ctx.waitForPrompt()
     expect(spawnProvider).toHaveBeenCalledOnce()
+    ctx.update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'New reply.' } })
     ctx.resolvePrompt()
     await vi.waitFor(() => expect(ctx.finished).toHaveBeenCalledTimes(2))
+    expect(ctx.finished).toHaveBeenLastCalledWith(expect.objectContaining({ preview: 'New reply.' }))
   })
 
   it('does not block session/prompt completion on IsDaemon background commands', async () => {

@@ -32,6 +32,7 @@ function modelList(cli: CliProvider, settings: Settings) {
 export function cliHandlers(deps: IpcDeps): Record<string, Handler> {
   const { store, broadcast, modelsCache } = deps
   const updating = new Set<CliProvider>()
+  let antigravityModelRequest = 0
   const installer = new CliInstaller((url, init) => import('electron').then(({ net }) => net.fetch(url, init)))
   const infoCache = cliInfoCacheFor(store)
   const history = {
@@ -77,12 +78,17 @@ export function cliHandlers(deps: IpcDeps): Record<string, Handler> {
       const cached = modelsCache.get(cli)
       if (cached && !refresh) return cached
       const settings = store.settings
+      const request = cli === 'antigravity' ? ++antigravityModelRequest : undefined
       const models = await modelList(cli, settings)
       const current = store.settings
-      if (models.length && (cli !== 'antigravity' || (
-        settings.antigravityPath === current.antigravityPath && settings.antigravityApiKey === current.antigravityApiKey
-          && settings.antigravityApiEndpoint === current.antigravityApiEndpoint
-      ))) modelsCache.set(cli, models)
+      if (cli === 'antigravity' && (
+        request !== antigravityModelRequest
+        || settings.antigravityPath !== current.antigravityPath
+        || settings.antigravityApiKey !== current.antigravityApiKey
+        || settings.antigravityApiEndpoint !== current.antigravityApiEndpoint
+      )) return models
+      if (models.length) modelsCache.set(cli, models)
+      else if (cli === 'antigravity') modelsCache.delete(cli)
       return models
     },
     'cli:info': async (provider?: CliProvider, refresh = false) => {

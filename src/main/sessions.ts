@@ -50,13 +50,15 @@ interface AgentProc extends SessionConnection {
   ready: boolean
   /** Set when this process is being torn down and must not be reused. */
   dying: boolean
+  /** Ignore late Antigravity updates from a cancelled turn until the next prompt is sent. */
+  suppressWakeups?: boolean
   force: boolean
   /** Retained when this ACP process is reused for later turns. */
   promptCapabilities?: { image: boolean }
 }
 
 interface FollowupState {
-  phase: 'tools' | 'llm' | 'reply' | 'usage'
+  phase: 'llm' | 'reply' | 'usage'
   timer?: NodeJS.Timeout
   finish: () => void
 }
@@ -611,6 +613,7 @@ export class SessionManager {
     const run = this.runs.get(threadId)
     if (!run) return
     run.stopped = true
+    if (run.proc.provider === 'antigravity') run.proc.suppressWakeups = true
     settleQuestion(run, 'cancel')
     if (run.proc.ready && run.proc.sessionId) {
       run.proc.acp.notify('session/cancel', { sessionId: run.proc.sessionId })
@@ -772,6 +775,7 @@ export class SessionManager {
           }
           return
         }
+        if (proc.suppressWakeups) return
         let run = this.runs.get(threadId)
         if (!run && method === 'session/update') run = this.resumeAntigravityWakeup(threadId, proc, params?.sessionId, params?.update)
         if (!run || run.proc !== proc || method !== 'session/update' || !run.acceptUpdates) return
@@ -793,6 +797,7 @@ export class SessionManager {
         this.observeFollowup(run, params?.update)
       },
       onRequest: (method, params) => {
+        if (proc.suppressWakeups) return onIdleAcpRequest(proc, method, params)
         let run = this.runs.get(threadId)
         if (!run && (method === 'session/request_permission' || method === 'cursor/ask_question' || Array.isArray(params?.questions))) {
           run = this.resumeAntigravityWakeup(threadId, proc, params?.sessionId, { sessionUpdate: 'tool_call' })
@@ -1074,6 +1079,7 @@ export class SessionManager {
     }
     if (run.proc.provider === 'codex') run.codexUsage = new CodexTurnUsageReader(run.proc.sessionId)
     run.timing = new TurnTiming()
+    run.proc.suppressWakeups = false
     const result = await run.proc.acp.request('session/prompt', {
       sessionId: run.proc.sessionId,
       prompt: [{ type: 'text', text }, ...images]
@@ -1081,7 +1087,7 @@ export class SessionManager {
     const stop = String(result?.stopReason ?? 'end_turn')
     if (run.proc.provider === 'antigravity' && stop === 'end_turn' && !run.stopped
       && !run.proc.dying && run.proc.child.exitCode === null && run.reducer.hasRunningForegroundTools()) {
-      await this.waitForFollowup(run, 'tools')
+      await this.waitForFollowup(run)
       if (!this.runs.has(threadId) || run.settled) return
       if (run.proc.dying || run.proc.child.exitCode !== null) return
     }
@@ -1365,10 +1371,10 @@ export class SessionManager {
    * Antigravity resolves `session/prompt` before backgrounded commands, timers, or
    * subagents finish, then streams reactive wakeup steps on the same ACP session.
    */
-  private waitForFollowup(run: Run, initial: FollowupState['phase']): Promise<void> {
+  private waitForFollowup(run: Run): Promise<void> {
     return new Promise((resolve) => {
       const followup: FollowupState = {
-        phase: initial,
+        phase: 'llm',
         finish: () => {
           if (run.followup !== followup) return
           if (followup.timer) clearTimeout(followup.timer)
@@ -1396,7 +1402,7 @@ export class SessionManager {
       followup.finish()
       return
     }
-    if (run.pendingQuestions?.size || followup.phase === 'tools') return
+    if (run.pendingQuestions?.size || run.reducer.hasRunningForegroundTools()) return
     const ms = followup.phase === 'llm' ? FOLLOWUP_LLM_MS
       : followup.phase === 'reply' ? FOLLOWUP_REPLY_MS : FOLLOWUP_USAGE_MS
     followup.timer = setTimeout(() => followup.finish(), ms)
@@ -1412,7 +1418,7 @@ export class SessionManager {
   private resumeFollowupAfterInteraction(run: Run): void {
     const followup = run.followup
     if (!followup) return
-    followup.phase = run.reducer.hasRunningForegroundTools() ? 'tools' : 'llm'
+    followup.phase = 'llm'
     this.scheduleFollowupTimer(run)
   }
 
@@ -1422,8 +1428,6 @@ export class SessionManager {
     switch (update?.sessionUpdate) {
       case 'tool_call':
       case 'tool_call_update':
-        followup.phase = run.reducer.hasRunningForegroundTools() ? 'tools' : 'llm'
-        break
       case 'agent_thought_chunk':
       case 'plan':
       case 'plan_update':
@@ -1433,7 +1437,7 @@ export class SessionManager {
         if (!run.reducer.hasRunningForegroundTools()) followup.phase = 'reply'
         break
       case 'usage_update':
-        if (!run.reducer.hasRunningForegroundTools() && followup.phase !== 'tools') {
+        if (!run.reducer.hasRunningForegroundTools()) {
           followup.phase = followup.phase === 'reply' ? 'usage' : 'llm'
         }
         break
@@ -1494,7 +1498,7 @@ export class SessionManager {
   }
 
   private async driveAntigravityWakeup(threadId: string, run: Run): Promise<void> {
-    const waiting = this.waitForFollowup(run, 'llm')
+    const waiting = this.waitForFollowup(run)
     void snapshotTurnFiles(run.proc.cwd)
       .then((files) => { if (!run.settled) run.fileSnapshot = files })
       .catch(() => undefined)

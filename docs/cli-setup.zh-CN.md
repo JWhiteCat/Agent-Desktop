@@ -79,7 +79,7 @@ Claude 认证优先使用设置中的 Key，其次是 `ANTHROPIC_API_KEY`。只�
 
 使用兼容 Gemini API 的服务时，在桌面应用的 **设置 → CLI → Antigravity CLI** 填写 **API Key** 和 **API 端点**，然后点击**保存 API 配置**。可以粘贴 CC Switch 的 Antigravity 供应商卡片里的地址和 Key。设置中的端点优先于 `GOOGLE_GEMINI_BASE_URL`，两者都为空时使用 Google 默认地址。
 
-配置自定义端点和 API Key 后，Antigravity 的模型列表只显示网关 Gemini 模型目录中以 `agy/` 开头的条目，同一 ID 只显示一次。在对话输入框选择模型和思考档位后，应用会按完整网关 ID 发送生成请求，例如 `agy/claude-opus-5-5-high`。使用 Google 默认端点时，模型列表来自 CLI。
+自定义端点可以填写网关根地址，也可以填写以 `/v1beta` 结尾的地址。配置自定义端点和 API Key 后，Antigravity 会读取网关 Gemini 模型目录的所有分页，只列出以 `agy/` 开头的条目，同一 ID 只显示一次。在对话输入框选择模型和思考档位后，应用会按完整网关 ID 发送生成请求，例如 `agy/claude-opus-5-5-high`。使用 Google 默认端点时，模型列表来自 CLI。
 
 已保存的选择如果还在使用 CLI 的 Gemini 4 Carbon ID，应用会按当前推理档位从自定义网关的模型列表匹配完整 ID，例如 `agy/gemini-4-carbon-high`。列表里没有匹配项时，应用先尝试 `gemini-4-carbon-high` 这类不带命名空间的别名。只有这次尝试返回 `403` 或 `404` 时，才会用基础 ID `gemini-4-carbon` 重试一次。两次请求都失败时，会显示别名请求的错误。Google 默认端点由 CLI 直接访问。
 

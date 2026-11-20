@@ -34,38 +34,49 @@ function gatewayTransport(url: URL) {
   return { transport, agent }
 }
 
-function readModelCatalog(url: URL, agent: http.Agent, headers: http.OutgoingHttpHeaders): Promise<ModelInfo[]> {
+function gatewayBase(endpoint: string): URL {
+  const base = new URL(endpoint)
+  base.pathname = base.pathname.replace(/\/+$/, '').replace(/\/v1beta$/, '')
+  return base
+}
+
+async function readModelCatalog(url: URL, agent: http.Agent, headers: http.OutgoingHttpHeaders): Promise<ModelInfo[]> {
   const transport = url.protocol === 'https:' ? https : http
-  return new Promise<ModelInfo[]>((resolve, reject) => {
-    const request = transport.get(url, { agent, signal: AbortSignal.timeout(3000), headers }, (response) => {
+  const page = new URL(url)
+  const models: ModelInfo[] = []
+  const seenTokens = new Set<string>()
+  const deadline = AbortSignal.timeout(15000)
+  try {
+    while (true) {
+      const signal = AbortSignal.any([deadline, AbortSignal.timeout(3000)])
+      const response = await new Promise<http.IncomingMessage>((resolve, reject) => {
+        transport.get(page, { agent, signal, headers }, resolve).once('error', reject)
+      })
       if (response.statusCode !== 200) {
         response.resume()
-        resolve([])
-        return
+        return []
       }
       const chunks: Buffer[] = []
-      response.on('data', (chunk: Buffer) => chunks.push(chunk))
-      response.on('error', reject)
-      response.on('end', () => {
-        try {
-          const { models } = JSON.parse(Buffer.concat(chunks).toString('utf8'))
-          resolve(Array.isArray(models) ? models.flatMap((model) => {
-            const id = typeof model?.name === 'string' ? qualifiedModelName.exec(model.name)?.[1] : undefined
-            if (!id) return []
-            const label = typeof model.displayName === 'string' ? model.displayName.trim() : ''
-            return [{ id, label: label || id }]
-          }) : [])
-        } catch {
-          resolve([])
-        }
-      })
-    })
-    request.on('error', reject)
-  }).catch(() => [])
+      for await (const chunk of response) chunks.push(chunk)
+      const catalog = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+      for (const model of Array.isArray(catalog.models) ? catalog.models : []) {
+        const id = typeof model?.name === 'string' ? qualifiedModelName.exec(model.name)?.[1] : undefined
+        if (!id) continue
+        const label = typeof model.displayName === 'string' ? model.displayName.trim() : ''
+        models.push({ id, label: label || id })
+      }
+      const token = catalog.nextPageToken
+      if (typeof token !== 'string' || !token || seenTokens.has(token)) return models
+      seenTokens.add(token)
+      page.searchParams.set('pageToken', token)
+    }
+  } catch {
+    return []
+  }
 }
 
 export async function listAntigravityGatewayModels(endpoint: string, apiKey: string): Promise<ModelInfo[]> {
-  const catalog = new URL(endpoint)
+  const catalog = gatewayBase(endpoint)
   catalog.pathname = catalog.pathname.replace(/\/$/, '') + '/v1beta/models'
   const { agent } = gatewayTransport(catalog)
   try {
@@ -117,7 +128,7 @@ function forwardHeaders(headers: http.IncomingHttpHeaders): http.OutgoingHttpHea
 }
 
 export async function openAntigravityGateway(endpoint: string): Promise<AntigravityGateway> {
-  const base = new URL(endpoint)
+  const base = gatewayBase(endpoint)
   const { transport, agent } = gatewayTransport(base)
   const prefix = `/${randomUUID()}`
   const catalogs = new Map<string, Promise<string[]>>()
