@@ -3,7 +3,7 @@ import type { CliInfo, CliProvider } from '@shared/types'
 import { useT } from '../../lib/i18n'
 import { errorText, loadModels, toast } from '../../store'
 import { Hyperlink } from '../Hyperlink'
-import { IconRefresh, Spinner } from '../icons'
+import { IconEye, IconRefresh, Spinner } from '../icons'
 import { Field } from './Field'
 import { CliInstallAction, useCliInstallStatus } from '../CliInstallAction'
 
@@ -44,6 +44,8 @@ export function CliCard({
   const [updateResult, setUpdateResult] = useState<{ text: string; error: boolean } | null>(null)
   const [pathDraft, setPathDraft] = useState(pathValue)
   const [keyDraft, setKeyDraft] = useState(keyValue)
+  const [keyVisible, setKeyVisible] = useState(false)
+  const visibilityLabel = keyVisible ? t('隐藏 API Key') : t('显示 API Key')
   const [endpointDraft, setEndpointDraft] = useState(endpoint?.value ?? '')
   const checkId = useRef(0)
 
@@ -162,21 +164,36 @@ export function CliCard({
         {updateResult && <pre className="cli-status" role={updateResult.error ? 'alert' : 'status'}>{updateResult.text}</pre>}
       </div>
       <Field label="API Key" desc={keyDesc}>
-        <input
-          className="input"
-          type="password"
-          disabled={updating || saving}
-          value={keyDraft}
-          placeholder={keyPlaceholder}
-          autoComplete="off"
-          spellCheck={false}
-          onChange={(e) => setKeyDraft(e.target.value)}
-          onBlur={() => {
-            if (!endpoint && keyDraft !== keyValue) {
+        <div
+          className="api-key-control"
+          onBlur={(e) => {
+            if (!e.currentTarget.contains(e.relatedTarget) && !endpoint && keyDraft !== keyValue) {
               void save(() => onKey(keyDraft))
             }
           }}
-        />
+        >
+          <input
+            className="input"
+            type={keyVisible ? 'text' : 'password'}
+            aria-label="API Key"
+            disabled={updating || saving}
+            value={keyDraft}
+            placeholder={keyPlaceholder}
+            autoComplete="off"
+            spellCheck={false}
+            onChange={(e) => setKeyDraft(e.target.value)}
+          />
+          <button
+            type="button"
+            className="icon-btn"
+            title={visibilityLabel}
+            aria-label={visibilityLabel}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => setKeyVisible((visible) => !visible)}
+          >
+            <IconEye crossed={keyVisible} />
+          </button>
+        </div>
       </Field>
       {endpoint && (
         <Field label="API 端点" desc="填写兼容 Gemini API 的服务地址。留空时使用 GOOGLE_GEMINI_BASE_URL 或 Google 默认地址。">

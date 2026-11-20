@@ -28,6 +28,8 @@ export const settingsMessages: Record<string, string> = {
   '留空自动检测；可填 agy 可执行文件或安装目录。': 'Leave blank for auto-detection, or enter the agy executable or install directory.',
   '留空使用 GEMINI_API_KEY': 'Leave blank to use GEMINI_API_KEY',
   'API 端点': 'API endpoint',
+  '显示 API Key': 'Show API key',
+  '隐藏 API Key': 'Hide API key',
   '填写兼容 Gemini API 的服务地址。留空时使用 GOOGLE_GEMINI_BASE_URL 或 Google 默认地址。': 'Enter a Gemini-compatible API URL. Leave blank to use GOOGLE_GEMINI_BASE_URL or Google’s default endpoint.',
   '请输入有效的 HTTP 或 HTTPS API 端点。': 'Enter a valid HTTP or HTTPS API endpoint.',
   '保存 API 配置': 'Save API configuration',

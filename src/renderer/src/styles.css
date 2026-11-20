@@ -2810,6 +2810,19 @@ select {
   width: 100%;
   flex: none;
 }
+.api-key-control {
+  position: relative;
+  max-width: 100%;
+}
+.api-key-control .input {
+  padding-right: 36px;
+}
+.api-key-control .icon-btn {
+  position: absolute;
+  right: 1px;
+  top: 50%;
+  transform: translateY(-50%);
+}
 .input:focus {
   border-color: var(--blue);
 }

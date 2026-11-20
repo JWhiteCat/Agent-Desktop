@@ -135,6 +135,17 @@ export async function runCliCardChecks() {
   const keyCall = calls.length
   await edit(0, 'new-api-key')
   check(saved.at(-1) === 'new-api-key' && calls.slice(keyCall).some((call) => call.refresh === true), 'Saving API key forces detection')
+  const keyInput = () => document.querySelector<HTMLInputElement>('input[aria-label="API Key"]')!
+  const toggleKey = (label: string) => {
+    const toggle = document.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)
+    check(toggle, `Missing visibility button: ${label}`)
+    flushSync(() => toggle.click())
+  }
+  check(keyInput().type === 'password', 'API key starts hidden')
+  toggleKey('Show API key')
+  check(keyInput().type === 'text' && keyInput().value === 'new-api-key', 'Eye reveals the current key')
+  toggleKey('Hide API key')
+  check(keyInput().type === 'password' && keyInput().value === 'new-api-key', 'Eye hides the same key')
 
   const old = deferred()
   next = old.promise
