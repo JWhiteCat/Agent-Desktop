@@ -1,4 +1,5 @@
 import fs from 'node:fs'
+import { createHash } from 'node:crypto'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -54,6 +55,18 @@ describe('persistent CLI detection cache', () => {
     await expect(cache.get('cursor', signature, detect)).resolves.toEqual({ found: false })
     await expect(cache.get('cursor', signature, detect, true)).resolves.toEqual(info)
     expect(detect).toHaveBeenCalledTimes(2)
+  })
+
+  it('refreshes pre-upgrade Antigravity entries and persists the new login status', async () => {
+    vi.stubEnv('GEMINI_API_KEY', '')
+    const legacy = createHash('sha256').update(JSON.stringify(['cli-source', 'antigravity', null, '', '', ''])).digest('hex')
+    await cache.get('antigravity', legacy, async () => ({ found: true }))
+    const authInfo: CliInfo = { found: true, authStatus: 'authenticated' }
+    const detect = vi.fn().mockResolvedValue(authInfo)
+    const current = cliInfoSignature('antigravity', DEFAULT_SETTINGS)
+    await expect(new CliInfoCache(() => file).get('antigravity', current, detect)).resolves.toEqual(authInfo)
+    await expect(new CliInfoCache(() => file).get('antigravity', current, detect)).resolves.toEqual(authInfo)
+    expect(detect).toHaveBeenCalledOnce()
   })
 
   it.each(['broken JSON', 'null', '{"version":2}', '{"version":1,"entries":{"cursor":{"info":{"found":true}}}}'])('recovers from unusable cache %s', async (saved) => {

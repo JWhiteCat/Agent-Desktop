@@ -3,7 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { t as translate } from '@shared/i18n'
 import type { CliInfo, ModelInfo, Settings } from '@shared/types'
-import { AcpConnection, MethodNotFound } from './acp'
+import { AcpConnection, AcpResponseError, MethodNotFound } from './acp'
 import { listAntigravityGatewayModels, usesAntigravityGateway } from './antigravity-gateway'
 import type { ResolvedCli } from './cli'
 import { cliEnvironment, cliSearchDirectories, findCliExecutable, killCliProcessTree, normalizeCliPath, spawnCliProcess } from './cli-runtime'
@@ -62,10 +62,7 @@ export function requireAntigravity(customPath: string): ResolvedCli {
   return cli
 }
 
-export async function antigravityCliInfo(customPath: string, apiKey: string): Promise<CliInfo> {
-  const cli = resolveAntigravity(customPath)
-  if (!cli) return { found: false }
-  if (cli.managed) return { found: true, source: 'managed', path: cli.display, version: cli.version, hasApiKey: !!apiKey }
+async function antigravityVersion(cli: ResolvedCli): Promise<string | undefined> {
   const child = spawnAntigravity(cli, ['--version'], os.homedir(), '')
   let version = ''
   child.stdout?.setEncoding('utf8').on('data', (chunk: string) => { version += chunk })
@@ -77,15 +74,38 @@ export async function antigravityCliInfo(customPath: string, apiKey: string): Pr
       child.once('error', () => resolve(-1))
       child.once('close', resolve)
     })
-    if (code !== 0) return { found: false }
-    const [major, minor] = (version.match(/\d+\.\d+/)?.[0] ?? '').split('.').map(Number)
-    return {
-      found: true, source: 'external', path: cli.display, version: version.trim(), hasApiKey: !!apiKey,
-      ...(major === 1 && minor < 5 ? { status: translate('请将 Antigravity CLI 更新到 1.5.0 或更高版本。') } : {})
-    }
+    return code === 0 ? version.trim() : undefined
   } finally {
     clearTimeout(timer)
   }
+}
+
+async function antigravityAuthStatus(cli: ResolvedCli): Promise<NonNullable<CliInfo['authStatus']>> {
+  // agy gates session/list on authentication. Filtering to the temp directory
+  // avoids fetching a user's full history and never creates a conversation.
+  const cwd = os.tmpdir()
+  try {
+    return await withAntigravityAcp(cli, cwd, { apiKey: '' }, async (acp) => {
+      const result = await acp.request('session/list', { cwd })
+      return Array.isArray(result?.sessions) ? 'authenticated' : 'unknown'
+    }, undefined, 10_000)
+  } catch (error) {
+    const response = error instanceof Error && error.cause instanceof AcpResponseError ? error.cause : error
+    return response instanceof AcpResponseError && response.code === -32000 ? 'required' : 'unknown'
+  }
+}
+
+export async function antigravityCliInfo(customPath: string, apiKey: string): Promise<CliInfo> {
+  const cli = resolveAntigravity(customPath)
+  if (!cli) return { found: false }
+  const version = cli.managed ? cli.version : await antigravityVersion(cli)
+  if (!cli.managed && version === undefined) return { found: false }
+  const info: CliInfo = { found: true, source: cli.managed ? 'managed' : 'external', path: cli.display, version, hasApiKey: !!apiKey }
+  const [major, minor] = (version?.match(/\d+\.\d+/)?.[0] ?? '').split('.').map(Number)
+  if (major === 1 && minor < 5) {
+    return { ...info, status: translate('请将 Antigravity CLI 更新到 1.5.0 或更高版本。') }
+  }
+  return { ...info, authStatus: apiKey ? 'api-key' : await antigravityAuthStatus(cli) }
 }
 
 export async function withAntigravityAcp<T>(

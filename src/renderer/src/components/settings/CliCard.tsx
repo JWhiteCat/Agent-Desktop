@@ -7,6 +7,13 @@ import { IconEye, IconRefresh, Spinner } from '../icons'
 import { Field } from './Field'
 import { CliInstallAction, useCliInstallStatus } from '../CliInstallAction'
 
+const authStatusLabels: Record<NonNullable<CliInfo['authStatus']>, string> = {
+  authenticated: '已登录',
+  required: '需要登录',
+  'api-key': 'API Key 已配置',
+  unknown: '无法确认登录状态'
+}
+
 export function CliCard({
   active,
   provider,
@@ -96,6 +103,7 @@ export function CliCard({
               <span className="muted small">{info.version}</span>
             </div>
             <div className="muted small mono break">{info.path}</div>
+            {info.authStatus && <div className="cli-status">{t(authStatusLabels[info.authStatus])}</div>}
             {info.status && <pre className="cli-status">{info.status}</pre>}
           </>
         ) : (

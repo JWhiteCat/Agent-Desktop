@@ -85,6 +85,8 @@ Claude 认证优先使用设置中的 Key，其次是 `ANTHROPIC_API_KEY`。只�
 
 Antigravity 优先使用设置中的 Gemini API Key，其次是 `GEMINI_API_KEY`，最后使用 `agy` 已保存的凭据。登录按钮打开 Google 个人账号登录。Gemini Enterprise 或终端登录请参阅 [Antigravity CLI 认证指南](https://antigravity.google/docs/ide/extensions/acp/#authentication)。
 
+检测 CLI 时，如果已设置密钥，Antigravity 卡片会显示 **API Key 已配置**。未设置密钥时，应用会向 `agy` 发送只读的会话列表请求。CLI 接受请求时显示 **已登录**，要求认证时显示 **需要登录**。如果检测超时或 CLI 返回异常结果，卡片会显示 **无法确认登录状态**。在终端登录或退出后，点击 **重新检测** 即可刷新。
+
 如果对话中出现 **Verification Required**，点击同一对话里的 **验证 Google 账号**，用登录 Antigravity 的账号完成验证，再重新发送消息。如果 CLI 没有提供可用链接，对话会提示你在终端打开 Antigravity CLI 完成验证。
 
 应用管理版和独立安装的 `agy` 共用 CLI 的登录和历史存储，均适用 CLI 沙箱设置。应用会读取当前账号可用的模型和思考级别。在 **设置 → 外观与历史 → 导入** 可以导入已有的 `agy` 会话。对话菜单可重新同步历史。分叉会新建独立会话，并在第一次发送时传入复制的历史。

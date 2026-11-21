@@ -29,7 +29,8 @@ export function cliInfoSignature(provider: CliProvider, settings: Settings): str
     : provider === 'claude'
       ? [settings.claudePath, settings.claudeApiKey, resolveClaudeApiKey(settings.claudeApiKey)]
       : provider === 'antigravity'
-        ? [settings.antigravityPath, settings.antigravityApiKey, resolveAntigravityApiKey(settings.antigravityApiKey)]
+        // Discard detection results saved before the CLI card reported authentication.
+        ? ['auth-status-v1', settings.antigravityPath, settings.antigravityApiKey, resolveAntigravityApiKey(settings.antigravityApiKey)]
         : [settings.agentPath, settings.apiKey, resolveApiKey(settings.apiKey)]
   return createHash('sha256').update(JSON.stringify(['cli-source', provider, managedExecutable(provider)?.command, ...config])).digest('hex')
 }
@@ -43,6 +44,7 @@ function validEntry(value: unknown): value is Entry {
     || (e.stale !== undefined && typeof e.stale !== 'boolean')) return false
   return (['path', 'version', 'status'] as const).every((key) => e.info[key] === undefined || typeof e.info[key] === 'string')
     && (['hasApiKey', 'bundled'] as const).every((key) => e.info[key] === undefined || typeof e.info[key] === 'boolean')
+    && (e.info.authStatus === undefined || ['authenticated', 'required', 'api-key', 'unknown'].includes(e.info.authStatus))
     && (e.info.source === undefined || e.info.source === 'external' || e.info.source === 'managed')
 }
 

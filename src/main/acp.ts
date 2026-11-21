@@ -10,6 +10,12 @@ export class MethodNotFound extends Error {
   }
 }
 
+export class AcpResponseError extends Error {
+  constructor(readonly code: number, message: string) {
+    super(message)
+  }
+}
+
 interface Pending {
   resolve: (value: any) => void
   reject: (err: Error) => void
@@ -120,7 +126,7 @@ export class AcpConnection {
       const waiter = this.pending.get(msg.id)
       if (!waiter) return
       this.pending.delete(msg.id)
-      if (msg.error) waiter.reject(new Error(acpErrorText(msg.error)))
+      if (msg.error) waiter.reject(new AcpResponseError(msg.error.code, acpErrorText(msg.error)))
       else waiter.resolve(msg.result)
       return
     }

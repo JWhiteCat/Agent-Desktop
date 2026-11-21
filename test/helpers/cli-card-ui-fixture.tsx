@@ -213,11 +213,23 @@ export async function runCliCardChecks() {
   const terminalGuide = () => document.querySelector<HTMLAnchorElement>('.cli-card a')
   check(!terminalGuide(), 'Cursor card has no agy installation link')
   provider = 'antigravity'
-  next = Promise.resolve({ found: true, source: 'managed', path: '/agy', version: '1.5.11' })
+  next = Promise.resolve({ found: true, source: 'managed', path: '/agy', version: '1.5.11', authStatus: 'authenticated' })
   render()
   await idle()
   check(document.querySelector('.cli-card')?.textContent?.includes('Use the path above to run agy in a terminal.'), 'Managed Antigravity shows how to use its binary in a terminal')
   check(!terminalGuide(), 'Managed Antigravity already has the terminal binary')
+  const authStatus = () => document.querySelector('.cli-card .cli-status')?.textContent
+  check(authStatus() === 'Logged in', 'Antigravity displays its login status')
+  const beforeTranslation = calls.length
+  flushSync(() => setLanguage('zh-CN'))
+  check(authStatus() === '已登录' && calls.length === beforeTranslation, 'Cached Antigravity status switches language without a new check')
+  flushSync(() => setLanguage('en'))
+  for (const [status, label] of [['required', 'Login required'], ['api-key', 'API key configured'], ['unknown', 'Unable to confirm login status']] as const) {
+    next = Promise.resolve({ found: true, authStatus: status })
+    await click('Check again')
+    await idle()
+    check(authStatus() === label, `Antigravity displays ${label}`)
+  }
   next = Promise.resolve({ found: false })
   await click('Check again')
   await idle()

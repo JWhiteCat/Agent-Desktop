@@ -457,6 +457,7 @@ export interface CliInfo {
   path?: string
   version?: string
   status?: string
+  authStatus?: 'authenticated' | 'required' | 'api-key' | 'unknown'
   hasApiKey?: boolean
   source?: 'external' | 'managed'
   /** The adapter package is used rather than a CLI on PATH. */
