@@ -1948,6 +1948,9 @@ select {
   color: var(--muted);
   background: var(--bg-hover);
 }
+.notice a {
+  color: var(--blue);
+}
 .notice.error {
   color: var(--red);
   background: var(--del-bg);

@@ -19,6 +19,7 @@ export interface FinalizeRunInput {
   autoContinue?: boolean
   wakeup?: boolean
   failText?: string
+  verification?: { url?: string }
   stderr: string
   code: number | null
   spawnError?: Error
@@ -126,20 +127,35 @@ export function finalizeTurnItems(input: FinalizeRunInput): FinalizeRunOutput {
   const continuePrompt = recover ? automaticContinuePrompt() : undefined
   const recoverNotice = continuePrompt ? automaticContinueNotice(provider) : undefined
 
-  appendTerminalNotice({
-    items,
-    reducer: r,
-    changed,
-    provider,
-    stopped,
-    spawnError,
-    autoContinue: input.autoContinue,
-    failText: input.failText,
-    stderr: input.stderr,
-    code: input.code,
-    continuePrompt,
-    recoverNotice
-  })
+  if (input.verification && !stopped) {
+    const result = ensureResult(model, true)
+    if (result) {
+      result.isError = true
+      changed.push(result)
+    }
+    const verificationUrl = input.verification.url
+    changed.push(r.push({
+      id: newId(), kind: 'notice', level: 'error',
+      ...(verificationUrl
+        ? { verificationUrl, ...localizedMessage('请使用当前 Antigravity 账号完成验证，然后重试。') }
+        : localizedMessage('请在终端打开 Antigravity CLI，按提示完成 Google 账号验证，然后重试。'))
+    }))
+  } else {
+    appendTerminalNotice({
+      items,
+      reducer: r,
+      changed,
+      provider,
+      stopped,
+      spawnError,
+      autoContinue: input.autoContinue,
+      failText: input.failText,
+      stderr: input.stderr,
+      code: input.code,
+      continuePrompt,
+      recoverNotice
+    })
+  }
 
   if (resultId && input.weeklyQuotaEstimate) {
     const result = items.find((item): item is ResultItem => item.kind === 'result' && item.id === resultId)

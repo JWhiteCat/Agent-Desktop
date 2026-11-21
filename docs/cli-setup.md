@@ -85,6 +85,8 @@ For a saved selection using the CLI's Gemini 4 Carbon ID, the app matches the se
 
 Antigravity uses the Gemini API key in Settings first, then `GEMINI_API_KEY`, then the credentials saved by `agy`. The login button opens Google's personal account sign-in. For Gemini Enterprise or terminal sign-in, use the [Antigravity CLI authentication guide](https://antigravity.google/docs/ide/extensions/acp/#authentication).
 
+If a chat reply says **Verification Required**, click **Verify your Google account** in that conversation. Complete Google's check with the same account you used for Antigravity, then resend your message. If the CLI did not supply a usable link, the chat directs you to open Antigravity CLI in a terminal to complete verification.
+
 Both app-managed and standalone installations of `agy` use the CLI’s sign-in and session store and support the CLI sandbox setting. Antigravity exposes the models and thinking levels available to your account. Use **Settings → Appearance & History → Import** to import existing `agy` conversations. The conversation menu can reload an imported transcript. Forking starts a separate session and sends the copied history with its first prompt.
 
 Antigravity reads MCP from `~/.gemini/config/mcp_config.json` and `.agents/mcp_config.json`. Its local skills include `~/.gemini/antigravity-cli/skills`, `~/.gemini/skills`, and the project's `.agents/skills`.

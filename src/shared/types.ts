@@ -202,6 +202,8 @@ export interface NoticeItem {
   text: string
   /** Present only on app-authored notices, so CLI and historical text stay verbatim. */
   message?: LocalizedMessage
+  /** Account verification action supplied by Antigravity for this turn. */
+  verificationUrl?: string
 }
 
 export interface QuestionOption {

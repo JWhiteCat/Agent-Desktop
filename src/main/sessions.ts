@@ -12,6 +12,7 @@ import { isCliProvider, threadCli } from '@shared/types'
 import { normalizeTurnUsage, preferTurnUsage } from '@shared/turn-usage'
 import type { WeeklyQuotaEstimate } from '@shared/turn-quota'
 import { AcpConnection } from './acp'
+import { readAntigravityVerificationUrl } from './antigravity-validation'
 import { killTree, stripAnsi } from './cli'
 import { createWorktree } from './git'
 import { changedTurnFiles, snapshotTurnFiles } from './turn-files'
@@ -48,6 +49,7 @@ export { automaticContinuePrompt, isCodexModelCapacity, isCursorRetriableDisconn
 /** One ACP process kept alive so the next message skips startup and session restoration. */
 interface AgentProc extends SessionConnection {
   child: ChildProcess
+  startedAt: number
   antigravityGateway?: AntigravityGateway
   acp: AcpConnection
   cwd: string
@@ -98,6 +100,14 @@ interface Run extends InteractionRun {
   managedMessageId?: string
   userItemId?: string
   fileSnapshot?: Awaited<ReturnType<typeof snapshotTurnFiles>>
+}
+
+// agy can deliver this warning as the entire assistant reply and still report end_turn.
+function requiresAntigravityVerification(run: Run): boolean {
+  return run.proc.provider === 'antigravity' && (
+    run.reducer.lastAssistantText.trim() === '⚠ Verification Required'
+    || /\bVALIDATION_REQUIRED\b|^PERMISSION_DENIED \(code 403\): Verify your account to continue\.?$/i.test(run.failText ?? '')
+  )
 }
 
 export interface RunFinished {
@@ -650,9 +660,11 @@ export class SessionManager {
     antigravityGateway?: AntigravityGateway
   ): AgentProc {
     const routedLaunch = antigravityGateway ? { ...launch, antigravityEndpoint: antigravityGateway.endpoint } : launch
+    const startedAt = Date.now()
     const child = spawnProvider(provider, routedLaunch, args, cwd, apiKey)
     const proc: AgentProc = {
       child,
+      startedAt,
       antigravityGateway,
       acp: undefined as unknown as AcpConnection,
       provider,
@@ -936,6 +948,9 @@ export class SessionManager {
       if (!this.runs.has(threadId) || run.settled) return
       if (run.proc.dying || run.proc.child.exitCode !== null) return
     }
+    if (stop !== 'cancelled' && !run.stopped && requiresAntigravityVerification(run)) {
+      return this.endRun(threadId, run, null)
+    }
     const failedReply = isAutomaticContinueFailure(run.proc.provider, run.reducer.lastAssistantText)
       || isAutomaticContinueFailure(run.proc.provider, run.failText)
     const timing = run.timing.finish(run.stopped || stop === 'cancelled'
@@ -1010,6 +1025,9 @@ export class SessionManager {
       return
     }
 
+    const verification = !run.reducer.gotResult && !run.stopped && requiresAntigravityVerification(run)
+      ? { url: await readAntigravityVerificationUrl(run.proc.child.pid, run.proc.startedAt, run.proc.sessionId) }
+      : undefined
     const fileChanges = run.fileSnapshot?.length
       ? await changedTurnFiles(run.fileSnapshot).catch(() => undefined) : undefined
     run.fileSnapshot = undefined
@@ -1030,6 +1048,7 @@ export class SessionManager {
       autoContinue: run.autoContinue,
       wakeup: run.wakeup,
       failText: run.failText,
+      verification,
       stderr: run.proc.stderr,
       code,
       spawnError,
@@ -1166,6 +1185,7 @@ export class SessionManager {
     await waiting
     if (this.runs.get(threadId) !== run || run.settled) return
     if (run.proc.dying || run.proc.child.exitCode !== null) return
+    if (!run.stopped && requiresAntigravityVerification(run)) return this.endRun(threadId, run, null)
     const timing = run.timing?.finish(run.stopped ? 'cancelled' : 'completed')
     run.timing = undefined
     run.reducer.gotResult = true

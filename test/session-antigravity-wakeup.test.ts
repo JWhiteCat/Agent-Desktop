@@ -6,6 +6,7 @@ import path from 'node:path'
 import { PassThrough, Writable } from 'node:stream'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { killTree } from '../src/main/cli'
+import { readAntigravityVerificationUrl } from '../src/main/antigravity-validation'
 import { spawnProvider } from '../src/main/session/provider'
 import { SessionManager } from '../src/main/sessions'
 import type { Store } from '../src/main/store'
@@ -14,6 +15,7 @@ import { DEFAULT_SETTINGS, type AssistantItem, type Item, type QuestionItem, typ
 vi.mock('../src/main/system-proxy', () => ({ refreshCodexProxyEnv: vi.fn(async () => ({})), codexProxyOverlay: () => ({}), isCodexRoutingTimeout: () => false }))
 vi.mock('../src/main/skills', () => ({ syncAllManagedSkills: vi.fn() }))
 vi.mock('../src/main/git', () => ({ createWorktree: vi.fn() }))
+vi.mock('../src/main/antigravity-validation', () => ({ readAntigravityVerificationUrl: vi.fn() }))
 vi.mock('../src/main/session/provider', async (original) => ({
   ...await original<typeof import('../src/main/session/provider')>(),
   resolveLaunch: () => ({ cli: { command: 'mock-agy', prefixArgs: ['acp'] } }),
@@ -33,6 +35,7 @@ interface RpcMessage {
   method?: string
   params?: any
   result?: any
+  error?: { code: number; message: string }
 }
 
 const managers: SessionManager[] = []
@@ -64,6 +67,7 @@ function setup(force = true) {
 
   let stdinBuf = ''
   const child = Object.assign(new EventEmitter(), {
+    pid: 42001,
     stdout,
     stderr: new PassThrough(),
     exitCode: null,
@@ -131,6 +135,7 @@ function setup(force = true) {
     finished,
     emit,
     waitForPrompt: () => vi.waitFor(() => expect(promptId).toBeDefined()),
+    rejectPrompt: (message: string) => sendToClient({ id: promptId, error: { code: -32603, message } }),
     resolvePrompt: (usage?: Record<string, unknown>) => {
       const id = promptId
       promptId = undefined
@@ -153,6 +158,63 @@ afterEach(async () => {
     throw new Error('Unexpected test directory')
   }
   fs.rmSync(resolved, { recursive: true, force: true })
+})
+
+describe('Antigravity account verification', () => {
+  it.each([true, false])('shows the verification action or a terminal fallback (link available: %s)', async (available) => {
+    const url = available ? 'https://accounts.google.com/signin/continue?challenge=test' : undefined
+    vi.mocked(readAntigravityVerificationUrl).mockResolvedValueOnce(url)
+    const ctx = setup()
+    ctx.items.push({ id: 'copied-turn', kind: 'assistant', text: 'Prior conversation.' })
+    ctx.thread.forkContextThroughItemId = 'copied-turn'
+    await ctx.manager.send(ctx.req)
+    await ctx.waitForPrompt()
+    for (const text of ['\n⚠ Verification', ' Required\n']) {
+      ctx.update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text } })
+    }
+    ctx.resolvePrompt()
+
+    await vi.waitFor(() => expect(ctx.finished).toHaveBeenCalledOnce())
+    expect(readAntigravityVerificationUrl).toHaveBeenCalledWith(42001, expect.any(Number), 'agy-session')
+    const notices = ctx.items.filter((it) => it.kind === 'notice')
+    expect(notices).toHaveLength(1)
+    expect(notices[0].level).toBe('error')
+    expect(notices[0].verificationUrl).toBe(url)
+    expect(notices[0].message?.source).toBe(available
+      ? '请使用当前 Antigravity 账号完成验证，然后重试。' : '请在终端打开 Antigravity CLI，按提示完成 Google 账号验证，然后重试。')
+    expect(ctx.items.find((it) => it.kind === 'result')).toMatchObject({ isError: true, timing: { outcome: 'failed' } })
+    expect(ctx.finished).toHaveBeenCalledWith(expect.objectContaining({ failed: true }))
+    expect(ctx.thread.forkContextThroughItemId).toBe('copied-turn')
+    expect(killTree).toHaveBeenCalledOnce()
+  })
+
+  it('keeps a reply discussing the verification warning as ordinary assistant text', async () => {
+    const ctx = setup()
+    await ctx.manager.send(ctx.req)
+    await ctx.waitForPrompt()
+    ctx.update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'The CLI may say ⚠ Verification Required.' } })
+    ctx.resolvePrompt()
+    await vi.waitFor(() => expect(ctx.finished).toHaveBeenCalledOnce())
+    expect(readAntigravityVerificationUrl).not.toHaveBeenCalled()
+    expect(ctx.items.find((it) => it.kind === 'notice')).toBeUndefined()
+    expect(ctx.finished).toHaveBeenCalledWith(expect.objectContaining({ failed: false }))
+  })
+
+  it.each([
+    ['PERMISSION_DENIED (code 403): Verify your account to continue.', true],
+    ['PERMISSION_DENIED (code 403): Model is not allowed for this API key.', false]
+  ] as const)('distinguishes a rejected verification request from other 403s: %s', async (message, verification) => {
+    const ctx = setup()
+    await ctx.manager.send(ctx.req)
+    await ctx.waitForPrompt()
+    ctx.rejectPrompt(message)
+    await vi.waitFor(() => expect(ctx.finished).toHaveBeenCalledOnce())
+    expect(readAntigravityVerificationUrl).toHaveBeenCalledTimes(verification ? 1 : 0)
+    const notices = ctx.items.filter((it) => it.kind === 'notice')
+    expect(notices).toHaveLength(1)
+    if (verification) expect(notices[0].text).toContain('Antigravity CLI')
+    else expect(notices[0].text).toBe(message)
+  })
 })
 
 describe('Antigravity reactive wakeup continuation', () => {

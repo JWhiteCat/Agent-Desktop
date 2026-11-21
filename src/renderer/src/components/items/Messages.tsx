@@ -1,6 +1,8 @@
 import { useContext, useMemo, useState } from 'react'
 import type { NoticeItem, ThinkingItem, UserItem } from '@shared/types'
+import { isAntigravityVerificationUrl } from '@shared/antigravity-validation'
 import { useT } from '../../lib/i18n'
+import { Hyperlink } from '../Hyperlink'
 import { IconBrain, IconChevronDown, IconChevronRight, Spinner } from '../icons'
 import { Markdown } from './Markdown'
 import { CopyButton, ForkButton } from './primitives'
@@ -57,5 +59,12 @@ export function ThinkingBlock({ item }: { item: ThinkingItem }) {
 
 export function Notice({ item }: { item: NoticeItem }) {
   const t = useT()
-  return <div className={`notice ${item.level}`}>{item.message ? t(item.message.source, item.message.params) : item.text}</div>
+  return (
+    <div className={`notice ${item.level}`}>
+      {item.message ? t(item.message.source, item.message.params) : item.text}
+      {isAntigravityVerificationUrl(item.verificationUrl) && (
+        <>{' '}<Hyperlink href={item.verificationUrl} target="_blank" rel="noreferrer">{t('验证 Google 账号')}</Hyperlink></>
+      )}
+    </div>
+  )
 }
