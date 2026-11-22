@@ -33,7 +33,7 @@ function setup() {
   const manager = new SessionManager(store as unknown as Store, vi.fn(), vi.fn(), vi.fn())
   const request = vi.fn().mockResolvedValue({ stopReason: 'end_turn', usage: requests[1] })
   const run = {
-    proc: { provider: 'codex', sessionId: 'session', stderr: '', acp: { request }, child: { exitCode: null }, ready: true },
+    proc: { provider: 'codex', sessionId: 'session', stderr: '', acp: { request, disconnect: vi.fn() }, child: { exitCode: null }, ready: true },
     reducer: new StreamReducer(items), stopped: false, pending: new Map(), acceptUpdates: true,
     force: false, mode: 'agent', switchCalls: new Set(), settled: false
   }

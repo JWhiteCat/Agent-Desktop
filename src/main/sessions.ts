@@ -58,6 +58,8 @@ interface AgentProc extends SessionConnection {
   fingerprint: string
   stderr: string
   ready: boolean
+  /** A commands preload is still holding the per-thread send queue. */
+  preparing?: boolean
   /** Set when this process is being torn down and must not be reused. */
   dying: boolean
   /** Ignore late Antigravity updates from a cancelled turn until the next prompt is sent. */
@@ -447,13 +449,10 @@ export class SessionManager {
     void turn.catch((err) => {
       if (run.settled) return
       if (!run.stopped) run.failText = err instanceof Error ? err.message : String(err)
-      // A live process can take the follow-up. Killing it here would drop the session
-      // that the automatic「继续」needs to reuse.
-      if (this.canAutoContinue(thread.id, run)) {
-        void this.endRun(thread.id, run, null)
-        return
-      }
-      this.killProc(run.proc)
+      // A rejected ACP request is terminal even if the adapter keeps its pipes
+      // open. Only the automatic follow-up can reuse this process.
+      if (!this.canAutoContinue(thread.id, run)) this.killProc(run.proc)
+      void this.endRun(thread.id, run, run.proc.child.exitCode)
     })
     return true
   }
@@ -535,9 +534,16 @@ export class SessionManager {
   stop(threadId: string): void {
     for (const startup of this.startups.get(threadId) ?? []) startup.cancelled = true
     const run = this.runs.get(threadId)
-    if (!run) return
+    if (!run) {
+      const proc = this.agents.get(threadId)
+      if (proc?.preparing) this.killProc(proc)
+      return
+    }
+    if (run.stopped) return
     run.stopped = true
+    run.acceptUpdates = false
     if (run.proc.provider === 'antigravity') run.proc.suppressWakeups = true
+    if (run.settled) return
     settleQuestion(run, 'cancel')
     if (run.proc.ready && run.proc.sessionId) {
       run.proc.acp.notify('session/cancel', { sessionId: run.proc.sessionId })
@@ -549,13 +555,19 @@ export class SessionManager {
         run.killTimer = setTimeout(() => {
           run.killTimer = undefined
           if (this.runs.get(threadId) !== run || run.settled) return
-          this.killProc(run.proc)
+          this.forceStop(threadId, run)
         }, CANCEL_KILL_MS)
       }
       return
     }
-    finishFollowup(run)
+    this.forceStop(threadId, run)
+  }
+
+  private forceStop(threadId: string, run: Run): void {
     this.killProc(run.proc)
+    // Descendants can keep pipes open after the adapter exits. Closing out the
+    // interrupted turn must not depend on another ACP response or child "close".
+    void this.endRun(threadId, run, null)
   }
 
   /** Kill the CLI process for this thread. Used when the thread or app is going away. */
@@ -762,11 +774,13 @@ export class SessionManager {
   }
 
   private killProc(proc: AgentProc): void {
+    if (proc.dying) return
     proc.dying = true
     for (const [id, kept] of this.agents) {
       if (kept === proc) this.agents.delete(id)
     }
     killTree(proc.child)
+    proc.acp.disconnect()
     proc.antigravityGateway?.close()
   }
 
@@ -827,6 +841,7 @@ export class SessionManager {
     // Track startup too: deletion, settings changes, and shutdown must be able
     // to cancel initialize/session/load before the process becomes ready.
     this.agents.set(threadId, proc)
+    proc.preparing = true
     try {
       const sessionId = await this.connectSession(proc, cwd, thread.chatId, provider, apiKey, mcpServers)
       await applySessionOptions(proc, req, this.store.settings.sandbox)
@@ -837,6 +852,8 @@ export class SessionManager {
     } catch (err) {
       this.killProc(proc)
       throw err
+    } finally {
+      proc.preparing = false
     }
     return this.commands.wait(threadId)
   }
@@ -853,6 +870,7 @@ export class SessionManager {
   ): Promise<void> {
     const { proc } = run
     const sessionId = await this.connectSession(proc, cwd, chatId, provider, apiKey, mcpServers)
+    if (run.settled || this.runs.get(threadId) !== run) return
     run.reducer.init = { sessionId, cwd: proc.cwd, model: req.model }
     this.store.updateThread(threadId, { chatId: sessionId, cwd: proc.cwd })
     this.onStateChange()

@@ -83,7 +83,7 @@ function setup(threadId = 'thread', sessionId = 'session') {
   managers.push(manager)
   const request = vi.fn().mockResolvedValue({ stopReason: 'end_turn' })
   const run = {
-    proc: { provider: 'codex', acp: { request, notify: vi.fn() }, child: { exitCode: null }, ready: true, sessionId, dying: false, stderr: '' },
+    proc: { provider: 'codex', acp: { request, notify: vi.fn(), disconnect: vi.fn() }, child: { exitCode: null }, ready: true, sessionId, dying: false, stderr: '' },
     reducer: new StreamReducer(state.items), stopped: false, pending: new Map(), acceptUpdates: true,
     force: false, mode: 'agent', switchCalls: new Set(), settled: false, codexAccountPath: '' as string | undefined
   }

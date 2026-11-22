@@ -48,6 +48,7 @@ export class AcpConnection {
     this.child.stdin?.on('error', ignoreWriteError)
     this.child.stdout?.setEncoding('utf8')
     this.child.stdout?.on('data', (chunk: string) => {
+      if (this.closed) return
       const receivedAt = performance.now()
       this.buffer += chunk
       let idx: number
@@ -64,12 +65,18 @@ export class AcpConnection {
       if (rest.trim()) this.onLine(rest, handlers, performance.now())
     })
     this.child.on('close', () => {
-      this.closed = true
+      this.disconnect()
       this.child.stdin?.removeListener('error', ignoreWriteError)
-      const err = new Error(translate('CLI 进程已退出'))
-      for (const waiter of this.pending.values()) waiter.reject(err)
-      this.pending.clear()
     })
+  }
+
+  /** Release outstanding requests even when a descendant holds the CLI's stdio open. */
+  disconnect(): void {
+    this.closed = true
+    this.buffer = ''
+    const err = new Error(translate('CLI 进程已退出'))
+    for (const waiter of this.pending.values()) waiter.reject(err)
+    this.pending.clear()
   }
 
   request(method: string, params: unknown): Promise<any> {
@@ -92,6 +99,7 @@ export class AcpConnection {
       .then(
         () =>
           new Promise<void>((resolve) => {
+            if (this.closed) return resolve()
             this.child.stdin?.write(line, () => resolve())
           })
       )

@@ -8,6 +8,7 @@ import { PassThrough, Writable } from 'node:stream'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_SETTINGS, type CliProvider, type Item, type SendRequest, type ThreadMeta } from '../src/shared/types'
 import { createWorktree } from '../src/main/git'
+import { killTree } from '../src/main/cli'
 import { spawnProvider } from '../src/main/session/provider'
 import { refreshCodexProxyEnv } from '../src/main/system-proxy'
 import { SessionManager } from '../src/main/sessions'
@@ -49,7 +50,7 @@ interface RpcMessage {
 const managers: SessionManager[] = []
 let workspace: string
 
-function setup(provider: CliProvider = 'cursor', initialization?: Promise<void>, cwd = workspace) {
+function mockAgent(initialization?: Promise<void>) {
   const stdout = new PassThrough()
   const calls: RpcMessage[] = []
   let promptId: number | string | undefined
@@ -73,6 +74,15 @@ function setup(provider: CliProvider = 'cursor', initialization?: Promise<void>,
     } })
   }) as unknown as ChildProcess
   vi.mocked(spawnProvider).mockReturnValue(child)
+  return {
+    child, calls, reply,
+    waitForPrompt: () => vi.waitFor(() => expect(promptId).toBeDefined()),
+    complete: () => reply({ id: promptId, result: { stopReason: 'end_turn' } })
+  }
+}
+
+function setup(provider: CliProvider = 'cursor', initialization?: Promise<void>, cwd = workspace) {
+  const agent = mockAgent(initialization)
   const thread = { id: 'thread', projectId: 'project', cli: provider, mode: 'agent' } as ThreadMeta
   const items: Item[] = []
   const store = {
@@ -88,11 +98,7 @@ function setup(provider: CliProvider = 'cursor', initialization?: Promise<void>,
   const manager = new SessionManager(store as unknown as Store, emit, stateChanged, finished)
   managers.push(manager)
   const req: SendRequest = { threadId: thread.id, prompt: 'Continue', model: 'auto', mode: 'agent', force: false }
-  return {
-    manager, req, thread, store, items, calls, reply, finished, emit, stateChanged,
-    waitForPrompt: () => vi.waitFor(() => expect(promptId).toBeDefined()),
-    complete: () => reply({ id: promptId, result: { stopReason: 'end_turn' } })
-  }
+  return { manager, req, thread, store, items, finished, emit, stateChanged, ...agent }
 }
 
 beforeEach(() => {
@@ -109,6 +115,58 @@ afterEach(async () => {
 })
 
 describe('unfinished session activity', () => {
+  it('finishes an unresponsive turn without close and ignores late events during its replacement', async () => {
+    const ctx = setup()
+    const request = { ...ctx.req, model: 'composer-2.5[fast=true]' }
+    await ctx.manager.send(request)
+    await ctx.waitForPrompt()
+    const replacement = mockAgent()
+    vi.mocked(killTree).mockImplementationOnce(() => {})
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      await ctx.manager.send({ ...request, prompt: 'Replacement', delivery: 'now' })
+      ctx.manager.stop('thread')
+      await vi.advanceTimersByTimeAsync(4999)
+      expect(ctx.calls.filter((call) => call.method === 'session/cancel')).toHaveLength(1)
+      expect(killTree).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(1)
+    } finally {
+      vi.useRealTimers()
+    }
+    await replacement.waitForPrompt()
+    expect(killTree).toHaveBeenCalledExactlyOnceWith(ctx.child)
+    expect(ctx.finished).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ stopped: true }))
+    expect(ctx.manager.queued()).toEqual({})
+    ctx.complete()
+    ctx.reply({ method: 'session/update', params: { sessionId: 'test-session', update: {
+      sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Delayed output' }
+    } } })
+    ctx.child.emit('close', 1)
+    await new Promise<void>((done) => setImmediate(done))
+    expect(ctx.manager.running()).toEqual(['thread'])
+    expect(ctx.items.some((item) => item.kind === 'assistant' && item.text.includes('Delayed output'))).toBe(false)
+    replacement.complete()
+    await vi.waitFor(() => expect(ctx.finished).toHaveBeenCalledTimes(2))
+  })
+
+  it('unblocks a send when its commands preload never acknowledges initialize or emits close', async () => {
+    const initializing = deferred<void>()
+    const ctx = setup('cursor', initializing.promise)
+    ctx.thread.chatId = 'test-session'
+    const preparing = ctx.manager.prepare('thread', ctx.req)
+    const rejected = expect(preparing).rejects.toThrow()
+    await vi.waitFor(() => expect(ctx.calls.some((call) => call.method === 'initialize')).toBe(true))
+    const sending = ctx.manager.send({ ...ctx.req, model: 'composer-2.5[fast=true]' })
+    vi.mocked(killTree).mockImplementationOnce(() => {})
+    ctx.manager.stop('thread')
+    await Promise.all([rejected, sending])
+    expect(ctx.manager.active()).toEqual([])
+    initializing.resolve()
+    await new Promise<void>((done) => setImmediate(done))
+    expect(ctx.items).toEqual([])
+    expect(ctx.store.updateThread).not.toHaveBeenCalled()
+  })
+
   it.each(['stop', 'dispose'] as const)('cancels all sends enqueued in the same tick on %s, but allows a later send', async (action) => {
     const ctx = setup('codex')
     const first = ctx.manager.send(ctx.req)

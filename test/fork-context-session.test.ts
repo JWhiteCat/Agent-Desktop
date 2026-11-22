@@ -43,7 +43,7 @@ function setup(provider: CliProvider, mode: SendRequest['mode'] = 'ask') {
     return { stopReason: 'end_turn' }
   })
   const run = {
-    proc: { provider, acp: { request }, child: { exitCode: null }, ready: true, sessionId: 'independent-session', dying: false },
+    proc: { provider, acp: { request, disconnect: vi.fn() }, child: { exitCode: null }, ready: true, sessionId: 'independent-session', dying: false },
     reducer: new StreamReducer(items), stopped: false, pending: new Map(), acceptUpdates: true,
     force: false, mode, switchCalls: new Set(), settled: false
   }

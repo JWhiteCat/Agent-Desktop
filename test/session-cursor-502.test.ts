@@ -6,6 +6,7 @@ import os from 'node:os'
 import { PassThrough, Writable } from 'node:stream'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_SETTINGS, type CliProvider, type Item, type SendRequest, type ThreadMeta } from '../src/shared/types'
+import { killTree } from '../src/main/cli'
 import { spawnProvider } from '../src/main/session/provider'
 import { setLanguage } from '../src/shared/i18n'
 import { isCodexModelCapacity, isCursorRetriableDisconnect, SessionManager } from '../src/main/sessions'
@@ -39,7 +40,7 @@ interface RpcMessage {
   method?: string
   params?: any
   result?: any
-  error?: { code: number; message: string }
+  error?: { code: number; message: string; data?: unknown }
 }
 
 const managers: SessionManager[] = []
@@ -87,14 +88,15 @@ function setup(provider: CliProvider = 'cursor') {
     updateThread: vi.fn((_id: string, patch: Partial<ThreadMeta>) => Object.assign(thread, patch))
   }
   const finished: Array<{ failed: boolean; stopped: boolean }> = []
-  const manager = new SessionManager(store as unknown as Store, vi.fn(), vi.fn(), (info) => {
+  const emit = vi.fn()
+  const manager = new SessionManager(store as unknown as Store, emit, vi.fn(), (info) => {
     finished.push({ failed: info.failed, stopped: info.stopped })
   })
   managers.push(manager)
   const send = (prompt = '修复这个报错', extra: Partial<SendRequest> = {}) =>
     manager.send({ threadId: thread.id, prompt, model: 'auto', mode: 'agent', force: false, ...extra })
   return {
-    manager, send, prompts, calls, items, finished, children,
+    manager, send, prompts, calls, items, finished, children, emit,
     setPrompt(handler: (id: number | string, child: ChildProcess, index: number) => void) {
       onPrompt = (id, child) => handler(id, child, prompts.length)
     },
@@ -300,6 +302,41 @@ describe('isCodexModelCapacity', () => {
     expect(isCodexModelCapacity(`${'已经完成了一段很长的说明。'.repeat(40)}\n${CODEX_CAPACITY}`)).toBe(false)
     expect(isCodexModelCapacity(undefined)).toBe(false)
   })
+})
+
+it('finishes a Codex quota rejection even when the adapter closes during the next turn', async () => {
+  const ctx = setup('codex')
+  const message = "You've hit your usage limit."
+  vi.mocked(killTree).mockImplementationOnce(() => {})
+  let finishNext: (() => void) | undefined
+  ctx.setPrompt((id, child, index) => {
+    if (index > 1) {
+      finishNext = () => ctx.reply(child, { id, result: { stopReason: 'end_turn' } })
+      return
+    }
+    ctx.reply(child, { method: 'session/update', params: { sessionId: 'test-session', update: {
+      sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: message }
+    } } })
+    ctx.reply(child, { id, error: {
+      code: -32603, message: 'Internal error', data: { message, codexErrorInfo: 'usageLimitExceeded' }
+    } })
+  })
+  await ctx.send()
+  await ctx.idle()
+  expect(ctx.emit).toHaveBeenCalledWith({ type: 'running', threadId: 'thread', running: false })
+  expect(ctx.finished).toEqual([{ failed: true, stopped: false }])
+  expect(ctx.notice('error')).toEqual([expect.objectContaining({ text: message })])
+  expect(ctx.items.filter((item) => item.kind === 'result')).toMatchObject([{ isError: true, timing: { outcome: 'failed' } }])
+
+  await ctx.send('重新发送')
+  await vi.waitFor(() => expect(finishNext).toBeDefined())
+  expect(ctx.children).toHaveLength(2)
+  ctx.children[0].emit('close', 1)
+  await new Promise<void>((resolve) => setImmediate(resolve))
+  expect(ctx.manager.isRunning('thread')).toBe(true)
+  finishNext!()
+  await ctx.idle()
+  expect(ctx.finished).toEqual([{ failed: true, stopped: false }, { failed: false, stopped: false }])
 })
 
 describe('Codex model capacity continue', () => {
