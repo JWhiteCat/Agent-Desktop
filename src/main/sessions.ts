@@ -10,7 +10,7 @@ import type { AttachmentRef } from '@shared/attachments'
 import type { AgentEvent, CliProvider, Item, MessageQueue, PrepareRequest, QuestionAnswer, SendRequest } from '@shared/types'
 import { isCliProvider, threadCli } from '@shared/types'
 import { normalizeTurnUsage, preferTurnUsage } from '@shared/turn-usage'
-import type { WeeklyQuotaEstimate } from '@shared/turn-quota'
+import type { TurnQuotaSnapshot, WeeklyQuotaEstimate } from '@shared/turn-quota'
 import { AcpConnection } from './acp'
 import { readAntigravityVerificationUrl } from './antigravity-validation'
 import { killTree, stripAnsi } from './cli'
@@ -23,7 +23,7 @@ import { StreamReducer } from './reducer'
 import { TurnTiming } from './turn-timing'
 import { loadCodexAccountUsage } from './codex-account'
 import { CodexTurnUsageReader } from './codex-turn-usage'
-import { loadCodexQuota } from './quota'
+import { loadAntigravityQuota, loadCodexQuota } from './quota'
 import { codexProxyOverlay, refreshCodexProxyEnv } from './system-proxy'
 import {
   antigravityArgs, applySessionOptions, cliLabel, cursorArgs, fingerprintWithCwd, initializeSession, leftPlanMode,
@@ -94,6 +94,10 @@ interface Run extends InteractionRun {
   wakeup?: boolean
   /** Defined only for ChatGPT-authenticated Codex turns; an empty path selects the detected CLI. */
   codexAccountPath?: string
+  /** Defined only for Google-account Antigravity turns; an empty path selects the detected CLI. */
+  antigravityQuotaPath?: string
+  antigravityStartQuota?: Promise<TurnQuotaSnapshot | undefined>
+  antigravityQuotaAbort?: AbortController
   resultId?: string
   timing?: TurnTiming
   codexUsage?: CodexTurnUsageReader
@@ -160,10 +164,18 @@ export class SessionManager {
     private readonly onStateChange: () => void,
     private readonly onFinished: (info: RunFinished) => void,
     readCodexAccount = loadCodexAccountUsage,
-    readCodexQuota = loadCodexQuota
+    readCodexQuota = loadCodexQuota,
+    readAntigravityQuota = loadAntigravityQuota
   ) {
     this.commands = new SlashCommandRegistry(emit)
-    this.usage = new SessionUsage(store, emit, (threadId) => this.isRunning(threadId), readCodexAccount, readCodexQuota)
+    this.usage = new SessionUsage(
+      store,
+      emit,
+      (threadId) => this.isRunning(threadId),
+      readCodexAccount,
+      readCodexQuota,
+      readAntigravityQuota
+    )
     this.messageQueue = new SessionQueue({
       store,
       isActive: (threadId) => this.active().includes(threadId),
@@ -443,6 +455,7 @@ export class SessionManager {
     this.onStateChange()
 
     if (provider === 'codex' && !apiKey) run.codexAccountPath = settings.codexPath
+    if (provider === 'antigravity' && !apiKey) run.antigravityQuotaPath = settings.antigravityPath
     const turn = reusable
       ? this.continueSession(thread.id, run, req)
       : this.drive(thread.id, run, req, cwd, thread.chatId, provider, apiKey, mcpServers)
@@ -479,7 +492,7 @@ export class SessionManager {
   ): Run {
     return {
       proc,
-      reducer: new StreamReducer(items, imageCapture(this.store, opts.cwd, items)),
+      reducer: new StreamReducer(items, imageCapture(this.store, opts.cwd, items), proc.provider),
       stopped: false,
       pending: new Map(),
       announcedQuestions: new Set(),
@@ -542,6 +555,7 @@ export class SessionManager {
     if (run.stopped) return
     run.stopped = true
     run.acceptUpdates = false
+    run.antigravityQuotaAbort?.abort()
     if (run.proc.provider === 'antigravity') run.proc.suppressWakeups = true
     if (run.settled) return
     settleQuestion(run, 'cancel')
@@ -578,6 +592,7 @@ export class SessionManager {
     const run = this.runs.get(threadId)
     if (run) {
       run.stopped = true
+      run.antigravityQuotaAbort?.abort()
       if (run.killTimer) {
         clearTimeout(run.killTimer)
         run.killTimer = undefined
@@ -790,8 +805,18 @@ export class SessionManager {
     this.killProc(proc)
   }
 
+  private startAntigravityQuota(run: Run, model: string): Promise<TurnQuotaSnapshot | undefined> {
+    if (run.antigravityStartQuota) return run.antigravityStartQuota
+    const abort = new AbortController()
+    run.antigravityQuotaAbort = abort
+    const reading = this.usage.sampleAntigravityQuota(model, run.antigravityQuotaPath, abort.signal)
+    run.antigravityStartQuota = reading
+    return reading
+  }
+
   private async continueSession(threadId: string, run: Run, req: SendRequest): Promise<void> {
     run.reducer.init = { sessionId: run.proc.sessionId, cwd: run.proc.cwd, model: req.model }
+    if (run.antigravityQuotaPath !== undefined) void this.startAntigravityQuota(run, req.model)
     await applySessionOptions(run.proc, req, this.store.settings.sandbox)
     if (!this.runs.has(threadId) || run.settled) return
     run.acceptUpdates = true
@@ -869,6 +894,7 @@ export class SessionManager {
     mcpServers: Record<string, unknown>[] = []
   ): Promise<void> {
     const { proc } = run
+    if (run.antigravityQuotaPath !== undefined) void this.startAntigravityQuota(run, req.model)
     const sessionId = await this.connectSession(proc, cwd, chatId, provider, apiKey, mcpServers)
     if (run.settled || this.runs.get(threadId) !== run) return
     run.reducer.init = { sessionId, cwd: proc.cwd, model: req.model }
@@ -937,8 +963,10 @@ export class SessionManager {
     run.managedMessageId = built.managedMessageId
     if (built.updatedUserItem) this.queue(threadId, run, [built.updatedUserItem])
 
-    if (run.codexAccountPath !== undefined) {
-      const start = await this.usage.sampleQuota()
+    if (run.codexAccountPath !== undefined || run.antigravityQuotaPath !== undefined) {
+      const start = run.antigravityQuotaPath !== undefined
+        ? await this.startAntigravityQuota(run, req.model)
+        : await this.usage.sampleQuota()
       if (this.runs.get(threadId) !== run || run.settled) return
       if (run.stopped) {
         await this.endRun(threadId, run, null)
@@ -1029,6 +1057,7 @@ export class SessionManager {
     if (run.settled) return
     run.settled = true
     run.acceptUpdates = false
+    run.antigravityQuotaAbort?.abort()
     // Freeze before filesystem/account cleanup. A killed/rejected turn must not look completed.
     const timing = run.timing?.finish(run.stopped ? 'cancelled' : 'failed')
     if (run.killTimer) {
@@ -1084,7 +1113,8 @@ export class SessionManager {
     this.runs.delete(threadId)
 
     if (run.resultId && run.weeklyQuotaEstimate) {
-      void this.usage.saveQuotaEstimate(threadId, run.resultId, run.proc.sessionId)
+      const quotaProvider = run.proc.provider === 'antigravity' ? 'antigravity' : 'codex'
+      void this.usage.saveQuotaEstimate(threadId, run.resultId, run.proc.sessionId, quotaProvider, run.model)
     }
 
     const keep = !run.proc.dying && !spawnError && run.proc.child.exitCode === null && (run.reducer.gotResult || finalized.recover)

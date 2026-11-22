@@ -20,9 +20,19 @@ export function usageHandlers(deps: IpcDeps): Record<string, Handler> {
       }))
       return { summary: summarizeUsage(threads, period, Date.now(), cli), sessions: listSessionUsage(threads, cli) }
     },
-    'usage:quotas': () => loadQuotas(deps.store.settings.apiKey, deps.store.settings.codexApiKey),
-    'usage:quota': (provider: ProviderQuota['provider']) => loadProviderQuota(provider,
-      provider === 'cursor' ? deps.store.settings.apiKey : deps.store.settings.codexApiKey),
+    'usage:quotas': () => loadQuotas(
+      deps.store.settings.apiKey,
+      deps.store.settings.codexApiKey,
+      { path: deps.store.settings.antigravityPath, apiKey: deps.store.settings.antigravityApiKey }
+    ),
+    'usage:quota': (provider: ProviderQuota['provider']) => {
+      if (provider === 'cursor') return loadProviderQuota('cursor', deps.store.settings.apiKey)
+      if (provider === 'codex') return loadProviderQuota('codex', deps.store.settings.codexApiKey)
+      if (provider === 'antigravity') {
+        return loadProviderQuota('antigravity', deps.store.settings.antigravityApiKey, deps.store.settings.antigravityPath)
+      }
+      throw new Error('Unknown quota provider')
+    },
     'usage:consumeCodexReset': (creditId: string) => consumeCodexReset(deps.store.settings.codexApiKey, creditId)
   }
 }

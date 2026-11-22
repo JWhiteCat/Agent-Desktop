@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { applyCursorMonthUsage, parseCodexQuota, parseCodexResetCredits, parseCursorQuota, windowLabel } from '../src/shared/quota'
+import {
+  antigravityQuotaGroup,
+  applyCursorMonthUsage,
+  parseAntigravityQuota,
+  parseCodexQuota,
+  parseCodexResetCredits,
+  parseCursorQuota,
+  windowLabel
+} from '../src/shared/quota'
 
 describe('window labels', () => {
   it('names common periods and leaves other lengths numeric', () => {
@@ -301,5 +309,73 @@ describe('codex reset credits', () => {
     expect(parseCodexResetCredits(null)).toBeNull()
     expect(parseCodexResetCredits({ credits: { balance: '0' } })).toBeNull()
     expect(parseCodexResetCredits({ available_count: 2 })).toBeNull()
+  })
+})
+
+describe('antigravity quota', () => {
+  it('reads model groups, orders 5-hour before weekly, and converts remaining fractions to used percent', () => {
+    const quota = parseAntigravityQuota({
+      status: 'SUCCESS',
+      command: {
+        name: 'usage',
+        data: {
+          groups: [
+            {
+              name: 'Gemini Models',
+              buckets: [
+                { id: 'gemini-weekly', name: 'Weekly Limit Remaining', window: 'weekly', remaining_fraction: 0.995, reset_time: '2026-11-29T14:12:40Z' },
+                { id: 'gemini-5h', name: 'Five Hour Limit Remaining', window: '5h', remaining_fraction: 0.875, reset_time: '2026-11-22T19:12:40Z' }
+              ]
+            },
+            {
+              name: 'Claude and GPT models',
+              buckets: [
+                { id: '3p-weekly', name: 'Weekly Limit Remaining', window: 'weekly', remaining_fraction: 1, reset_time: '2026-11-29T14:17:38Z' },
+                { id: '3p-5h', name: 'Five Hour Limit Remaining', window: '5h', remaining_fraction: 0.25, reset_time: '2026-11-22T19:17:38Z' }
+              ]
+            }
+          ]
+        }
+      }
+    }, { status: 'SUCCESS', command: { name: 'credits', data: { remaining_credits: 42 } } })
+
+    expect(quota.provider).toBe('antigravity')
+    expect(quota.note).toBeUndefined()
+    expect(quota.windows.map((row) => [row.id, row.label, row.detail])).toEqual([
+      ['gemini-5h', '5小时', 'Gemini 模型'],
+      ['gemini-weekly', '每周', 'Gemini 模型'],
+      ['3p-5h', '5小时', 'Claude 和 GPT 模型'],
+      ['3p-weekly', '每周', 'Claude 和 GPT 模型'],
+      ['credits', '积分', undefined]
+    ])
+    expect(quota.windows[0]).toMatchObject({ usedPercent: 12.5, resetsAt: Date.parse('2026-11-22T19:12:40Z') })
+    expect(quota.windows[1].usedPercent).toBeCloseTo(0.5, 10)
+    expect(quota.windows[2].usedPercent).toBe(75)
+    expect(quota.windows[3].usedPercent).toBe(0)
+    expect(quota.windows[4]).toMatchObject({ usedPercent: null, amount: '42' })
+  })
+
+  it('omits zero credits, preserves unknown group names, and notes empty payloads', () => {
+    const quota = parseAntigravityQuota({
+      groups: [{ name: 'Partner Pool', buckets: [{ id: 'partner-24h', window: '24h', remainingFraction: 0.5 }] }]
+    }, { command: { data: { remaining_credits: 0 } } })
+    expect(quota.windows).toEqual([{ id: 'partner-24h', label: '24小时', detail: 'Partner Pool', usedPercent: 50 }])
+
+    expect(parseAntigravityQuota({ status: 'SUCCESS', command: { data: { groups: [] } } })).toEqual({
+      provider: 'antigravity',
+      windows: [],
+      note: '没有可用的额度窗口'
+    })
+  })
+
+  it('maps Antigravity model IDs to their quota groups', () => {
+    expect(antigravityQuotaGroup('gemini-4-neon[effort=high]')).toBe('gemini')
+    expect(antigravityQuotaGroup('agy/gemini-4-carbon-high')).toBe('gemini')
+    expect(antigravityQuotaGroup('gemini-pro-orchestrator-neon')).toBe('gemini')
+    expect(antigravityQuotaGroup('claude-opus-5-5[effort=high]')).toBe('3p')
+    expect(antigravityQuotaGroup('gpt-oss-120b-medium')).toBe('3p')
+    expect(antigravityQuotaGroup('agy/claude-sonnet-5-5-medium')).toBe('3p')
+    expect(antigravityQuotaGroup('unknown-model')).toBeUndefined()
+    expect(antigravityQuotaGroup('')).toBeUndefined()
   })
 })

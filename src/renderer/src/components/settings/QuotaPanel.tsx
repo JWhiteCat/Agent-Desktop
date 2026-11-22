@@ -36,6 +36,8 @@ export function QuotaPanel({ provider }: { provider: ProviderQuota['provider'] }
 
   const refresh = () => setReload((n) => n + 1)
 
+  const visibleQuota = quota?.provider === provider ? quota : undefined
+
   return (
     <>
       <div className="quota-head">
@@ -45,8 +47,8 @@ export function QuotaPanel({ provider }: { provider: ProviderQuota['provider'] }
         </button>
       </div>
       <QuotaCard
-        title={provider === 'cursor' ? 'Cursor' : 'Codex'}
-        quota={quota}
+        title={provider === 'cursor' ? 'Cursor' : provider === 'codex' ? 'Codex' : 'Antigravity'}
+        quota={visibleQuota}
         loading={pending}
         error={error}
         onRedeemed={provider === 'codex' ? refresh : undefined}

@@ -288,10 +288,22 @@ describe('result footer weekly turn estimate', () => {
     expect(render()).not.toContain('本轮预估周额度')
   })
 
-  it.each(['cursor', 'claude', 'antigravity'] as const)('uses the saved result provider when a conversation switches to %s', (cli) => {
+  it.each(['cursor', 'claude'] as const)('uses the saved result provider when a conversation switches to %s', (cli) => {
     expect(render(undefined, cli, { weeklyQuotaEstimate })).not.toContain('本轮预估周额度')
     expect(render(undefined, 'codex', { weeklyQuotaEstimate, cli })).not.toContain('本轮预估周额度')
     expect(render(undefined, cli, { weeklyQuotaEstimate, cli: 'codex' })).toContain('本轮预估周额度 0.5%')
+  })
+
+  it('shows the weekly turn estimate for Antigravity results without Codex session consumption', () => {
+    const html = render(undefined, 'antigravity', {
+      cli: 'antigravity',
+      model: 'gemini-4-neon[effort=high]',
+      weeklyQuotaEstimate
+    })
+    expect(html).toContain('本轮预估周额度 0.5%')
+    expect(html).toContain('开始 30%，结束 30.5%')
+    expect(html).not.toContain('本轮周额度')
+    expect(render(undefined, 'antigravity', { cli: 'antigravity', model: 'gemini-4-neon[effort=high]' })).not.toContain('本轮预估周额度')
   })
 
   it('prices Antigravity results from Gemini API / Google Cloud list rates', () => {

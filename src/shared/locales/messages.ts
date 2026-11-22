@@ -34,6 +34,8 @@ export const messagesMessages: Record<string, string> = {
   'Cursor 模型': 'Cursor models',
   '其他模型': 'Other models',
   '按需支出': 'On-demand spending',
+  'Gemini 模型': 'Gemini models',
+  'Claude 和 GPT 模型': 'Claude and GPT models',
   '没有可用的额度数据': 'No quota data available',
   '没有可用的额度窗口': 'No quota windows available',
   '不限': 'Unlimited',

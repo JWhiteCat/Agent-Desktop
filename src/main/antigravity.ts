@@ -210,6 +210,48 @@ export async function listAntigravityModels(customPath: string, auth: Antigravit
   }
 }
 
+export async function runAntigravitySlashCommand(
+  cli: ResolvedCli,
+  command: '/usage' | '/credits',
+  timeoutMs: number,
+  signal?: AbortSignal
+): Promise<{ code: number | null; stdout: string; stderr: string; timedOut: boolean; aborted: boolean }> {
+  if (signal?.aborted) return { code: null, stdout: '', stderr: '', timedOut: false, aborted: true }
+  const child = spawnAntigravity(cli, ['-p', command, '--output-format', 'json'], os.tmpdir(), '')
+  let stdout = ''
+  let stderr = ''
+  let timedOut = false
+  let aborted = false
+  const maxStdout = 512 * 1024
+  const maxStderr = 16 * 1024
+  child.stdout?.setEncoding('utf8').on('data', (chunk: string) => {
+    if (stdout.length < maxStdout) stdout += chunk.slice(0, maxStdout - stdout.length)
+  })
+  child.stderr?.setEncoding('utf8').on('data', (chunk: string) => {
+    stderr = (stderr + chunk).slice(-maxStderr)
+  })
+  child.stdin?.end()
+  const onAbort = () => {
+    aborted = true
+    killCliProcessTree(child)
+  }
+  signal?.addEventListener('abort', onAbort, { once: true })
+  const timer = setTimeout(() => {
+    timedOut = true
+    killCliProcessTree(child)
+  }, timeoutMs)
+  try {
+    const code = await new Promise<number | null>((resolve) => {
+      child.once('error', () => resolve(-1))
+      child.once('close', resolve)
+    })
+    return { code, stdout, stderr, timedOut, aborted }
+  } finally {
+    clearTimeout(timer)
+    signal?.removeEventListener('abort', onAbort)
+  }
+}
+
 export async function loginAntigravity(customPath: string): Promise<string> {
   return withAntigravityAcp(requireAntigravity(customPath), os.homedir(), { apiKey: '' }, async (acp) => {
     await acp.request('authenticate', { methodId: 'oauth-personal' })

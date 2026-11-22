@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_SETTINGS, type AgentEvent, type CliProvider, type Item, type ResultItem, type SendRequest, type ThreadMeta } from '../src/shared/types'
 import type { Store } from '../src/main/store'
 import type { loadCodexAccountUsage } from '../src/main/codex-account'
-import type { loadCodexQuota } from '../src/main/quota'
+import type { loadAntigravityQuota, loadCodexQuota } from '../src/main/quota'
 import { readCodexUsage } from '../src/main/codex-history'
 import { spawnCodexAcp } from '../src/main/codex'
 import { StreamReducer } from '../src/main/reducer'
@@ -579,5 +579,122 @@ describe('Codex account and session usage lifecycle', () => {
       expect(ctx.readAccount).not.toHaveBeenCalled()
       expect(ctx.readQuota).toHaveBeenCalledOnce()
     })
+  })
+})
+
+
+describe('Antigravity weekly quota estimate lifecycle', () => {
+  const resetsAt = 1_900_000_000_000
+  function agyQuota(geminiUsed: number, thirdPartyUsed = 0) {
+    return {
+      provider: 'antigravity' as const,
+      windows: [
+        { id: 'gemini-5h', label: '5小时', detail: 'Gemini 模型', usedPercent: geminiUsed * 4, resetsAt },
+        { id: 'gemini-weekly', label: '每周', detail: 'Gemini 模型', usedPercent: geminiUsed, resetsAt },
+        { id: '3p-5h', label: '5小时', detail: 'Claude 和 GPT 模型', usedPercent: thirdPartyUsed * 4, resetsAt },
+        { id: '3p-weekly', label: '每周', detail: 'Claude 和 GPT 模型', usedPercent: thirdPartyUsed, resetsAt }
+      ]
+    }
+  }
+
+  function setupAntigravity(model = 'gemini-4-neon[effort=high]') {
+    vi.setSystemTime(1_800_000_000_000)
+    const readAntigravity = vi.fn<typeof loadAntigravityQuota>().mockResolvedValue(agyQuota(1))
+    const state = { exists: true, items: [] as Item[] }
+    const meta = { id: 'thread', projectId: 'project', title: 'Task', cli: 'antigravity' as CliProvider, chatId: 'session' }
+    const store = {
+      thread: () => state.exists ? meta : undefined, items: () => state.items,
+      updateThread: (_id: string, patch: Partial<ThreadMeta>) => Object.assign(meta, patch), markItemsDirty: vi.fn(),
+      project: () => ({ id: 'project', path: os.tmpdir() }),
+      settings: { ...DEFAULT_SETTINGS, antigravityPath: '/custom/agy', antigravityApiKey: '' }
+    }
+    const events: AgentEvent[] = []
+    const finished = vi.fn()
+    const manager = new SessionManager(
+      store as unknown as Store,
+      (event) => events.push(event),
+      vi.fn(),
+      finished,
+      vi.fn(async () => ({})),
+      vi.fn<typeof loadCodexQuota>(),
+      readAntigravity
+    )
+    managers.push(manager)
+    const request = vi.fn().mockResolvedValue({ stopReason: 'end_turn' })
+    const run = {
+      proc: { provider: 'antigravity', acp: { request, notify: vi.fn(), disconnect: vi.fn() }, child: { exitCode: null }, ready: true, sessionId: 'session', dying: false, stderr: '' },
+      reducer: new StreamReducer(state.items), stopped: false, pending: new Map(), acceptUpdates: true,
+      force: false, mode: 'agent', model, switchCalls: new Set(), settled: false, antigravityQuotaPath: '/custom/agy' as string | undefined
+    }
+    const internal = manager as any
+    internal.runs.set('thread', run)
+    const req = { threadId: 'thread', prompt: 'Hello', mode: 'agent', model, force: false } as SendRequest
+    const start = () => internal.runPrompt('thread', run, req) as Promise<void>
+    return { manager, state, meta, store, events, finished, request, run, readAntigravity, start }
+  }
+
+  it('samples the matching Antigravity model group before sending and saves the weekly difference asynchronously', async () => {
+    const ctx = setupAntigravity('claude-opus-5-5[effort=high]')
+    const before = deferred<Awaited<ReturnType<typeof loadAntigravityQuota>>>()
+    const after = deferred<Awaited<ReturnType<typeof loadAntigravityQuota>>>()
+    ctx.readAntigravity.mockReturnValueOnce(before.promise).mockReturnValueOnce(after.promise)
+
+    const work = ctx.start()
+    expect(ctx.request).not.toHaveBeenCalled()
+    expect(ctx.readAntigravity).toHaveBeenCalledExactlyOnceWith('/custom/agy', '', 8_000, expect.any(AbortSignal))
+    before.resolve(agyQuota(5, 10))
+    await work
+    expect(ctx.finished).toHaveBeenCalledOnce()
+    expect(ctx.state.items[0]).toMatchObject({
+      cli: 'antigravity',
+      weeklyQuotaEstimate: { start: { weekly: { usedPercent: 10 } } }
+    })
+
+    await vi.advanceTimersByTimeAsync(1_000)
+    after.resolve(agyQuota(5, 10.25))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(ctx.state.items[0]).toMatchObject({
+      weeklyQuotaEstimate: {
+        start: { weekly: { usedPercent: 10 } },
+        end: { weekly: { usedPercent: 10.25 } },
+        usedPercent: 0.25
+      }
+    })
+  })
+
+  it('aborts the start read and does not send the prompt when stopped while sampling', async () => {
+    const ctx = setupAntigravity()
+    let capturedSignal: AbortSignal | undefined
+    ctx.readAntigravity.mockImplementationOnce((_path, _key, _timeout, signal) => {
+      capturedSignal = signal
+      return new Promise((resolve) => {
+        signal?.addEventListener('abort', () => resolve({ provider: 'antigravity', windows: [], note: 'aborted' }), { once: true })
+      })
+    })
+    const work = ctx.start()
+    ctx.manager.stop('thread')
+    await work
+    expect(capturedSignal?.aborted).toBe(true)
+    expect(ctx.request).not.toHaveBeenCalled()
+    expect(ctx.manager.isRunning('thread')).toBe(false)
+  })
+
+  it('skips quota sampling for API-key sessions and discards late end reads after API key configuration', async () => {
+    const apiCtx = setupAntigravity()
+    apiCtx.run.antigravityQuotaPath = undefined
+    await apiCtx.start()
+    expect(apiCtx.readAntigravity).not.toHaveBeenCalled()
+    expect(apiCtx.state.items[0]).not.toHaveProperty('weeklyQuotaEstimate')
+
+    const ctx = setupAntigravity()
+    const after = deferred<Awaited<ReturnType<typeof loadAntigravityQuota>>>()
+    ctx.readAntigravity.mockResolvedValueOnce(agyQuota(1)).mockReturnValueOnce(after.promise)
+    await ctx.start()
+    ctx.store.settings.antigravityApiKey = 'configured-gemini-key'
+    const count = ctx.events.length
+    after.resolve(agyQuota(2))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(ctx.events).toHaveLength(count)
+    expect(ctx.state.items[0]).not.toHaveProperty('weeklyQuotaEstimate.usedPercent')
   })
 })

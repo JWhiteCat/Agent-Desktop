@@ -45,7 +45,7 @@ export interface CodexResetCredit {
 }
 
 export interface ProviderQuota {
-  provider: 'cursor' | 'codex'
+  provider: 'cursor' | 'codex' | 'antigravity'
   plan?: string
   windows: QuotaWindow[]
   /** Why the card is empty, or a warning beside the windows. */
@@ -60,6 +60,7 @@ export interface ProviderQuota {
 export interface QuotaReport {
   cursor: ProviderQuota
   codex: ProviderQuota
+  antigravity: ProviderQuota
 }
 
 /** Names a quota window from its length. Unknown lengths stay numeric. */
@@ -169,6 +170,112 @@ export function parseCodexResetCredits(body: unknown): CodexResetCredit[] | null
     })
   }
   return credits
+}
+
+/** Identifies which Antigravity quota pool a model consumes. */
+export function antigravityQuotaGroup(model?: string): 'gemini' | '3p' | undefined {
+  if (typeof model !== 'string') return undefined
+  const base = model.trim().toLowerCase().replace(/^agy\//, '').replace(/\[[^\]]*\]$/, '')
+  if (!base) return undefined
+  if (base.startsWith('claude') || base.startsWith('gpt')) return '3p'
+  if (base.startsWith('gemini') || base.startsWith('orchestrator')) return 'gemini'
+  return undefined
+}
+
+/** Parses `agy -p "/usage" --output-format json` and optional `/credits` output. */
+export function parseAntigravityQuota(usageBody: unknown, creditsBody?: unknown, planOverride?: string): ProviderQuota {
+  const root = asRecord(usageBody)
+  const status = text(pick(root, 'status'))?.toUpperCase()
+  const command = asRecord(pick(root, 'command'))
+  const data = asRecord(pick(command, 'data')) ?? root
+  const plan = planOverride?.trim() || text(pick(data, 'plan_tier', 'planTier', 'plan')) || text(pick(root, 'plan_tier', 'planTier', 'plan'))
+  const windows: QuotaWindow[] = []
+
+  if (!status || status === 'SUCCESS') {
+    const groups = pick(data, 'groups')
+    if (Array.isArray(groups)) {
+      groups.forEach((rawGroup, groupIndex) => {
+        const group = asRecord(rawGroup)
+        if (!group) return
+        const detail = antigravityGroupLabel(text(pick(group, 'name', 'id')))
+        const rawBuckets = pick(group, 'buckets')
+        if (!Array.isArray(rawBuckets)) return
+        const groupWindows: Array<{ row: QuotaWindow; order: number }> = []
+        rawBuckets.forEach((rawBucket, bucketIndex) => {
+          const bucket = asRecord(rawBucket)
+          if (!bucket) return
+          const remaining = num(pick(bucket, 'remaining_fraction', 'remainingFraction'))
+          if (remaining == null) return
+          const id = text(pick(bucket, 'id')) ?? `antigravity-${groupIndex}-${bucketIndex}`
+          const label = antigravityBucketLabel(bucket, id)
+          if (!label) return
+          const rawUsed = (1 - remaining) * 100
+          const usedPercent = Math.abs(rawUsed) < 1e-12 ? 0 : Math.max(0, Math.round(rawUsed * 1e10) / 1e10)
+          const resetsAt = expiryMillis(pick(bucket, 'reset_time', 'resetTime', 'resets_at', 'resetsAt'))
+          groupWindows.push({
+            row: { id, label, detail, usedPercent, ...(resetsAt != null ? { resetsAt } : {}) },
+            order: label === '5小时' ? 0 : label === '每周' ? 1 : 2
+          })
+        })
+        groupWindows.sort((a, b) => a.order - b.order)
+        for (const entry of groupWindows) windows.push(entry.row)
+      })
+    }
+  }
+
+  const credits = antigravityCreditWindow(creditsBody)
+  if (credits) windows.push(credits)
+
+  if (!windows.length) {
+    return { provider: 'antigravity', ...(plan ? { plan } : {}), windows, note: '没有可用的额度窗口' }
+  }
+  return { provider: 'antigravity', ...(plan ? { plan } : {}), windows }
+}
+
+function antigravityGroupLabel(name?: string): string | undefined {
+  if (!name) return undefined
+  const lower = name.toLowerCase()
+  if (lower === 'gemini models' || lower === 'gemini') return 'Gemini 模型'
+  if (lower === 'claude and gpt models' || lower === '3p') return 'Claude 和 GPT 模型'
+  return name
+}
+
+function antigravityBucketLabel(bucket: Record<string, unknown>, id: string): string {
+  const rawWindow = text(pick(bucket, 'window'))?.toLowerCase()
+  const rawName = text(pick(bucket, 'name'))?.toLowerCase()
+  const seconds = num(pick(bucket, 'window_seconds', 'windowSeconds'))
+  if (seconds != null && seconds > 0) {
+    const fromSeconds = windowLabel(seconds)
+    if (fromSeconds) return fromSeconds
+  }
+  const token = rawWindow || id.toLowerCase()
+  if (token === '5h' || token === '5_hour' || token === 'five_hour' || token.endsWith('-5h')) return '5小时'
+  if (token === 'weekly' || token === 'week' || token === '7d' || token.endsWith('-weekly')) return '每周'
+  if (token === 'monthly' || token === 'month' || token.endsWith('-monthly')) return '每月'
+  if (token === 'daily' || token === 'day' || token === '24h' || token.endsWith('-daily')) return '24小时'
+  const hoursMatch = /^(\d+)h$/.exec(token)
+  if (hoursMatch) return windowLabel(Number(hoursMatch[1]) * 3600)
+  const daysMatch = /^(\d+)d$/.exec(token)
+  if (daysMatch) return windowLabel(Number(daysMatch[1]) * 86_400)
+  if (rawName) {
+    if (/five\s*hour|5[\s-]*hour/i.test(rawName)) return '5小时'
+    if (/weekly/i.test(rawName)) return '每周'
+    if (/monthly/i.test(rawName)) return '每月'
+    return text(pick(bucket, 'name')) ?? ''
+  }
+  return text(pick(bucket, 'window')) ?? id
+}
+
+function antigravityCreditWindow(creditsBody: unknown): QuotaWindow | null {
+  const root = asRecord(creditsBody)
+  const status = text(pick(root, 'status'))?.toUpperCase()
+  if (status && status !== 'SUCCESS') return null
+  const command = asRecord(pick(root, 'command'))
+  const data = asRecord(pick(command, 'data')) ?? root
+  const remaining = num(pick(data, 'remaining_credits', 'remainingCredits'))
+  if (remaining == null || remaining <= 0) return null
+  const amount = Number.isInteger(remaining) ? String(remaining) : String(Number(remaining.toFixed(2)))
+  return { id: 'credits', label: '积分', usedPercent: null, amount }
 }
 
 function otherModelsWindow(

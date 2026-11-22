@@ -4,7 +4,17 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { net } from 'electron'
-import { applyCursorMonthUsage, parseCodexQuota, parseCodexResetCredits, parseCursorQuota, type CodexResetCredit, type ProviderQuota, type QuotaReport } from '@shared/quota'
+import {
+  applyCursorMonthUsage,
+  parseAntigravityQuota,
+  parseCodexQuota,
+  parseCodexResetCredits,
+  parseCursorQuota,
+  type CodexResetCredit,
+  type ProviderQuota,
+  type QuotaReport
+} from '@shared/quota'
+import { resolveAntigravity, resolveAntigravityApiKey, runAntigravitySlashCommand } from './antigravity'
 import { resolveApiKey } from './cli'
 import { resolveCodexApiKey } from './codex'
 
@@ -13,6 +23,7 @@ const CODEX_USAGE = 'https://chatgpt.com/backend-api/wham/usage'
 const CODEX_RESET_CREDITS = 'https://chatgpt.com/backend-api/wham/rate-limit-reset-credits'
 const FETCH_MS = 15_000
 const DETAIL_FETCH_MS = 3_000
+const ANTIGRAVITY_DETAIL_FETCH_MS = 10_000
 const EXPIRED_NOTE = () => translate('Codex 登录已过期，请重新登录')
 
 /** Chromium's network stack follows the system proxy. Node's fetch does not. */
@@ -21,16 +32,34 @@ const http: typeof net.fetch = (...args) => net.fetch(...args)
 /** In-memory only. The API key itself is not stored here. */
 let cursorTokenCache: { keyId: string; accessToken: string; exp: number } | null = null
 
-/** Reads account quota for both CLIs. Access tokens never leave this process. */
-export async function loadQuotas(cursorApiKey: string | undefined, codexApiKey: string | undefined): Promise<QuotaReport> {
-  const [cursor, codex] = await Promise.all([loadCursorQuota(cursorApiKey), loadCodexSettingsQuota(codexApiKey)])
-  return { cursor, codex }
+export interface AntigravityQuotaOptions {
+  path?: string
+  apiKey?: string
 }
 
-/** Each settings card can finish without waiting for the other provider. */
-export function loadProviderQuota(provider: ProviderQuota['provider'], apiKey: string | undefined): Promise<ProviderQuota> {
+/** Reads account quota for supported CLIs. Access tokens never leave this process. */
+export async function loadQuotas(
+  cursorApiKey: string | undefined,
+  codexApiKey: string | undefined,
+  antigravity?: AntigravityQuotaOptions
+): Promise<QuotaReport> {
+  const [cursor, codex, antigravityQuota] = await Promise.all([
+    loadCursorQuota(cursorApiKey),
+    loadCodexSettingsQuota(codexApiKey),
+    loadAntigravitySettingsQuota(antigravity?.path, antigravity?.apiKey)
+  ])
+  return { cursor, codex, antigravity: antigravityQuota }
+}
+
+/** Each settings card can finish without waiting for the other providers. */
+export function loadProviderQuota(
+  provider: ProviderQuota['provider'],
+  apiKey: string | undefined,
+  customPath?: string
+): Promise<ProviderQuota> {
   if (provider === 'cursor') return loadCursorQuota(apiKey)
   if (provider === 'codex') return loadCodexSettingsQuota(apiKey)
+  if (provider === 'antigravity') return loadAntigravitySettingsQuota(customPath, apiKey)
   throw new Error('Unknown quota provider')
 }
 
@@ -75,6 +104,116 @@ export async function loadCodexQuota(apiKeySetting: string | undefined, timeoutM
   const auth = codexAuth(apiKeySetting)
   if ('quota' in auth) return auth.quota
   return readCodexUsage(auth.headers, timeoutMs)
+}
+
+/** Turn snapshots read only `/usage` to avoid spawning an extra credits process. */
+export async function loadAntigravityQuota(
+  customPath: string | undefined,
+  apiKeySetting: string | undefined,
+  timeoutMs = FETCH_MS,
+  signal?: AbortSignal
+): Promise<ProviderQuota> {
+  const prepared = antigravityQuotaTarget(customPath, apiKeySetting)
+  if ('quota' in prepared) return prepared.quota
+  return readAntigravityUsage(prepared.cli, timeoutMs, undefined, signal)
+}
+
+/** Settings quota fetches `/usage` and optional `/credits` in parallel. */
+async function loadAntigravitySettingsQuota(
+  customPath: string | undefined,
+  apiKeySetting: string | undefined
+): Promise<ProviderQuota> {
+  const prepared = antigravityQuotaTarget(customPath, apiKeySetting)
+  if ('quota' in prepared) return prepared.quota
+  const [usageResult, creditsResult] = await Promise.all([
+    runAntigravitySlashCommand(prepared.cli, '/usage', FETCH_MS).catch(() => null),
+    runAntigravitySlashCommand(prepared.cli, '/credits', ANTIGRAVITY_DETAIL_FETCH_MS).catch(() => null)
+  ])
+  const creditsJson = creditsResult && !creditsResult.timedOut && !creditsResult.aborted && creditsResult.code === 0
+    ? parseJsonOutput(creditsResult.stdout)
+    : undefined
+  return interpretAntigravityUsage(usageResult, creditsJson)
+}
+
+function antigravityQuotaTarget(
+  customPath: string | undefined,
+  apiKeySetting: string | undefined
+): { cli: NonNullable<ReturnType<typeof resolveAntigravity>> } | { quota: ProviderQuota } {
+  const empty = (note: string): { quota: ProviderQuota } => ({ quota: { provider: 'antigravity', windows: [], note } })
+  if (resolveAntigravityApiKey(apiKeySetting ?? '')) {
+    return empty(translate('当前使用 API Key，没有 Antigravity 订阅额度'))
+  }
+  const cli = resolveAntigravity(customPath ?? '')
+  if (!cli) return empty(translate('未找到 Antigravity CLI'))
+  return { cli }
+}
+
+async function readAntigravityUsage(
+  cli: NonNullable<ReturnType<typeof resolveAntigravity>>,
+  timeoutMs: number,
+  creditsJson?: unknown,
+  signal?: AbortSignal
+): Promise<ProviderQuota> {
+  const result = await runAntigravitySlashCommand(cli, '/usage', timeoutMs, signal).catch(() => null)
+  return interpretAntigravityUsage(result, creditsJson)
+}
+
+function interpretAntigravityUsage(
+  result: Awaited<ReturnType<typeof runAntigravitySlashCommand>> | null,
+  creditsJson?: unknown
+): ProviderQuota {
+  const empty = (note: string): ProviderQuota => ({ provider: 'antigravity', windows: [], note })
+  if (!result || result.timedOut || result.aborted) {
+    return empty(translate('暂时无法获取 Antigravity 额度'))
+  }
+  const json = parseJsonOutput(result.stdout)
+  const root = asRecord(json)
+  const status = stringField(root, 'status').toUpperCase()
+  const diagnostic = [stringField(root, 'error'), stringField(root, 'response'), result.stderr.trim()].filter(Boolean).join('\n')
+  if (result.code !== 0 || (status && status !== 'SUCCESS')) {
+    const authNote = antigravityErrorNote(diagnostic)
+    if (authNote) return empty(authNote)
+    return empty(translate('暂时无法获取 Antigravity 额度'))
+  }
+  if (!root) {
+    const authNote = antigravityErrorNote(result.stderr)
+    return empty(authNote || translate('暂时无法获取 Antigravity 额度'))
+  }
+  return parseAntigravityQuota(root, creditsJson)
+}
+
+function antigravityErrorNote(detail: string): string {
+  if (!detail) return ''
+  if (/gemini_api_key|api[\s_-]*key/i.test(detail)) {
+    return translate('当前使用 API Key，没有 Antigravity 订阅额度')
+  }
+  if (/expired/i.test(detail) && /auth|login|sign.?in|token|session|credential/i.test(detail)) {
+    return translate('Antigravity 登录已过期，请重新登录')
+  }
+  if (/auth(?:entication)?\s*required|not\s+(?:logged|signed)\s*in|unauthenticated|please\s+(?:log|sign)\s*in/i.test(detail)) {
+    return translate('未登录 Antigravity。请先在设置中登录。')
+  }
+  return ''
+}
+
+function parseJsonOutput(stdout: string): unknown {
+  const trimmed = stdout.trim()
+  if (!trimmed) return null
+  try {
+    return JSON.parse(trimmed) as unknown
+  } catch {
+    const lines = trimmed.split(/\r?\n/).reverse()
+    for (const line of lines) {
+      const candidate = line.trim()
+      if (!candidate.startsWith('{')) continue
+      try {
+        return JSON.parse(candidate) as unknown
+      } catch {
+        continue
+      }
+    }
+    return null
+  }
 }
 
 /** Settings quota includes reset cards. Turn snapshots keep using `loadCodexQuota`. */

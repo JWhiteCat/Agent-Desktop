@@ -46,7 +46,8 @@ export function ResultFooter({ item, steps, user, text, fallbackModel, cli = 'cu
   const quote = modelId && u ? quoteModel(item.apiModel || modelId, u, provider) : undefined
   const priceSource = priceSourceLabel(provider)
   const sessionUsage = provider === 'codex' ? sessionConsumption(item) : undefined
-  const turnEstimate = provider === 'codex' && item.weeklyQuotaEstimate !== undefined ? weeklyEstimate(item) : undefined
+  const turnEstimate = (provider === 'codex' || provider === 'antigravity') && item.weeklyQuotaEstimate !== undefined
+    ? weeklyEstimate(item) : undefined
   return (
     <div className="result-footer">
       {text && <CopyButton text={text} />}

@@ -77,7 +77,7 @@ export function UsageSettings({ provider, period, onPeriodChange }: {
 
   return (
     <>
-      {(provider === 'cursor' || provider === 'codex') && <QuotaPanel provider={provider} />}
+      {(provider === 'cursor' || provider === 'codex' || provider === 'antigravity') && <QuotaPanel provider={provider} />}
       <h4>{t('本机用量')}</h4>
       <div className="usage-periods" role="group" aria-label={t('统计范围')}>
         {USAGE_PERIODS.map((item) => (

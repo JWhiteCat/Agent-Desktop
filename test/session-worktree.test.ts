@@ -116,7 +116,15 @@ function setup(provider: CliProvider = 'cursor') {
     updateThread: (_id: string, patch: Partial<ThreadMeta>) => Object.assign(thread, patch)
   }
   const finished = vi.fn()
-  const manager = new SessionManager(store as unknown as Store, vi.fn(), vi.fn(), finished, vi.fn(async () => undefined) as any, vi.fn(async () => undefined) as any)
+  const manager = new SessionManager(
+    store as unknown as Store,
+    vi.fn(),
+    vi.fn(),
+    finished,
+    vi.fn(async () => undefined) as any,
+    vi.fn(async () => undefined) as any,
+    vi.fn(async () => ({ provider: 'antigravity', windows: [] })) as any
+  )
   const send = async (prompt: string, worktree = true) => {
     const count = finished.mock.calls.length
     await manager.send({ threadId: 'thread', prompt, model: 'auto', mode: 'agent', force: false, worktree })

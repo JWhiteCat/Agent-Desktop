@@ -14,7 +14,7 @@ import { attachmentsMessages } from '../src/shared/locales/attachments'
 import { toolbarMessages } from '../src/shared/locales/toolbar'
 import { navigationMessages } from '../src/shared/locales/navigation'
 import { terminalMessages } from '../src/shared/locales/terminal'
-import { displayQuotaText, parseCodexQuota, parseCursorQuota, windowLabel } from '../src/shared/quota'
+import { displayQuotaText, parseAntigravityQuota, parseCodexQuota, parseCursorQuota, windowLabel } from '../src/shared/quota'
 import type { ResultItem } from '../src/shared/types'
 import { ResultFooter } from '../src/renderer/src/components/items/ResultFooter'
 import { relativeTime, resetsIn } from '../src/renderer/src/lib/format'
@@ -204,12 +204,26 @@ describe('English presentation', () => {
       }
     }
     const rawCursor = { planUsage: { autoPercentUsed: 12, apiPercentUsed: 34 } }
+    const rawAntigravity = {
+      status: 'SUCCESS',
+      command: {
+        name: 'usage',
+        data: {
+          groups: [
+            { name: 'Gemini Models', buckets: [{ id: 'gemini-5h', window: '5h', remaining_fraction: 0.9 }] },
+            { name: 'Claude and GPT models', buckets: [{ id: '3p-weekly', window: 'weekly', remaining_fraction: 0.8 }] }
+          ]
+        }
+      }
+    }
     const chineseCodex = parseCodexQuota(rawCodex)
     const chineseCursor = parseCursorQuota(rawCursor, {})
+    const chineseAntigravity = parseAntigravityQuota(rawAntigravity)
     setLanguage('en')
 
     expect(parseCodexQuota(rawCodex)).toEqual(chineseCodex)
     expect(parseCursorQuota(rawCursor, {})).toEqual(chineseCursor)
+    expect(parseAntigravityQuota(rawAntigravity)).toEqual(chineseAntigravity)
     expect(windowLabel(18_000)).toBe('5小时')
     expect(windowLabel(604_800)).toBe('每周')
     expect(windowLabel(2_592_000)).toBe('每月')
@@ -219,6 +233,8 @@ describe('English presentation', () => {
     expect(displayQuotaText('每周')).toBe('Weekly')
     expect(displayQuotaText('每月')).toBe('Monthly')
     expect(displayQuotaText('Cursor 模型')).toBe('Cursor models')
+    expect(displayQuotaText('Gemini 模型')).toBe('Gemini models')
+    expect(displayQuotaText('Claude 和 GPT 模型')).toBe('Claude and GPT models')
     expect(displayQuotaText('custom quota pool')).toBe('custom quota pool')
   })
 

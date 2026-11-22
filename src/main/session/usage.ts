@@ -1,9 +1,10 @@
 import type { AgentEvent } from '@shared/types'
 import { threadCli } from '@shared/types'
 import { quotaSnapshot, weeklyQuotaEstimate, type TurnQuotaSnapshot } from '@shared/turn-quota'
+import { resolveAntigravityApiKey } from '../antigravity'
 import { resolveCodexApiKey } from '../codex'
 import { loadCodexAccountUsage } from '../codex-account'
-import { loadCodexQuota } from '../quota'
+import { loadAntigravityQuota, loadCodexQuota } from '../quota'
 import type { CodexTurnUsageReader } from '../codex-turn-usage'
 import type { Store } from '../store'
 
@@ -15,15 +16,20 @@ interface CodexUsageRefresh {
   timer?: ReturnType<typeof setTimeout>
 }
 
+interface PendingEstimate {
+  abort?: AbortController
+}
+
 const CODEX_USAGE_RETRY_MS = [30_000, 120_000, 300_000]
 const CODEX_QUOTA_SAMPLE_MS = 3_000
+const ANTIGRAVITY_QUOTA_SAMPLE_MS = 8_000
 
 type UsageStore = Pick<Store, 'thread' | 'items' | 'markItemsDirty' | 'settings'>
 
 /** Owns delayed usage writes and retries without owning a CLI process or turn. */
 export class SessionUsage {
   private refreshes = new Map<string, CodexUsageRefresh>()
-  private estimates = new Map<string, object>()
+  private estimates = new Map<string, PendingEstimate>()
   private stopped = false
 
   constructor(
@@ -31,11 +37,13 @@ export class SessionUsage {
     private readonly emit: (event: AgentEvent) => void,
     private readonly isRunning: (threadId: string) => boolean,
     private readonly readCodexAccount = loadCodexAccountUsage,
-    private readonly readCodexQuota = loadCodexQuota
+    private readonly readCodexQuota = loadCodexQuota,
+    private readonly readAntigravityQuota = loadAntigravityQuota
   ) {}
 
   stop(): void {
     this.stopped = true
+    for (const pending of this.estimates.values()) pending.abort?.abort()
     this.estimates.clear()
     for (const threadId of this.refreshes.keys()) this.cancel(threadId)
   }
@@ -57,21 +65,62 @@ export class SessionUsage {
     }
   }
 
+  /** Samples the Antigravity quota pool matching `model` with a bounded deadline. */
+  async sampleAntigravityQuota(model: string, customPath?: string, signal?: AbortSignal): Promise<TurnQuotaSnapshot | undefined> {
+    if (this.stopped || signal?.aborted) return undefined
+    const controller = new AbortController()
+    const onAbort = () => controller.abort()
+    signal?.addEventListener('abort', onAbort, { once: true })
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+      const quota = await Promise.race([
+        this.readAntigravityQuota(
+          customPath ?? this.store.settings.antigravityPath,
+          this.store.settings.antigravityApiKey,
+          ANTIGRAVITY_QUOTA_SAMPLE_MS,
+          controller.signal
+        ),
+        new Promise<undefined>((resolve) => {
+          timer = setTimeout(() => {
+            controller.abort()
+            resolve(undefined)
+          }, ANTIGRAVITY_QUOTA_SAMPLE_MS)
+        })
+      ])
+      return !this.stopped && !signal?.aborted && quota ? quotaSnapshot(quota, Date.now(), model) : undefined
+    } catch {
+      return undefined
+    } finally {
+      clearTimeout(timer)
+      signal?.removeEventListener('abort', onAbort)
+    }
+  }
+
   /** Freeze one end reading for this result; history refreshes never repeat it. */
-  async saveQuotaEstimate(threadId: string, resultId: string, sessionId: string): Promise<void> {
+  async saveQuotaEstimate(
+    threadId: string,
+    resultId: string,
+    sessionId: string,
+    provider: 'codex' | 'antigravity' = 'codex',
+    model?: string
+  ): Promise<void> {
     if (this.stopped || this.isRunning(threadId)) return
     const items = this.store.items(threadId)
     const item = items.find((item) => item.kind === 'result' && item.id === resultId)
     if (item?.kind !== 'result' || !item.weeklyQuotaEstimate) return
     const estimate = item.weeklyQuotaEstimate
-    const pending = {}
+    this.estimates.get(threadId)?.abort?.abort()
+    const pending: PendingEstimate = provider === 'antigravity' ? { abort: new AbortController() } : {}
     this.estimates.set(threadId, pending)
     try {
-      const end = await this.sampleQuota()
+      const end = provider === 'antigravity'
+        ? await this.sampleAntigravityQuota(model ?? item.model ?? '', this.store.settings.antigravityPath, pending.abort?.signal)
+        : await this.sampleQuota()
       if (this.estimates.get(threadId) !== pending || this.stopped || this.isRunning(threadId)) return
       const thread = this.store.thread(threadId)
-      if (!thread || thread.chatId !== sessionId || threadCli(thread) !== 'codex') return
-      if (resolveCodexApiKey(this.store.settings.codexApiKey)) return
+      if (!thread || thread.chatId !== sessionId || threadCli(thread) !== provider) return
+      if (provider === 'codex' && resolveCodexApiKey(this.store.settings.codexApiKey)) return
+      if (provider === 'antigravity' && resolveAntigravityApiKey(this.store.settings.antigravityApiKey)) return
       // Re-importing may replace the transcript, even when it retains result IDs.
       if (this.store.items(threadId) !== items) return
       const current = items.find((item) => item.kind === 'result' && item.id === resultId)
@@ -111,6 +160,7 @@ export class SessionUsage {
   }
 
   cancel(threadId: string): void {
+    this.estimates.get(threadId)?.abort?.abort()
     this.estimates.delete(threadId)
     this.cancelRefresh(threadId)
   }

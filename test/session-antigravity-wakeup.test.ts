@@ -120,7 +120,15 @@ function setup(force = true) {
   const finished = vi.fn()
   const emit = vi.fn()
   const stateChanged = vi.fn()
-  const manager = new SessionManager(store as unknown as Store, emit, stateChanged, finished)
+  const manager = new SessionManager(
+    store as unknown as Store,
+    emit,
+    stateChanged,
+    finished,
+    undefined,
+    undefined,
+    vi.fn(async () => ({ provider: 'antigravity' as const, windows: [] }))
+  )
   managers.push(manager)
   const req: SendRequest = { threadId: thread.id, prompt: 'Run checks and report', model: 'gemini-3.8-pro-high', mode: 'agent', force }
   return {

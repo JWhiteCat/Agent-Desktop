@@ -1,10 +1,41 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { consumeCodexReset, loadCodexQuota, loadProviderQuota, loadQuotas } from '../src/main/quota'
+import { consumeCodexReset, loadAntigravityQuota, loadCodexQuota, loadProviderQuota, loadQuotas } from '../src/main/quota'
 
-const { fetchMock } = vi.hoisted(() => ({ fetchMock: vi.fn() }))
+const { fetchMock, resolveAntigravityMock, runAntigravitySlashCommandMock } = vi.hoisted(() => ({
+  fetchMock: vi.fn(),
+  resolveAntigravityMock: vi.fn(),
+  runAntigravitySlashCommandMock: vi.fn()
+}))
 vi.mock('electron', () => ({ net: { fetch: fetchMock } }))
+vi.mock('../src/main/antigravity', async (original) => ({
+  ...await original<typeof import('../src/main/antigravity')>(),
+  resolveAntigravity: resolveAntigravityMock,
+  runAntigravitySlashCommand: runAntigravitySlashCommandMock
+}))
+
+const antigravityUsageStdout = JSON.stringify({
+  status: 'SUCCESS',
+  command: {
+    name: 'usage',
+    data: {
+      groups: [
+        {
+          name: 'Gemini Models',
+          buckets: [
+            { id: 'gemini-weekly', window: 'weekly', remaining_fraction: 0.9, reset_time: '2026-11-29T14:12:40Z' },
+            { id: 'gemini-5h', window: '5h', remaining_fraction: 0.8, reset_time: '2026-11-22T19:12:40Z' }
+          ]
+        }
+      ]
+    }
+  }
+})
+const antigravityCreditsStdout = JSON.stringify({
+  status: 'SUCCESS',
+  command: { name: 'credits', data: { remaining_credits: 15 } }
+})
 
 const usage = {
   plan_type: 'plus',
@@ -22,8 +53,17 @@ beforeEach(() => {
   vi.stubEnv('CODEX_API_KEY', '')
   vi.stubEnv('OPENAI_API_KEY', '')
   vi.stubEnv('CURSOR_API_KEY', '')
+  vi.stubEnv('GEMINI_API_KEY', '')
   vi.stubEnv('CODEX_HOME', '')
   vi.spyOn(fs, 'readFileSync').mockReturnValue(storedAuth())
+  resolveAntigravityMock.mockReset().mockReturnValue({ command: 'agy', prefixArgs: [], display: 'agy' })
+  runAntigravitySlashCommandMock.mockReset().mockImplementation(async (_cli: unknown, command: string) => ({
+    code: 0,
+    stdout: command === '/credits' ? antigravityCreditsStdout : antigravityUsageStdout,
+    stderr: '',
+    timedOut: false,
+    aborted: false
+  }))
   fetchMock.mockReset().mockImplementation(async (url: string) => {
     if (String(url).includes('/rate-limit-reset-credits')) {
       return { ok: true, status: 200, json: async () => ({ credits: [] }) }
@@ -253,5 +293,63 @@ describe('Codex turn quota snapshot', () => {
     await expect(loadCodexQuota(undefined, 3_000)).resolves.toMatchObject({
       provider: 'codex', windows: [], note: '暂时无法获取 Codex 额度'
     })
+  })
+})
+
+describe('Antigravity quota', () => {
+  it('fetches usage and optional credits in parallel for Settings', async () => {
+    const quota = await loadProviderQuota('antigravity', undefined, '/custom/agy')
+    expect(resolveAntigravityMock).toHaveBeenCalledWith('/custom/agy')
+    expect(runAntigravitySlashCommandMock).toHaveBeenCalledWith(expect.objectContaining({ command: 'agy' }), '/usage', 15_000)
+    expect(runAntigravitySlashCommandMock).toHaveBeenCalledWith(expect.objectContaining({ command: 'agy' }), '/credits', 10_000)
+    expect(quota.provider).toBe('antigravity')
+    expect(quota.windows.map((row) => [row.id, row.usedPercent, row.amount])).toEqual([
+      ['gemini-5h', 20, undefined],
+      ['gemini-weekly', 10, undefined],
+      ['credits', null, '15']
+    ])
+  })
+
+  it('keeps usage windows when the optional credits command fails or times out', async () => {
+    runAntigravitySlashCommandMock.mockImplementation(async (_cli: unknown, command: string) => (
+      command === '/credits'
+        ? { code: null, stdout: '', stderr: '', timedOut: true, aborted: false }
+        : { code: 0, stdout: antigravityUsageStdout, stderr: '', timedOut: false, aborted: false }
+    ))
+    const quota = await loadProviderQuota('antigravity', undefined)
+    expect(quota.windows.map((row) => row.id)).toEqual(['gemini-5h', 'gemini-weekly'])
+    expect(quota.note).toBeUndefined()
+  })
+
+  it.each(['settings', 'GEMINI_API_KEY'])('reports API key usage for %s without spawning agy', async (source) => {
+    if (source === 'GEMINI_API_KEY') vi.stubEnv('GEMINI_API_KEY', 'env-gemini-key')
+    const quota = await loadProviderQuota('antigravity', source === 'settings' ? 'configured-key' : undefined)
+    expect(quota).toMatchObject({ provider: 'antigravity', windows: [], note: '当前使用 API Key，没有 Antigravity 订阅额度' })
+    expect(runAntigravitySlashCommandMock).not.toHaveBeenCalled()
+  })
+
+  it('reports missing CLI, unauthenticated state, timeouts, and command failures', async () => {
+    resolveAntigravityMock.mockReturnValueOnce(undefined)
+    expect(await loadProviderQuota('antigravity', undefined)).toMatchObject({ windows: [], note: '未找到 Antigravity CLI' })
+
+    runAntigravitySlashCommandMock.mockResolvedValueOnce({
+      code: 1, stdout: JSON.stringify({ status: 'ERROR', error: 'Authentication required' }), stderr: '', timedOut: false, aborted: false
+    }).mockResolvedValueOnce({ code: 1, stdout: '', stderr: '', timedOut: false, aborted: false })
+    expect(await loadProviderQuota('antigravity', undefined)).toMatchObject({ windows: [], note: '未登录 Antigravity。请先在设置中登录。' })
+
+    runAntigravitySlashCommandMock.mockResolvedValueOnce({ code: null, stdout: '', stderr: '', timedOut: true, aborted: false })
+    expect(await loadAntigravityQuota('', undefined, 8_000)).toMatchObject({ windows: [], note: '暂时无法获取 Antigravity 额度' })
+  })
+
+  it('reads only /usage for turn snapshots with the configured timeout and signal', async () => {
+    const signal = new AbortController().signal
+    const quota = await loadAntigravityQuota('/custom/agy', undefined, 8_000, signal)
+    expect(quota.windows.map((row) => row.id)).toEqual(['gemini-5h', 'gemini-weekly'])
+    expect(runAntigravitySlashCommandMock).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ command: 'agy' }),
+      '/usage',
+      8_000,
+      signal
+    )
   })
 })

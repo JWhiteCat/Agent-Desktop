@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseCodexQuota, type ProviderQuota } from '../src/shared/quota'
+import { parseAntigravityQuota, parseCodexQuota, type ProviderQuota } from '../src/shared/quota'
 import { quotaSnapshot, weeklyQuotaEstimate, type TurnQuotaSnapshot } from '../src/shared/turn-quota'
 
 const startedAt = 1_800_000_000_000
@@ -41,12 +41,42 @@ describe('Codex turn quota snapshots', () => {
     expect(quotaSnapshot(current, finishedAt)).toBeUndefined()
   })
 
-  it('rejects snapshots without main windows, a valid sample time, or the Codex provider', () => {
+  it('rejects snapshots without main windows, a valid sample time, or a supported provider', () => {
     expect(quotaSnapshot({ provider: 'codex', windows: [{ id: 'extra', label: '每周', usedPercent: 10 }] }, finishedAt)).toBeUndefined()
     expect(quotaSnapshot({ ...quota(1, 1), provider: 'cursor' }, finishedAt)).toBeUndefined()
     expect(quotaSnapshot(quota(1, 1), NaN)).toBeUndefined()
   })
 
+  it('selects the matching Antigravity model pool for turn snapshots', () => {
+    const agyQuota = parseAntigravityQuota({
+      groups: [
+        {
+          name: 'Gemini Models',
+          buckets: [
+            { id: 'gemini-weekly', window: 'weekly', remaining_fraction: 0.99, reset_time: new Date(resetsAt + 604_800_000).toISOString() },
+            { id: 'gemini-5h', window: '5h', remaining_fraction: 0.95, reset_time: new Date(resetsAt).toISOString() }
+          ]
+        },
+        {
+          name: 'Claude and GPT models',
+          buckets: [
+            { id: '3p-weekly', window: 'weekly', remaining_fraction: 0.8, reset_time: new Date(resetsAt + 500_000_000).toISOString() },
+            { id: '3p-5h', window: '5h', remaining_fraction: 0.7, reset_time: new Date(resetsAt).toISOString() }
+          ]
+        }
+      ]
+    })
+    const gemini = quotaSnapshot(agyQuota, finishedAt, 'gemini-4-neon[effort=high]')
+    expect(gemini?.weekly?.usedPercent).toBeCloseTo(1, 10)
+    expect(gemini?.fiveHour?.usedPercent).toBeCloseTo(5, 10)
+
+    const thirdParty = quotaSnapshot(agyQuota, finishedAt, 'claude-opus-5-5[effort=high]')
+    expect(thirdParty?.weekly?.usedPercent).toBeCloseTo(20, 10)
+    expect(thirdParty?.fiveHour?.usedPercent).toBeCloseTo(30, 10)
+
+    // Multiple pools with an unrecognized model cannot guess which pool was consumed.
+    expect(quotaSnapshot(agyQuota, finishedAt, 'unknown-model')).toBeUndefined()
+  })
 })
 
 describe('weekly account quota estimate for a single turn', () => {
@@ -125,6 +155,15 @@ describe('weekly account quota estimate for a single turn', () => {
   it.each([NaN, Infinity, -Infinity, -1])('rejects invalid weekly percentages %s at either end', (value) => {
     expect(weeklyQuotaEstimate(snapshot(value), snapshot(31, finishedAt)).usedPercent).toBeUndefined()
     expect(weeklyQuotaEstimate(snapshot(30), snapshot(value, finishedAt)).usedPercent).toBeUndefined()
+  })
+
+  it('accepts a fresh unused rolling window whose reset anchors during the turn', () => {
+    const start = snapshot(0, startedAt, startedAt + 604_800_000)
+    const end = snapshot(0.15, finishedAt, finishedAt + 604_800_000)
+    expect(weeklyQuotaEstimate(start, end)).toEqual({ start, end, usedPercent: 0.15 })
+    // Reject a reset jump beyond the turn duration even when starting at 0%.
+    const jumped = snapshot(0.15, finishedAt, finishedAt + 604_800_000 + 2_000)
+    expect(weeklyQuotaEstimate(start, jumped).usedPercent).toBeUndefined()
   })
 
   it('rejects decreasing readings and reversed or nonfinite sampling times', () => {
