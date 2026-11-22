@@ -43,7 +43,7 @@ export async function scanAntigravitySessions(settings: Credentials, imported: S
 export async function readAntigravityTranscript(settings: Credentials, sessionId: string, cwd: string, capture?: ToolImageCapture): Promise<Item[]> {
   const cli = requireAntigravity(settings.antigravityPath)
   const items: Item[] = []
-  const reducer = new StreamReducer(items, capture)
+  const reducer = new StreamReducer(items, capture, 'antigravity')
   reducer.init = { sessionId, cwd }
   const readForkPrompt = createForkPromptReader()
   let user: { text: string; images: number; messageId?: string; createdAt: number } | undefined

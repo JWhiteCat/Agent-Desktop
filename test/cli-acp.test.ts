@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { formatAnswers, normalizeQuestions, parseQuestionBlock } from '@shared/questions'
+import { formatAnswers, formatQuestionBlock, normalizeQuestions, parseQuestionBlock } from '@shared/questions'
 import { setLanguage } from '@shared/i18n'
 import { acpErrorText, claudePlanModePrompt, codexPlanModePrompt, permissionResult, planModePrompt } from '../src/main/acp'
 import { exitFailureDetail, parseModels, resolveApiKey, stripAnsi } from '../src/main/cli'
@@ -60,12 +60,26 @@ describe('acp questions', () => {
   it('keeps complete questions and drops empty ones', () => {
     const questions = normalizeQuestions([
       { id: 'q1', prompt: '继续？', options: [{ id: 'yes', label: '是' }, { label: '' }] },
+      { question: '多选？', options: ['甲', '乙'], is_multi_select: true },
       { prompt: '   ', options: [{ id: 'a', label: 'A' }] },
       null
     ])
     expect(questions).toEqual([
-      { id: 'q1', prompt: '继续？', options: [{ id: 'yes', label: '是' }], allowMultiple: false }
+      { id: 'q1', prompt: '继续？', options: [{ id: 'yes', label: '是' }], allowMultiple: false },
+      { id: 'q1', prompt: '多选？', options: [{ id: 'o0', label: '甲' }, { id: 'o1', label: '乙' }], allowMultiple: true }
     ])
+  })
+
+  it('serializes a question set into a fenced block that round-trips cleanly', () => {
+    const questions = normalizeQuestions([
+      { question: '选颜色', options: ['红', '蓝'], is_multi_select: false },
+      { question: '选配料', options: ['芝士', '蘑菇'], isMultiSelect: true }
+    ])
+    const fenced = formatQuestionBlock({ title: '确认选项', questions })
+    expect(fenced.startsWith('```questions\n')).toBe(true)
+    expect(fenced.endsWith('\n```')).toBe(true)
+    const body = fenced.slice('```questions\n'.length, -'\n```'.length)
+    expect(parseQuestionBlock(body)).toEqual({ title: '确认选项', questions })
   })
 
   it('parses a questions block and formats the picks as a reply', () => {

@@ -1,6 +1,7 @@
 import type { ToolImageCapture } from '@shared/tool-images'
 import { t as translate } from '@shared/i18n'
-import type { AssistantItem, Item, ResultItem, ThinkingItem, ToolItem } from '@shared/types'
+import { formatQuestionBlock, normalizeQuestions, type QuestionSet } from '@shared/questions'
+import type { AssistantItem, CliProvider, Item, QuestionPrompt, ResultItem, ThinkingItem, ToolItem } from '@shared/types'
 import { isBackgroundAgentActivity } from '@shared/transcript'
 import { normalizeTurnUsage, preferTurnUsage } from '@shared/turn-usage'
 import { unifiedDiff } from '@shared/unified-diff'
@@ -69,6 +70,11 @@ export class StreamReducer {
   private fileRecorder = new ToolFileRecorder()
   /** One Codex plan card per turn, updated by `plan` and `plan_update`. */
   private planCallId?: string
+  /** Antigravity `ask_question` inputs cached by tool call id until the call enters `pending`. */
+  private askQuestionInputs = new Map<string, QuestionSet>()
+  private emittedAskQuestions = new Set<string>()
+  /** Plain-text fallback `agy acp` emits right after `ask_question` transitions to `pending`. */
+  private pendingQuestionEcho?: { expected: string; buffered: string; messageId?: string }
   private sawDelta = false
   init: InitInfo = {}
   gotResult = false
@@ -77,7 +83,11 @@ export class StreamReducer {
   /** API model id Claude attaches to `usage_update`, since the chosen model may be an alias. */
   lastModel?: string
 
-  constructor(private readonly items: Item[], private readonly captureImages?: ToolImageCapture) {}
+  constructor(
+    private readonly items: Item[],
+    private readonly captureImages?: ToolImageCapture,
+    private readonly provider?: CliProvider
+  ) {}
 
   /** Returns items that were created or changed. */
   handle(ev: any): Item[] {
@@ -122,13 +132,13 @@ export class StreamReducer {
       case 'agent_thought_chunk': {
         const text = textOfContent(update.content)
         if (!text) return []
-        return this.onThinking({ subtype: 'delta', text, timestamp_ms: Date.now() })
+        return [...this.flushPendingQuestionEcho(), ...this.onThinking({ subtype: 'delta', text, timestamp_ms: Date.now() })]
       }
       case 'agent_message_chunk': {
         const text = textOfContent(update.content)
         if (!text) return []
         const messageId = typeof update.messageId === 'string' && update.messageId.trim() ? update.messageId : undefined
-        return this.onAssistant({ message: { content: text }, timestamp_ms: Date.now() }, messageId)
+        return this.onAcpAssistantText(text, messageId)
       }
       case 'tool_call':
       case 'tool_call_update':
@@ -155,7 +165,7 @@ export class StreamReducer {
   }
 
   closeSegments(): Item[] {
-    const changed: Item[] = []
+    const changed = this.flushPendingQuestionEcho()
     if (this.thinking) {
       this.thinking.done = true
       this.thinking.endedAt = Date.now()
@@ -333,16 +343,99 @@ export class StreamReducer {
     return [item]
   }
 
+  private onAcpAssistantText(text: string, messageId?: string): Item[] {
+    const echo = this.pendingQuestionEcho
+    if (echo) {
+      const normalized = text.replace(/\r\n/g, '\n')
+      const candidate = echo.buffered + normalized
+      const trimmedStart = candidate.replace(/^\s+/, '')
+      if (!trimmedStart) {
+        echo.buffered = candidate
+        if (messageId) echo.messageId = messageId
+        return []
+      }
+      if (trimmedStart.startsWith(echo.expected)) {
+        const rest = trimmedStart.slice(echo.expected.length).replace(/^\s+/, '')
+        this.pendingQuestionEcho = undefined
+        if (!rest) return []
+        return this.onAssistant({ message: { content: rest }, timestamp_ms: Date.now() }, messageId ?? echo.messageId)
+      }
+      if (echo.expected.startsWith(trimmedStart)) {
+        echo.buffered = candidate
+        if (messageId) echo.messageId = messageId
+        return []
+      }
+      this.pendingQuestionEcho = undefined
+      return this.onAssistant({ message: { content: candidate }, timestamp_ms: Date.now() }, messageId ?? echo.messageId)
+    }
+    return this.onAssistant({ message: { content: text }, timestamp_ms: Date.now() }, messageId)
+  }
+
+  private flushPendingQuestionEcho(): Item[] {
+    const echo = this.pendingQuestionEcho
+    if (!echo) return []
+    this.pendingQuestionEcho = undefined
+    if (!echo.buffered.trim()) return []
+    return this.onAssistant({ message: { content: echo.buffered }, timestamp_ms: Date.now() }, echo.messageId)
+  }
+
+  private emitInlineQuestionBlock(set: QuestionSet): Item[] {
+    const changed = this.thinking ? this.closeSegments() : this.flushPendingQuestionEcho()
+    const block = formatQuestionBlock(set)
+    let item = this.assistant
+    if (!item) {
+      item = { id: newId(), kind: 'assistant', text: block }
+      this.items.push(item)
+    } else {
+      item.text = item.text.trim() ? `${item.text.trimEnd()}\n\n${block}` : block
+    }
+    this.lastAssistantText = item.text
+    // End the active assistant segment so later text cannot collide with the closing code fence.
+    this.assistant = undefined
+    this.pendingQuestionEcho = { expected: expectedAntigravityQuestionText(set.questions), buffered: '' }
+    return [...changed, item]
+  }
+
+  private onAcpAskQuestion(update: any, callId: string, raw: unknown): Item[] {
+    if (raw) {
+      const questions = normalizeQuestions((raw as { questions?: unknown }).questions)
+      if (questions.length) {
+        const rawTitle = (raw as { title?: unknown }).title
+        const set: QuestionSet = {
+          ...(typeof rawTitle === 'string' && rawTitle.trim() ? { title: rawTitle.trim() } : {}),
+          questions
+        }
+        if (callId) this.askQuestionInputs.set(callId, set)
+        if (this.provider === 'antigravity' && update.status === 'pending' && (!callId || !this.emittedAskQuestions.has(callId))) {
+          if (callId) this.emittedAskQuestions.add(callId)
+          return this.emitInlineQuestionBlock(set)
+        }
+      }
+    } else if (this.provider === 'antigravity' && update.status === 'pending' && callId && !this.emittedAskQuestions.has(callId)) {
+      const cached = this.askQuestionInputs.get(callId)
+      if (cached?.questions.length) {
+        this.emittedAskQuestions.add(callId)
+        return this.emitInlineQuestionBlock(cached)
+      }
+    }
+    if (callId && (update.status === 'completed' || update.status === 'failed')) {
+      this.askQuestionInputs.delete(callId)
+    }
+    const existing = this.tools.get(callId)
+    if (!existing || existing.status !== 'running') return []
+    existing.status = 'success'
+    existing.endedAt = Date.now()
+    return [existing]
+  }
+
   private onAcpTool(update: any): Item[] {
     const rawInput = update.rawInput
-    if (isAskQuestionArgs(rawInput)) {
-      const existing = this.tools.get(String(update.toolCallId || ''))
-      if (!existing || existing.status !== 'running') return []
-      existing.status = 'success'
-      existing.endedAt = Date.now()
-      return [existing]
+    const rawCallId = String(update.toolCallId || '')
+    const questionInput = isAskQuestionArgs(rawInput) ? rawInput : isAskQuestionArgs(update.args) ? update.args : undefined
+    if (questionInput || (rawCallId && this.askQuestionInputs.has(rawCallId))) {
+      return this.onAcpAskQuestion(update, rawCallId, questionInput)
     }
-    const callId = String(update.toolCallId || newId())
+    const callId = rawCallId || newId()
     const args = argsFrom(update)
     const outputText = textOfContent(update.content)
     const result = attachContentDiffs(asToolResult(update.rawOutput, outputText), update.content)
@@ -351,7 +444,7 @@ export class StreamReducer {
     if (!this.tools.has(callId)) {
       // Subagent completion can arrive while the parent is still streaming one
       // message. Keep its Markdown together across these background notices.
-      const changed = isBackgroundAgentActivity(args) ? [] : this.closeSegments()
+      const changed = isBackgroundAgentActivity(args) ? this.flushPendingQuestionEcho() : this.closeSegments()
       const item: ToolItem = {
         id: newId(),
         kind: 'tool',
@@ -370,6 +463,7 @@ export class StreamReducer {
       return [...changed, item]
     }
 
+    const flushed = this.flushPendingQuestionEcho()
     const item = this.tools.get(callId)!
     if (!item.tool || item.tool === 'tool') item.tool = toolNameFrom(update, args)
     if (rawInput && typeof rawInput === 'object') item.args = compact(args)
@@ -381,7 +475,7 @@ export class StreamReducer {
     }
     this.fileRecorder.record(item, this.init.cwd ?? '', rawInput ?? item.args, update.rawOutput ?? result, update.content)
     this.captureImages?.(item, [update.content, update.rawOutput])
-    return [item]
+    return [...flushed, item]
   }
 }
 
@@ -406,7 +500,13 @@ function isAskQuestionArgs(raw: unknown): boolean {
   if (!raw || typeof raw !== 'object') return false
   const questions = (raw as { questions?: unknown }).questions
   if (!Array.isArray(questions) || questions.length === 0) return false
-  return questions.some((q) => q && typeof q === 'object' && ('prompt' in q || 'options' in q))
+  return questions.some((q) => q && typeof q === 'object' && ('prompt' in q || 'question' in q || 'options' in q))
+}
+
+function expectedAntigravityQuestionText(questions: QuestionPrompt[]): string {
+  return questions
+    .map((q) => `${q.prompt}\n${q.options.map((o, i) => `- [${i + 1}] ${o.label}`).join('\n')}`)
+    .join('\n\n')
 }
 
 function argsFrom(update: any): Record<string, unknown> {

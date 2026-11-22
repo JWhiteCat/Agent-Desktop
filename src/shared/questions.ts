@@ -32,10 +32,21 @@ export function normalizeQuestions(raw: unknown): QuestionPrompt[] {
       id: String((q as { id?: unknown }).id ?? `q${i}`),
       prompt,
       options,
-      allowMultiple: !!((q as { allowMultiple?: unknown }).allowMultiple || (q as { allow_multiple?: unknown }).allow_multiple)
+      allowMultiple: !!(
+        (q as { allowMultiple?: unknown }).allowMultiple
+        || (q as { allow_multiple?: unknown }).allow_multiple
+        || (q as { is_multi_select?: unknown }).is_multi_select
+        || (q as { isMultiSelect?: unknown }).isMultiSelect
+      )
     })
   })
   return questions
+}
+
+/** Serializes a question set into the fenced Markdown block rendered by QuestionBlock. */
+export function formatQuestionBlock(set: QuestionSet): string {
+  const payload = set.title ? { title: set.title, questions: set.questions } : { questions: set.questions }
+  return `\`\`\`${QUESTION_BLOCK_LANG}\n${JSON.stringify(payload)}\n\`\`\``
 }
 
 /** Body of a ```questions block. Undefined while the JSON is incomplete or has no usable question. */

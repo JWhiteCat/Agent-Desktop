@@ -372,4 +372,89 @@ describe('StreamReducer', () => {
     expect(reducer.abortRunningTools().map((item) => (item as ToolItem).callId)).toEqual(['bg-agent'])
     expect(items.find((item): item is ToolItem => item.kind === 'tool' && item.callId === 'daemon-cmd')?.status).toBe('running')
   })
+
+  it('turns an Antigravity pending ask_question call into a questions card and suppresses the duplicate plain-text echo', () => {
+    const items: Item[] = []
+    const reducer = new StreamReducer(items, undefined, 'antigravity')
+    const rawInput = {
+      questions: [
+        { question: 'Which color do you choose?', options: ['Red', 'Blue'], is_multi_select: false },
+        { question: 'Which toppings do you choose?', options: ['Cheese', 'Olives', 'Mushrooms'], is_multi_select: true }
+      ]
+    }
+    reducer.handleAcp({ sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: 'Need user input.' } })
+    expect(reducer.handleAcp({
+      sessionUpdate: 'tool_call', toolCallId: 'call_1', name: 'ask_question', status: 'in_progress', kind: 'other', rawInput
+    })).toEqual([])
+    const emitted = reducer.handleAcp({
+      sessionUpdate: 'tool_call_update', toolCallId: 'call_1', name: 'ask_question', status: 'pending', kind: 'other', rawInput
+    })
+    expect(emitted.map((it) => it.kind)).toEqual(['thinking', 'assistant'])
+    // Duplicate pending update must not emit a second card or break echo suppression.
+    expect(reducer.handleAcp({
+      sessionUpdate: 'tool_call_update', toolCallId: 'call_1', name: 'ask_question', status: 'pending', kind: 'other', rawInput
+    })).toEqual([])
+    // Plain-text fallback from agy acp (even split across chunks) is suppressed.
+    expect(reducer.handleAcp({
+      sessionUpdate: 'agent_message_chunk',
+      content: { type: 'text', text: '\nWhich color do you choose?\n- [1] Red\n- [2] Blue\n' }
+    })).toEqual([])
+    expect(reducer.handleAcp({
+      sessionUpdate: 'agent_message_chunk',
+      content: { type: 'text', text: '\nWhich toppings do you choose?\n- [1] Cheese\n- [2] Olives\n- [3] Mushrooms\n' }
+    })).toEqual([])
+
+    expect(items.filter((it) => it.kind === 'tool')).toEqual([])
+    const assistants = items.filter((it): it is AssistantItem => it.kind === 'assistant')
+    expect(assistants).toHaveLength(1)
+    const body = assistants[0].text.split('```questions\n')[1].replace(/\n```$/, '')
+    expect(parseQuestionBlock(body)).toEqual({
+      title: undefined,
+      questions: [
+        { id: 'q0', prompt: 'Which color do you choose?', options: [{ id: 'o0', label: 'Red' }, { id: 'o1', label: 'Blue' }], allowMultiple: false },
+        { id: 'q1', prompt: 'Which toppings do you choose?', options: [{ id: 'o0', label: 'Cheese' }, { id: 'o1', label: 'Olives' }, { id: 'o2', label: 'Mushrooms' }], allowMultiple: true }
+      ]
+    })
+  })
+
+  it('attaches an Antigravity ask_question card to preceding prose and keeps unrelated trailing text separate', () => {
+    const items: Item[] = []
+    const reducer = new StreamReducer(items, undefined, 'antigravity')
+    const rawInput = { questions: [{ question: 'Pick one', options: ['A', 'B'], is_multi_select: false }] }
+
+    reducer.handleAcp({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Before proceeding, please confirm.' } })
+    reducer.handleAcp({ sessionUpdate: 'tool_call', toolCallId: 'call_2', name: 'ask_question', status: 'in_progress', rawInput })
+    // Even if the pending update omits rawInput, cached questions from tool_call are used.
+    reducer.handleAcp({ sessionUpdate: 'tool_call_update', toolCallId: 'call_2', name: 'ask_question', status: 'pending' })
+    reducer.handleAcp({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '\nPick one\n- [1] A\n- [2] B\n\nTake your time.' } })
+
+    const assistants = items.filter((it): it is AssistantItem => it.kind === 'assistant')
+    expect(assistants).toHaveLength(2)
+    expect(assistants[0].text).toMatch(/^Before proceeding, please confirm\.\n\n```questions\n[\s\S]+\n```$/)
+    expect(assistants[1].text).toBe('Take your time.')
+  })
+
+  it('flushes buffered non-echo text losslessly and ignores completed or non-Antigravity ask_question updates', () => {
+    const items: Item[] = []
+    const reducer = new StreamReducer(items, undefined, 'antigravity')
+    const rawInput = { questions: [{ question: 'Pick one', options: ['A', 'B'], is_multi_select: false }] }
+
+    reducer.handleAcp({ sessionUpdate: 'tool_call', toolCallId: 'call_done', name: 'ask_question', status: 'in_progress', rawInput })
+    reducer.handleAcp({ sessionUpdate: 'tool_call_update', toolCallId: 'call_done', name: 'ask_question', status: 'completed', rawInput })
+    reducer.handleAcp({ sessionUpdate: 'tool_call', toolCallId: 'call_failed', name: 'ask_question', status: 'failed', rawInput })
+    expect(items).toEqual([])
+
+    reducer.handleAcp({ sessionUpdate: 'tool_call', toolCallId: 'call_3', name: 'ask_question', status: 'pending', rawInput })
+    reducer.handleAcp({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Pick one' } })
+    reducer.handleAcp({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: ' from the list above.' } })
+    expect(items.filter((it): it is AssistantItem => it.kind === 'assistant').map((a) => a.text)).toEqual([
+      expect.stringContaining('```questions\n'),
+      'Pick one from the list above.'
+    ])
+
+    const cursorItems: Item[] = []
+    const cursorReducer = new StreamReducer(cursorItems, undefined, 'cursor')
+    cursorReducer.handleAcp({ sessionUpdate: 'tool_call', toolCallId: 'cursor_ask', status: 'pending', rawInput })
+    expect(cursorItems).toEqual([])
+  })
 })

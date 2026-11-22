@@ -482,4 +482,87 @@ describe('Antigravity reactive wakeup continuation', () => {
     const replies = ctx.items.filter((it): it is AssistantItem => it.kind === 'assistant').map((a) => a.text)
     expect(replies).toEqual(['已启动子代理，等待返回结果。', '子代理调查完成，已更新笔记。'])
   })
+
+  it('emits an interactive questions card for Agent-mode ask_question and skips re-emitting on the reply turn', async () => {
+    const ctx = setup(true)
+    const rawInput = {
+      questions: [
+        { question: '请选择构建目标', options: ['桌面端', '网页端'], is_multi_select: false },
+        { question: '需要包含哪些检查？', options: ['类型检查', '单元测试'], is_multi_select: true }
+      ]
+    }
+
+    await ctx.manager.send({ ...ctx.req, prompt: '帮我准备发布', mode: 'agent', force: true })
+    await ctx.waitForPrompt()
+
+    ctx.update({
+      sessionUpdate: 'tool_call',
+      toolCallId: 'ask-1',
+      name: 'ask_question',
+      status: 'in_progress',
+      kind: 'other',
+      rawInput
+    })
+    ctx.update({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'ask-1',
+      name: 'ask_question',
+      status: 'pending',
+      kind: 'other',
+      rawInput
+    })
+    ctx.update({
+      sessionUpdate: 'agent_message_chunk',
+      content: {
+        type: 'text',
+        text: '\n请选择构建目标\n- [1] 桌面端\n- [2] 网页端\n\n需要包含哪些检查？\n- [1] 类型检查\n- [2] 单元测试\n'
+      }
+    })
+    ctx.resolvePrompt({ inputTokens: 1200, outputTokens: 80 })
+    await vi.waitFor(() => expect(ctx.finished).toHaveBeenCalledOnce())
+    expect(ctx.manager.isRunning('thread')).toBe(false)
+
+    const turn1Replies = ctx.items.filter((it): it is AssistantItem => it.kind === 'assistant')
+    expect(turn1Replies).toHaveLength(1)
+    expect(turn1Replies[0].text).toContain('```questions\n')
+    expect(turn1Replies[0].text).not.toContain('- [1] 桌面端')
+    expect(turn1Replies[0].text).toContain('"allowMultiple":true')
+
+    // User submits the selection card as the next message; agy completes ask-1 and continues.
+    await ctx.manager.send({
+      ...ctx.req,
+      prompt: '我的选择：\n- 请选择构建目标：桌面端\n- 需要包含哪些检查？：类型检查、单元测试',
+      mode: 'agent',
+      force: true
+    })
+    await ctx.waitForPrompt()
+
+    ctx.update({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'ask-1',
+      name: 'ask_question',
+      status: 'in_progress',
+      kind: 'other',
+      rawInput
+    })
+    ctx.update({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'ask-1',
+      name: 'ask_question',
+      status: 'completed',
+      kind: 'other',
+      rawInput
+    })
+    ctx.update({
+      sessionUpdate: 'agent_message_chunk',
+      content: { type: 'text', text: '收到，将按桌面端并运行类型检查与单元测试来准备发布。' }
+    })
+    ctx.resolvePrompt({ inputTokens: 1500, outputTokens: 50 })
+    await vi.waitFor(() => expect(ctx.finished).toHaveBeenCalledTimes(2))
+
+    const allReplies = ctx.items.filter((it): it is AssistantItem => it.kind === 'assistant')
+    expect(allReplies).toHaveLength(2)
+    expect(allReplies[1].text).toBe('收到，将按桌面端并运行类型检查与单元测试来准备发布。')
+    expect(ctx.items.filter((it) => it.kind === 'tool')).toEqual([])
+  })
 })
