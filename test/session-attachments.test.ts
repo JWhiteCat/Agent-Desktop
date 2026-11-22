@@ -231,6 +231,40 @@ describe('attachments delivered through ACP sessions', () => {
     expect(prompt[2]).toMatchObject({ type: 'image', data: 'aGVsbG8=' })
   })
 
+  it('recomputes historical image indices and drops omitted-turn attachments when extreme history drops earliest users', async () => {
+    const ctx = setup()
+    const oldImage = { ...image, id: '11111111-1111-4111-8111-111111111111', name: 'old.png' }
+    const recentImage = { ...image, id: '22222222-2222-4222-8222-222222222222', name: 'recent.png' }
+    attachmentStore.resolveMany.mockImplementation((ids: string[]) =>
+      ids.map((id) => (id === oldImage.id ? oldImage : recentImage))
+    )
+    ctx.items.push({ id: 'old-u', kind: 'user', text: `Old turn ${'a'.repeat(1_000)}`, createdAt: 1, attachments: [oldImage] })
+    for (let i = 0; i < 240; i++) {
+      ctx.items.push({ id: `filler-u-${i}`, kind: 'user', text: `Turn ${i}: ${'x'.repeat(1_200)}`, createdAt: i + 2 })
+      ctx.items.push({ id: `filler-a-${i}`, kind: 'assistant', text: `Reply ${i}: ${'y'.repeat(1_200)}` })
+    }
+    ctx.items.push({ id: 'recent-u', kind: 'user', text: 'Recent image turn', createdAt: 1000, attachments: [recentImage] })
+    ctx.thread.forkContextThroughItemId = 'recent-u'
+    ctx.req.attachmentIds = []
+    ctx.req.prompt = '继续'
+
+    await ctx.send()
+
+    const prompt = ctx.calls.find((call) => call.method === 'session/prompt')!.params.prompt
+    const replay = parseForkPrompt(prompt[0].text)!
+    expect(parseAttachmentPrompt(replay.prompt).prompt.split('\n')[0]).toBe('继续')
+    expect(replay.prompt).toContain('recent.png')
+    expect(replay.prompt).not.toContain('old.png')
+    const keptUsers = replay.items.filter((item) => item.kind === 'user')
+    const recentIndex = keptUsers.findIndex((item) => item.text === 'Recent image turn') + 1
+    expect(recentIndex).toBeGreaterThan(0)
+    expect(prompt.filter((block: any) => block.type === 'image')).toHaveLength(1)
+    expect(prompt[1]).toMatchObject({
+      type: 'text',
+      text: expect.stringContaining(JSON.stringify({ id: recentImage.id, name: recentImage.name, copiedUserMessages: [recentIndex], currentMessage: false }))
+    })
+  })
+
   it('does not repeat the original attachments in an automatic plan revision', async () => {
     const ctx = setup('codex')
     ctx.req.mode = 'plan'

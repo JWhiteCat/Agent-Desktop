@@ -105,4 +105,36 @@ describe('fork context delivery to the model', () => {
     await expect(ctx.start()).rejects.toThrow('分叉历史缺失')
     expect(ctx.request).not.toHaveBeenCalled()
   })
+
+  it('keeps total Antigravity replay prompt text below the 192 KB truncation limit while preserving the new prompt and recent turns', async () => {
+    const ctx = setup('antigravity', 'agent')
+    ctx.items.splice(0, ctx.items.length)
+    for (let i = 0; i < 40; i++) {
+      ctx.items.push({
+        id: `tool-${i}`, kind: 'tool', callId: `call-${i}`, tool: 'shell',
+        args: { command: `run-${i}` },
+        result: { success: { stdout: 'z'.repeat(12_000) } },
+        status: 'success', startedAt: i + 1, endedAt: i + 2
+      })
+    }
+    ctx.items.push(
+      { id: 'recent-u', kind: 'user', text: 'Rename script to 手游日常 and add toggles', createdAt: 100 },
+      { id: 'recent-a', kind: 'assistant', text: 'Updated FarmBootNotice(), pending test.' },
+      { id: 'current-u', kind: 'user', text: '继续', createdAt: 200 }
+    )
+    ctx.thread.forkContextThroughItemId = 'recent-a'
+    ctx.req.prompt = '继续'
+
+    await ctx.start()
+
+    const promptBlocks = ctx.request.mock.calls[0][1].prompt
+    const totalTextBytes = promptBlocks
+      .filter((block: any) => block.type === 'text')
+      .reduce((sum: number, block: any) => sum + Buffer.byteLength(block.text, 'utf8'), 0)
+    expect(totalTextBytes).toBeLessThan(165_000)
+    const replay = parseForkPrompt(promptBlocks[0].text)!
+    expect(replay.prompt).toBe('继续')
+    expect(replay.items.some((item) => item.kind === 'user' && item.text.includes('手游日常'))).toBe(true)
+    expect(replay.items.some((item) => item.kind === 'assistant' && item.text.includes('FarmBootNotice'))).toBe(true)
+  })
 })

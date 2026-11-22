@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Item } from '../src/shared/types'
 import { mergeInterruptedAssistantMessages } from '../src/shared/transcript'
-import { forkPrompt, parseForkPrompt } from '../src/main/fork-context'
+import { buildForkContext, DEFAULT_FORK_CONTEXT_MAX_BYTES, forkPrompt, parseForkPrompt } from '../src/main/fork-context'
 import { planModePrompt, codexPlanModePrompt, claudePlanModePrompt } from '../src/main/acp'
 import { transcriptItems } from '../src/main/codex-history'
 import { claudeTranscriptItems, visibleUserText } from '../src/main/claude-history'
@@ -127,6 +127,72 @@ describe('fork replay context', () => {
     expect(parseForkPrompt('<agent_desktop_fork_context>{broken}</agent_desktop_fork_context>')).toBeUndefined()
     expect(parseForkPrompt(`Please explain this example:\n${forkPrompt(history, 'Continue.')}`)).toBeUndefined()
     expect(parseForkPrompt(`<user_query>${forkPrompt(history, 'Continue.')}`)).toBeUndefined()
+  })
+
+  it('compacts huge tool-heavy histories within budget while preserving all dialogue and the latest turn', () => {
+    const bigHistory: Item[] = []
+    for (let turn = 1; turn <= 4; turn++) {
+      bigHistory.push({ id: `u-${turn}`, kind: 'user', text: `User requirement #${turn}`, createdAt: turn * 100 })
+      for (let step = 0; step < 30; step++) {
+        bigHistory.push({
+          id: `th-${turn}-${step}`, kind: 'thinking', text: `Intermediate thinking ${turn}.${step} ${'思'.repeat(120)}`,
+          done: true, startedAt: turn * 100 + step
+        })
+        bigHistory.push({
+          id: `tool-${turn}-${step}`, kind: 'tool', callId: `c-${turn}-${step}`, tool: 'shell',
+          args: { command: `step-${turn}-${step} ${'a'.repeat(500)}` },
+          result: { success: { stdout: `output-${turn}-${step} ${'x'.repeat(8_000)}` } },
+          fileChanges: [{ path: '/repo/a.ts', diff: 'd'.repeat(2_000), source: 'tool-result' }],
+          status: 'success', startedAt: turn * 100 + step, endedAt: turn * 100 + step + 1
+        })
+      }
+      bigHistory.push({ id: `a-${turn}`, kind: 'assistant', text: `Assistant summary for turn ${turn}.` })
+    }
+    bigHistory.push(
+      { id: 'u-5', kind: 'user', text: 'Latest turn request: add toggles and rename.', createdAt: 500 },
+      { id: 'tool-5-latest', kind: 'tool', callId: 'c-5-latest', tool: 'shell',
+        args: { command: 'update FarmBootNotice()' },
+        result: { success: { stdout: 'patched FarmBootNotice ok' } },
+        status: 'success', startedAt: 501, endedAt: 502 },
+      { id: 'a-5', kind: 'assistant', text: 'You hit your usage limit.' }
+    )
+
+    const prompt = forkPrompt(bigHistory, '继续')
+    const built = buildForkContext(bigHistory)
+    expect(built.compacted).toBe(true)
+    expect(Buffer.byteLength(built.envelope, 'utf8')).toBeLessThanOrEqual(DEFAULT_FORK_CONTEXT_MAX_BYTES)
+    expect(prompt.endsWith('</agent_desktop_fork_context>\n\n继续')).toBe(true)
+
+    const parsed = parseForkPrompt(prompt)!
+    expect(parsed.prompt).toBe('继续')
+    expect(parsed.items.filter((it) => it.kind === 'user').map((it) => it.text)).toEqual([
+      'User requirement #1',
+      'User requirement #2',
+      'User requirement #3',
+      'User requirement #4',
+      'Latest turn request: add toggles and rename.'
+    ])
+    expect(parsed.items.filter((it) => it.kind === 'assistant').map((it) => it.text)).toEqual([
+      'Assistant summary for turn 1.',
+      'Assistant summary for turn 2.',
+      'Assistant summary for turn 3.',
+      'Assistant summary for turn 4.',
+      'You hit your usage limit.'
+    ])
+    expect(parsed.items.some((it) => it.kind === 'tool' && it.callId === 'c-5-latest')).toBe(true)
+  })
+
+  it('keeps UTF-8 multi-byte and HTML-escaped single-item histories inside tight byte budgets', () => {
+    const huge: Item[] = [
+      { id: 'u1', kind: 'user', text: `重要上下文🚀 ${'<tag>中文内容</tag>'.repeat(5_000)}`, createdAt: 1 }
+    ]
+    const built = buildForkContext(huge, 4_000)
+    expect(built.compacted).toBe(true)
+    expect(Buffer.byteLength(built.envelope, 'utf8')).toBeLessThanOrEqual(4_000)
+    const parsed = parseForkPrompt(`${built.envelope}\n\n继续`)!
+    expect(parsed.prompt).toBe('继续')
+    expect(parsed.items).toHaveLength(1)
+    expect(parsed.items[0].kind).toBe('user')
   })
 })
 
