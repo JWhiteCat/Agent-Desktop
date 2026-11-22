@@ -131,7 +131,7 @@ chmod +x release/agent-desktop-*-linux-x86_64.AppImage
 
 Build on **Windows x64**. Optional agent binaries are installed for the machine that runs the build, so packaging on another architecture does not produce a matching portable executable.
 
-Double-click `build-portable.bat` in the project root. It checks Node.js 22.12 or newer, installs dependencies and the Electron runtime, then packages the app. From a terminal in the project directory:
+Double-click `build-portable.bat` in the project root. It checks Node.js 24 LTS (or 22.12+ / 26+), reuses up-to-date dependencies, the local `node_modules/electron/dist` runtime, and fresh production builds (skipping redundant `npm install` and `electron-vite build` runs), and packages the portable executable with fast 7-Zip compression (`ELECTRON_BUILDER_COMPRESSION_LEVEL=1` by default, or any level you set in the environment). Pass `--install` to refresh dependencies, `--rebuild` to force a fresh Vite build, or `--max` for maximum 7-Zip compression (`-mx=9`, smaller file, slower). Packaging skips native rebuilds (`npmRebuild: false`), keeps renderer-only libraries out of `app.asar`, excludes unused `js-tiktoken` ranks, and trims Windows Electron locales to Chinese and English. From a terminal in the project directory:
 
 ```bash
 npm ci --include=dev --include=optional

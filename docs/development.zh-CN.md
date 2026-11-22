@@ -131,7 +131,7 @@ chmod +x release/agent-desktop-*-linux-x86_64.AppImage
 
 Windows 便携包的目标架构为 **x64**。
 
-双击项目根目录的 `build-portable.bat`。脚本会检查 Node.js 22.12 或更高版本，安装依赖和 Electron 运行时，然后打包。在项目目录的终端中也可以执行：
+双击项目根目录的 `build-portable.bat`。脚本会检查 Node.js 24 LTS（或 22.12+ / 26+），复用已就绪的依赖、本地 `node_modules/electron/dist` 运行时及最新生产构建产物（跳过重复的 `npm install` 和 `electron-vite build`），并默认使用快速 7-Zip 压缩（`ELECTRON_BUILDER_COMPRESSION_LEVEL=1`，也可通过环境变量指定压缩级别）完成打包。传入 `--install` 可强制刷新依赖，`--rebuild` 可强制重新构建，`--max` 可启用最高 7-Zip 压缩率（`-mx=9`，体积更小但更慢）。打包配置关闭无原生插件场景下的 `npmRebuild`，将仅用于渲染进程构建的依赖移至 `devDependencies` 以避免打入 `app.asar`，排除未使用的 `js-tiktoken` 词表，并将 Windows 端 Electron 语言包精简为中英文。在项目目录的终端中也可以执行：
 
 ```bash
 npm ci --include=dev --include=optional
