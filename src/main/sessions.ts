@@ -36,8 +36,9 @@ import { SessionQueue } from './session/queue'
 import { SlashCommandRegistry } from './session/commands'
 import { buildTurnPrompt } from './session/prompt'
 import {
-  finishFollowup, holdFollowupForInteraction, isAntigravityWakeupUpdate, observeFollowup,
-  resumeFollowupAfterInteraction, waitForFollowup, type FollowupState
+  finishFollowup, hasPendingAntigravityWakeup, holdFollowupForInteraction, isAntigravityWakeupUpdate,
+  observeAntigravityUpdate, resumeFollowupAfterInteraction, waitForFollowup,
+  type AntigravityWakeupState, type FollowupState
 } from './session/antigravity-wakeup'
 import { finalizeTurnItems, mergeWakeupResult } from './session/finalize'
 import type { Store } from './store'
@@ -90,6 +91,7 @@ interface Run extends InteractionRun {
   killTimer?: NodeJS.Timeout
   /** Antigravity reactive wakeup continuation after `session/prompt` returned early. */
   followup?: FollowupState
+  antigravityWakeup?: AntigravityWakeupState
   /** Attached to an unsolicited post-turn wakeup on an idle Antigravity session. */
   wakeup?: boolean
   /** Defined only for ChatGPT-authenticated Codex turns; an empty path selects the detected CLI. */
@@ -770,7 +772,7 @@ export class SessionManager {
     run.timing?.observe(params?.update, receivedAt)
     const changed = run.reducer.handleAcp(params?.update)
     if (changed.length) this.queue(threadId, run, changed)
-    observeFollowup(run, params?.update)
+    if (proc.provider === 'antigravity') observeAntigravityUpdate(run, params?.update)
   }
 
   private handleProcRequest(threadId: string, proc: AgentProc, method: string, params: any): Promise<unknown> {
@@ -781,9 +783,10 @@ export class SessionManager {
     }
     if (run?.proc === proc) run.timing?.interrupt()
     if (run && run.proc === proc) {
-      holdFollowupForInteraction(run)
+      const toolCallId = typeof params?.toolCall?.toolCallId === 'string' ? params.toolCall.toolCallId : undefined
+      holdFollowupForInteraction(run, toolCallId)
       return onAcpRequest(run, method, params, (items) => this.queue(threadId, run!, items))
-        .finally(() => resumeFollowupAfterInteraction(run!))
+        .finally(() => resumeFollowupAfterInteraction(run!, toolCallId))
     }
     return onIdleAcpRequest(proc, method, params)
   }
@@ -988,9 +991,11 @@ export class SessionManager {
       prompt: built.blocks
     })
     const stop = String(result?.stopReason ?? 'end_turn')
+    const hasRunningTools = run.reducer.hasRunningForegroundTools()
     if (run.proc.provider === 'antigravity' && stop === 'end_turn' && !run.stopped
-      && !run.proc.dying && run.proc.child.exitCode === null && run.reducer.hasRunningForegroundTools()) {
-      await waitForFollowup(run)
+      && !run.proc.dying && run.proc.child.exitCode === null
+      && (hasRunningTools || hasPendingAntigravityWakeup(run))) {
+      await waitForFollowup(run, { cascadeIdle: hasRunningTools })
       if (!this.runs.has(threadId) || run.settled) return
       if (run.proc.dying || run.proc.child.exitCode !== null) return
     }
