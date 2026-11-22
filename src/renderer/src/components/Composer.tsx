@@ -10,7 +10,7 @@ import { appendDraftAttachments, restoreDraftAttachments, textSendOptions, uploa
 import { IconArrowUp, IconBranch, IconFolder, IconPlus, IconShield, IconStop } from './icons'
 import { ModelPicker } from './ModelPicker'
 import { DraftAttachmentCard } from './items/AttachmentCards'
-import { CliPicker, ModePicker } from './composer/Pickers'
+import { CliPicker, ComposerOptionsButton, ModePicker } from './composer/Pickers'
 import { SlashCommandPopover } from './composer/SlashCommandPopover'
 
 export { MODES } from './composer/Pickers'
@@ -380,10 +380,12 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
           >
             <IconPlus size={17} />
           </button>
-          {props.onCliChange && activeCli && (
-            <CliPicker value={activeCli} note={props.cliNote} disabled={props.cliDisabled} onChange={chooseCli} />
-          )}
-          <ModePicker value={opts.mode} onChange={(mode) => setOpts((o) => ({ ...o, mode }))} />
+          <span className="composer-desktop-controls">
+            {props.onCliChange && activeCli && (
+              <CliPicker value={activeCli} note={props.cliNote} disabled={props.cliDisabled} onChange={chooseCli} />
+            )}
+            <ModePicker value={opts.mode} onChange={(mode) => setOpts((o) => ({ ...o, mode }))} />
+          </span>
           <ModelPicker
             cli={activeCli}
             value={opts.model}
@@ -392,50 +394,70 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
               rememberModel(props.projectId, model, opts.model, activeCli)
             }}
           />
-          <button
-            className={`pill ${opts.force ? 'pill-warn' : ''}`}
-            title={opts.force ? t('完全访问：命令无需确认直接执行（--force）') : t('默认权限：遵循 CLI 权限配置')}
-            onClick={() => {
-              const force = !opts.force
+          <span className="composer-desktop-controls">
+            <button
+              className={`pill ${opts.force ? 'pill-warn' : ''}`}
+              title={opts.force ? t('完全访问：命令无需确认直接执行（--force）') : t('默认权限：遵循 CLI 权限配置')}
+              onClick={() => {
+                const force = !opts.force
+                setOpts((o) => ({ ...o, force }))
+                props.onForceChange?.(force)
+              }}
+            >
+              <IconShield size={13} />
+              <span>{opts.force ? t('完全访问') : t('默认权限')}</span>
+            </button>
+            {props.showWorktree && (
+              <button
+                className={`pill ${opts.worktree ? 'pill-on' : ''}`}
+                title={t('在隔离的 git worktree 中运行')}
+                onClick={() => setOpts((o) => ({ ...o, worktree: !o.worktree }))}
+              >
+                {opts.worktree ? <IconBranch size={13} /> : <IconFolder size={13} />}
+                <span>{opts.worktree ? 'Worktree' : t('本地')}</span>
+              </button>
+            )}
+          </span>
+          {props.footerLeft}
+        </div>
+        <div className="composer-actions">
+          <ComposerOptionsButton
+            cli={props.onCliChange ? activeCli : undefined}
+            cliNote={props.cliNote}
+            cliDisabled={props.cliDisabled}
+            onCliChange={props.onCliChange ? chooseCli : undefined}
+            mode={opts.mode}
+            onModeChange={(mode) => setOpts((o) => ({ ...o, mode }))}
+            force={opts.force}
+            onForceChange={(force) => {
               setOpts((o) => ({ ...o, force }))
               props.onForceChange?.(force)
             }}
-          >
-            <IconShield size={13} />
-            <span>{opts.force ? t('完全访问') : t('默认权限')}</span>
-          </button>
-          {props.showWorktree && (
-            <button
-              className={`pill ${opts.worktree ? 'pill-on' : ''}`}
-              title={t('在隔离的 git worktree 中运行')}
-              onClick={() => setOpts((o) => ({ ...o, worktree: !o.worktree }))}
-            >
-              {opts.worktree ? <IconBranch size={13} /> : <IconFolder size={13} />}
-              <span>{opts.worktree ? 'Worktree' : t('本地')}</span>
+            showWorktree={props.showWorktree}
+            worktree={!!opts.worktree}
+            onWorktreeChange={(worktree) => setOpts((o) => ({ ...o, worktree }))}
+          />
+          {running ? (
+            <>
+              {canSend && (
+                <button
+                  className="send-btn queue"
+                  title={t('加入队列 (Enter)，{shortcut} 立即发送', { shortcut: nowShortcut })}
+                  onClick={(e) => void submit(e.ctrlKey || e.metaKey ? 'now' : 'queue')}
+                >
+                  <IconArrowUp size={16} />
+                </button>
+              )}
+              <button className="send-btn stop" title={t('停止 (Esc)')} onClick={props.onStop}>
+                <IconStop size={14} />
+              </button>
+            </>
+          ) : (
+            <button className="send-btn" title={t('发送 (Enter)')} disabled={!canSend} onClick={() => void submit()}>
+              <IconArrowUp size={16} />
             </button>
           )}
-          {props.footerLeft}
         </div>
-        {running ? (
-          <div className="composer-actions">
-            {canSend && (
-              <button
-                className="send-btn queue"
-                title={t('加入队列 (Enter)，{shortcut} 立即发送', { shortcut: nowShortcut })}
-                onClick={(e) => void submit(e.ctrlKey || e.metaKey ? 'now' : 'queue')}
-              >
-                <IconArrowUp size={16} />
-              </button>
-            )}
-            <button className="send-btn stop" title={t('停止 (Esc)')} onClick={props.onStop}>
-              <IconStop size={14} />
-            </button>
-          </div>
-        ) : (
-          <button className="send-btn" title={t('发送 (Enter)')} disabled={!canSend} onClick={() => void submit()}>
-            <IconArrowUp size={16} />
-          </button>
-        )}
       </div>
     </div>
   )

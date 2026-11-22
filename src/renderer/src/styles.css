@@ -720,6 +720,10 @@ select {
   background: var(--accent);
   color: var(--accent-fg);
 }
+.model-opt.selected.warn {
+  background: var(--orange);
+  color: #fff;
+}
 .model-opt:disabled {
   opacity: 0.35;
 }
@@ -1009,6 +1013,50 @@ select {
   flex-wrap: wrap;
   min-width: 0;
   margin-left: -8px;
+}
+.composer-desktop-controls {
+  display: contents;
+}
+.composer-options-btn {
+  display: none;
+  position: relative;
+  flex: none;
+}
+.composer-options-dot {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--blue);
+  box-shadow: 0 0 0 1.5px var(--bg-elev);
+}
+.composer-options-dot.warn {
+  background: var(--orange);
+}
+.popover.composer-options-popover {
+  width: min(320px, calc(100vw - 16px));
+  padding: 10px 12px;
+}
+.composer-options-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.composer-options-panel .model-param {
+  grid-template-columns: 52px minmax(0, 1fr);
+}
+.composer-options-col {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.composer-options-note {
+  color: var(--muted);
+  font-size: calc(11.5px * var(--font-scale));
+  line-height: 1.4;
 }
 .pill {
   display: inline-flex;
@@ -3481,8 +3529,65 @@ body.panel-resizing webview {
   .home-bottom {
     padding: 0 10px calc(10px + env(safe-area-inset-bottom));
   }
+  .composer {
+    padding: 8px 10px 6px 12px;
+    border-radius: 18px;
+  }
   .composer textarea {
     font-size: max(16px, calc(16px * var(--font-scale)));
+    line-height: 1.4;
+    min-height: 22px;
+    padding: 1px 0 4px;
+  }
+  .composer-bar {
+    gap: 4px;
+  }
+  .composer-left {
+    flex: 1;
+    flex-wrap: nowrap;
+    margin-left: -4px;
+    gap: 2px;
+  }
+  .composer-desktop-controls {
+    display: none;
+  }
+  .composer-options-btn {
+    display: inline-flex;
+    width: 28px;
+    height: 28px;
+  }
+  .composer .attach-btn {
+    width: 28px;
+    height: 28px;
+    flex: none;
+  }
+  .composer-left > .hover-tip {
+    flex: 0 1 auto;
+    max-width: 100%;
+  }
+  .composer .model-pill {
+    height: 28px;
+    padding: 0 6px;
+    max-width: 100%;
+    font-size: calc(13px * var(--font-scale));
+  }
+  .composer .model-name {
+    min-width: 0;
+  }
+  .composer .model-meta {
+    flex: none;
+    white-space: nowrap;
+    font-size: calc(12px * var(--font-scale));
+  }
+  .composer .model-meta::before {
+    margin: 0 4px;
+  }
+  .composer .send-btn {
+    width: 30px;
+    height: 30px;
+  }
+  .composer-actions {
+    gap: 4px;
   }
   .modal-backdrop {
     align-items: stretch;

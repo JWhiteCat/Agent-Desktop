@@ -1,7 +1,7 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { cliTitle, type AgentMode, type CliProvider } from '@shared/types'
 import { useT } from '../../lib/i18n'
-import { IconChevronDown, IconList, IconSparkle } from '../icons'
+import { IconChevronDown, IconList, IconSliders, IconSparkle } from '../icons'
 import { MenuList, Popover } from '../Menu'
 
 export const MODES: { id: AgentMode; label: string; desc: string }[] = [
@@ -74,6 +74,184 @@ export function ModePicker({ value, onChange }: { value: AgentMode; onChange: (m
           onClose={() => setOpen(false)}
           items={MODES.map((m) => ({ label: t(m.label), hint: t(m.desc), checked: m.id === value, onSelect: () => onChange(m.id) }))}
         />
+      </Popover>
+    </>
+  )
+}
+
+export interface ComposerOptionsProps {
+  cli?: CliProvider
+  cliNote?: string
+  cliDisabled?: boolean
+  onCliChange?: (cli: CliProvider) => void
+  mode: AgentMode
+  onModeChange: (mode: AgentMode) => void
+  force: boolean
+  onForceChange: (force: boolean) => void
+  showWorktree?: boolean
+  worktree?: boolean
+  onWorktreeChange?: (worktree: boolean) => void
+}
+
+const NARROW_MEDIA = '(max-width: 720px)'
+
+export function ComposerOptionsPanel({
+  cli,
+  cliNote,
+  cliDisabled,
+  onCliChange,
+  mode,
+  onModeChange,
+  force,
+  onForceChange,
+  showWorktree,
+  worktree,
+  onWorktreeChange
+}: ComposerOptionsProps) {
+  const t = useT()
+  return (
+    <div className="composer-options-panel">
+      {cli && onCliChange && (
+        <div className="model-param">
+          <div className="model-param-label">CLI</div>
+          <div className="composer-options-col">
+            <div className="model-param-options">
+              {CLIS.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={`model-opt ${item.id === cli ? 'selected' : ''}`}
+                  disabled={cliDisabled}
+                  aria-pressed={item.id === cli}
+                  onClick={() => onCliChange(item.id)}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+            {cliDisabled && cliNote && <div className="composer-options-note">{cliNote}</div>}
+          </div>
+        </div>
+      )}
+      <div className="model-param">
+        <div className="model-param-label">{t('模式')}</div>
+        <div className="model-param-options">
+          {MODES.map((m) => (
+            <button
+              key={m.id}
+              type="button"
+              className={`model-opt ${m.id === mode ? 'selected' : ''}`}
+              title={t(m.desc)}
+              aria-pressed={m.id === mode}
+              onClick={() => onModeChange(m.id)}
+            >
+              {t(m.label)}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="model-param">
+        <div className="model-param-label">{t('权限')}</div>
+        <div className="model-param-options">
+          <button
+            type="button"
+            className={`model-opt ${!force ? 'selected' : ''}`}
+            title={t('默认权限：遵循 CLI 权限配置')}
+            aria-pressed={!force}
+            onClick={() => {
+              if (force) onForceChange(false)
+            }}
+          >
+            {t('默认权限')}
+          </button>
+          <button
+            type="button"
+            className={`model-opt ${force ? 'selected warn' : ''}`}
+            title={t('完全访问：命令无需确认直接执行（--force）')}
+            aria-pressed={force}
+            onClick={() => {
+              if (!force) onForceChange(true)
+            }}
+          >
+            {t('完全访问')}
+          </button>
+        </div>
+      </div>
+      {showWorktree && onWorktreeChange && (
+        <div className="model-param">
+          <div className="model-param-label">{t('工作区')}</div>
+          <div className="model-param-options">
+            <button
+              type="button"
+              className={`model-opt ${!worktree ? 'selected' : ''}`}
+              aria-pressed={!worktree}
+              onClick={() => {
+                if (worktree) onWorktreeChange(false)
+              }}
+            >
+              {t('本地')}
+            </button>
+            <button
+              type="button"
+              className={`model-opt ${worktree ? 'selected' : ''}`}
+              title={t('在隔离的 git worktree 中运行')}
+              aria-pressed={!!worktree}
+              onClick={() => {
+                if (!worktree) onWorktreeChange(true)
+              }}
+            >
+              Worktree
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+export function ComposerOptionsButton(props: ComposerOptionsProps) {
+  const t = useT()
+  const [open, setOpen] = useState(false)
+  const btn = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    if (!open || typeof window === 'undefined' || typeof window.matchMedia !== 'function') return
+    const media = window.matchMedia(NARROW_MEDIA)
+    const onChange = (e: MediaQueryListEvent) => {
+      if (!e.matches) setOpen(false)
+    }
+    media.addEventListener('change', onChange)
+    return () => media.removeEventListener('change', onChange)
+  }, [open])
+
+  const currentMode = MODES.find((m) => m.id === props.mode) ?? MODES[0]
+  const dotTone = props.force ? 'warn' : props.mode !== 'agent' || (props.showWorktree && props.worktree) ? 'active' : undefined
+  const summary = [
+    t('对话选项'),
+    props.cli ? cliTitle(props.cli) : undefined,
+    t(currentMode.label),
+    props.force ? t('完全访问') : t('默认权限'),
+    props.showWorktree ? (props.worktree ? 'Worktree' : t('本地')) : undefined
+  ]
+    .filter(Boolean)
+    .join(' · ')
+
+  return (
+    <>
+      <button
+        ref={btn}
+        type="button"
+        className={`icon-btn composer-options-btn ${open ? 'active' : ''}`}
+        title={summary}
+        aria-label={summary}
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+      >
+        <IconSliders size={16} />
+        {dotTone && <span className={`composer-options-dot ${dotTone}`} aria-hidden />}
+      </button>
+      <Popover anchor={btn.current} open={open} onClose={() => setOpen(false)} placement="top-end" className="composer-options-popover">
+        <ComposerOptionsPanel {...props} />
       </Popover>
     </>
   )
