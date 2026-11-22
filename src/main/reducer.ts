@@ -411,9 +411,9 @@ function isAskQuestionArgs(raw: unknown): boolean {
 
 function argsFrom(update: any): Record<string, unknown> {
   const raw = update.rawInput && typeof update.rawInput === 'object' ? { ...update.rawInput } : {}
-  const path = Array.isArray(update.locations) ? update.locations.find((l: any) => l?.path)?.path : undefined
-  if (typeof path === 'string' && raw.path === undefined && raw.targetFile === undefined && raw.filePath === undefined && raw.command === undefined) {
-    raw.path = path
+  const locPath = Array.isArray(update.locations) ? update.locations.find((l: any) => l?.path)?.path : undefined
+  if (typeof locPath === 'string' && raw.path === undefined && raw.Path === undefined && raw.targetFile === undefined && raw.filePath === undefined && raw.command === undefined) {
+    raw.path = process.platform === 'win32' && /^\/[a-zA-Z]:[\\/]/.test(locPath) ? locPath.slice(1) : locPath
   }
   return raw
 }

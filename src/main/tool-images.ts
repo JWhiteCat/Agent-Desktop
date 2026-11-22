@@ -1,21 +1,28 @@
 import { t } from '@shared/i18n'
 import crypto from 'node:crypto'
 import fs from 'node:fs'
+import { open } from 'node:fs/promises'
+import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { Item, ToolItem } from '@shared/types'
-import type { ToolImageCapture, ToolImageRef, ToolImageData } from '@shared/tool-images'
+import { threadCli, type Item, type ToolItem } from '@shared/types'
+import type { ToolImageRef, ToolImageData } from '@shared/tool-images'
 import { MAX_TOOL_IMAGE_PIXELS } from '@shared/tool-images'
 import { MAX_ATTACHMENT_BYTES, MAX_MESSAGE_ATTACHMENT_BYTES, MAX_ATTACHMENTS, isImageAttachment } from '@shared/attachments'
 import { attachmentMime, attachmentsFor } from './attachments'
+import { codexImageEvidence, codexImageEvidenceByTurn, normalizeLocalPath } from './codex-tool-images'
+import { samePath } from './local-files'
 import type { Store } from './store'
 
 const hash = (value: string | Buffer) => crypto.createHash('sha256').update(value).digest('hex')
 type ImageOwner = Pick<Store, 'dataDir' | 'threads' | 'items' | 'thread' | 'project' | 'markItemsDirty'>
 const readTool = (tool: string) => ['read', 'readfile', 'viewimage', 'readimage'].includes(tool.toLowerCase().replace(/[^a-z]/g, ''))
+const SAFE_SEGMENT = /^[a-zA-Z0-9._-]+$/
+const CODEX_USAGE_TURN = /^codex:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i
+
 export function imagePath(item: ToolItem): string | undefined {
   if (!readTool(item.tool) || !item.args || typeof item.args !== 'object') return
-  for (const key of ['path', 'file_path', 'local_image_path', 'targetFile', 'filePath', 'file']) {
+  for (const key of ['Path', 'path', 'file_path', 'local_image_path', 'targetFile', 'filePath', 'file']) {
     const value = item.args[key]
     if (typeof value === 'string' && /\.(png|jpe?g|webp|gif)$/i.test(value)) return value
   }
@@ -78,15 +85,42 @@ export function decodeImage(data: string): Buffer {
   validateImage(bytes)
   return bytes
 }
-function safeFile(file: string, cwd: string, allowed: string[] = []): string {
+function isWithinRoot(root: string, target: string): boolean {
+  const rel = path.relative(root, target)
+  return rel !== '..' && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel)
+}
+/** Resolves an externally attested file without following a symlink at the leaf. */
+function verifiedRealPath(verifiedPath: string): string | undefined {
+  try {
+    const stat = fs.lstatSync(verifiedPath)
+    if (!stat.isFile() || stat.isSymbolicLink()) return undefined
+    const realDir = fs.realpathSync(path.dirname(verifiedPath))
+    const realFile = fs.realpathSync(verifiedPath)
+    return samePath(realFile, path.join(realDir, path.basename(verifiedPath))) ? realFile : undefined
+  } catch {
+    return undefined
+  }
+}
+function safeFile(file: string, cwd: string, allowed: string[] = [], allowedRoots: string[] = []): string {
   if (!cwd || file.includes('\0') || /^(https?:|data:|blob:|\\\\)/i.test(file)) throw new Error(t('图片不在允许的项目范围内'))
-  const candidate = file.startsWith('file:') ? fileURLToPath(file) : file
+  let candidate = file
+  if (/^file:/i.test(file)) {
+    let url: URL
+    try { url = new URL(file) } catch { throw new Error(t('图片不在允许的项目范围内')) }
+    if (url.hostname) throw new Error(t('图片不在允许的项目范围内'))
+    candidate = fileURLToPath(url)
+  }
   // file://host/share becomes a UNC path on Windows; reject before filesystem access.
   if (/^(\\\\|\/\/)/.test(candidate)) throw new Error(t('图片不在允许的项目范围内'))
-  const root = fs.realpathSync(cwd)
+  if (process.platform === 'win32' && /^\/[a-zA-Z]:[\\/]/.test(candidate)) candidate = candidate.slice(1)
+  const roots = [fs.realpathSync(cwd)]
+  for (const extra of allowedRoots) {
+    try { roots.push(fs.realpathSync(extra)) } catch { /* absent conversation dir does not grant access */ }
+  }
   const target = fs.realpathSync(path.resolve(cwd, candidate))
-  const rel = path.relative(root, target)
-  if ((rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) && !allowed.includes(target)) throw new Error(t('图片不在允许的项目范围内'))
+  if (!roots.some((root) => isWithinRoot(root, target)) && !allowed.some((entry) => samePath(entry, target))) {
+    throw new Error(t('图片不在允许的项目范围内'))
+  }
   return target
 }
 function fileBytes(target: string): Buffer {
@@ -107,7 +141,7 @@ function fileBytes(target: string): Buffer {
     return bytes
   } finally { fs.closeSync(fd) }
 }
-export function imageCapture(store: ImageOwner, cwd: string, previous: Item[] = []): ToolImageCapture {
+export function imageCapture(store: ImageOwner, cwd: string, previous: Item[] = [], extraRoots: string[] = []) {
   const storage = () => attachmentsFor(store)
   const allowed: string[] = []
   for (const x of previous) if (x.kind === 'user') for (const ref of x.attachments ?? []) {
@@ -118,7 +152,7 @@ export function imageCapture(store: ImageOwner, cwd: string, previous: Item[] = 
   const pending = new Map<string, { data: string; mimeType: string }[]>()
   let pendingBytes = 0
   const incomplete = new Set<string>()
-  return (item, raw) => {
+  return (item: ToolItem, raw: unknown, verifiedPath?: string): void => {
     const incoming = inlineImages(raw)
     if (item.status === 'running') {
       const existing = pending.get(item.callId) ?? []
@@ -158,15 +192,18 @@ export function imageCapture(store: ImageOwner, cwd: string, previous: Item[] = 
       item.images = [...(item.images ?? []), { ...ref, key, sourceKind, ...(sourcePath ? { sourcePath } : {}) }]
       total += bytes.length
     }
+    // The native record authorizes this exact file, never the target of a new leaf symlink.
+    const verified = verifiedPath ? verifiedRealPath(verifiedPath) : undefined
+    const allowedPaths = verified ? [...allowed, verified] : allowed
     try {
       if (blobs.length) for (const blob of blobs) {
         const bytes = decodeImage(blob.data)
         let sourcePath: string | undefined
-        if (file) { try { sourcePath = safeFile(file, cwd, allowed) } catch { /* inline data remains previewable without granting path access */ } }
+        if (file) { try { sourcePath = safeFile(file, cwd, allowedPaths, extraRoots) } catch { /* inline data remains previewable without granting path access */ } }
         add(bytes, hash(bytes), 'result', sourcePath)
       }
       else if (file && !item.images?.length) {
-        const target = safeFile(file, cwd, allowed)
+        const target = safeFile(file, cwd, allowedPaths, extraRoots)
         add(fileBytes(target), hash(target), 'file', target)
       }
       if (incomplete.has(item.callId)) item.imageError = t('待处理图片超出缓存限制')
@@ -186,14 +223,119 @@ export function readToolImage(store: ImageOwner, threadId: string, itemId: strin
   return { ...value, path: storage.pathFor(ref.id), ...(ref.sourcePath ? { sourcePath: ref.sourcePath } : {}) }
 }
 
+function antigravityBrainDir(chatId: string | undefined): string | undefined {
+  if (!chatId || !SAFE_SEGMENT.test(chatId) || chatId === '.' || chatId === '..') return undefined
+  const base = process.env.ANTIGRAVITY_CLI_DATA_DIR || path.join(os.homedir(), '.gemini', 'antigravity-cli')
+  return path.join(base, 'brain', chatId)
+}
+
+function unquoteArg(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  if (value.startsWith('"') && value.endsWith('"')) {
+    try {
+      const parsed = JSON.parse(value)
+      if (typeof parsed === 'string') return parsed
+    } catch { /* fall through */ }
+  }
+  return value
+}
+
+/** Checks Antigravity's own conversation transcript for a completed read_file call on the exact path. */
+async function antigravityImageEvidence(chatId: string, file: string, cwd: string): Promise<{ path?: string } | undefined> {
+  const brainDir = antigravityBrainDir(chatId)
+  if (!brainDir) return undefined
+  const expected = normalizeLocalPath(file, cwd)
+  if (!expected) return undefined
+  const transcript = path.join(brainDir, '.system_generated', 'logs', 'transcript.jsonl')
+  try {
+    const handle = await open(transcript, 'r')
+    try {
+      let sawMatchingRead = false
+      for await (const line of handle.readLines()) {
+        if (!line.trim()) continue
+        if (!sawMatchingRead && !line.includes('"read_file"')) continue
+        const row = JSON.parse(line)
+        if (row?.type === 'PLANNER_RESPONSE' && Array.isArray(row.tool_calls)) {
+          sawMatchingRead = row.tool_calls.some((call: any) => {
+            if (call?.name !== 'read_file' || !call.args || typeof call.args !== 'object') return false
+            const rawPath = unquoteArg(call.args.Path ?? call.args.path)
+            const target = normalizeLocalPath(rawPath, cwd)
+            return !!target && samePath(target, expected)
+          })
+          continue
+        }
+        if (sawMatchingRead) {
+          if (row?.status === 'DONE' && Array.isArray(row.media) && row.media.some((m: any) => typeof m?.mime_type === 'string' && m.mime_type.startsWith('image/'))) {
+            return { path: expected }
+          }
+          if (row?.type === 'USER_INPUT' || row?.type === 'PLANNER_RESPONSE') sawMatchingRead = false
+        }
+      }
+    } finally {
+      await handle.close()
+    }
+  } catch {
+    // Transcript may not exist yet or be unreadable.
+  }
+  return undefined
+}
+
+/** Finds the Codex turn id owning a historical tool item when a thread later switched CLI. */
+function codexTurnIdForItem(items: Item[], item: ToolItem): string | undefined {
+  const start = items.indexOf(item)
+  if (start < 0) return undefined
+  for (let i = start + 1; i < items.length; i++) {
+    const next = items[i]
+    if (next.kind === 'user') return undefined
+    if (next.kind === 'result') {
+      if (next.cli !== 'codex' || typeof next.usageId !== 'string') return undefined
+      return CODEX_USAGE_TURN.exec(next.usageId)?.[1]
+    }
+  }
+  return undefined
+}
+
 /** Legacy transcripts only gain previews on explicit expansion, never by scanning the host. */
-export function prepareToolImages(store: ImageOwner, threadId: string, itemId: string): { images: ToolImageRef[]; error?: string; retryable?: boolean } {
+export async function prepareToolImages(store: ImageOwner, threadId: string, itemId: string): Promise<{ images: ToolImageRef[]; error?: string; retryable?: boolean }> {
   const thread = store.thread(threadId)
   if (!thread) throw new Error(t('对话不存在'))
-  const item = store.items(threadId).find((x) => x.id === itemId)
+  const items = store.items(threadId)
+  const item = items.find((x) => x.id === itemId)
   if (!item || item.kind !== 'tool') throw new Error(t('工具消息不存在'))
   if (item.status === 'success' && !item.images?.length) {
-    imageCapture(store, thread.cwd ?? store.project(thread.projectId)?.path ?? '', store.items(threadId))(item, item.result)
+    const cwd = thread.cwd ?? store.project(thread.projectId)?.path ?? ''
+    const cli = threadCli(thread)
+    const { chatId } = thread
+    const brainDir = cli === 'antigravity' ? antigravityBrainDir(chatId) : undefined
+    const extraRoots = brainDir ? [brainDir] : []
+    const capture = imageCapture(store, cwd, items, extraRoots)
+    capture(item, item.result)
+    const file = imagePath(item)
+    if (!item.images?.length && file) {
+      const callId = item.callId
+      let checkedEvidence = false
+      let evidence: { path?: string; output?: unknown } | undefined
+      if (cli === 'codex' && chatId) {
+        checkedEvidence = true
+        evidence = await codexImageEvidence(chatId, callId, file, cwd)
+      } else {
+        const turnId = codexTurnIdForItem(items, item)
+        if (turnId) {
+          checkedEvidence = true
+          evidence = await codexImageEvidenceByTurn(turnId, callId, file, cwd)
+        } else if (cli === 'antigravity' && chatId) {
+          checkedEvidence = true
+          evidence = await antigravityImageEvidence(chatId, file, cwd)
+        }
+      }
+      if (checkedEvidence) {
+        // Sync, deletion, and live tool updates may replace the message during the log read.
+        const current = store.thread(threadId)
+        if (!current || current.chatId !== chatId || threadCli(current) !== cli || !store.items(threadId).includes(item)
+          || item.status !== 'success' || item.callId !== callId || imagePath(item) !== file) throw new Error(t('工具消息不存在'))
+        if (evidence && !item.images?.length) capture(item, evidence.output, evidence.path)
+      }
+    }
     store.markItemsDirty(threadId)
   }
   return { images: item.images ?? [], ...(item.imageError ? { error: item.imageError, retryable: item.status === 'success' && !item.images?.length && !!imagePath(item) } : {}) }

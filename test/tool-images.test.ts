@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { imageCapture, readToolImage, prepareToolImages, inlineImages, decodeImage, validateImage } from '../src/main/tool-images'
 import { attachmentsFor } from '../src/main/attachments'
@@ -103,16 +104,16 @@ describe('tool image storage and boundaries', () => {
     const item = tool(); imageCapture(store, cwd)(item, undefined)
     expect((untrustedForkItems([item])[0] as ToolItem).images).toBeUndefined()
   })
-  it('lazily upgrades a legacy successful read and marks it dirty', () => {
-    items.push(tool()); const result = prepareToolImages(store, 't', 'i')
+  it('lazily upgrades a legacy successful read and marks it dirty', async () => {
+    items.push(tool()); const result = await prepareToolImages(store, 't', 'i')
     expect(result.images).toHaveLength(1); expect(store.markItemsDirty).toHaveBeenCalledWith('t')
-    expect(prepareToolImages(store, 't', 'i').images[0].id).toBe(result.images[0].id)
+    expect((await prepareToolImages(store, 't', 'i')).images[0].id).toBe(result.images[0].id)
   })
-  it('retries a missing legacy image without changing its tool status', () => {
+  it('retries a missing legacy image without changing its tool status', async () => {
     fs.unlinkSync(path.join(cwd, 'a.png')); items.push(tool())
-    expect(prepareToolImages(store, 't', 'i').error).toBeTruthy()
+    expect((await prepareToolImages(store, 't', 'i')).error).toBeTruthy()
     fs.writeFileSync(path.join(cwd, 'a.png'), Buffer.from(PNG, 'base64'))
-    expect(prepareToolImages(store, 't', 'i').images).toHaveLength(1)
+    expect((await prepareToolImages(store, 't', 'i')).images).toHaveLength(1)
     expect((items[0] as ToolItem).status).toBe('success')
   })
   it('preserves original snapshots across read/view_image history normalization', () => {
@@ -123,6 +124,258 @@ describe('tool image storage and boundaries', () => {
     imageCapture(store, cwd, [original])(imported, undefined)
     expect(imported.images).toEqual(original.images)
     expect(imported.imageError).toBe(original.imageError)
+  })
+})
+
+describe('Codex image previews outside the project', () => {
+  const chatId = '00000000-0000-0000-0000-000000000001'
+  const callId = 'exec-8f568f97-0d2d-4b08-bf7f-796d185d02da'
+  let rollout: string, sourcePath: string, item: ToolItem
+  beforeEach(() => {
+    const codex = path.join(dir, 'codex')
+    vi.stubEnv('CODEX_HOME', codex)
+    rollout = path.join(codex, 'sessions', `rollout-test-${chatId}.jsonl`)
+    fs.mkdirSync(path.dirname(rollout), { recursive: true })
+    sourcePath = path.join(dir, '截图 #1.png')
+    fs.writeFileSync(sourcePath, Buffer.from(PNG, 'base64'))
+    Object.assign(store.thread('t'), { cli: 'codex', chatId })
+    item = tool({ callId, args: { path: sourcePath }, imageError: '图片不在允许的项目范围内' })
+    items.push(item)
+  })
+  afterEach(() => vi.unstubAllEnvs())
+
+  function writeRollout(native: Record<string, unknown> = {}, threadId = chatId, event = 'item_completed') {
+    const records = [
+      { type: 'session_meta', payload: { id: chatId, cwd } },
+      { type: 'event_msg', payload: { type: event, thread_id: threadId, turn_id: 'turn-1', item: {
+        type: 'ImageView', id: callId, path: pathToFileURL(sourcePath).href, ...native
+      } } }
+    ]
+    fs.writeFileSync(rollout, records.map((row) => JSON.stringify(row)).join('\n') + '\n')
+  }
+
+  it('retries after the native ImageView is recorded and reuses one snapshot across concurrent expansions', async () => {
+    const first = await prepareToolImages(store, 't', item.id)
+    expect(first).toMatchObject({ images: [], retryable: true })
+    writeRollout()
+    const [desktop, remote] = await Promise.all([prepareToolImages(store, 't', item.id), prepareToolImages(store, 't', item.id)])
+    expect(desktop.error).toBeUndefined()
+    expect(desktop.images).toHaveLength(1)
+    expect(desktop.images[0]).toMatchObject({ sourceKind: 'file', sourcePath: fs.realpathSync(sourcePath) })
+    expect(remote.images).toEqual(desktop.images)
+    fs.unlinkSync(sourcePath)
+    fs.unlinkSync(rollout)
+    const reopened = await prepareToolImages(store, 't', item.id)
+    expect(reopened.images).toEqual(desktop.images)
+    expect(readToolImage(store, 't', item.id, reopened.images[0].id).data).toBe(PNG)
+    expect(JSON.stringify(item)).not.toContain(PNG)
+  })
+
+  it.each([
+    ['a different call', { id: 'exec-other' }, chatId, 'item_completed'],
+    ['a different path', { path: 'file:///other.png' }, chatId, 'item_completed'],
+    ['a different tool', { type: 'CommandExecution' }, chatId, 'item_completed'],
+    ['a different thread', {}, '00000000-0000-0000-0000-000000000002', 'item_completed'],
+    ['an unfinished image view', {}, chatId, 'item_started']
+  ] as const)('keeps an external image unavailable for %s', async (_description, native, threadId, event) => {
+    writeRollout(native, threadId, event)
+    const result = await prepareToolImages(store, 't', item.id)
+    expect(result.images).toEqual([])
+    expect(result.error).toBeTruthy()
+  })
+
+  it('requires the native session id even when the rollout filename matches the chat', async () => {
+    writeRollout()
+    const differentSession = fs.readFileSync(rollout, 'utf8').replace(chatId, '00000000-0000-0000-0000-000000000002')
+    fs.writeFileSync(rollout, differentSession)
+    expect((await prepareToolImages(store, 't', item.id)).images).toEqual([])
+  })
+
+  it('rejects a recorded external file that now links to a different external image', async () => {
+    writeRollout()
+    const other = path.join(dir, 'other.png')
+    fs.renameSync(sourcePath, other)
+    fs.symlinkSync(other, sourcePath)
+    expect((await prepareToolImages(store, 't', item.id)).images).toEqual([])
+  })
+
+  it('does not attach a pending preview to a replaced transcript item', async () => {
+    writeRollout()
+    const pending = prepareToolImages(store, 't', item.id)
+    const replacement = tool({ id: item.id, callId: 'other', args: { path: sourcePath } })
+    items = [replacement]
+    await expect(pending).rejects.toThrow()
+    expect(item.images).toBeUndefined()
+    expect(replacement.images).toBeUndefined()
+  })
+
+  it.each([
+    ['its matching output', 'call_direct', true],
+    ['an unrelated output', 'call_other', false]
+  ] as const)('checks a direct view_image against %s after the external source has been deleted', async (_description, outputId, matches) => {
+    item.callId = 'call_direct'
+    fs.unlinkSync(sourcePath)
+    const records = [
+      { type: 'session_meta', payload: { id: chatId, cwd } },
+      { type: 'response_item', payload: { type: 'function_call', name: 'view_image',
+        call_id: item.callId, arguments: JSON.stringify({ path: sourcePath }) } },
+      { type: 'response_item', payload: { type: 'function_call_output', call_id: outputId,
+        output: [{ type: 'input_image', image_url: `data:image/png;base64,${PNG}` }] } }
+    ]
+    fs.writeFileSync(rollout, records.map((row) => JSON.stringify(row)).join('\n') + '\n')
+    const result = await prepareToolImages(store, 't', item.id)
+    if (!matches) {
+      expect(result.images).toEqual([])
+      expect(result.error).toBeTruthy()
+      return
+    }
+    expect(result.error).toBeUndefined()
+    expect(result.images).toHaveLength(1)
+    expect(result.images[0].sourceKind).toBe('result')
+    expect(readToolImage(store, 't', item.id, result.images[0].id).data).toBe(PNG)
+  })
+
+  it('recovers a deleted external screenshot from a single-ImageView Codex exec output', async () => {
+    fs.unlinkSync(sourcePath)
+    const records = [
+      { type: 'session_meta', payload: { id: chatId, cwd } },
+      { type: 'response_item', payload: { type: 'custom_tool_call', name: 'exec', call_id: 'call_exec_1', input: 'view_image' } },
+      { type: 'event_msg', payload: { type: 'item_completed', thread_id: chatId, turn_id: 'turn-1', item: {
+        type: 'ImageView', id: callId, path: pathToFileURL(sourcePath).href
+      } } },
+      { type: 'response_item', payload: { type: 'custom_tool_call_output', call_id: 'call_exec_1',
+        output: [{ type: 'input_text', text: 'Script completed' }, { type: 'input_image', image_url: `data:image/png;base64,${PNG}` }] } }
+    ]
+    fs.writeFileSync(rollout, records.map((row) => JSON.stringify(row)).join('\n') + '\n')
+    const result = await prepareToolImages(store, 't', item.id)
+    expect(result.error).toBeUndefined()
+    expect(result.images).toHaveLength(1)
+    expect(result.images[0].sourceKind).toBe('result')
+    expect(readToolImage(store, 't', item.id, result.images[0].id).data).toBe(PNG)
+  })
+
+  it('falls back to the verified file without misattributing a multi-ImageView Codex exec output', async () => {
+    const otherBytes = Buffer.concat([Buffer.from(PNG, 'base64'), Buffer.from([1])]).toString('base64')
+    const records = [
+      { type: 'session_meta', payload: { id: chatId, cwd } },
+      { type: 'response_item', payload: { type: 'custom_tool_call', name: 'exec', call_id: 'call_exec_multi', input: 'view_image x2' } },
+      { type: 'event_msg', payload: { type: 'item_completed', thread_id: chatId, turn_id: 'turn-1', item: {
+        type: 'ImageView', id: callId, path: pathToFileURL(sourcePath).href
+      } } },
+      { type: 'event_msg', payload: { type: 'item_completed', thread_id: chatId, turn_id: 'turn-1', item: {
+        type: 'ImageView', id: 'exec-other-view', path: pathToFileURL(path.join(dir, 'second.png')).href
+      } } },
+      { type: 'response_item', payload: { type: 'custom_tool_call_output', call_id: 'call_exec_multi',
+        output: [{ type: 'input_image', image_url: `data:image/png;base64,${otherBytes}` }] } }
+    ]
+    fs.writeFileSync(rollout, records.map((row) => JSON.stringify(row)).join('\n') + '\n')
+    const result = await prepareToolImages(store, 't', item.id)
+    expect(result.error).toBeUndefined()
+    expect(result.images).toHaveLength(1)
+    expect(result.images[0].sourceKind).toBe('file')
+    expect(readToolImage(store, 't', item.id, result.images[0].id).data).toBe(PNG)
+  })
+
+  it('recovers a historical Codex image after the thread switched to another CLI', async () => {
+    const turnId = '01a202b6-c8b5-7f81-824b-c8c374bcd4c4'
+    Object.assign(store.thread('t'), { cli: 'antigravity', chatId: 'ag-session-1' })
+    items.push({ id: 'res-1', kind: 'result', cli: 'codex', usageId: `codex:${turnId}`, isError: false })
+    fs.unlinkSync(sourcePath)
+    const records = [
+      { type: 'session_meta', payload: { id: chatId, cwd } },
+      { type: 'response_item', payload: { type: 'custom_tool_call', name: 'exec', call_id: 'call_exec_sw', input: 'view_image' } },
+      { type: 'event_msg', payload: { type: 'item_completed', thread_id: chatId, turn_id: turnId, item: {
+        type: 'ImageView', id: callId, path: pathToFileURL(sourcePath).href
+      } } },
+      { type: 'response_item', payload: { type: 'custom_tool_call_output', call_id: 'call_exec_sw',
+        output: [{ type: 'input_image', image_url: `data:image/png;base64,${PNG}` }] } }
+    ]
+    fs.writeFileSync(rollout, records.map((row) => JSON.stringify(row)).join('\n') + '\n')
+    const result = await prepareToolImages(store, 't', item.id)
+    expect(result.error).toBeUndefined()
+    expect(result.images).toHaveLength(1)
+    expect(result.images[0].sourceKind).toBe('result')
+    expect(readToolImage(store, 't', item.id, result.images[0].id).data).toBe(PNG)
+  })
+
+  it.runIf(process.platform === 'win32')('matches verified Windows external paths across drive-letter casing differences', async () => {
+    const lowerUrl = pathToFileURL(sourcePath).href.replace(/^file:\/\/\/([A-Z]):/, (_, d: string) => `file:///${d.toLowerCase()}:`)
+    writeRollout({ path: lowerUrl })
+    const result = await prepareToolImages(store, 't', item.id)
+    expect(result.error).toBeUndefined()
+    expect(result.images).toHaveLength(1)
+    expect(readToolImage(store, 't', item.id, result.images[0].id).data).toBe(PNG)
+  })
+})
+
+describe('Antigravity image paths and conversation scope', () => {
+  const agChatId = '480ee055-2b6c-4394-a067-8362f246e072'
+  let agDataDir: string, brainDir: string
+  beforeEach(() => {
+    agDataDir = path.join(dir, 'ag-data')
+    brainDir = path.join(agDataDir, 'brain', agChatId)
+    fs.mkdirSync(path.join(brainDir, 'scratch'), { recursive: true })
+    vi.stubEnv('ANTIGRAVITY_CLI_DATA_DIR', agDataDir)
+    Object.assign(store.thread('t'), { cli: 'antigravity', chatId: agChatId })
+  })
+  afterEach(() => vi.unstubAllEnvs())
+
+  it('allows images in the conversation brain directory and handles Windows leading-slash drive paths', async () => {
+    const scratchImg = path.join(brainDir, 'scratch', 'frame_0.png')
+    fs.writeFileSync(scratchImg, Buffer.from(PNG, 'base64'))
+    const slashPath = process.platform === 'win32' ? `/${scratchImg.replace(/\\/g, '/')}` : scratchImg
+    const item = tool({ args: { path: slashPath } })
+    items.push(item)
+    const result = await prepareToolImages(store, 't', item.id)
+    expect(result.error).toBeUndefined()
+    expect(result.images).toHaveLength(1)
+    expect(readToolImage(store, 't', item.id, result.images[0].id).data).toBe(PNG)
+  })
+
+  it('blocks images from another Antigravity conversation brain directory', async () => {
+    const otherDir = path.join(agDataDir, 'brain', 'other-session', 'scratch')
+    fs.mkdirSync(otherDir, { recursive: true })
+    const otherImg = path.join(otherDir, 'secret.png')
+    fs.writeFileSync(otherImg, Buffer.from(PNG, 'base64'))
+    const item = tool({ args: { Path: otherImg } })
+    items.push(item)
+    const result = await prepareToolImages(store, 't', item.id)
+    expect(result.images).toEqual([])
+    expect(result.error).toContain('项目')
+  })
+
+  it('allows an external image attested by Antigravity transcript read_file + media', async () => {
+    const extImg = path.join(dir, 'temp-preview.png')
+    fs.writeFileSync(extImg, Buffer.from(PNG, 'base64'))
+    const logsDir = path.join(brainDir, '.system_generated', 'logs')
+    fs.mkdirSync(logsDir, { recursive: true })
+    const rows = [
+      { type: 'PLANNER_RESPONSE', status: 'DONE', tool_calls: [{ name: 'read_file', args: { Path: JSON.stringify(extImg) } }] },
+      { type: 'GENERIC', status: 'DONE', media: [{ mime_type: 'image/jpeg', uri: pathToFileURL(extImg).href }] }
+    ]
+    fs.writeFileSync(path.join(logsDir, 'transcript.jsonl'), rows.map((r) => JSON.stringify(r)).join('\n') + '\n')
+    const item = tool({ args: { Path: extImg, path: process.platform === 'win32' ? `/${extImg.replace(/\\/g, '/')}` : extImg } })
+    items.push(item)
+    const result = await prepareToolImages(store, 't', item.id)
+    expect(result.error).toBeUndefined()
+    expect(result.images).toHaveLength(1)
+    expect(readToolImage(store, 't', item.id, result.images[0].id).data).toBe(PNG)
+  })
+
+  it('does not overwrite rawInput.Path with ACP locations in StreamReducer', () => {
+    const reducer = new StreamReducer(items)
+    const winPath = path.join(cwd, 'a.png')
+    reducer.handleAcp({
+      sessionUpdate: 'tool_call',
+      toolCallId: 'ag-1',
+      kind: 'read',
+      rawInput: { Path: winPath },
+      locations: [{ path: process.platform === 'win32' ? `/${winPath.replace(/\\/g, '/')}` : winPath }],
+      status: 'completed'
+    })
+    const item = items[0] as ToolItem
+    expect(item.args.Path).toBe(winPath)
+    expect(item.args.path).toBeUndefined()
   })
 })
 
@@ -148,7 +401,7 @@ describe('image event and history normalization', () => {
     reducer.handleAcp({ sessionUpdate: 'tool_call_update', toolCallId: 'c', status: 'completed' })
     expect((items[0] as ToolItem).images).toHaveLength(1)
   })
-  it('keeps a warning when running updates contain more images than can be cached', () => {
+  it('keeps a warning when running updates contain more images than can be cached', async () => {
     const reducer = new StreamReducer(items, imageCapture(store, cwd))
     const content = Array.from({ length: 12 }, (_, i) => ({ ...image, data: Buffer.concat([Buffer.from(PNG, 'base64'), Buffer.from([i])]).toString('base64') }))
     reducer.handleAcp({ sessionUpdate: 'tool_call', toolCallId: 'c', rawInput: {}, status: 'in_progress', content })
@@ -158,7 +411,7 @@ describe('image event and history normalization', () => {
     expect(item.imageError).toContain('缓存限制')
     reducer.handleAcp({ sessionUpdate: 'tool_call_update', toolCallId: 'c', status: 'completed' })
     expect(item.imageError).toContain('缓存限制')
-    expect(prepareToolImages(store, 't', item.id).retryable).toBe(false)
+    expect((await prepareToolImages(store, 't', item.id)).retryable).toBe(false)
   })
   it('captures embedded ACP image resources without persisting their blob in metadata', () => {
     const raw = { type: 'resource', resource: { uri: 'memory:test', mimeType: 'image/png', blob: PNG } }
