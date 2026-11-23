@@ -1,4 +1,5 @@
 import { localizedMessage, t as translate } from '@shared/i18n'
+import { latestTurnPreview } from '@shared/transcript'
 import type { CliProvider, Item, ResultItem } from '@shared/types'
 import type { WeeklyQuotaEstimate } from '@shared/turn-quota'
 import { exitFailureDetail } from '../cli'
@@ -165,7 +166,10 @@ export function finalizeTurnItems(input: FinalizeRunInput): FinalizeRunOutput {
     }
   }
 
-  const preview = (recoverNotice && continuePrompt ? translate(recoverNotice, { word: continuePrompt }) : r.lastAssistantText)
+  const turnPreview = wakeup ? '' : latestTurnPreview(items, { currentTurnOnly: true })
+  const preview = (recoverNotice && continuePrompt
+    ? translate(recoverNotice, { word: continuePrompt })
+    : turnPreview || r.lastAssistantText)
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 120)

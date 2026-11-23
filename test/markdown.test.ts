@@ -411,3 +411,57 @@ describe('Markdown rendering after background activity', () => {
     expect(html).not.toContain('class="working"')
   })
 })
+
+describe('multi-assistant turn visibility with single collapsed steps bar', () => {
+  it('keeps both the main answer and a trailing background-task follow-up visible while collapsing steps once', () => {
+    const tool: Item = { id: 't1', kind: 'tool', callId: 'c1', tool: 'shell', args: { command: 'git log' }, status: 'success', startedAt: 1, endedAt: 2 }
+    const think1: Item = { id: 'th1', kind: 'thinking', text: 'Verifying', done: true, startedAt: 2, endedAt: 3 }
+    const main = '统计范围：UE4181 仓库中全部 48 个提交的完整开关清单如下。'
+    const think2: Item = { id: 'th2', kind: 'thinking', text: 'Analyzing completed background task', done: true, startedAt: 4, endedAt: 5 }
+    const followup = '后台查询任务已结束，结果与上述结论一致，无需补充调整。'
+
+    const html = renderThread([user, tool, think1, assistant('main', main), think2, assistant('followup', followup), result])
+
+    expect(html.match(/class="worked-toggle"/g)).toHaveLength(1)
+    expect(html).toContain('3 个步骤')
+    expect(html).toContain(main)
+    expect(html).toContain(followup)
+    expect(html.match(/class="msg-assistant-wrap"/g)).toHaveLength(2)
+    expect(actions.copyTexts).toEqual([user.text, main, followup, `${main}\n\n${followup}`])
+  })
+
+  it('keeps intermediate commentary before foreground tools collapsed and does not duplicate copy on single replies', () => {
+    const commentary = '我先去查一下仓库里的提交记录。'
+    const tool: Item = { id: 't1', kind: 'tool', callId: 'c1', tool: 'shell', args: { command: 'git log' }, status: 'success', startedAt: 1, endedAt: 2 }
+    const finalReply = '最终结论：共找到 5 个已开启开关和 4 个关闭开关。'
+
+    const html = renderThread([user, assistant('c', commentary), tool, assistant('final', finalReply), result])
+
+    expect(html.match(/class="worked-toggle"/g)).toHaveLength(1)
+    expect(html).toContain('2 个步骤')
+    expect(html).not.toContain(commentary)
+    expect(html).toContain(finalReply)
+    expect(html.match(/class="msg-assistant-wrap"/g)).toHaveLength(1)
+    expect(actions.copyTexts).toEqual([user.text, finalReply])
+  })
+
+  it('preserves the reply before an Antigravity wakeup result boundary even when wakeup runs tools', () => {
+    const initial = '初步结果已生成，正在等待后台验证完成。'
+    const wakeupTool: Item = { id: 't2', kind: 'tool', callId: 'c2', tool: 'shell', args: { command: 'npm test' }, status: 'success', startedAt: 10, endedAt: 20 }
+    const wakeupReply = '后台测试全部通过。'
+
+    const html = renderThread([
+      user,
+      assistant('initial', initial),
+      result,
+      wakeupTool,
+      assistant('wakeup', wakeupReply)
+    ])
+
+    expect(html.match(/class="worked-toggle"/g)).toHaveLength(1)
+    expect(html).toContain(initial)
+    expect(html).toContain(wakeupReply)
+    expect(html.match(/class="msg-assistant-wrap"/g)).toHaveLength(2)
+    expect(actions.copyTexts).toContain(`${initial}\n\n${wakeupReply}`)
+  })
+})

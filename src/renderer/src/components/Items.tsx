@@ -58,17 +58,19 @@ export function StepItem({
   item,
   streaming,
   threadId,
+  showCopy,
   onFork
 }: {
   item: Item
   streaming?: boolean
   threadId?: string
+  showCopy?: boolean
   onFork?: () => void
 }) {
   let content: React.ReactNode
   switch (item.kind) {
     case 'assistant':
-      content = <AssistantMessage text={item.text} streaming={streaming} onFork={onFork} />
+      content = <AssistantMessage text={item.text} streaming={streaming} showCopy={showCopy} onFork={onFork} />
       break
     case 'thinking':
       content = <ThinkingBlock item={item} />

@@ -2,8 +2,8 @@ import { useT } from '../lib/i18n'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { composeCommands, FORK_COMMAND } from '@shared/commands'
 import { displayThreadTitle } from '@shared/thread-title'
-import { isBackgroundAgentItem, mergeInterruptedAssistantMessages } from '@shared/transcript'
-import { cliTitle, threadCli, type AssistantItem, type CliProvider, type Item, type ResultItem, type ThreadMeta, type ToolItem, type UserItem } from '@shared/types'
+import { isBackgroundAgentItem, mergeInterruptedAssistantMessages, visibleAssistantIndices, visibleAssistantText } from '@shared/transcript'
+import { cliTitle, threadCli, type CliProvider, type Item, type ResultItem, type ThreadMeta, type ToolItem, type UserItem } from '@shared/types'
 import { DiffFileView, collectEditedFiles } from '../lib/diff'
 import { duration } from '../lib/format'
 import { planPath, planUriOf } from '../lib/tools'
@@ -25,6 +25,7 @@ interface Turn {
   user?: UserItem
   steps: Item[]
   result?: ResultItem
+  resultBoundaries: number[]
 }
 
 function groupTurns(items: Item[]): Turn[] {
@@ -32,16 +33,18 @@ function groupTurns(items: Item[]): Turn[] {
   let cur: Turn | undefined
   for (const it of mergeInterruptedAssistantMessages(items)) {
     if (it.kind === 'user') {
-      cur = { key: it.id, user: it, steps: [] }
+      cur = { key: it.id, user: it, steps: [], resultBoundaries: [] }
       turns.push(cur)
       continue
     }
     if (!cur) {
-      cur = { key: it.id, steps: [] }
+      cur = { key: it.id, steps: [], resultBoundaries: [] }
       turns.push(cur)
     }
-    if (it.kind === 'result') cur.result = it
-    else cur.steps.push(it)
+    if (it.kind === 'result') {
+      cur.result = it
+      cur.resultBoundaries.push(cur.steps.length)
+    } else cur.steps.push(it)
   }
   return turns
 }
@@ -96,12 +99,15 @@ function TurnView({
 }) {
   const t = useT()
   const [expanded, setExpanded] = useState(false)
-  const lastAssistantIdx = useMemo(() => {
-    for (let i = turn.steps.length - 1; i >= 0; i--) if (turn.steps[i].kind === 'assistant') return i
-    return -1
-  }, [turn.steps])
-
-  const finalText = lastAssistantIdx >= 0 ? (turn.steps[lastAssistantIdx] as AssistantItem).text : undefined
+  const visibleAssistantIdxList = useMemo(
+    () => visibleAssistantIndices(turn.steps, turn.resultBoundaries),
+    [turn.steps, turn.resultBoundaries]
+  )
+  const visibleAssistants = useMemo(() => new Set(visibleAssistantIdxList), [visibleAssistantIdxList])
+  const finalText = useMemo(
+    () => visibleAssistantText(turn.steps, turn.resultBoundaries),
+    [turn.steps, turn.resultBoundaries]
+  )
 
   if (live) {
     // A background completion can arrive while the earlier assistant item is
@@ -129,9 +135,10 @@ function TurnView({
   }
 
   const keepVisible = (s: Item, i: number) =>
-    s.kind === 'question' || s.kind === 'notice' || (s.kind === 'tool' && s.tool === 'createPlan') || i === lastAssistantIdx
+    s.kind === 'question' || s.kind === 'notice' || (s.kind === 'tool' && s.tool === 'createPlan') || visibleAssistants.has(i)
   const intermediate = turn.steps.filter((s, i) => !keepVisible(s, i))
   const trailing = turn.steps.filter((s, i) => keepVisible(s, i))
+  const showAssistantCopy = visibleAssistantIdxList.length > 1
   const workMs =
     turn.result?.durationMs ??
     (() => {
@@ -160,6 +167,7 @@ function TurnView({
           key={s.id}
           item={s}
           threadId={threadId}
+          showCopy={showAssistantCopy}
           onFork={onFork && s.kind === 'assistant' ? () => onFork(s.id) : undefined}
         />
       ))}

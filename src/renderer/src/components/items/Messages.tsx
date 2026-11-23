@@ -22,9 +22,20 @@ export function UserMessage({ item, onFork }: { item: UserItem; onFork?: () => v
   )
 }
 
-export function AssistantMessage({ text, streaming, onFork }: { text: string; streaming?: boolean; onFork?: () => void }) {
+export function AssistantMessage({
+  text,
+  streaming,
+  showCopy,
+  onFork
+}: {
+  text: string
+  streaming?: boolean
+  showCopy?: boolean
+  onFork?: () => void
+}) {
   const actions = useContext(TurnActionsContext)
   const value = useMemo(() => ({ ...actions, streaming }), [actions, streaming])
+  const canCopy = !!showCopy && !!text
   return (
     <div className="msg-assistant-wrap">
       <div className={`msg-assistant ${streaming ? 'streaming' : ''}`}>
@@ -32,9 +43,10 @@ export function AssistantMessage({ text, streaming, onFork }: { text: string; st
           <Markdown text={text} />
         </TurnActionsContext.Provider>
       </div>
-      {onFork && !streaming && (
+      {!streaming && (canCopy || onFork) && (
         <div className="msg-actions">
-          <ForkButton onFork={onFork} />
+          {canCopy && <CopyButton text={text} />}
+          {onFork && <ForkButton onFork={onFork} />}
         </div>
       )}
     </div>

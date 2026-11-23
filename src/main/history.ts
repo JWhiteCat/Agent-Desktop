@@ -131,10 +131,20 @@ function imageSuffix(content: unknown): string {
   return images ? `\n[${images} 张图片]` : ''
 }
 
+const CURSOR_BG_NOTIFICATION_QUERY = /^Briefly inform the user about the task result\b/i
+
+function isCursorSystemNotification(raw: string, suffix: string): boolean {
+  if (suffix || !/<system_notification>[\s\S]*?<\/system_notification>/.test(raw)) return false
+  const query = raw.match(/<user_query>\s*([\s\S]*?)\s*<\/user_query>/)
+  if (!query) return true
+  return CURSOR_BG_NOTIFICATION_QUERY.test(query[1].trim())
+}
+
 /** User turns are wrapped with injected context blocks; keep only what the person typed. */
 function userText(content: unknown): string {
   const raw = contentText(content)
   const suffix = imageSuffix(content)
+  if (isCursorSystemNotification(raw, suffix)) return ''
   const query = raw.match(/<user_query>\s*([\s\S]*?)\s*<\/user_query>/)
   if (query) return query[1] + suffix
   const text = raw.replace(CONTEXT_BLOCK, (block: string) => block.startsWith('<agent_desktop_attachments>') ? block : '').trim()

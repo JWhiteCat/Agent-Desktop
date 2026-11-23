@@ -1,5 +1,6 @@
 import { imageCapture } from './tool-images'
 import { localizedMessage, t as translate } from '@shared/i18n'
+import { latestTurnPreview } from '@shared/transcript'
 import type { Item, ResultItem, ThreadMeta, ToolItem, UserItem } from '@shared/types'
 import { isManagedMessageId } from '@shared/attachment-message'
 import { threadCli } from '@shared/types'
@@ -23,11 +24,7 @@ export interface HistoryDeps {
 }
 
 function previewOf(items: Item[]): string | undefined {
-  for (let i = items.length - 1; i >= 0; i--) {
-    const it = items[i]
-    if (it.kind === 'assistant') return it.text.replace(/\s+/g, ' ').trim().slice(0, 120)
-  }
-  return undefined
+  return latestTurnPreview(items) || undefined
 }
 
 function forkTitle(store: Store, title: string, projectId: string): string {
