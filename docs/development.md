@@ -51,7 +51,9 @@ Download the DMG for your chip, drag the app into Applications, eject the image,
 
 The first toolbar command may ask permission to control Terminal. After a denial, allow Agent Desktop under **Privacy & Security → Automation** and retry; development builds may appear as Electron. Editor buttons can open installed VS Code/Cursor apps even without their `code`/`cursor` launchers. Closing a window keeps conversations running; click the Dock to reopen, or a completion notification to open its conversation. ⌘Q retains the active-task quit confirmation.
 
-`verify:mac` mounts the DMG and copies its app into a temporary directory. It checks the signature, the app executable architecture, absence of native Codex and Claude packages, both ACP initialize handshakes with fixtures, runner arguments, and the real window/preload IPC with a mock CLI. It does not call models or read user logins, and cleans up processes and the mount. A Mac graphical session is required.
+`verify:mac` mounts the DMG and copies its app into a temporary directory. It checks the signature, the app executable architecture, absence of native Codex and Claude packages, both ACP initialize handshakes with fixtures (the Codex fixture answers the `app-server` JSON-RPC `initialize` request instead of exiting early), runner arguments, and the real window/preload IPC with a mock CLI. It does not call models or read user logins, and cleans up processes and the mount. A Mac graphical session is required.
+
+Hover-tip Electron checks poll for the delayed interactive-bubble dismissal rather than assuming a fixed 200 ms sleep finishes on busy Intel macOS runners, and the 10 MiB remote attachment RPC test uses a 20-second timeout.
 
 On macOS, `/var` is an alias of `/private/var`. Offline tests use the physical temporary directory so child working directories and fixture expectations agree. Separate directory-alias regressions cover worktree subdirectories, missing shared child paths and snapshot display paths, ensuring fixture normalization does not hide application bugs.
 

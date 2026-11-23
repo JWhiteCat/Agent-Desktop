@@ -13,6 +13,11 @@ const pause = (ms = 0) => new Promise<void>(resolve => setTimeout(resolve, ms))
 function check(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message)
 }
+async function waitFor(condition: () => unknown, message: string, timeoutMs = 1500) {
+  const deadline = Date.now() + timeoutMs
+  while (!condition() && Date.now() < deadline) await pause(25)
+  check(condition(), message)
+}
 function one<T extends Element = HTMLElement>(selector: string): T {
   const element = document.querySelector<T>(selector)
   check(element, `Missing element: ${selector}`)
@@ -70,8 +75,7 @@ export async function runHoverTipChecks() {
   await pause(200)
   check(tooltip(), 'Moving into an interactive bubble cancels hiding')
   await pointer(bubble, 'pointerout', 'mouse')
-  await pause(200)
-  check(!tooltip(), 'Leaving the interactive bubble closes it after the delay')
+  await waitFor(() => !tooltip(), 'Leaving the interactive bubble closes it after the delay')
   await pointer(one('a'), 'pointerover', 'mouse')
   await pointer(one('[role="tooltip"]'), 'pointerdown', 'touch')
   check(!tooltip(), 'Touching an interactive bubble dismisses it')

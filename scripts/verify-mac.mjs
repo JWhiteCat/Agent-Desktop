@@ -171,8 +171,28 @@ try {
   assert(!/\/node_modules\/(?:@openai\/codex(?:[-/]|$)|@anthropic-ai\/claude-agent-sdk-)/m.test(asarList), 'Release bundles a native CLI package')
   const codexEntry = path.join(modules, '@agentclientprotocol', 'codex-acp', 'dist', 'index.js')
   const claudeEntry = path.join(modules, '@agentclientprotocol', 'claude-agent-acp', 'dist', 'index.js')
+  const shQuote = (value) => `'${value.replace(/'/g, `'\\''`)}'`
+  const codexMockScript = path.join(root, 'mock-codex.cjs')
+  fs.writeFileSync(codexMockScript, [
+    'let buf = ""',
+    'process.stdin.setEncoding("utf8")',
+    'process.stdin.on("data", (chunk) => {',
+    '  buf += chunk',
+    '  const lines = buf.split("\\n")',
+    '  buf = lines.pop()',
+    '  for (const line of lines) {',
+    '    if (!line.trim()) continue',
+    '    let msg',
+    '    try { msg = JSON.parse(line) } catch { continue }',
+    '    if (msg.id === undefined) continue',
+    '    const result = msg.method === "initialize" ? { userAgent: "mock-codex", codexHome: process.env.CODEX_HOME } : {}',
+    '    process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result }) + "\\n")',
+    '  }',
+    '})',
+    'process.stdin.resume()'
+  ].join('\n'))
   const codexFixture = path.join(root, 'mock-codex')
-  fs.writeFileSync(codexFixture, '#!/bin/sh\nexit 0\n', { mode: 0o755 })
+  fs.writeFileSync(codexFixture, `#!/bin/sh\nELECTRON_RUN_AS_NODE=1 exec ${shQuote(executable)} ${shQuote(codexMockScript)} "$@"\n`, { mode: 0o755 })
   await initializeAdapter(executable, codexEntry, { CODEX_PATH: codexFixture })
   // Claude's initialize probes auth status; never let a local verification read Keychain logins.
   const authFixture = path.join(root, 'mock-claude-auth')
