@@ -4,9 +4,39 @@ Write upcoming changes under `## [Unreleased]`. `release.bat X.Y.Z` or `npm run 
 
 ## [Unreleased]
 
-### 修复
+## [1.3.0] - 2026-11-23
 
+### Antigravity CLI 与按需安装
+
+- 集成 Google [Antigravity CLI](https://antigravity.google/product/antigravity-cli/)（`agy`）ACP 支持：支持在应用内自动检测、识别登录状态、按需安装与更新原生 `agy`，以及导入和续接对话。
+- 支持自定义 Antigravity API 端点 / 网关，按上游 `agy` 模型目录自动发现与路由模型，兼容网关模型前缀与 Carbon 思考档位别名。
+- 新增 Antigravity 账号额度卡片与回合「本轮预估周额度」（按模型自动匹配 Gemini 模型或 Claude / GPT 模型池）；对话内展示 Google 账号验证链接，并为 `ask_question` 工具调用渲染交互选择卡片。
+- 修复 Antigravity 后台工具（如 `run_command`、`schedule`、`run_workflow`）与响应式唤醒期间的轮次状态保持，避免后台工具先于在途回复完成时提前结束轮次或触发完成通知；完全访问权限下自动批准 Plan 调研权限。
+- 支持在聊天输入框或 **设置 → CLI** 中按需下载并校验缺失的 Agent CLI（Cursor、Codex、Claude、Antigravity，覆盖 Windows x64、macOS arm64/x64 与 Linux x64），并支持在应用内管理更新。
+
+### 用量统计、定价与设置
+
+- **设置 → 用量** 改为按 CLI 分页展示账号额度与本机统计（Cursor、Codex、Claude、Antigravity），**设置 → CLI** 页签与模型页签布局对齐，API Key 输入框新增显隐切换按钮。
+- 补齐最新模型公开 API 标价估算：新增 Antigravity 模型价目、Cursor / Antigravity 的 Gemini 4 Neon，Cursor 的 Fable 5.2 / Gemini 4 Carbon / Gemini 4 Hydrogen / DeepSeek V4.1 Flash，以及 Codex 的 GPT-6.2 Astra / GPT-6.2 Sol / GPT-6.1 Terra。
+- 客户端首字延迟改为从主代理首次有效输出（正文、思考片段、工具调用或计划）起算，不再将中间思考与工具执行耗时全部计入首字延迟，并在打开历史记录时修复已完成回合的首字延迟展示。
+- 减少设置页账号额度加载延迟。
+
+### 移动端、体验与构建优化
+
+- 移动端（≤720px）底部输入区收紧为紧凑两行布局，保留附件、模型与发送按钮，将 CLI、模式、权限及首页 Worktree 选项收纳至选项弹窗并显示状态圆点。
 - 手机浏览器远程访问时，发送消息后页面不立即更新：事件流改为每 15 秒发送可被页面检测的心跳，并在连接开头填充数据，避免移动浏览器或代理缓冲；页面在事件流静默、从后台恢复、网关报错关闭或发送后未收到状态更新时自动重连并补齐消息。
+- 阻止触屏点击模型选择器时弹出价格悬浮提示遮挡选项。
+- 锁定 Web 壁纸视口（含 `<video>` 元素背景缩放与 `html` / `body` 视口绑定），确保窗口缩放时背景和画布始终跟随。
+- 优化 Windows 生产预览启动与渲染进程构建速度（复用 Mermaid 预构建产物并按指纹跳过重复构建），加快 Windows 便携版打包速度并精简 `app.asar` 与 Windows Electron 语言包体积。
+
+### 修复与架构
+
+- 恢复项目目录之外的 Codex 与 Antigravity 工具图片预览（支持从本机 Codex 会话记录与 Antigravity `brain/<会话 ID>` 工作目录匹配并恢复截图）。
+- 切换 CLI 或分叉回放历史上下文超出长度时自动压缩，防止超出 CLI 输入限制导致截断。
+- 回合失败或取消时立即完成轮次收尾，不再阻塞等待 CLI 进程退出。
+- 解耦主进程会话管理、Codex 历史解析以及前端侧边栏与输入区模块，加固 CI 动态壁纸缩放回归测试。
+
+详细操作见[使用指南](https://github.com/JWhiteCat/Agent-Desktop/blob/v1.3.0/docs/user-guide.zh-CN.md)、[CLI 安装与配置](https://github.com/JWhiteCat/Agent-Desktop/blob/v1.3.0/docs/cli-setup.zh-CN.md)和[用量统计](https://github.com/JWhiteCat/Agent-Desktop/blob/v1.3.0/docs/usage-stats.zh-CN.md)。真实模型检查需单独启用，不属于离线测试或发布 CI。
 
 ## [1.2.1] - 2026-11-10
 
