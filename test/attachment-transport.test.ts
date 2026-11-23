@@ -55,7 +55,7 @@ describe('attachment remote transport', () => {
     const response = await rpc('attachment:upload', [req])
     expect(response.status).toBe(200)
     expect((await response.json()).result.size).toBe(10 * 1024 * 1024)
-  })
+  }, 20_000)
 
   it('keeps attachment browser calls authenticated under the public prefix', async () => {
     vi.stubGlobal('location', new URL('https://example.test/c/aaaaaaaaaaaaaaaa/'))

@@ -51,7 +51,9 @@ npm run verify:mac -- release/agent-desktop-0.1.0-mac-arm64.dmg arm64
 
 顶部命令首次运行可能请求控制 Terminal，请允许；拒绝后可在「隐私与安全性 → 自动化」重新允许 Agent Desktop 控制 Terminal，开发模式对应的名称可能是 Electron。没有安装 `code` / `cursor` 命令时，编辑器按钮会尝试打开已安装的 VS Code / Cursor 应用。应用关闭窗口后继续运行，点击 Dock 可重开窗口，点击完成通知会打开对应会话；⌘Q 退出时保留任务确认。
 
-`verify:mac` 在临时目录挂载并复制 DMG 内的应用，检查签名、应用可执行文件的架构、是否排除了 Codex 和 Claude 原生包、两个基于模拟 CLI 的 ACP 握手、runner 参数，以及真实窗口、preload IPC 和模拟 CLI 检测；不调用模型或读取用户登录，检查后清理进程和挂载。该检查需要 Mac 图形会话。
+`verify:mac` 在临时目录挂载并复制 DMG 内的应用，检查签名、应用可执行文件的架构、是否排除了 Codex 和 Claude 原生包、两个基于模拟 CLI 的 ACP 握手（其中 Codex 模拟程序响应 `app-server` 的 JSON-RPC `initialize` 请求而不会提前退出）、runner 参数，以及真实窗口、preload IPC 和模拟 CLI 检测；不调用模型或读取用户登录，检查后清理进程和挂载。该检查需要 Mac 图形会话。
+
+悬浮提示的 Electron 回归测试会轮询等待交互气泡延时关闭，避免高负载 Intel macOS 运行器上固定 200 ms 休眠超时误报；10 MiB 远程附件上传测试设置 20 秒超时。
 
 macOS 的 `/var` 是 `/private/var` 的目录别名。离线测试使用真实临时目录，避免把两种路径拼写当成不同目录；单独的目录别名回归覆盖 worktree 子目录、尚不存在的共享子路径及快照显示路径，确保测试环境统一不会掩盖应用中的别名问题。
 
