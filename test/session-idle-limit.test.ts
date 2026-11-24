@@ -128,8 +128,8 @@ afterEach(() => {
 })
 
 describe('idle agent LRU cap', () => {
-  it('defaults to keeping 3 idle processes', () => {
-    expect(DEFAULT_MAX_IDLE_AGENTS).toBe(3)
+  it('defaults to keeping 6 idle processes', () => {
+    expect(DEFAULT_MAX_IDLE_AGENTS).toBe(6)
   })
 
   it('evicts the least-recently-used idle process when a new thread finishes', async () => {

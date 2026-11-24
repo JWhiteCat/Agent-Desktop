@@ -140,7 +140,7 @@ export function titleFrom(prompt: string): string {
 
 const CANCEL_KILL_MS = 5000
 const FORK_TIMEOUT_MS = 60_000
-export const DEFAULT_MAX_IDLE_AGENTS = 3
+export const DEFAULT_MAX_IDLE_AGENTS = 6
 
 export class SessionManager {
   private runs = new Map<string, Run>()
