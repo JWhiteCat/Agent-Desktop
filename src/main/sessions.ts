@@ -140,6 +140,7 @@ export function titleFrom(prompt: string): string {
 
 const CANCEL_KILL_MS = 5000
 const FORK_TIMEOUT_MS = 60_000
+export const DEFAULT_MAX_IDLE_AGENTS = 3
 
 export class SessionManager {
   private runs = new Map<string, Run>()
@@ -167,7 +168,8 @@ export class SessionManager {
     private readonly onFinished: (info: RunFinished) => void,
     readCodexAccount = loadCodexAccountUsage,
     readCodexQuota = loadCodexQuota,
-    readAntigravityQuota = loadAntigravityQuota
+    readAntigravityQuota = loadAntigravityQuota,
+    private readonly maxIdleAgents = DEFAULT_MAX_IDLE_AGENTS
   ) {
     this.commands = new SlashCommandRegistry(emit)
     this.usage = new SessionUsage(
@@ -406,6 +408,7 @@ export class SessionManager {
     if (cancelled()) return false
     let proc = this.agents.get(thread.id)
     const reusable = !!proc && this.canReuse(proc, fingerprint)
+    if (reusable && proc) this.rememberAgent(thread.id, proc)
     if (proc && !reusable) {
       this.discard(thread.id)
       proc = undefined
@@ -808,6 +811,34 @@ export class SessionManager {
     this.killProc(proc)
   }
 
+  /** Record `proc` at the most-recently-used position in `this.agents`. */
+  private rememberAgent(threadId: string, proc: AgentProc): void {
+    this.agents.delete(threadId)
+    this.agents.set(threadId, proc)
+  }
+
+  private isIdleAgent(threadId: string, proc: AgentProc, justParked?: string): boolean {
+    if (proc.dying || proc.preparing) return false
+    if (this.runs.has(threadId) || this.pendingSends.has(threadId) || this.messageQueue.has(threadId)) return false
+    return threadId === justParked || !this.startups.has(threadId)
+  }
+
+  /** Park a finished or prepared process and evict the oldest idle ones above the LRU cap. */
+  private parkAgent(threadId: string, proc: AgentProc): void {
+    this.rememberAgent(threadId, proc)
+    this.evictIdleAgents(threadId)
+  }
+
+  private evictIdleAgents(justParked?: string): void {
+    const limit = Math.max(0, this.maxIdleAgents)
+    const idle: AgentProc[] = []
+    for (const [id, proc] of this.agents) {
+      if (this.isIdleAgent(id, proc, justParked)) idle.push(proc)
+    }
+    const excess = idle.length - limit
+    for (let i = 0; i < excess; i++) this.killProc(idle[i])
+  }
+
   private startAntigravityQuota(run: Run, model: string): Promise<TurnQuotaSnapshot | undefined> {
     if (run.antigravityStartQuota) return run.antigravityStartQuota
     const abort = new AbortController()
@@ -856,7 +887,10 @@ export class SessionManager {
       this.discard(threadId)
       proc = undefined
     }
-    if (reusable && proc) return this.commands.wait(threadId)
+    if (reusable && proc) {
+      this.rememberAgent(threadId, proc)
+      return this.commands.wait(threadId)
+    }
 
     if (!proc) {
       syncAllManagedSkills(settings.skills)
@@ -868,21 +902,23 @@ export class SessionManager {
     proc.force = opts.force
     // Track startup too: deletion, settings changes, and shutdown must be able
     // to cancel initialize/session/load before the process becomes ready.
-    this.agents.set(threadId, proc)
+    this.rememberAgent(threadId, proc)
     proc.preparing = true
+    let prepared = false
     try {
       const sessionId = await this.connectSession(proc, cwd, thread.chatId, provider, apiKey, mcpServers)
       await applySessionOptions(proc, req, this.store.settings.sandbox)
       if (proc.dying || proc.child.exitCode !== null) throw new Error(translate('CLI 进程已退出'))
       this.store.updateThread(threadId, { chatId: sessionId, cwd })
       this.onStateChange()
-      this.agents.set(threadId, proc)
+      prepared = true
     } catch (err) {
       this.killProc(proc)
       throw err
     } finally {
       proc.preparing = false
     }
+    if (prepared && !proc.dying && proc.child.exitCode === null) this.parkAgent(threadId, proc)
     return this.commands.wait(threadId)
   }
 
@@ -1123,7 +1159,7 @@ export class SessionManager {
     }
 
     const keep = !run.proc.dying && !spawnError && run.proc.child.exitCode === null && (run.reducer.gotResult || finalized.recover)
-    if (keep) this.agents.set(threadId, run.proc)
+    if (keep) this.parkAgent(threadId, run.proc)
     else this.killProc(run.proc)
 
     const updated = this.store.updateThread(threadId, {
