@@ -492,6 +492,34 @@ describe('Codex account and session usage lifecycle', () => {
       expect(ctx.state.items[1]).toHaveProperty('codexSessionUsage.status', 'unavailable')
     })
 
+    it('runs the full Codex usage retry chain even when the 30s timer wakes slightly early on wall-clock time', async () => {
+      const ctx = historySetup()
+      ctx.readAccount.mockResolvedValue({ sessionUsage: { threadId: 'session', status: 'unavailable' } })
+      const baseNow = Date.now()
+      let wallNow = baseNow
+      const nowSpy = vi.spyOn(Date, 'now').mockImplementation(() => wallNow)
+      try {
+        ctx.manager.refreshCodexUsage('thread')
+        await vi.advanceTimersByTimeAsync(0)
+        expect(ctx.readAccount).toHaveBeenCalledTimes(1)
+
+        // Simulate 15ms timer quantization / NTP step-back so Date.now() - previous.at < 30_000 when retry 1 fires.
+        wallNow = baseNow + 29_985
+        await vi.advanceTimersByTimeAsync(30_000)
+        expect(ctx.readAccount).toHaveBeenCalledTimes(2)
+
+        wallNow += 119_900
+        await vi.advanceTimersByTimeAsync(120_000)
+        expect(ctx.readAccount).toHaveBeenCalledTimes(3)
+
+        wallNow += 299_900
+        await vi.advanceTimersByTimeAsync(300_000)
+        expect(ctx.readAccount).toHaveBeenCalledTimes(4)
+      } finally {
+        nowSpy.mockRestore()
+      }
+    })
+
     it('keeps partial data visible and stops retrying once the session becomes available', async () => {
       const ctx = historySetup()
       ctx.readAccount

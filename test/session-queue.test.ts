@@ -11,7 +11,7 @@ import { SessionManager } from '../src/main/sessions'
 import type { Store } from '../src/main/store'
 
 vi.mock('../src/main/skills', () => ({ syncAllManagedSkills: vi.fn() }))
-vi.mock('../src/main/git', () => ({ createWorktree: vi.fn() }))
+vi.mock('../src/main/git', () => ({ createWorktree: vi.fn(), removeWorktree: vi.fn(async () => undefined) }))
 vi.mock('../src/main/session/provider', async (original) => ({
   ...await original<typeof import('../src/main/session/provider')>(),
   resolveLaunch: () => ({ cli: { command: 'mock-agent', prefixArgs: [] } }),
@@ -277,5 +277,35 @@ describe('message queue', () => {
     await vi.waitFor(() => expect(ctx.manager.active()).toEqual([]))
     expect(ctx.manager.queued()).toEqual({})
     expect(ctx.prompts).toHaveLength(1)
+  })
+
+  it.each(['queue', 'now'] as const)('never broadcasts a transient idle state while promoting a %s message to active', async (delivery) => {
+    const ctx = setup()
+    const snapshots: Array<{ busy: boolean; running: string[]; queuedCount: number }> = []
+    let recording = false
+    ctx.stateChanged.mockImplementation(() => {
+      if (!recording) return
+      const running = ctx.manager.running()
+      const starting = ctx.manager.starting()
+      const q = ctx.manager.queued().thread
+      const busy = running.includes('thread') || starting.includes('thread')
+        || !!(q && q.items.length > 0 && !q.paused && !q.waitingForPlan)
+      snapshots.push({ busy, running, queuedCount: q?.items.length ?? 0 })
+    })
+
+    await ctx.manager.send(ctx.req('first'))
+    await ctx.waitForPrompts(1)
+    recording = true
+    await ctx.manager.send(ctx.req('second', { delivery }))
+    if (delivery === 'queue') ctx.complete()
+    await ctx.waitForPrompts(2)
+
+    // Between queuing Turn 2 and Turn 2 actually running, no state change may look idle.
+    expect(snapshots.length).toBeGreaterThan(0)
+    expect(snapshots.every((snap) => snap.busy)).toBe(true)
+
+    ctx.complete()
+    await vi.waitFor(() => expect(ctx.manager.active()).toEqual([]))
+    expect(snapshots.at(-1)?.busy).toBe(false)
   })
 })

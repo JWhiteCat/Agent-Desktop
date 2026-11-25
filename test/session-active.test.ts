@@ -7,7 +7,9 @@ import { execFileSync } from 'node:child_process'
 import { PassThrough, Writable } from 'node:stream'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_SETTINGS, type CliProvider, type Item, type SendRequest, type ThreadMeta } from '../src/shared/types'
-import { createWorktree } from '../src/main/git'
+import { createWorktree, removeWorktree } from '../src/main/git'
+import { openAntigravityGateway, usesAntigravityGateway, type AntigravityGateway } from '../src/main/antigravity-gateway'
+import { threadHandlers } from '../src/main/ipc/threads'
 import { killTree } from '../src/main/cli'
 import { spawnProvider } from '../src/main/session/provider'
 import { refreshCodexProxyEnv } from '../src/main/system-proxy'
@@ -18,7 +20,12 @@ import { collectEditedFiles, collectSnapshotTurns } from '../src/renderer/src/li
 
 vi.mock('../src/main/system-proxy', () => ({ refreshCodexProxyEnv: vi.fn(async () => ({})), codexProxyOverlay: () => ({}), isCodexRoutingTimeout: () => false }))
 vi.mock('../src/main/skills', () => ({ syncAllManagedSkills: vi.fn() }))
-vi.mock('../src/main/git', () => ({ createWorktree: vi.fn() }))
+vi.mock('../src/main/git', () => ({ createWorktree: vi.fn(), removeWorktree: vi.fn(async () => undefined), releaseWorktrees: vi.fn(async () => undefined) }))
+vi.mock('../src/main/antigravity-gateway', async (original) => ({
+  ...await original<typeof import('../src/main/antigravity-gateway')>(),
+  usesAntigravityGateway: vi.fn(() => false),
+  openAntigravityGateway: vi.fn()
+}))
 vi.mock('../src/main/session/provider', async (original) => ({
   ...await original<typeof import('../src/main/session/provider')>(),
   resolveLaunch: () => ({ cli: { command: 'mock-agent', prefixArgs: [] } }),
@@ -333,6 +340,7 @@ describe('unfinished session activity', () => {
     expect(spawnProvider).not.toHaveBeenCalled()
     expect(ctx.store.updateThread).not.toHaveBeenCalled()
     expect(ctx.items).toEqual([])
+    expect(removeWorktree).toHaveBeenCalledExactlyOnceWith(workspace)
   })
 
   it.each([
@@ -569,5 +577,148 @@ describe('unfinished session activity', () => {
     expect(spawnProvider).not.toHaveBeenCalled()
     expect(ctx.store.updateThread).not.toHaveBeenCalled()
     expect(ctx.items).toEqual([])
+    expect(removeWorktree).toHaveBeenCalledExactlyOnceWith(workspace)
+  })
+
+  it('cleans up running state, flushTimer, and pending questions synchronously when deleting a running thread', async () => {
+    let exists = true
+    const ctx = setup('cursor')
+    vi.spyOn(ctx.store, 'thread').mockImplementation((id: string) => exists && id === ctx.thread.id ? ctx.thread : undefined)
+    Object.assign(ctx.store, {
+      threads: [ctx.thread],
+      projects: [{ id: 'project', path: workspace }],
+      deleteThread: vi.fn(() => { exists = false })
+    })
+    await ctx.manager.send(ctx.req)
+    await ctx.waitForPrompt()
+
+    // Schedule an unflushed chunk (creates flushTimer) and a pending question.
+    ctx.reply({ method: 'session/update', params: { sessionId: 'test-session', update: {
+      sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Streaming...' }
+    } } })
+    ctx.reply({ id: 'q-del', method: 'cursor/ask_question', params: {
+      toolCallId: 'ask-del', questions: [{ id: 'c', prompt: 'Pick?', options: ['A', 'B'] }]
+    } })
+    await vi.waitFor(() => expect(ctx.manager.waitingForInput()).toEqual(['thread']))
+    ctx.reply({ method: 'session/update', params: { sessionId: 'test-session', update: {
+      sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'More streaming' }
+    } } })
+    await new Promise((resolve) => setTimeout(resolve, 5))
+
+    // Simulate a descendant holding stdout/stderr open so killTree does not emit close.
+    vi.mocked(killTree).mockImplementationOnce(() => {})
+    ctx.emit.mockClear()
+    ctx.store.markItemsDirty.mockClear()
+    ctx.stateChanged.mockClear()
+
+    let runningAtBroadcast: string[] | undefined
+    const broadcast = vi.fn(() => { runningAtBroadcast = ctx.manager.running() })
+    const handlers = threadHandlers({ store: ctx.store as unknown as Store, sessions: ctx.manager, broadcast } as any)
+    handlers['thread:delete']('thread')
+
+    expect(ctx.manager.running()).toEqual([])
+    expect(ctx.manager.starting()).toEqual([])
+    expect(ctx.manager.active()).toEqual([])
+    expect(ctx.manager.waitingForInput()).toEqual([])
+    expect(runningAtBroadcast).toEqual([])
+    expect(ctx.emit).toHaveBeenCalledWith({ type: 'running', threadId: 'thread', running: false })
+    expect(ctx.stateChanged).toHaveBeenCalled()
+    expect(ctx.store.markItemsDirty).not.toHaveBeenCalled()
+    expect(ctx.emit).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'items' }))
+
+    // Wait past the 40ms flushTimer window to ensure no delayed items event leaks.
+    await new Promise((resolve) => setTimeout(resolve, 70))
+    expect(ctx.emit).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'items' }))
+    expect(ctx.finished).not.toHaveBeenCalled()
+  })
+
+  it('does not leave phantom user messages or mutated metadata when Antigravity gateway startup is cancelled or fails', async () => {
+    const gateway = deferred<AntigravityGateway>()
+    vi.mocked(usesAntigravityGateway).mockReturnValue(true)
+    vi.mocked(openAntigravityGateway).mockReturnValueOnce(gateway.promise)
+    const ctx = setup('antigravity')
+    ctx.thread.title = '新对话'
+    ctx.thread.titleKind = 'default'
+    ctx.thread.archived = true
+
+    const sending = ctx.manager.send({ ...ctx.req, prompt: 'First attempt', model: 'gemini-3.8-pro-high' })
+    await vi.waitFor(() => expect(openAntigravityGateway).toHaveBeenCalledOnce())
+    ctx.manager.stop('thread')
+    const close = vi.fn()
+    gateway.resolve({ endpoint: 'http://127.0.0.1:45678', selectModel: vi.fn(), close })
+    await sending
+
+    expect(close).toHaveBeenCalledOnce()
+    expect(spawnProvider).not.toHaveBeenCalled()
+    expect(ctx.items).toEqual([])
+    expect(ctx.store.updateThread).not.toHaveBeenCalled()
+    expect(ctx.thread).toMatchObject({ title: '新对话', titleKind: 'default', archived: true })
+
+    // If openAntigravityGateway rejects, items and metadata stay clean too.
+    vi.mocked(openAntigravityGateway).mockRejectedValueOnce(new Error('gateway failed'))
+    await expect(ctx.manager.send({ ...ctx.req, prompt: 'Second attempt' })).rejects.toThrow('gateway failed')
+    expect(ctx.items).toEqual([])
+    expect(ctx.store.updateThread).not.toHaveBeenCalled()
+    vi.mocked(usesAntigravityGateway).mockReturnValue(false)
+  })
+
+  it('does not push duplicate user messages when a queued dispatch fails in spawnProvider and is retried', async () => {
+    const ctx = setup('cursor')
+    await ctx.manager.send({ ...ctx.req, prompt: 'Turn 1' })
+    await ctx.waitForPrompt()
+    await ctx.manager.send({ ...ctx.req, prompt: 'Turn 2', delivery: 'queue' })
+
+    // Force a new process for Turn 2 and fail spawnProvider once.
+    ctx.manager.dispose('thread')
+    await vi.waitFor(() => expect(ctx.manager.queued().thread?.paused).toBe(true))
+    const queuedId = ctx.manager.queued().thread.items[0].id
+
+    vi.mocked(spawnProvider).mockImplementationOnce(() => { throw new Error('spawn failed') })
+    ctx.manager.sendQueuedNow('thread', queuedId)
+    await vi.waitFor(() => expect(ctx.manager.queued().thread?.error).toBe('spawn failed'))
+    expect(ctx.items.filter((it) => it.kind === 'user' && it.text === 'Turn 2')).toEqual([])
+
+    const replacement = mockAgent()
+    ctx.manager.sendQueuedNow('thread', ctx.manager.queued().thread.items[0].id)
+    await replacement.waitForPrompt()
+    expect(ctx.items.filter((it) => it.kind === 'user' && it.text === 'Turn 2')).toHaveLength(1)
+    replacement.complete()
+    await vi.waitFor(() => expect(ctx.manager.active()).toEqual([]))
+  })
+
+  it('dispatches a queued delivery=now message when an in-flight startup rejects instead of stranding it paused', async () => {
+    const worktree = deferred<string>()
+    vi.mocked(createWorktree).mockReturnValueOnce(worktree.promise)
+    const ctx = setup('claude')
+    const first = ctx.manager.send({ ...ctx.req, prompt: 'Will fail', worktree: true }).catch((error: Error) => error)
+    await vi.waitFor(() => expect(createWorktree).toHaveBeenCalledOnce())
+
+    await ctx.manager.send({ ...ctx.req, prompt: 'Urgent replacement', delivery: 'now' })
+    worktree.reject(new Error('worktree failed'))
+    expect(await first).toMatchObject({ message: 'worktree failed' })
+
+    await ctx.waitForPrompt()
+    expect(ctx.manager.queued()).toEqual({})
+    expect(ctx.items.filter((it) => it.kind === 'user').map((it) => it.text)).toEqual(['Urgent replacement'])
+    ctx.complete()
+    await vi.waitFor(() => expect(ctx.manager.active()).toEqual([]))
+  })
+
+  it('pauses a queued delivery=queue message when an in-flight startup rejects', async () => {
+    const worktree = deferred<string>()
+    vi.mocked(createWorktree).mockReturnValueOnce(worktree.promise)
+    const ctx = setup('claude')
+    const first = ctx.manager.send({ ...ctx.req, prompt: 'Will fail', worktree: true }).catch((error: Error) => error)
+    await vi.waitFor(() => expect(createWorktree).toHaveBeenCalledOnce())
+
+    await ctx.manager.send({ ...ctx.req, prompt: 'Normal queued', delivery: 'queue' })
+    worktree.reject(new Error('worktree failed'))
+    expect(await first).toMatchObject({ message: 'worktree failed' })
+
+    expect(ctx.manager.queued().thread).toMatchObject({
+      paused: true,
+      items: [expect.objectContaining({ prompt: 'Normal queued' })]
+    })
+    expect(spawnProvider).not.toHaveBeenCalled()
   })
 })

@@ -14,7 +14,7 @@ import { DEFAULT_SETTINGS, type AssistantItem, type Item, type QuestionItem, typ
 
 vi.mock('../src/main/system-proxy', () => ({ refreshCodexProxyEnv: vi.fn(async () => ({})), codexProxyOverlay: () => ({}), isCodexRoutingTimeout: () => false }))
 vi.mock('../src/main/skills', () => ({ syncAllManagedSkills: vi.fn() }))
-vi.mock('../src/main/git', () => ({ createWorktree: vi.fn() }))
+vi.mock('../src/main/git', () => ({ createWorktree: vi.fn(), removeWorktree: vi.fn(async () => undefined) }))
 vi.mock('../src/main/antigravity-validation', () => ({ readAntigravityVerificationUrl: vi.fn() }))
 vi.mock('../src/main/session/provider', async (original) => ({
   ...await original<typeof import('../src/main/session/provider')>(),
@@ -917,5 +917,51 @@ describe('Antigravity reactive wakeup continuation', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('does not strand this.runs when an Antigravity turn or unsolicited wakeup is deleted during waitForFollowup without child close', async () => {
+    // 1) Deleted during runPrompt's waitForFollowup with pipe-holding descendant (no close event).
+    let exists = true
+    const ctx = setup(true)
+    vi.spyOn(ctx.store, 'thread').mockImplementation((id: string) => exists && id === ctx.thread.id ? ctx.thread : undefined)
+    await ctx.manager.send(ctx.req)
+    await ctx.waitForPrompt()
+    ctx.update({
+      sessionUpdate: 'tool_call',
+      toolCallId: 'bg-orphan',
+      kind: 'execute',
+      status: 'in_progress',
+      rawInput: { CommandLine: 'sleep 60', WaitMsBeforeAsync: 500 }
+    })
+    ctx.resolvePrompt()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(ctx.manager.isRunning('thread')).toBe(true)
+
+    vi.mocked(killTree).mockImplementationOnce(() => {})
+    exists = false
+    ctx.manager.dispose('thread')
+    expect(ctx.manager.running()).toEqual([])
+    expect(ctx.manager.active()).toEqual([])
+    expect(ctx.emit).toHaveBeenCalledWith({ type: 'running', threadId: 'thread', running: false })
+
+    // 2) Deleted during unsolicited driveAntigravityWakeup with pipe-holding descendant (no close event).
+    let exists2 = true
+    const ctx2 = setup(true)
+    vi.spyOn(ctx2.store, 'thread').mockImplementation((id: string) => exists2 && id === ctx2.thread.id ? ctx2.thread : undefined)
+    await ctx2.manager.send(ctx2.req)
+    await ctx2.waitForPrompt()
+    ctx2.resolvePrompt()
+    await vi.waitFor(() => expect(ctx2.finished).toHaveBeenCalledOnce())
+    ctx2.update({ sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: 'Woke up!' } })
+    expect(ctx2.manager.isRunning('thread')).toBe(true)
+
+    vi.mocked(killTree).mockImplementationOnce(() => {})
+    exists2 = false
+    ctx2.manager.dispose('thread')
+    expect(ctx2.manager.running()).toEqual([])
+    expect(ctx2.manager.active()).toEqual([])
+    expect(ctx2.emit).toHaveBeenCalledWith({ type: 'running', threadId: 'thread', running: false })
+    // Let the background snapshotTurnFiles child exit before afterEach removes workspace on Windows.
+    await new Promise((resolve) => setTimeout(resolve, 150))
   })
 })

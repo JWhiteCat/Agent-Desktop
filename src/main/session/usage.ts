@@ -174,7 +174,7 @@ export class SessionUsage {
   async saveAccountUsage(threadId: string, resultId: string, sessionId: string, customPath: string, retry = 0): Promise<void> {
     if (this.stopped) return
     const previous = this.refreshes.get(threadId)
-    if (previous?.resultId === resultId && previous.sessionId === sessionId && (previous.pending || Date.now() - previous.at < 30_000)) return
+    if (previous?.resultId === resultId && previous.sessionId === sessionId && (previous.pending || (retry === 0 && Date.now() - previous.at < 30_000))) return
     this.cancelRefresh(threadId)
     const refresh: CodexUsageRefresh = { resultId, sessionId, at: Date.now(), pending: true }
     this.refreshes.set(threadId, refresh)

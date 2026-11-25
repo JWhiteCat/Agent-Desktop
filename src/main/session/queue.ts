@@ -108,13 +108,10 @@ export class SessionQueue {
     else this.dispatchHead(threadId)
   }
 
-  /** Pauses a queue after a send failed before starting a turn (so no endRun drains it). */
+  /** Pauses a queue after a send failed before starting a turn (so no endRun drains it),
+   *  or dispatches an immediate head queued with "now". */
   pauseIfIdle(threadId: string): void {
-    const queue = this.queues.get(threadId)
-    if (queue && !this.host.isActive(threadId) && !queue.paused) {
-      queue.paused = true
-      this.host.onStateChange()
-    }
+    this.drain(threadId, { interrupted: true, planned: false, agent: false })
   }
 
   /**
@@ -129,7 +126,7 @@ export class SessionQueue {
       this.queues.delete(threadId)
       return
     }
-    if (!queue.items[0].immediate) {
+    if (!queue.items[0]?.immediate) {
       if (turn.interrupted) {
         if (!queue.paused) this.set(threadId, { ...queue, paused: true })
         return
@@ -143,17 +140,16 @@ export class SessionQueue {
     this.dispatchHead(threadId)
   }
 
-  private set(threadId: string, queue: MessageQueue): void {
+  private set(threadId: string, queue: MessageQueue, notify = true): void {
     if (queue.items.length) this.queues.set(threadId, queue)
     else this.queues.delete(threadId)
-    this.host.onStateChange()
+    if (notify) this.host.onStateChange()
   }
 
   private dispatchHead(threadId: string): void {
     const queue = this.queues.get(threadId)
     const head = queue?.items[0]
     if (!queue || !head) return
-    this.set(threadId, { items: queue.items.slice(1) })
     const req: SendRequest = {
       threadId,
       prompt: head.prompt,
@@ -163,14 +159,28 @@ export class SessionQueue {
       ...(head.attachments.length ? { attachmentIds: head.attachments.map((a) => a.id) } : {}),
       ...(head.cli ? { cli: head.cli } : {})
     }
-    void this.host.dispatch(req).catch((err) => {
-      if (!this.host.store.thread(threadId)) return
-      const current = this.queues.get(threadId) ?? { items: [] }
-      this.set(threadId, {
-        items: [{ ...head, immediate: undefined }, ...current.items],
-        paused: true,
-        error: err instanceof Error ? err.message : String(err)
-      })
-    })
+    // Remove head before dispatch so re-entrant callers see the remaining queue,
+    // without broadcasting a transient idle state before dispatch() starts the run.
+    this.set(threadId, { items: queue.items.slice(1) }, false)
+    let dispatched: Promise<void>
+    try {
+      dispatched = this.host.dispatch(req)
+    } catch (err) {
+      dispatched = Promise.reject(err)
+    }
+    void dispatched.then(
+      () => {
+        this.host.onStateChange()
+      },
+      (err) => {
+        if (!this.host.store.thread(threadId)) return
+        const current = this.queues.get(threadId) ?? { items: [] }
+        this.set(threadId, {
+          items: [{ ...head, immediate: undefined }, ...current.items],
+          paused: true,
+          error: err instanceof Error ? err.message : String(err)
+        })
+      }
+    )
   }
 }

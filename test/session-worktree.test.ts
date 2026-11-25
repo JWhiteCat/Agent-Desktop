@@ -248,6 +248,27 @@ describe.each(['codex', 'claude'] as const)('%s worktree conversations', (provid
       ctx.manager.stopAll()
     }
   })
+
+  it('removes a newly created git worktree if process spawn fails before the turn starts', async () => {
+    const ctx = setup(provider)
+    gitRepo(ctx.project)
+    spawned().mockImplementationOnce(() => { throw new Error('spawn failed') })
+    try {
+      await expect(ctx.manager.send({ threadId: 'thread', prompt: 'x', model: 'auto', mode: 'agent', force: false, worktree: true }))
+        .rejects.toThrow('spawn failed')
+      expect(ctx.thread.cwd).toBeUndefined()
+      expect(ctx.thread.worktree).toBeUndefined()
+      const worktreeBase = path.join(ctx.dataDir, 'worktrees', 'project')
+      await vi.waitFor(() => {
+        const remaining = fs.existsSync(worktreeBase) ? fs.readdirSync(worktreeBase) : []
+        expect(remaining).toEqual([])
+        const branches = execFileSync('git', ['branch', '--list', 'agent-desktop/*'], { cwd: ctx.project }).toString().trim()
+        expect(branches).toBe('')
+      })
+    } finally {
+      ctx.manager.stopAll()
+    }
+  })
 })
 
 describe.each(['cursor', 'codex', 'claude'] as const)('%s missing worktree', (provider) => {

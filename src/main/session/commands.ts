@@ -9,7 +9,7 @@ const COMMAND_WAIT_MS = 2000
  */
 export class SlashCommandRegistry {
   readonly lists = new Map<string, SlashCommand[]>()
-  private waiters = new Map<string, Array<() => void>>()
+  private waiters = new Map<string, Array<(cancelled: boolean) => void>>()
 
   constructor(private readonly emit: (ev: AgentEvent) => void) {}
 
@@ -19,7 +19,10 @@ export class SlashCommandRegistry {
 
   delete(threadId: string): void {
     this.lists.delete(threadId)
+    const waiting = this.waiters.get(threadId)
+    if (!waiting) return
     this.waiters.delete(threadId)
+    for (const wake of waiting) wake(true)
   }
 
   remember(threadId: string, raw: unknown): void {
@@ -29,7 +32,7 @@ export class SlashCommandRegistry {
     const waiting = this.waiters.get(threadId)
     if (!waiting) return
     this.waiters.delete(threadId)
-    for (const wake of waiting) wake()
+    for (const wake of waiting) wake(false)
   }
 
   wait(threadId: string): Promise<SlashCommand[]> {
@@ -38,18 +41,22 @@ export class SlashCommandRegistry {
     return new Promise((resolve) => {
       let settled = false
       let timer: ReturnType<typeof setTimeout> | undefined
-      const finish = () => {
+      const finish = (cancelled: boolean) => {
         if (settled) return
         settled = true
         if (timer) clearTimeout(timer)
         const left = (this.waiters.get(threadId) ?? []).filter((waiter) => waiter !== wake)
         if (left.length) this.waiters.set(threadId, left)
         else this.waiters.delete(threadId)
+        if (cancelled) {
+          resolve([])
+          return
+        }
         if (!this.lists.has(threadId)) this.lists.set(threadId, [])
         resolve(this.lists.get(threadId) ?? [])
       }
-      const wake = () => finish()
-      timer = setTimeout(finish, COMMAND_WAIT_MS)
+      const wake = (cancelled: boolean) => finish(cancelled)
+      timer = setTimeout(() => finish(false), COMMAND_WAIT_MS)
       const waiting = this.waiters.get(threadId) ?? []
       waiting.push(wake)
       this.waiters.set(threadId, waiting)

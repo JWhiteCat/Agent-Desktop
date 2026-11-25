@@ -14,7 +14,7 @@ import type { TurnQuotaSnapshot, WeeklyQuotaEstimate } from '@shared/turn-quota'
 import { AcpConnection } from './acp'
 import { readAntigravityVerificationUrl } from './antigravity-validation'
 import { killTree, stripAnsi } from './cli'
-import { createWorktree } from './git'
+import { createWorktree, removeWorktree } from './git'
 import { changedTurnFiles, snapshotTurnFiles } from './turn-files'
 import { syncAllManagedSkills } from './skills'
 import { newId } from './id'
@@ -385,94 +385,104 @@ export class SessionManager {
     if (provider !== currentProvider) {
       this.store.updateThread(thread.id, { cli: provider })
       this.discard(thread.id)
+      this.commands.delete(thread.id)
     }
     const apiKey = providerApiKey(provider, settings)
 
     let cwd = thread.cwd && (thread.worktree || fs.existsSync(thread.cwd)) ? thread.cwd : project.path
     if (!fs.existsSync(cwd)) throw new Error(translate('项目目录不存在：{path}', { path: cwd }))
-    // Cursor creates its own worktree from `--worktree`; the other providers use an app-managed worktree.
-    if (provider !== 'cursor' && req.worktree && !thread.chatId && !thread.cwd) {
-      cwd = await createWorktree(cwd, worktreeRoot(this.store))
+    let createdWorktree: string | undefined
+    let committedWorktree = false
+    try {
+      // Cursor creates its own worktree from `--worktree`; the other providers use an app-managed worktree.
+      if (provider !== 'cursor' && req.worktree && !thread.chatId && !thread.cwd) {
+        createdWorktree = await createWorktree(cwd, worktreeRoot(this.store))
+        cwd = createdWorktree
+        if (cancelled()) return false
+      }
+      this.usage.cancel(thread.id)
+
+      const mcpServers = this.mcpServersFor(provider)
+      const skills = enabledSkillFingerprint(settings.skills)
+      // Automatic「继续」must register its run before this function yields. A refresh here
+      // lets the deferred queue drain, and idle observers, see the thread as already finished.
+      const fingerprint = internal?.autoContinue
+        ? this.cachedFingerprint(provider, launch, cwd, settings.sandbox, req.force, apiKey, mcpServers, skills)
+        : await this.launchFingerprint(provider, launch, cwd, settings.sandbox, req.force, apiKey, mcpServers, skills)
       if (cancelled()) return false
-      this.store.updateThread(thread.id, { cwd, worktree: true })
+      let proc = this.agents.get(thread.id)
+      const reusable = !!proc && this.canReuse(proc, fingerprint)
+      if (reusable && proc) this.rememberAgent(thread.id, proc)
+      if (proc && !reusable) {
+        this.discard(thread.id)
+        proc = undefined
+      }
+      if (!proc) {
+        syncAllManagedSkills(settings.skills)
+        const args = this.providerArgs(provider, req, cwd, !!thread.chatId, mcpServers)
+        const opening = this.openTurnProc(thread.id, provider, launch, args, cwd, apiKey, fingerprint, cancelled)
+        proc = opening instanceof Promise ? await opening : opening
+        if (!proc) return false
+      }
+      proc.force = req.force
+
+      const items = this.store.items(thread.id)
+      const userId = newId()
+      const managedMessageId = attachments.length ? userId : undefined
+      const userItem: Item = {
+        id: userId, kind: 'user', text: req.prompt, createdAt: Date.now(),
+        ...(attachments.length ? { attachments, managedMessageId } : {})
+      }
+      items.push(userItem)
+      if (attachments.length) attachmentsFor(this.store).retain(attachments.map((attachment) => attachment.id))
+
+      this.store.updateThread(thread.id, {
+        ...(thread.titleKind ? { title: titleFrom(req.prompt.trim() || attachments[0]?.name || ''), titleKind: undefined } : {}),
+        ...(createdWorktree ? { cwd: createdWorktree } : {}),
+        model: req.model,
+        mode: req.mode,
+        force: req.force,
+        worktree: createdWorktree ? true : thread.chatId || thread.cwd ? thread.worktree : !!req.worktree,
+        updatedAt: Date.now(),
+        archived: false
+      })
+      committedWorktree = true
+
+      const run = this.createRun(thread.id, proc, items, {
+        cwd,
+        model: req.model,
+        mode: req.mode,
+        force: req.force,
+        starting: !reusable,
+        autoContinue: internal?.autoContinue,
+        attachments,
+        managedMessageId,
+        userItemId: userId
+      })
+      this.runs.set(thread.id, run)
+      this.queue(thread.id, run, [userItem])
+      this.emit({ type: 'running', threadId: thread.id, running: true })
+      this.onStateChange()
+
+      if (provider === 'codex' && !apiKey) run.codexAccountPath = settings.codexPath
+      if (provider === 'antigravity' && !apiKey) run.antigravityQuotaPath = settings.antigravityPath
+      const turn = reusable
+        ? this.continueSession(thread.id, run, req)
+        : this.drive(thread.id, run, req, cwd, thread.chatId, provider, apiKey, mcpServers)
+      void turn.catch((err) => {
+        if (run.settled) return
+        if (!run.stopped) run.failText = err instanceof Error ? err.message : String(err)
+        // A rejected ACP request is terminal even if the adapter keeps its pipes
+        // open. Only the automatic follow-up can reuse this process.
+        if (!this.canAutoContinue(thread.id, run)) this.killProc(run.proc)
+        void this.endRun(thread.id, run, run.proc.child.exitCode)
+      })
+      return true
+    } finally {
+      if (createdWorktree && !committedWorktree) {
+        void removeWorktree(createdWorktree).catch(() => undefined)
+      }
     }
-    this.usage.cancel(thread.id)
-
-    const mcpServers = this.mcpServersFor(provider)
-    const skills = enabledSkillFingerprint(settings.skills)
-    // Automatic「继续」must register its run before this function yields. A refresh here
-    // lets the deferred queue drain, and idle observers, see the thread as already finished.
-    const fingerprint = internal?.autoContinue
-      ? this.cachedFingerprint(provider, launch, cwd, settings.sandbox, req.force, apiKey, mcpServers, skills)
-      : await this.launchFingerprint(provider, launch, cwd, settings.sandbox, req.force, apiKey, mcpServers, skills)
-    if (cancelled()) return false
-    let proc = this.agents.get(thread.id)
-    const reusable = !!proc && this.canReuse(proc, fingerprint)
-    if (reusable && proc) this.rememberAgent(thread.id, proc)
-    if (proc && !reusable) {
-      this.discard(thread.id)
-      proc = undefined
-    }
-    if (!proc) syncAllManagedSkills(settings.skills)
-
-    const items = this.store.items(thread.id)
-    const userId = newId()
-    const managedMessageId = attachments.length ? userId : undefined
-    const userItem: Item = {
-      id: userId, kind: 'user', text: req.prompt, createdAt: Date.now(),
-      ...(attachments.length ? { attachments, managedMessageId } : {})
-    }
-    items.push(userItem)
-    if (attachments.length) attachmentsFor(this.store).retain(attachments.map((attachment) => attachment.id))
-
-    this.store.updateThread(thread.id, {
-      ...(thread.titleKind ? { title: titleFrom(req.prompt.trim() || attachments[0]?.name || ''), titleKind: undefined } : {}),
-      model: req.model,
-      mode: req.mode,
-      force: req.force,
-      worktree: thread.chatId || thread.cwd ? thread.worktree : !!req.worktree,
-      updatedAt: Date.now(),
-      archived: false
-    })
-
-    if (!proc) {
-      const args = this.providerArgs(provider, req, cwd, !!thread.chatId, mcpServers)
-      const opening = this.openTurnProc(thread.id, provider, launch, args, cwd, apiKey, fingerprint, cancelled)
-      proc = opening instanceof Promise ? await opening : opening
-      if (!proc) return false
-    }
-    proc.force = req.force
-
-    const run = this.createRun(thread.id, proc, items, {
-      cwd,
-      model: req.model,
-      mode: req.mode,
-      force: req.force,
-      starting: !reusable,
-      autoContinue: internal?.autoContinue,
-      attachments,
-      managedMessageId,
-      userItemId: userId
-    })
-    this.runs.set(thread.id, run)
-    this.queue(thread.id, run, [userItem])
-    this.emit({ type: 'running', threadId: thread.id, running: true })
-    this.onStateChange()
-
-    if (provider === 'codex' && !apiKey) run.codexAccountPath = settings.codexPath
-    if (provider === 'antigravity' && !apiKey) run.antigravityQuotaPath = settings.antigravityPath
-    const turn = reusable
-      ? this.continueSession(thread.id, run, req)
-      : this.drive(thread.id, run, req, cwd, thread.chatId, provider, apiKey, mcpServers)
-    void turn.catch((err) => {
-      if (run.settled) return
-      if (!run.stopped) run.failText = err instanceof Error ? err.message : String(err)
-      // A rejected ACP request is terminal even if the adapter keeps its pipes
-      // open. Only the automatic follow-up can reuse this process.
-      if (!this.canAutoContinue(thread.id, run)) this.killProc(run.proc)
-      void this.endRun(thread.id, run, run.proc.child.exitCode)
-    })
-    return true
   }
 
   private createRun(
@@ -597,14 +607,15 @@ export class SessionManager {
     const run = this.runs.get(threadId)
     if (run) {
       run.stopped = true
+      run.acceptUpdates = false
       run.antigravityQuotaAbort?.abort()
       if (run.killTimer) {
         clearTimeout(run.killTimer)
         run.killTimer = undefined
       }
       finishFollowup(run)
-      settleQuestion(run, 'cancel')
       this.killProc(run.proc)
+      void this.endRun(threadId, run, null)
       return
     }
     this.discard(threadId)
@@ -1033,7 +1044,7 @@ export class SessionManager {
       && (hasRunningTools || hasPendingAntigravityWakeup(run))) {
       await waitForFollowup(run, { cascadeIdle: hasRunningTools })
       if (!this.runs.has(threadId) || run.settled) return
-      if (run.proc.dying || run.proc.child.exitCode !== null) return
+      if (run.proc.dying || run.proc.child.exitCode !== null) return this.endRun(threadId, run, run.proc.child.exitCode)
     }
     if (stop !== 'cancelled' && !run.stopped && requiresAntigravityVerification(run)) {
       return this.endRun(threadId, run, null)
@@ -1106,12 +1117,11 @@ export class SessionManager {
       run.killTimer = undefined
     }
     finishFollowup(run)
-    settleQuestion(run, 'cancel')
     if (!this.store.thread(threadId)) {
-      this.runs.delete(threadId)
-      this.killProc(run.proc)
+      this.cleanupDeletedRun(threadId, run)
       return
     }
+    settleQuestion(run, 'cancel')
 
     const verification = !run.reducer.gotResult && !run.stopped && requiresAntigravityVerification(run)
       ? { url: await readAntigravityVerificationUrl(run.proc.child.pid, run.proc.startedAt, run.proc.sessionId) }
@@ -1121,8 +1131,7 @@ export class SessionManager {
     run.fileSnapshot = undefined
     // A conversation may have been deleted while reading its final files.
     if (!this.store.thread(threadId)) {
-      this.runs.delete(threadId)
-      this.killProc(run.proc)
+      this.cleanupDeletedRun(threadId, run)
       return
     }
 
@@ -1273,7 +1282,7 @@ export class SessionManager {
       .catch(() => undefined)
     await waiting
     if (this.runs.get(threadId) !== run || run.settled) return
-    if (run.proc.dying || run.proc.child.exitCode !== null) return
+    if (run.proc.dying || run.proc.child.exitCode !== null) return this.endRun(threadId, run, run.proc.child.exitCode)
     if (!run.stopped && requiresAntigravityVerification(run)) return this.endRun(threadId, run, null)
     const timing = run.timing?.finish(run.stopped ? 'cancelled' : 'completed')
     run.timing = undefined
@@ -1295,7 +1304,23 @@ export class SessionManager {
     await this.endRun(threadId, run, null)
   }
 
+  private cleanupDeletedRun(threadId: string, run: Run): void {
+    this.clearPending(run)
+    settleQuestion(run, 'cancel')
+    if (this.runs.get(threadId) === run) this.runs.delete(threadId)
+    this.killProc(run.proc)
+    this.emit({ type: 'running', threadId, running: false })
+    this.onStateChange()
+  }
+
+  private clearPending(run: Run): void {
+    if (run.flushTimer) clearTimeout(run.flushTimer)
+    run.flushTimer = undefined
+    run.pending.clear()
+  }
+
   private queue(threadId: string, run: Run, items: Item[]): void {
+    if (!this.store.thread(threadId)) return
     for (const it of items) run.pending.set(it.id, it)
     const questions = items.filter((item) => item.kind === 'question')
     const freshQuestions = questions.filter((item) => item.status === 'pending' && !run.announcedQuestions.has(item.id))
@@ -1317,6 +1342,10 @@ export class SessionManager {
     if (run.flushTimer) clearTimeout(run.flushTimer)
     run.flushTimer = undefined
     if (!run.pending.size) return
+    if (!this.store.thread(threadId)) {
+      run.pending.clear()
+      return
+    }
     this.emit({ type: 'items', threadId, items: [...run.pending.values()] })
     run.pending.clear()
   }

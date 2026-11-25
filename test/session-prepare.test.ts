@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_SETTINGS, type ThreadMeta } from '../src/shared/types'
 import type { Store } from '../src/main/store'
 import { spawnCli, killTree } from '../src/main/cli'
+import { SlashCommandRegistry } from '../src/main/session/commands'
 import { SessionManager } from '../src/main/sessions'
 
 vi.mock('../src/main/skills', () => ({ syncAllManagedSkills: vi.fn() }))
@@ -120,6 +121,46 @@ describe('preparing a saved session', () => {
       killTree(ctx.child)
       ctx.release()
       await pending
+      ctx.manager.stopAll()
+    }
+  })
+
+  it('clears pending wait timers on SlashCommandRegistry.delete without leaking the deleted thread back into lists', async () => {
+    vi.useFakeTimers()
+    try {
+      const registry = new SlashCommandRegistry(vi.fn())
+      const waiting = registry.wait('deleted-thread')
+      registry.delete('deleted-thread')
+      await expect(waiting).resolves.toEqual([])
+      expect(registry.get('deleted-thread')).toBeUndefined()
+
+      await vi.advanceTimersByTimeAsync(5000)
+      expect(registry.get('deleted-thread')).toBeUndefined()
+      expect(registry.lists.has('deleted-thread')).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('clears cached slash commands when switching CLI provider inside send()', async () => {
+    const ctx = setup()
+    const items: any[] = []
+    Object.assign(ctx.store, {
+      items: () => items,
+      markItemsDirty: vi.fn(),
+      updateThread: vi.fn((_id: string, patch: Partial<ThreadMeta>) => Object.assign(ctx.store.thread()!, patch))
+    })
+    try {
+      await expect(ctx.prepare()).resolves.toEqual(ctx.commands)
+      expect((ctx.manager as any).commandLists.get('thread')).toEqual(ctx.commands)
+      // Switching to another provider (e.g. codex) with no codex binary fails at resolveLaunch or succeeds if available;
+      // force a switch from cursor -> antigravity with antigravityPath set so send() runs the provider switch branch.
+      ctx.store.settings.antigravityPath = process.execPath
+      await ctx.manager.send({
+        threadId: 'thread', prompt: 'Switch provider', model: 'auto', mode: 'ask', force: false, cli: 'antigravity'
+      }).catch(() => undefined)
+      expect((ctx.manager as any).commandLists.get('thread')).toBeUndefined()
+    } finally {
       ctx.manager.stopAll()
     }
   })
