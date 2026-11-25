@@ -10,12 +10,28 @@ import { Modal } from './Modal'
 export function ImportDialog({ onClose }: { onClose: () => void }) {
   const t = useT()
   const [sessions, setSessions] = useState<CliSession[] | null>(null)
+  const [loadError, setLoadError] = useState('')
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [filter, setFilter] = useState('')
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
-    window.api.scanCliSessions().then(setSessions)
+    let alive = true
+    window.api.scanCliSessions().then(
+      (list) => {
+        if (alive) setSessions(list)
+      },
+      (err) => {
+        if (!alive) return
+        const msg = errorText(err)
+        setLoadError(msg)
+        setSessions([])
+        toast(msg, 'error')
+      }
+    )
+    return () => {
+      alive = false
+    }
   }, [])
 
   const groups = useMemo(() => {
@@ -80,12 +96,13 @@ export function ImportDialog({ onClose }: { onClose: () => void }) {
     >
       <input className="input" placeholder={t('按标题或目录筛选')} value={filter} onChange={(e) => setFilter(e.target.value)} />
       <div className="import-list">
-        {!sessions && (
+        {!sessions && !loadError && (
           <div className="center-hint">
             <Spinner />
           </div>
         )}
-        {sessions && sessions.length === 0 && <div className="empty-hint">{t('未找到可导入的 CLI 会话')}</div>}
+        {loadError && <div className="notice error" role="alert">{loadError}</div>}
+        {sessions && !loadError && sessions.length === 0 && <div className="empty-hint">{t('未找到可导入的 CLI 会话')}</div>}
         {groups.map(([cwd, list]) => {
           const ids = list.filter((s) => !s.imported).map((s) => s.chatId)
           const allOn = ids.length > 0 && ids.every((id) => selected.has(id))

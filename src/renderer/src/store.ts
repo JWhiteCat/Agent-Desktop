@@ -5,7 +5,7 @@ export { initStore } from './store/init'
 export { cliCommands, loadSkillCommands, prepareCommands, skillCommands } from './store/commands'
 export { chatModel, rememberModel, rememberModelVariant, setDefaultModel, setFavoriteModels } from './store/model-preferences'
 export { loadModels, setCliProvider } from './store/models'
-export { errorText, toast } from './store/feedback'
+export { errorText, toast, toastError } from './store/feedback'
 export {
   addProjectInteractive,
   answerQuestion,

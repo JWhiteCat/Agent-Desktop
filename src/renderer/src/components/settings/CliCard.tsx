@@ -206,7 +206,7 @@ export function CliCard({
         </div>
       </Field>
       {endpoint && (
-        <Field label="API 端点" desc="填写兼容 Gemini API 的服务地址。留空时使用 GOOGLE_GEMINI_BASE_URL 或 Google 默认地址。">
+        <Field label={t('API 端点')} desc={t('填写兼容 Gemini API 的服务地址。留空时使用 GOOGLE_GEMINI_BASE_URL 或 Google 默认地址。')}>
           <div className="row-gap wrap">
             <input
               className="input"

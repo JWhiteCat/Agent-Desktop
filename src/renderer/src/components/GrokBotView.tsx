@@ -167,14 +167,26 @@ export function GrokBotView({ botId, onOpenSettings }: Props) {
   const selectedManual = !!selected?.manual
   const sharedName = !!selected && bots.some((b) => b.id !== selected.id && b.name === selected.name)
   const hasKey = list?.hasApiKey !== false
+  const selectionKey = `${selectedId ?? ''}\0${selectedName ?? ''}`
+  const selectionRef = useRef({ key: selectionKey, seq: 0 })
+  if (selectionRef.current.key !== selectionKey) {
+    selectionRef.current = { key: selectionKey, seq: selectionRef.current.seq + 1 }
+  }
+
+  useEffect(() => () => {
+    selectionRef.current.seq++
+  }, [])
 
   useEffect(() => {
     setPending(null)
+    setSending(false)
+    sentAt.current = 0
     if (!selectedName || !hasKey) {
       setChat(null)
       return
     }
     let alive = true
+    let polling = false
     let timer: ReturnType<typeof setTimeout> | undefined
     // A bot shown earlier in this session appears at once and continues from its cursor.
     const remembered = cachedGrokBotChat(selectedName)
@@ -206,14 +218,45 @@ export function GrokBotView({ botId, onOpenSettings }: Props) {
         // The next tick tries again.
       }
     }
+    const clearTimer = () => {
+      if (timer !== undefined) {
+        clearTimeout(timer)
+        timer = undefined
+      }
+    }
     const schedule = () => {
-      if (!alive) return
+      if (!alive || polling) return
+      clearTimer()
       const fast = grokBotBusy(state.turn) || Date.now() - sentAt.current < AFTER_SEND_FAST_MS
-      timer = setTimeout(tick, fast ? BUSY_POLL_MS : IDLE_POLL_MS)
+      timer = setTimeout(() => {
+        timer = undefined
+        void tick()
+      }, fast ? BUSY_POLL_MS : IDLE_POLL_MS)
+    }
+    const loadHistory = async () => {
+      if (!alive || polling) return
+      clearTimer()
+      polling = true
+      try {
+        const history = await window.api.grokbotHistory(selectedName)
+        if (!alive) return
+        update({ messages: history.messages, cursor: history.cursor, turn: history.turn, sessionId: history.sessionId, loading: false, error: '' })
+      } catch (err) {
+        if (alive) update({ loading: false, error: errorText(err) })
+      } finally {
+        polling = false
+      }
+      schedule()
     }
     const tick = async () => {
-      if (!alive) return
-      if (document.hidden || !state.cursor) return schedule()
+      if (!alive || polling) return
+      clearTimer()
+      if (document.hidden) return schedule()
+      if (!state.cursor) {
+        await loadHistory()
+        return
+      }
+      polling = true
       try {
         const page = await window.api.grokbotPoll(selectedName, state.cursor, state.sessionId)
         if (!alive) return
@@ -221,19 +264,12 @@ export function GrokBotView({ botId, onOpenSettings }: Props) {
         update({ ...applyGrokBotPoll(state, page), error: '' })
         await recheckAttachments()
       } catch (err) {
-        update({ error: errorText(err) })
+        if (alive) update({ error: errorText(err) })
+      } finally {
+        polling = false
       }
       schedule()
     }
-    const loadHistory = () =>
-      window.api.grokbotHistory(selectedName).then(
-        (history) => {
-          if (!alive) return
-          update({ messages: history.messages, cursor: history.cursor, turn: history.turn, sessionId: history.sessionId, loading: false, error: '' })
-          schedule()
-        },
-        (err) => update({ loading: false, error: errorText(err) })
-      )
     if (remembered) {
       void tick()
     } else {
@@ -250,15 +286,15 @@ export function GrokBotView({ botId, onOpenSettings }: Props) {
       )
     }
     const wake = () => {
-      if (document.hidden || !timer) return
-      clearTimeout(timer)
+      if (document.hidden || polling || timer === undefined) return
+      clearTimer()
       void tick()
     }
     document.addEventListener('visibilitychange', wake)
     return () => {
       alive = false
       applyMessages.current = () => {}
-      if (timer) clearTimeout(timer)
+      clearTimer()
       document.removeEventListener('visibilitychange', wake)
     }
   }, [selectedId, selectedName, selectedManual, hasKey])
@@ -273,10 +309,13 @@ export function GrokBotView({ botId, onOpenSettings }: Props) {
 
   const send = async () => {
     if (!canSend || !selectedName) return
+    const targetName = selectedName
+    const targetSeq = selectionRef.current.seq
     const body = text.trim()
     setSending(true)
     try {
-      await window.api.grokbotSend(selectedName, body)
+      await window.api.grokbotSend(targetName, body)
+      if (selectionRef.current.seq !== targetSeq) return
       sentAt.current = Date.now()
       setPending(body)
       setText('')
@@ -284,7 +323,7 @@ export function GrokBotView({ botId, onOpenSettings }: Props) {
     } catch (err) {
       toast(errorText(err), 'error')
     } finally {
-      setSending(false)
+      if (selectionRef.current.seq === targetSeq) setSending(false)
     }
   }
 

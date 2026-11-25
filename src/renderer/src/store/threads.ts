@@ -1,7 +1,7 @@
 import type { Item, QuestionAnswer, ThreadMeta } from '@shared/types'
 import { t } from '@shared/i18n'
 import { getNextRunningThread, getNextUnreadThread, isThreadUnread } from '@shared/task-counts'
-import { errorText, toast } from './feedback'
+import { errorText, toast, toastError } from './feedback'
 import { LAST_PROJECT_KEY } from './persistence'
 import { getState, setState, type SendOptions } from './state'
 
@@ -185,20 +185,20 @@ export async function answerQuestion(threadId: string, questionId: string, answe
   try {
     await window.api.answerQuestion(threadId, questionId, answers)
   } catch (err) {
-    toast(errorText(err), 'error')
+    toastError(err)
     throw err
   }
 }
 
 export async function sendMessage(threadId: string, prompt: string, opts: SendOptions): Promise<void> {
-  if (!getState().items[threadId]) {
-    await loadThreadItems(threadId)
-  }
   const { cli, ...rest } = opts
   try {
+    if (!getState().items[threadId]) {
+      await loadThreadItems(threadId)
+    }
     await window.api.send({ threadId, prompt, ...rest, ...(cli ? { cli } : {}) })
   } catch (err) {
-    toast(errorText(err), 'error')
+    toastError(err)
     throw err
   }
 }
@@ -207,7 +207,7 @@ async function queueAction(action: () => Promise<void>): Promise<void> {
   try {
     await action()
   } catch (err) {
-    toast(errorText(err), 'error')
+    toastError(err)
     throw err
   }
 }

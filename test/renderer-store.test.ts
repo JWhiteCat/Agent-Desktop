@@ -724,4 +724,16 @@ describe('renderer store', () => {
     expect(store.getState().view.kind).toBe('home')
     expect(store.getState().sidebarReveal).toBeUndefined()
   })
+
+  it('deduplicates repeated toastError calls for the same error and toasts sendMessage history-load failures', async () => {
+    const err = new Error('load failed')
+    api.getItems.mockRejectedValueOnce(err)
+    await expect(store.sendMessage(thread.id, 'hi', { model: 'auto', mode: 'agent', force: false })).rejects.toBe(err)
+    const firstToast = store.getState().toast
+    expect(firstToast).toMatchObject({ text: 'load failed', level: 'error' })
+
+    // Re-reporting the same error instance in an outer catch handler must not emit a duplicate toast
+    store.toastError(err)
+    expect(store.getState().toast?.id).toBe(firstToast?.id)
+  })
 })

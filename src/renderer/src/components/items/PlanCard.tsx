@@ -3,6 +3,7 @@ import type { ToolItem } from '@shared/types'
 import { useT } from '../../lib/i18n'
 import { errorOf, planPath, planUriOf } from '../../lib/tools'
 import { useDraftState } from '../../store/drafts'
+import { toastError } from '../../store/feedback'
 import { IconChevronDown, IconChevronRight, IconFile, IconList, Spinner } from '../icons'
 import { Markdown } from './Markdown'
 import { ItemDraftContext, TurnActionsContext } from './TurnActions'
@@ -25,8 +26,8 @@ export function PlanCard({ item }: { item: ToolItem }) {
     setStarting(true)
     try {
       await buildPlan(item)
-    } catch {
-      // The send path reports the error; allow retrying this plan.
+    } catch (err) {
+      toastError(err)
     } finally {
       setStarting(false)
     }

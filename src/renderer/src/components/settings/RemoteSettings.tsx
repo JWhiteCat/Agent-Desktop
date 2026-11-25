@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import QRCode from 'qrcode'
 import type { RemoteInfo } from '@shared/types'
+import { copyText } from '../../lib/clipboard'
 import { useT } from '../../lib/i18n'
+import { viewHash } from '../../lib/view-route'
 import { errorText, toast, useStore } from '../../store'
 import { Field } from './Field'
 
@@ -42,13 +44,21 @@ export function RemoteSettings() {
   ])
 
   useEffect(() => {
-    if (!info?.publicUrl) return
-    const index = info.urls.indexOf(info.publicUrl)
-    if (index >= 0) setUrlIndex(index)
-  }, [info?.publicUrl])
+    const urls = info?.urls ?? []
+    if (info?.publicUrl) {
+      const index = urls.indexOf(info.publicUrl)
+      if (index >= 0) {
+        setUrlIndex(index)
+        return
+      }
+    }
+    setUrlIndex((current) => (urls.length > 0 && current >= 0 && current < urls.length ? current : 0))
+  }, [info?.publicUrl, info?.urls])
 
-  const hash = view.kind === 'thread' ? `#thread=${view.id}` : view.kind === 'home' && view.projectId ? `#project=${view.projectId}` : ''
-  const base = info?.urls[urlIndex] ?? info?.urls[0]
+  const route = viewHash(view)
+  const hash = route ? `#${route}` : ''
+  const safeUrlIndex = info && info.urls.length > 0 && urlIndex >= 0 && urlIndex < info.urls.length ? urlIndex : 0
+  const base = info?.urls[safeUrlIndex]
   const link = base ? base + hash : ''
 
   useEffect(() => {
@@ -198,7 +208,7 @@ export function RemoteSettings() {
             ) : (
               <>
                 {info.urls.length > 1 && (
-                  <select className="input" value={urlIndex} onChange={(e) => setUrlIndex(Number(e.target.value))}>
+                  <select className="input" value={safeUrlIndex} onChange={(e) => setUrlIndex(Number(e.target.value))}>
                     {info.urls.map((u, i) => (
                       <option key={u} value={i}>
                         {(() => {
@@ -210,11 +220,24 @@ export function RemoteSettings() {
                   </select>
                 )}
                 <div className="mono small break remote-link">{link}</div>
-                <div className="muted small">{view.kind === 'thread' ? t('扫码后打开当前正在查看的对话') : t('扫码后打开当前正在查看的项目')}</div>
+                <div className="muted small">
+                  {view.kind === 'thread'
+                    ? t('扫码后打开当前正在查看的对话')
+                    : view.kind === 'grokbot'
+                      ? t('扫码后打开当前正在查看的 Grok Bot')
+                      : t('扫码后打开当前正在查看的项目')}
+                </div>
               </>
             )}
             <div className="row-gap wrap">
-              <button className="btn" disabled={!link} onClick={() => navigator.clipboard.writeText(link).then(() => toast(t('已复制链接')))}>
+              <button
+                className="btn"
+                disabled={!link}
+                onClick={() => void copyText(link).then(
+                  () => toast(t('已复制链接')),
+                  (err) => toast(t('无法复制链接：{error}', { error: errorText(err) }), 'error')
+                )}
+              >
                 {t('复制链接')}
               </button>
               <button className="btn" disabled={busy} onClick={() => run(async () => setInfo(await window.api.resetRemoteToken()))}>

@@ -1,9 +1,10 @@
 import { useT } from '../lib/i18n'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { GitDiff, ThreadMeta } from '@shared/types'
 import { DiffFileView, collectEditedFiles, collectGitFiles, collectSnapshotTurns, type DiffFile } from '../lib/diff'
 import { untrackedGitPaths } from '@shared/git-path'
 import { useStore } from '../store'
+import { errorText } from '../store/feedback'
 import { IconBranch, IconRefresh, IconX, Spinner } from './icons'
 import { BinaryFilesGroup } from './BinaryFilesGroup'
 import { ResizeHandle } from './ResizeHandle'
@@ -55,24 +56,49 @@ function ChangesPanelBody({ thread, onClose }: { thread: ThreadMeta; onClose: ()
   const project = useStore((s) => s.app.projects.find((p) => p.id === thread.projectId))
   const cwd = thread.cwd ?? project?.path ?? ''
   const [git, setGit] = useState<GitDiff | null>(null)
+  const [gitError, setGitError] = useState('')
+  const [gitCwd, setGitCwd] = useState(cwd)
   const [loading, setLoading] = useState(false)
+  const refreshSeq = useRef(0)
+  if (gitCwd !== cwd) {
+    setGitCwd(cwd)
+    setGit(null)
+    setGitError('')
+  }
   // null follows the newest completed turn; explicit history selection stays pinned.
   const [selectedSnapshot, setSelectedSnapshot] = useState<string | null>(null)
   const snapshots = useMemo(() => collectSnapshotTurns(items ?? [], cwd, running), [items, cwd, running])
   const snapshot = snapshots.find((turn) => turn.id === selectedSnapshot) ?? snapshots[snapshots.length - 1]
 
   const refresh = useCallback(async () => {
-    if (!cwd) return
-    setLoading(true)
-    try {
-      setGit(await window.api.gitDiff(cwd))
-    } finally {
+    if (!cwd) {
+      refreshSeq.current++
+      setGit(null)
+      setGitError('')
       setLoading(false)
+      return
+    }
+    const seq = ++refreshSeq.current
+    setLoading(true)
+    setGitError('')
+    try {
+      const result = await window.api.gitDiff(cwd)
+      if (seq !== refreshSeq.current) return
+      setGit(result)
+    } catch (err) {
+      if (seq !== refreshSeq.current) return
+      setGitError(errorText(err))
+    } finally {
+      if (seq === refreshSeq.current) setLoading(false)
     }
   }, [cwd])
 
   useEffect(() => {
-    if (tab === 'git' && !running) refresh()
+    if (tab === 'git' && !running) void refresh()
+    else setLoading(false)
+    return () => {
+      refreshSeq.current++
+    }
   }, [tab, running, refresh])
 
   const threadFiles = useMemo(() => collectEditedFiles(items ?? [], cwd), [items, cwd, t])
@@ -142,13 +168,13 @@ function ChangesPanelBody({ thread, onClose }: { thread: ThreadMeta; onClose: ()
         )}
       </div>
       <div className="changes-body">
-        {tab === 'git' && loading && !git && (
+        {tab === 'git' && loading && !git && !gitError && (
           <div className="center-hint">
             <Spinner />
           </div>
         )}
         {tab === 'git' && git && !git.isRepo && <div className="empty-hint">{t('当前目录不是 git 仓库')}</div>}
-        {tab === 'git' && git?.error && <div className="notice error">{git.error}</div>}
+        {tab === 'git' && (gitError || git?.error) && <div className="notice error" role="alert">{gitError || git?.error}</div>}
         {tab === 'snapshot' && files.length === 0 && (
           <div className="empty-hint">{snapshot?.files === undefined ? t('本轮未记录快照') : t('本轮没有快照差异')}</div>
         )}

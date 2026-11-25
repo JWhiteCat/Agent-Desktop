@@ -3,6 +3,7 @@ import { formatAnswers, parseQuestionBlock, QUESTION_BLOCK_LANG } from '@shared/
 import type { QuestionAnswer, QuestionPrompt } from '@shared/types'
 import { useT } from '../../lib/i18n'
 import { useDraftState } from '../../store/drafts'
+import { toastError } from '../../store/feedback'
 import { CodeBlock } from './primitives'
 import { ItemDraftContext, TurnActionsContext } from './TurnActions'
 
@@ -81,8 +82,9 @@ export function QuestionForm({ draftScope, draftKey = 'question', title, questio
     setSending(true)
     try {
       await action()
-    } catch {
+    } catch (err) {
       setSending(false)
+      toastError(err)
     }
   }
 

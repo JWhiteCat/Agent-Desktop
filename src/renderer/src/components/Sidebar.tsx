@@ -89,6 +89,14 @@ export const Sidebar = forwardRef<HTMLInputElement, Props>(function Sidebar({ on
     return m
   }, [visible])
 
+  const totalCountByProject = useMemo(() => {
+    const m = new Map<string, number>()
+    for (const thread of threads) {
+      m.set(thread.projectId, (m.get(thread.projectId) ?? 0) + 1)
+    }
+    return m
+  }, [threads])
+
   const results = useMemo(() => {
     const q = query.trim().toLowerCase()
     if (!q) return null
@@ -219,7 +227,7 @@ export const Sidebar = forwardRef<HTMLInputElement, Props>(function Sidebar({ on
                     project={p}
                     index={i}
                     total={projects.length}
-                    count={list.length}
+                    count={totalCountByProject.get(p.id) ?? 0}
                     running={anyRunning}
                     editing={editing === p.id}
                     onEdit={() => setEditing(p.id)}

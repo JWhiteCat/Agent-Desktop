@@ -245,6 +245,7 @@ export const settingsMessages: Record<string, string> = {
   '远程控制二维码': 'Remote control QR code',
   '未检测到局域网地址，请确认电脑已连接 Wi-Fi 或有线网络': 'No local network address found. Make sure this computer is connected to Wi-Fi or Ethernet.',
   '扫码后打开当前正在查看的对话': 'Scanning the code opens the chat you are currently viewing.',
+  '扫码后打开当前正在查看的 Grok Bot': 'Scanning the code opens the Grok Bot you are currently viewing.',
   '扫码后打开当前正在查看的项目': 'Scanning the code opens the project you are currently viewing.',
   '已复制链接': 'Link copied',
   '复制链接': 'Copy link',

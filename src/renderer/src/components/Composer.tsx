@@ -222,12 +222,13 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
       return
     }
     setSending(true)
+    setSendError('')
     setText('')
     try {
       await props.onSend(value, { ...textSendOptions(opts), ...(running ? { delivery: 'queue' as const } : {}) })
-    } catch {
-      setDismissed(false)
+    } catch (err) {
       setText(value)
+      setSendError(errorText(err))
     } finally {
       setSending(false)
     }

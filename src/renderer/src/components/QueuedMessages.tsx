@@ -3,6 +3,7 @@ import type { AgentMode, QueuedMessage } from '@shared/types'
 import { useT } from '../lib/i18n'
 import { moveQueued } from '../lib/queue'
 import { removeQueued, reorderQueued, sendQueuedNow, toast, useStore } from '../store'
+import { toastError } from '../store/feedback'
 import { IconArrowUp, IconEdit, IconGrip, IconTrash } from './icons'
 
 const DRAG_TYPE = 'application/x-agent-desktop-queued'
@@ -26,11 +27,18 @@ export function QueuedMessages({ threadId, running, onEdit }: {
   const ids = queue.items.map((item) => item.id)
 
   const edit = async (item: QueuedMessage) => {
+    let restored: boolean
     try {
-      if (!(await onEdit(item))) {
-        toast(t('请先清空输入框，再编辑排队消息'), 'info')
-        return
-      }
+      restored = await onEdit(item)
+    } catch (err) {
+      toastError(err)
+      return
+    }
+    if (!restored) {
+      toast(t('请先清空输入框，再编辑排队消息'), 'info')
+      return
+    }
+    try {
       await removeQueued(threadId, item.id)
     } catch {
       // The store already reported the failure.
