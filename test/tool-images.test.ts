@@ -14,6 +14,25 @@ import type { Item, ToolItem, ThreadMeta } from '../src/shared/types'
 const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aK7sAAAAASUVORK5CYII='
 const image = { type: 'image', data: PNG, mimeType: 'image/png' }
 const tool = (patch: Partial<ToolItem> = {}): ToolItem => ({ id: 'i', callId: 'c', kind: 'tool', tool: 'read', args: { path: 'a.png' }, status: 'success', startedAt: 1, ...patch })
+
+function supportsFileSymlinks(): boolean {
+  if (process.platform !== 'win32') return true
+  const probeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tool-image-symlink-probe-'))
+  try {
+    const target = path.join(probeDir, 'target')
+    fs.writeFileSync(target, '')
+    fs.symlinkSync(target, path.join(probeDir, 'link'))
+    return true
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException)?.code
+    if (code === 'EPERM' || code === 'EACCES') return false
+    throw err
+  } finally {
+    fs.rmSync(probeDir, { recursive: true, force: true })
+  }
+}
+
+const SUPPORTS_FILE_SYMLINKS = supportsFileSymlinks()
 let dir: string, cwd: string, items: Item[], store: any
 beforeEach(() => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tool-image-test-'))
@@ -53,10 +72,18 @@ describe('tool image storage and boundaries', () => {
     const item = tool({ args: { path: file } }); imageCapture(store, cwd)(item, undefined)
     expect(item.images).toBeUndefined(); expect(item.imageError).toBeTruthy()
   })
-  it('blocks symlink escapes', () => {
+  it.runIf(SUPPORTS_FILE_SYMLINKS)('blocks symlink escapes', () => {
     fs.writeFileSync(path.join(dir, 'secret.png'), Buffer.from(PNG, 'base64'))
     fs.symlinkSync(path.join(dir, 'secret.png'), path.join(cwd, 'link.png'))
     const item = tool({ args: { path: 'link.png' } }); imageCapture(store, cwd)(item, undefined)
+    expect(item.images).toBeUndefined(); expect(item.imageError).toContain('项目')
+  })
+  it('blocks symlinked directory escapes', () => {
+    const outside = path.join(dir, 'outside')
+    fs.mkdirSync(outside)
+    fs.writeFileSync(path.join(outside, 'secret.png'), Buffer.from(PNG, 'base64'))
+    fs.symlinkSync(outside, path.join(cwd, 'escape-dir'), process.platform === 'win32' ? 'junction' : 'dir')
+    const item = tool({ args: { path: path.join('escape-dir', 'secret.png') } }); imageCapture(store, cwd)(item, undefined)
     expect(item.images).toBeUndefined(); expect(item.imageError).toContain('项目')
   })
   it('allows only this conversation managed originals outside cwd', () => {
@@ -191,7 +218,7 @@ describe('Codex image previews outside the project', () => {
     expect((await prepareToolImages(store, 't', item.id)).images).toEqual([])
   })
 
-  it('rejects a recorded external file that now links to a different external image', async () => {
+  it.runIf(SUPPORTS_FILE_SYMLINKS)('rejects a recorded external file that now links to a different external image', async () => {
     writeRollout()
     const other = path.join(dir, 'other.png')
     fs.renameSync(sourcePath, other)
