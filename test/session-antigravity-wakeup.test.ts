@@ -165,7 +165,7 @@ afterEach(async () => {
   if (path.dirname(resolved) !== path.resolve(os.tmpdir()) || !path.basename(resolved).startsWith('agent-desktop-agy-wakeup-')) {
     throw new Error('Unexpected test directory')
   }
-  fs.rmSync(resolved, { recursive: true, force: true })
+  fs.rmSync(resolved, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
 })
 
 describe('Antigravity account verification', () => {

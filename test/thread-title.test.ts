@@ -1,6 +1,9 @@
+import type { ChildProcess } from 'node:child_process'
+import { EventEmitter } from 'node:events'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { PassThrough } from 'node:stream'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setLanguage } from '../src/shared/i18n'
 import { displayThreadTitle } from '../src/shared/thread-title'
@@ -29,6 +32,7 @@ vi.mock('../src/main/cli', async (original) => ({
   ...await original<typeof import('../src/main/cli')>(),
   resolveCli: vi.fn(),
   resolveApiKey: vi.fn(() => 'test-key'),
+  killTree: vi.fn(),
   spawnCli: vi.fn(() => { throw new Error('Test process launch stopped') })
 }))
 
@@ -125,17 +129,33 @@ describe('automatic conversation titles', () => {
 
   it('generates a title from the first submitted message only for marked placeholders', async () => {
     vi.mocked(resolveCli).mockReturnValue({ command: 'test-agent', prefixArgs: [], display: 'test-agent' })
+    vi.mocked(spawnCli).mockImplementation(() => {
+      const child = Object.assign(new EventEmitter(), {
+        stdin: new PassThrough(),
+        stdout: new PassThrough(),
+        stderr: new PassThrough(),
+        pid: 12345,
+        exitCode: null,
+        killed: false,
+        kill: vi.fn(() => true)
+      })
+      return child as unknown as ChildProcess
+    })
     const manager = new SessionManager(store, vi.fn(), vi.fn(), vi.fn())
     const generated = create()
     const literal = create()
     threadHandlers(deps)['thread:update'](literal.id, { title: '新对话' })
-    for (const thread of [generated, literal]) {
-      await expect(manager.send({ threadId: thread.id, prompt: 'First task\nDetails', model, mode: 'agent', force: false }))
-        .rejects.toThrow('Test process launch stopped')
+    try {
+      for (const thread of [generated, literal]) {
+        await manager.send({ threadId: thread.id, prompt: 'First task\nDetails', model, mode: 'agent', force: false })
+      }
+      expect(store.thread(generated.id)).toMatchObject({ title: 'First task' })
+      expect(store.thread(generated.id)?.titleKind).toBeUndefined()
+      expect(store.thread(literal.id)).toMatchObject({ title: '新对话' })
+    } finally {
+      manager.dispose(generated.id)
+      manager.dispose(literal.id)
     }
-    expect(store.thread(generated.id)).toMatchObject({ title: 'First task' })
-    expect(store.thread(generated.id)?.titleKind).toBeUndefined()
-    expect(store.thread(literal.id)).toMatchObject({ title: '新对话' })
   })
 
   it('marks missing titles in all CLI scanners without marking actual titles matching the placeholder', () => {

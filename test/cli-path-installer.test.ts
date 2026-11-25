@@ -153,6 +153,8 @@ describe('cli-path-installer', () => {
     fs.writeFileSync(path.join(binDir, 'agd'), '#!/usr/bin/env bash\n', { mode: 0o644 })
 
     const readOnlySource = new Set([path.join(binDir, 'agent-desktop'), path.join(binDir, 'agd')])
+    const targetBinDir = path.join(homeDir, '.local', 'bin')
+    const canSimulatePosixInPath = !targetBinDir.includes(':')
     const ctx: Partial<PathInstallerEnv> = {
       platform: 'linux',
       isPackaged: true,
@@ -161,7 +163,7 @@ describe('cli-path-installer', () => {
       dataDir,
       execPath,
       appPath: appDir,
-      env: { PATH: `${path.join(homeDir, '.local', 'bin')}:/usr/bin` },
+      env: { PATH: canSimulatePosixInPath ? `${targetBinDir}:/usr/bin` : '/usr/bin:/bin' },
       chmodPosix: (filePath, mode) => {
         if (readOnlySource.has(filePath)) {
           const err = new Error(`EPERM: operation not permitted, chmod '${filePath}'`) as NodeJS.ErrnoException
@@ -175,7 +177,10 @@ describe('cli-path-installer', () => {
 
     const installed = installAppCliToPath(dataDir, ctx)
     expect(installed.state).toBe('installed')
-    expect(installed.inPath).toBe(true)
+    expect(installed.inPath).toBe(canSimulatePosixInPath)
+    if (!canSimulatePosixInPath) {
+      expect(installed.pathSnippet).toContain(targetBinDir)
+    }
 
     for (const cmd of ['agent-desktop', 'agd']) {
       const dest = path.join(homeDir, '.local', 'bin', cmd)
