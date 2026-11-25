@@ -8,7 +8,7 @@ import {
   type SendRequest,
   type ThreadMeta
 } from '@shared/types'
-import { promptQuestionInteractively } from '../prompt-ui'
+import { isPromptAbortError, promptQuestionInteractively } from '../prompt-ui'
 import { StreamRenderer } from '../stream-render'
 import {
   CliError,
@@ -51,10 +51,27 @@ export interface RunCommandOptions {
   promptFlag?: string
 }
 
-function isThreadBusy(state: AppState, threadId: string): boolean {
-  if (state.running.includes(threadId) || (state.starting ?? []).includes(threadId)) return true
+function isThreadActive(state: AppState, threadId: string): boolean {
+  return state.running.includes(threadId) || (state.starting ?? []).includes(threadId)
+}
+
+function hasRunnableQueue(state: AppState, threadId: string): boolean {
   const q = state.queued?.[threadId]
-  return !!(q && q.items.length > 0 && !q.paused && !q.waitingForPlan)
+  if (!q || q.items.length === 0) return false
+  return !!q.items[0]?.immediate || (!q.paused && !q.waitingForPlan)
+}
+
+function isThreadBusy(state: AppState, threadId: string): boolean {
+  return isThreadActive(state, threadId) || hasRunnableQueue(state, threadId)
+}
+
+function hasNewUserItem(items: Item[], seenIds: Set<string>, expectedPrompt?: string): boolean {
+  return items.some(
+    (item) =>
+      item.kind === 'user' &&
+      !seenIds.has(item.id) &&
+      (expectedPrompt === undefined || item.text === expectedPrompt)
+  )
 }
 
 export async function runPromptCommand(
@@ -130,7 +147,7 @@ export async function runPromptCommand(
       detached: true,
       modeRuntime: runtime.mode
     }
-    if (opts.format === 'json' || opts.format === 'jsonl') writeJson(io, info)
+    if (opts.format === 'json' || opts.format === 'jsonl') writeJson(io, info, opts.format)
     else io.stdout.write(`${thread.id}\n`)
     return EXIT_OK
   }
@@ -155,10 +172,42 @@ export async function runPromptCommand(
     else resolveRun()
   }
 
+  const preTurnItemIds = new Set<string>(baselineItems.map((i) => i.id))
+  const initialQueueIds = new Set<string>((state.queued?.[thread.id]?.items ?? []).map((q) => q.id))
   let latestState: AppState = state
-  let sawActive = false
+  let sendStarted = false
   let sendReturned = false
+  let sawActive = false
+  let sawOwnUserItem = false
+  let wasBusyBeforeSend = isThreadBusy(state, thread.id)
+  let trackedQueueId: string | undefined
+  let queuePhase: 'none' | 'queued' | 'dispatching' | 'running' = 'none'
   let handlingQuestion = false
+  const questionAbort = new AbortController()
+
+  let sigintCount = 0
+  const triggerInterrupt = (): void => {
+    sigintCount++
+    interrupted = true
+    questionAbort.abort()
+    if (sigintCount === 1) {
+      io.stderr.write('\n[interrupt] Stopping run...\n')
+      void runtime.call('agent:stop', thread.id).then(
+        () => {
+          if (!isThreadActive(latestState, thread.id)) settle()
+        },
+        () => settle()
+      )
+    } else {
+      settle()
+    }
+  }
+
+  const recordPreTurnItems = (items: Item[]): void => {
+    for (const item of items) preTurnItemIds.add(item.id)
+  }
+
+  const filterTurnItems = (items: Item[]): Item[] => items.filter((item) => !preTurnItemIds.has(item.id))
 
   const renderer = new StreamRenderer({
     format: opts.format,
@@ -184,10 +233,20 @@ export async function runPromptCommand(
             settle()
             return
           }
-          const answers = await promptQuestionInteractively(qItem, io)
+          const answers = await promptQuestionInteractively(qItem, io, questionAbort.signal)
+          if (interrupted || settled) {
+            handlingQuestion = false
+            return
+          }
           await runtime.call('agent:answerQuestion', thread.id, qItem.id, answers)
           handlingQuestion = false
         } catch (err) {
+          handlingQuestion = false
+          if (settled) return
+          if (interrupted || isPromptAbortError(err)) {
+            if (!interrupted) triggerInterrupt()
+            return
+          }
           settle(err instanceof Error ? err : new Error(String(err)))
         }
       })()
@@ -208,66 +267,181 @@ export async function runPromptCommand(
     io.stderr.write(`[thread] ${thread.id} (${provider} · ${mode}${model ? ` · ${model}` : ''} · ${runtime.mode})\n`)
   }
 
+  const handleState = (nextState: AppState): void => {
+    latestState = nextState
+    const active = isThreadActive(nextState, thread.id)
+    const queue = nextState.queued?.[thread.id]
+    const queueItems = queue?.items ?? []
+
+    if (interrupted) {
+      if (!active) settle()
+      return
+    }
+
+    if (!sendStarted) {
+      for (const q of queueItems) initialQueueIds.add(q.id)
+      wasBusyBeforeSend = isThreadBusy(nextState, thread.id)
+      return
+    }
+
+    if (delivery && queuePhase === 'none' && !trackedQueueId && queueItems.length > 0) {
+      const added = queueItems.filter((q) => !initialQueueIds.has(q.id))
+      const match =
+        added.find((q) => q.prompt === prompt) ??
+        (delivery === 'now' ? added[0] : added[added.length - 1])
+      if (match) {
+        trackedQueueId = match.id
+        queuePhase = 'queued'
+      }
+    }
+
+    if (queuePhase === 'queued' && trackedQueueId) {
+      const stillQueued = queueItems.some((q) => q.id === trackedQueueId)
+      if (stillQueued) {
+        if (queue?.error && queue.paused && !active) {
+          settle(new CliError(queue.error, EXIT_ERROR))
+          return
+        }
+        if (!isThreadBusy(nextState, thread.id)) {
+          settle()
+        }
+        return
+      }
+      if (active) {
+        queuePhase = 'running'
+        sawActive = true
+      } else {
+        queuePhase = 'dispatching'
+      }
+      return
+    }
+
+    if (queuePhase === 'dispatching') {
+      if (active) {
+        queuePhase = 'running'
+        sawActive = true
+        return
+      }
+      if (trackedQueueId && queueItems.some((q) => q.id === trackedQueueId)) {
+        if (queue?.error && queue.paused) {
+          settle(new CliError(queue.error, EXIT_ERROR))
+          return
+        }
+        queuePhase = 'queued'
+        if (!isThreadBusy(nextState, thread.id)) settle()
+        return
+      }
+      if (!nextState.threads.some((t) => t.id === thread.id)) {
+        settle(new CliError(`Thread not found: ${thread.id}`, EXIT_ERROR))
+      }
+      return
+    }
+
+    if (queuePhase === 'running') {
+      if (active) {
+        sawActive = true
+      } else if (sendReturned && (sawActive || sawOwnUserItem)) {
+        settle()
+      }
+      return
+    }
+
+    if (isThreadBusy(nextState, thread.id)) {
+      if (!wasBusyBeforeSend || !delivery) sawActive = true
+    } else if (sendReturned) {
+      if (wasBusyBeforeSend && delivery && !sawActive && !sawOwnUserItem) {
+        queuePhase = 'dispatching'
+        return
+      }
+      settle()
+    }
+  }
+
   const unsubscribe = await runtime.subscribe({
     onEvent: (event) => {
       if (event.threadId !== thread.id) return
       if (event.type === 'items') {
-        renderer.onItems(event.items)
+        const buffering =
+          !sendStarted ||
+          queuePhase === 'queued' ||
+          queuePhase === 'dispatching' ||
+          (!sendReturned && wasBusyBeforeSend && !!delivery)
+        if (buffering) {
+          const ownStarted =
+            (queuePhase === 'dispatching' && hasNewUserItem(event.items, preTurnItemIds)) ||
+            (sendStarted && !sendReturned && wasBusyBeforeSend && !!delivery && hasNewUserItem(event.items, preTurnItemIds, prompt))
+          if (ownStarted) {
+            queuePhase = 'running'
+            sawOwnUserItem = true
+            renderer.onItems(filterTurnItems(event.items))
+          } else {
+            recordPreTurnItems(event.items)
+          }
+          return
+        }
+        renderer.onItems(filterTurnItems(event.items))
       } else if (event.type === 'running') {
         if (event.running) {
-          sawActive = true
-        } else if (sawActive || sendReturned) {
-          // Wait briefly for state:changed if a queued message is about to dispatch.
-          if (!isThreadBusy(latestState, thread.id)) settle()
+          if (queuePhase === 'dispatching') {
+            queuePhase = 'running'
+            sawActive = true
+          } else if (sendStarted && queuePhase !== 'queued') {
+            sawActive = true
+          }
+        } else {
+          if (interrupted) {
+            settle()
+            return
+          }
+          if (queuePhase === 'queued' || queuePhase === 'dispatching') {
+            return
+          }
+          if (queuePhase === 'running') {
+            if (sendReturned && (sawActive || sawOwnUserItem)) settle()
+            return
+          }
+          if (sendReturned && (sawActive || !wasBusyBeforeSend || !delivery) && !hasRunnableQueue(latestState, thread.id)) {
+            settle()
+          }
         }
       }
     },
     onState: (nextState) => {
-      latestState = nextState
-      if (isThreadBusy(nextState, thread.id)) {
-        sawActive = true
-      } else if ((sawActive || sendReturned) && !isThreadBusy(nextState, thread.id)) {
-        settle()
-      }
+      handleState(nextState)
     },
     onDisconnect: (err) => {
       settle(new CliError(`Disconnected from Agent Desktop before turn completed${err ? `: ${err.message}` : ''}`, EXIT_ERROR))
     }
   })
 
-  let sigintCount = 0
-  const onSigint = () => {
-    sigintCount++
-    interrupted = true
-    if (sigintCount === 1) {
-      io.stderr.write('\n[interrupt] Stopping run...\n')
-      void runtime.call('agent:stop', thread.id).catch(() => settle())
-    } else {
-      settle()
-    }
-  }
-  process.on('SIGINT', onSigint)
+  process.on('SIGINT', triggerInterrupt)
 
   try {
+    sendStarted = true
     await runtime.call('agent:send', req)
     sendReturned = true
 
     // If the turn completed synchronously/very quickly before we reached here, verify current state.
     if (!settled) {
       const postState = await runtime.call<AppState>('state:get')
-      latestState = postState
-      if (!isThreadBusy(postState, thread.id)) {
-        const finalItems = await runtime.call<Item[]>('thread:items', thread.id)
-        renderer.onItems(finalItems)
-        settle()
+      if (!isThreadBusy(postState, thread.id) && queuePhase === 'none' && wasBusyBeforeSend && delivery && !sawActive && !sawOwnUserItem) {
+        const postItems = await runtime.call<Item[]>('thread:items', thread.id).catch(() => renderer.items)
+        if (hasNewUserItem(postItems, preTurnItemIds, prompt)) {
+          sawOwnUserItem = true
+          renderer.onItems(filterTurnItems(postItems))
+        }
       }
+      handleState(postState)
     }
 
     await donePromise
-    const finalItems = await runtime.call<Item[]>('thread:items', thread.id).catch(() => renderer.items)
-    renderer.onItems(finalItems)
+    if (queuePhase === 'none' || queuePhase === 'running') {
+      const finalItems = await runtime.call<Item[]>('thread:items', thread.id).catch(() => renderer.items)
+      renderer.onItems(filterTurnItems(finalItems))
+    }
   } finally {
-    process.off('SIGINT', onSigint)
+    questionAbort.abort()
+    process.off('SIGINT', triggerInterrupt)
     unsubscribe()
   }
 
@@ -281,7 +455,7 @@ export async function runPromptCommand(
       questions: questionExitItem.questions
     }
     if (opts.format === 'json' || opts.format === 'jsonl') {
-      writeJson(io, payload)
+      writeJson(io, payload, opts.format)
     } else {
       io.stderr.write(
         `\n[question] Agent asked a question (questionId=${questionExitItem.id}). ` +
@@ -346,6 +520,15 @@ export async function runWatchCommand(
     return renderer.result?.isError ? EXIT_ERROR : EXIT_OK
   }
 
+  const seenUserIds = new Set(initialItems.filter((i) => i.kind === 'user').map((i) => i.id))
+  let latestState: AppState = state
+  let runnableHeadId: string | undefined = hasRunnableQueue(state, threadId)
+    ? state.queued?.[threadId]?.items[0]?.id
+    : undefined
+  let awaitingQueuedDispatch = false
+  let settled = false
+  let detachedByUser = false
+
   let resolveDone!: () => void
   let rejectDone!: (err: Error) => void
   const done = new Promise<void>((resolve, reject) => {
@@ -353,28 +536,98 @@ export async function runWatchCommand(
     rejectDone = reject
   })
 
-  let detachedByUser = false
+  const settle = (err?: Error): void => {
+    if (settled) return
+    settled = true
+    if (err) rejectDone(err)
+    else resolveDone()
+  }
+
+  const handleState = (next: AppState): void => {
+    latestState = next
+    const active = isThreadActive(next, threadId)
+    const runnable = hasRunnableQueue(next, threadId)
+    const nextHeadId = runnable ? next.queued?.[threadId]?.items[0]?.id : undefined
+    const queueItems = next.queued?.[threadId]?.items ?? []
+
+    if (awaitingQueuedDispatch) {
+      if (active || runnable) {
+        awaitingQueuedDispatch = false
+        runnableHeadId = nextHeadId
+        return
+      }
+      if (queueItems.length > 0 || !next.threads.some((t) => t.id === threadId)) {
+        awaitingQueuedDispatch = false
+        runnableHeadId = undefined
+        settle()
+      }
+      return
+    }
+
+    if (runnableHeadId && !active && !queueItems.some((q) => q.id === runnableHeadId)) {
+      runnableHeadId = undefined
+      awaitingQueuedDispatch = true
+      return
+    }
+
+    runnableHeadId = nextHeadId
+    if (!isThreadBusy(next, threadId)) {
+      settle()
+    }
+  }
+
   const unsubscribe = await runtime.subscribe({
     onEvent: (event) => {
       if (event.threadId !== threadId) return
-      if (event.type === 'items') renderer.onItems(event.items)
-      else if (event.type === 'running' && !event.running) resolveDone()
+      if (event.type === 'items') {
+        if (awaitingQueuedDispatch && hasNewUserItem(event.items, seenUserIds)) {
+          awaitingQueuedDispatch = false
+        }
+        for (const item of event.items) {
+          if (item.kind === 'user') seenUserIds.add(item.id)
+        }
+        renderer.onItems(event.items)
+      } else if (event.type === 'running') {
+        if (event.running) {
+          awaitingQueuedDispatch = false
+        } else if (!awaitingQueuedDispatch && !hasRunnableQueue(latestState, threadId)) {
+          settle()
+        }
+      }
     },
     onState: (next) => {
-      if (!isThreadBusy(next, threadId)) resolveDone()
+      handleState(next)
     },
-    onDisconnect: (err) => rejectDone(new CliError(`Disconnected${err ? `: ${err.message}` : ''}`, EXIT_ERROR))
+    onDisconnect: (err) => settle(new CliError(`Disconnected${err ? `: ${err.message}` : ''}`, EXIT_ERROR))
   })
 
   const onSigint = () => {
     detachedByUser = true
     io.stderr.write(`\n[watch] Detached. Thread ${threadId} continues running (stop via "agent-desktop stop ${threadId}").\n`)
-    resolveDone()
+    settle()
   }
   process.on('SIGINT', onSigint)
 
   try {
+    if (!settled) {
+      const postState = await runtime.call<AppState>('state:get')
+      const postItems = await runtime.call<Item[]>('thread:items', threadId).catch(() => renderer.items)
+      if (hasNewUserItem(postItems, seenUserIds)) {
+        runnableHeadId = undefined
+        awaitingQueuedDispatch = false
+      }
+      for (const item of postItems) {
+        if (item.kind === 'user') seenUserIds.add(item.id)
+      }
+      renderer.onItems(postItems)
+      if (!settled) handleState(postState)
+    }
+
     await done
+    if (!detachedByUser) {
+      const finalItems = await runtime.call<Item[]>('thread:items', threadId).catch(() => renderer.items)
+      renderer.onItems(finalItems)
+    }
   } finally {
     process.off('SIGINT', onSigint)
     unsubscribe()
@@ -395,7 +648,7 @@ export async function runStopCommand(
   if (!threadId) throw new CliError('Usage: agent-desktop stop <threadId>', EXIT_USAGE)
   await runtime.call('agent:stop', threadId)
   if (opts.format === 'json' || opts.format === 'jsonl') {
-    writeJson(io, { stopped: true, threadId })
+    writeJson(io, { stopped: true, threadId }, opts.format)
   } else {
     io.stdout.write(`Stopped thread ${threadId}.\n`)
   }
@@ -430,7 +683,7 @@ export async function runAnswerCommand(
 
   await runtime.call('agent:answerQuestion', threadId, questionId, answers)
   if (opts.format === 'json' || opts.format === 'jsonl') {
-    writeJson(io, { answered: true, threadId, questionId, skipped: answers === null })
+    writeJson(io, { answered: true, threadId, questionId, skipped: answers === null }, opts.format)
   } else {
     io.stdout.write(`${answers === null ? 'Skipped' : 'Answered'} question ${questionId} on thread ${threadId}.\n`)
   }

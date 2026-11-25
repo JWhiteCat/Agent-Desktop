@@ -30,7 +30,7 @@ export async function runCliCommand(
       })
     }
     if (opts.format === 'json' || opts.format === 'jsonl') {
-      writeJson(io, rows)
+      writeJson(io, rows, opts.format)
       return 0
     }
     for (const r of rows) {
@@ -46,7 +46,7 @@ export async function runCliCommand(
     const provider = parseProvider(positionals[0], state.settings.cliProvider)
     const models = await runtime.call<ModelInfo[]>('cli:models', !!opts.refresh, provider)
     if (opts.format === 'json' || opts.format === 'jsonl') {
-      writeJson(io, { provider, models })
+      writeJson(io, { provider, models }, opts.format)
       return 0
     }
     if (!models.length) {

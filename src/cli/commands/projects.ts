@@ -21,7 +21,7 @@ export async function runProjectsCommand(
       threadCount: counts.get(p.id) ?? 0
     }))
     if (opts.format === 'json' || opts.format === 'jsonl') {
-      writeJson(io, list)
+      writeJson(io, list, opts.format)
       return 0
     }
     if (!list.length) {
@@ -38,7 +38,7 @@ export async function runProjectsCommand(
     const target = path.resolve(io.cwd(), positionals[0] ?? '.')
     const project = await runtime.call<Project>('project:add', target)
     if (opts.format === 'json' || opts.format === 'jsonl') {
-      writeJson(io, project)
+      writeJson(io, project, opts.format)
       return 0
     }
     io.stdout.write(`${project.id}  ${project.name}  ${project.path}\n`)

@@ -70,7 +70,7 @@ export async function runThreadsCommand(
     }))
 
     if (opts.format === 'json' || opts.format === 'jsonl') {
-      writeJson(io, enriched)
+      writeJson(io, enriched, opts.format)
       return 0
     }
     if (!enriched.length) {
@@ -93,7 +93,7 @@ export async function runThreadsCommand(
     const items = await runtime.call<Item[]>('thread:items', threadId)
     const sliced = opts.tail && opts.tail > 0 ? items.slice(-opts.tail) : items
     if (opts.format === 'json' || opts.format === 'jsonl') {
-      writeJson(io, { thread, items: sliced })
+      writeJson(io, { thread, items: sliced }, opts.format)
       return 0
     }
     io.stdout.write(`Thread: ${thread.id} (${thread.title})\n`)
@@ -113,7 +113,7 @@ export async function runThreadsCommand(
     const force = opts.force ?? state.settings.force
     const thread = await runtime.call<ThreadMeta>('thread:create', project.id, mode, model, force, provider)
     if (opts.format === 'json' || opts.format === 'jsonl') {
-      writeJson(io, thread)
+      writeJson(io, thread, opts.format)
       return 0
     }
     io.stdout.write(`${thread.id}\n`)
@@ -125,7 +125,7 @@ export async function runThreadsCommand(
     if (!threadId) throw new CliError('Usage: agent-desktop threads fork <threadId> [--at <itemId>]', EXIT_USAGE)
     const forked = await runtime.call<ForkResult>('thread:fork', threadId, opts.at)
     if (opts.format === 'json' || opts.format === 'jsonl') {
-      writeJson(io, forked)
+      writeJson(io, forked, opts.format)
       return 0
     }
     io.stdout.write(`${forked.thread.id}\n`)
@@ -137,7 +137,7 @@ export async function runThreadsCommand(
     if (!threadId) throw new CliError('Usage: agent-desktop threads sync <threadId>', EXIT_USAGE)
     const items = await runtime.call<Item[]>('thread:syncFromCli', threadId)
     if (opts.format === 'json' || opts.format === 'jsonl') {
-      writeJson(io, { threadId, count: items.length, items })
+      writeJson(io, { threadId, count: items.length, items }, opts.format)
       return 0
     }
     io.stdout.write(`Synced ${items.length} items for thread ${threadId}.\n`)
@@ -149,7 +149,7 @@ export async function runThreadsCommand(
     if (!threadId) throw new CliError('Usage: agent-desktop threads delete <threadId>', EXIT_USAGE)
     await runtime.call('thread:delete', threadId)
     if (opts.format === 'json' || opts.format === 'jsonl') {
-      writeJson(io, { deleted: true, threadId })
+      writeJson(io, { deleted: true, threadId }, opts.format)
       return 0
     }
     io.stdout.write(`Deleted thread ${threadId}.\n`)

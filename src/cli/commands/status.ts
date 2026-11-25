@@ -39,7 +39,7 @@ export async function runStatus(
   }
 
   if (opts.format === 'json' || opts.format === 'jsonl') {
-    writeJson(io, payload)
+    writeJson(io, payload, opts.format)
     return 0
   }
 

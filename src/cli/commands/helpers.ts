@@ -3,7 +3,7 @@ import path from 'node:path'
 import type { AttachmentRef, AttachmentUpload } from '@shared/attachments'
 import { isCliProvider, normalizeCliProvider, type AgentMode, type AppState, type CliProvider, type Project, type Settings } from '@shared/types'
 import { pathKey } from '../../main/local-files'
-import { CliError, EXIT_USAGE, type CliIo, type CliRuntime } from '../types'
+import { CliError, EXIT_USAGE, type CliIo, type CliRuntime, type OutputFormat } from '../types'
 
 const MIME_BY_EXT: Record<string, string> = {
   '.png': 'image/png',
@@ -119,6 +119,7 @@ export async function readStdinText(io: CliIo): Promise<string> {
   return Buffer.concat(chunks).toString('utf8')
 }
 
-export function writeJson(io: CliIo, value: unknown): void {
-  io.stdout.write(`${JSON.stringify(value, null, 2)}\n`)
+export function writeJson(io: CliIo, value: unknown, format: OutputFormat = 'json'): void {
+  const serialized = format === 'jsonl' ? JSON.stringify(value) : JSON.stringify(value, null, 2)
+  io.stdout.write(`${serialized}\n`)
 }
