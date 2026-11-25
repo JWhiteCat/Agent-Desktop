@@ -185,14 +185,20 @@ export class RemoteServer {
       throw err
     }
     this.heartbeat = setInterval(() => {
-      for (const c of this.clients) c.write(HEARTBEAT_FRAME)
+      this.writeSse(HEARTBEAT_FRAME)
     }, HEARTBEAT_MS)
   }
 
   private async stopServer(): Promise<void> {
     if (this.heartbeat) clearInterval(this.heartbeat)
     this.heartbeat = undefined
-    for (const c of this.clients) c.end()
+    for (const c of [...this.clients]) {
+      try {
+        c.end()
+      } catch {
+        // ignore
+      }
+    }
     this.clients.clear()
     const server = this.server
     this.server = undefined
@@ -206,7 +212,26 @@ export class RemoteServer {
   broadcast(channel: string, payload: unknown): void {
     if (!this.clients.size) return
     const frame = `data: ${JSON.stringify({ channel, payload })}\n\n`
-    for (const c of this.clients) c.write(frame)
+    this.writeSse(frame)
+  }
+
+  private writeSse(frame: string): void {
+    for (const c of [...this.clients]) {
+      if (c.destroyed || c.writableEnded) {
+        this.clients.delete(c)
+        continue
+      }
+      try {
+        c.write(frame)
+      } catch {
+        this.clients.delete(c)
+        try {
+          c.destroy()
+        } catch {
+          // ignore
+        }
+      }
+    }
   }
 
   private async handle(req: http.IncomingMessage, res: http.ServerResponse, opts: RemoteServerOptions, server: http.Server): Promise<void> {
@@ -228,7 +253,10 @@ export class RemoteServer {
       })
       res.write(': connected\n\n' + SSE_PADDING)
       this.clients.add(res)
-      req.on('close', () => this.clients.delete(res))
+      const remove = () => this.clients.delete(res)
+      res.on('error', remove)
+      res.on('close', remove)
+      req.on('close', remove)
       return
     }
 
@@ -274,18 +302,41 @@ export class RemoteServer {
       res.writeHead(403).end()
       return
     }
-    if (!fs.existsSync(file) || fs.statSync(file).isDirectory()) file = path.join(root, 'index.html')
+    const stat = fs.statSync(file, { throwIfNoEntry: false })
+    if (!stat || stat.isDirectory()) file = path.join(root, 'index.html')
     if (!fs.existsSync(file)) {
       res.writeHead(404).end()
       return
     }
     const ext = path.extname(file).toLowerCase()
-    res.writeHead(200, {
+    const headers = {
       'content-type': MIME[ext] ?? 'application/octet-stream',
       'cache-control': ext === '.html' ? 'no-store' : 'public, max-age=3600'
+    }
+    if (req.method === 'HEAD') {
+      res.writeHead(200, headers)
+      res.end()
+      return
+    }
+    const stream = fs.createReadStream(file)
+    stream.on('error', (err: NodeJS.ErrnoException) => {
+      if (!res.headersSent) {
+        res.writeHead(err.code === 'ENOENT' ? 404 : 500).end()
+      } else if (!res.destroyed) {
+        res.destroy()
+      }
     })
-    if (req.method === 'HEAD') res.end()
-    else fs.createReadStream(file).pipe(res)
+    stream.once('open', () => {
+      if (res.destroyed) {
+        stream.destroy()
+        return
+      }
+      res.writeHead(200, headers)
+      stream.pipe(res)
+    })
+    res.once('close', () => {
+      if (!stream.destroyed) stream.destroy()
+    })
   }
 
   private proxy(req: http.IncomingMessage, res: http.ServerResponse, devUrl: string): void {

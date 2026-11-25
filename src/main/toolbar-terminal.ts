@@ -13,16 +13,45 @@ export interface TerminalLaunch {
 }
 
 /** Resolve executable names without invoking a shell, including Windows npm .cmd launchers. */
-export function findTerminalExecutable(command: string, env = cliEnvironment()): string | undefined {
+export function findTerminalExecutable(command: string, env = cliEnvironment(), platform: NodeJS.Platform = process.platform): string | undefined {
   const pathKey = Object.keys(env).find((key) => key.toLowerCase() === 'path')
   const pathExtKey = Object.keys(env).find((key) => key.toLowerCase() === 'pathext')
-  const extensions = process.platform === 'win32' ? ((pathExtKey && env[pathExtKey]) || '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean) : ['']
-  const candidates = (file: string) => [file, ...extensions.filter((ext) => ext && !file.toLowerCase().endsWith(ext.toLowerCase())).map((ext) => file + ext)]
-  const directories = cliSearchDirectories({ ...env, PATH: pathKey ? env[pathKey] : '' })
-  for (const candidate of path.isAbsolute(command) || /[/\\]/.test(command)
-    ? candidates(command)
-    : directories.flatMap((directory) => candidates(path.join(directory, command)))) {
-    if (isExecutableFile(candidate)) return path.resolve(candidate)
+  const isWin = platform === 'win32'
+  const hasExplicitPath = path.isAbsolute(command) || /[/\\]/.test(command)
+  const directories = hasExplicitPath ? [] : cliSearchDirectories({ ...env, PATH: pathKey ? env[pathKey] : '' })
+  const bases = hasExplicitPath ? [command] : directories.map((directory) => path.join(directory, command))
+
+  if (!isWin) {
+    for (const candidate of bases) {
+      if (isExecutableFile(candidate)) return path.resolve(candidate)
+    }
+    return undefined
+  }
+
+  const extensions = ((pathExtKey && env[pathExtKey]) || '.COM;.EXE;.BAT;.CMD')
+    .split(';')
+    .map((ext) => ext.trim())
+    .filter(Boolean)
+    .map((ext) => (ext.startsWith('.') ? ext : `.${ext}`))
+  const lowerCommand = command.toLowerCase()
+  const hasPathExt = extensions.some((ext) => lowerCommand.endsWith(ext.toLowerCase()))
+
+  // Pass 1: check PATHEXT executables across PATH directories before considering extensionless files,
+  // so POSIX shims (e.g. extensionless `code` in an earlier PATH dir) do not shadow real `.cmd`/`.exe` launchers.
+  for (const base of bases) {
+    const candidates = hasPathExt
+      ? [base, ...extensions.filter((ext) => !base.toLowerCase().endsWith(ext.toLowerCase())).map((ext) => base + ext)]
+      : extensions.map((ext) => base + ext)
+    for (const candidate of candidates) {
+      if (isExecutableFile(candidate)) return path.resolve(candidate)
+    }
+  }
+
+  // Pass 2: allow explicit paths or commands with a non-PATHEXT extension as a fallback if no PATHEXT match exists.
+  if (!hasPathExt && (hasExplicitPath || path.extname(command) !== '')) {
+    for (const base of bases) {
+      if (isExecutableFile(base)) return path.resolve(base)
+    }
   }
   return undefined
 }

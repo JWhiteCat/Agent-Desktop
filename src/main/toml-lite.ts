@@ -81,8 +81,10 @@ function setPath(table: TomlTable, path: string[], value: TomlValue): void {
 }
 
 class Parser {
-  pos = 0
-  constructor(readonly text: string) {}
+  pos: number
+  constructor(readonly text: string) {
+    this.pos = text.startsWith('\uFEFF') ? 1 : 0
+  }
 
   eof(): boolean {
     return this.pos >= this.text.length
@@ -356,7 +358,7 @@ export function tableSections(sections: TomlSection[], root: string, name: strin
  * `block` may be empty to delete the server.
  */
 export function replaceTomlTables(text: string, root: string, name: string, block: string, insertAfter?: string): string {
-  const out = replaceLf(text.replace(/\r\n/g, '\n'), root, name, block.replace(/\r\n/g, '\n'), insertAfter)
+  const out = replaceLf(text.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n'), root, name, block.replace(/\r\n/g, '\n'), insertAfter)
   return text.includes('\r\n') ? out.replace(/\n/g, '\r\n') : out
 }
 

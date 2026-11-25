@@ -70,6 +70,30 @@ describe('terminal launchers', () => {
     expect(findTerminalExecutable('some-tool', { Path: directory, PATHEXT: '.EXE;.CMD' })).toBe(file)
     expect(findTerminalExecutable('some-missing-tool', { PATH: '' })).toBeUndefined()
   })
+
+  it('prefers PATHEXT executables over extensionless files on Windows (#31)', () => {
+    const earlier = temporary()
+    const later = temporary()
+    const shim = path.join(earlier, 'code')
+    const launcher = path.join(later, 'code.CMD')
+    fs.writeFileSync(shim, '#!/bin/sh\n', { mode: 0o755 })
+    fs.writeFileSync(launcher, '@echo off\r\n', { mode: 0o755 })
+
+    // Extensionless POSIX shim in an earlier PATH dir must not shadow a real .cmd in a later dir.
+    const env = { Path: `${earlier}${path.delimiter}${later}`, PATHEXT: '.EXE;.CMD' }
+    expect(findTerminalExecutable('code', env, 'win32')).toBe(path.resolve(launcher))
+
+    // When both extensionless and .cmd exist in the same dir, .cmd wins.
+    const sameDirCmd = path.join(earlier, 'code.CMD')
+    fs.writeFileSync(sameDirCmd, '@echo off\r\n', { mode: 0o755 })
+    expect(findTerminalExecutable('code', env, 'win32')).toBe(path.resolve(sameDirCmd))
+    expect(findTerminalExecutable(path.join(earlier, 'code'), env, 'win32')).toBe(path.resolve(sameDirCmd))
+
+    // An extensionless-only file on PATH must not match an extensionless command name on Windows.
+    const onlyShimDir = temporary()
+    fs.writeFileSync(path.join(onlyShimDir, 'only-shim'), '#!/bin/sh\n', { mode: 0o755 })
+    expect(findTerminalExecutable('only-shim', { Path: onlyShimDir, PATHEXT: '.EXE;.CMD' }, 'win32')).toBeUndefined()
+  })
 })
 
 describe('terminal acknowledgement', () => {

@@ -2,16 +2,18 @@ import fs from 'node:fs'
 import http from 'node:http'
 import os from 'node:os'
 import path from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_SETTINGS, type AppState } from '@shared/types'
 import { connectAttached } from '../src/cli/client'
 import { acquireHeadlessLock, activeHeadlessLock, HeadlessLockConflictError, headlessLockPath } from '../src/main/headless-lock'
 import {
+  cleanupLocalControlFiles,
   handlersForLocalCli,
   localControlFilePath,
   LocalControlServer,
   probeLocalControl,
-  readLocalControlMeta
+  readLocalControlMeta,
+  type LocalControlMeta
 } from '../src/main/local-control'
 
 function makeState(overrides: Partial<AppState> = {}): AppState {
@@ -153,5 +155,77 @@ describe('LocalControlServer and headless-lock', () => {
     const reclaimed = acquireHeadlessLock(tmpDir, 'status')
     expect(reclaimed.info.pid).toBe(process.pid)
     reclaimed.release()
+  })
+
+  it('guards POSIX Unix socket unlink inside the metadata ownership check (#15)', () => {
+    const sockPath = path.join(tmpDir, 'cli-ipc.sock')
+    fs.writeFileSync(sockPath, 'live-socket')
+
+    const ownerMeta: LocalControlMeta = {
+      version: 1,
+      pid: 22222,
+      socketPath: sockPath,
+      token: 'owner-token',
+      appVersion: '0.1.0',
+      startedAt: 200
+    }
+    const staleMeta: LocalControlMeta = {
+      version: 1,
+      pid: 11111,
+      socketPath: sockPath,
+      token: 'old-token',
+      appVersion: '0.1.0',
+      startedAt: 100
+    }
+    fs.writeFileSync(localControlFilePath(tmpDir), JSON.stringify(ownerMeta))
+
+    // Non-owner cleanup must leave both cli-control.json and the POSIX socket untouched.
+    cleanupLocalControlFiles(tmpDir, staleMeta, 'linux')
+    expect(fs.existsSync(localControlFilePath(tmpDir))).toBe(true)
+    expect(fs.existsSync(sockPath)).toBe(true)
+
+    // Matching owner removes both cli-control.json and the POSIX socket.
+    cleanupLocalControlFiles(tmpDir, ownerMeta, 'linux')
+    expect(fs.existsSync(localControlFilePath(tmpDir))).toBe(false)
+    expect(fs.existsSync(sockPath)).toBe(false)
+  })
+
+  it('guards SSE heartbeat and broadcast writes against throwing clients without dropping healthy ones (#28)', () => {
+    const clients = (server as unknown as { clients: Set<http.ServerResponse> }).clients
+    const received: string[] = []
+    const broken = {
+      destroyed: false,
+      writableEnded: false,
+      write: vi.fn(() => { throw new Error('EPIPE') }),
+      destroy: vi.fn()
+    } as unknown as http.ServerResponse
+    const healthy = {
+      destroyed: false,
+      writableEnded: false,
+      write: vi.fn((chunk: string) => { received.push(chunk); return true }),
+      destroy: vi.fn()
+    } as unknown as http.ServerResponse
+
+    clients.add(broken)
+    clients.add(healthy)
+
+    expect(() => server.broadcast('state:changed', { ok: true })).not.toThrow()
+    expect(clients.has(broken)).toBe(false)
+    expect(clients.has(healthy)).toBe(true)
+    expect(received).toHaveLength(1)
+    expect(received[0]).toContain('"state:changed"')
+
+    // Also verify writeSse used by the heartbeat interval handles throwing clients safely.
+    const broken2 = {
+      destroyed: false,
+      writableEnded: false,
+      write: vi.fn(() => { throw new Error('ECONNRESET') }),
+      destroy: vi.fn()
+    } as unknown as http.ServerResponse
+    clients.add(broken2)
+    const writeSse = (server as unknown as { writeSse: (frame: string) => void }).writeSse.bind(server)
+    expect(() => writeSse('data: {"channel":"transport:ping","payload":null}\n\n')).not.toThrow()
+    expect(clients.has(broken2)).toBe(false)
+    expect(received).toHaveLength(2)
   })
 })

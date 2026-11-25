@@ -1,4 +1,5 @@
 import http from 'node:http'
+import { EventEmitter } from 'node:events'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -92,6 +93,69 @@ describe('RemoteServer', () => {
       await reader.cancel()
     }
   }, 10_000)
+
+  it('handles ReadStream errors in serveStatic without crashing the server (#28)', async () => {
+    const asset = path.join(staticDir, 'vanished.js')
+    fs.writeFileSync(asset, 'console.log(1)')
+    const fakeStream = Object.assign(new EventEmitter(), {
+      destroyed: false,
+      pipe: vi.fn(),
+      destroy: vi.fn()
+    })
+    const spy = vi.spyOn(fs, 'createReadStream').mockImplementationOnce(() => {
+      queueMicrotask(() => fakeStream.emit('error', Object.assign(new Error('ENOENT'), { code: 'ENOENT' })))
+      return fakeStream as unknown as fs.ReadStream
+    })
+
+    try {
+      const res = await fetch(`${base}/vanished.js`)
+      expect(res.status).toBe(404)
+    } finally {
+      spy.mockRestore()
+    }
+    // Server stays alive and continues serving subsequent requests.
+    const ok = await fetch(`${base}/index.html`)
+    expect(ok.status).toBe(200)
+    expect(await ok.text()).toContain('app')
+  })
+
+  it('guards SSE broadcast and heartbeat writes against throwing clients (#28)', () => {
+    const clients = (server as unknown as { clients: Set<http.ServerResponse> }).clients
+    const received: string[] = []
+    const broken = {
+      destroyed: false,
+      writableEnded: false,
+      write: vi.fn(() => { throw new Error('EPIPE') }),
+      destroy: vi.fn()
+    } as unknown as http.ServerResponse
+    const healthy = {
+      destroyed: false,
+      writableEnded: false,
+      write: vi.fn((chunk: string) => { received.push(chunk); return true }),
+      destroy: vi.fn()
+    } as unknown as http.ServerResponse
+
+    clients.add(broken)
+    clients.add(healthy)
+
+    expect(() => server.broadcast('state:changed', { n: 2 })).not.toThrow()
+    expect(clients.has(broken)).toBe(false)
+    expect(clients.has(healthy)).toBe(true)
+    expect(received).toHaveLength(1)
+    expect(received[0]).toContain('"n":2')
+
+    const broken2 = {
+      destroyed: false,
+      writableEnded: false,
+      write: vi.fn(() => { throw new Error('ECONNRESET') }),
+      destroy: vi.fn()
+    } as unknown as http.ServerResponse
+    clients.add(broken2)
+    const writeSse = (server as unknown as { writeSse: (frame: string) => void }).writeSse.bind(server)
+    expect(() => writeSse('data: {"channel":"transport:ping","payload":null}\n\n')).not.toThrow()
+    expect(clients.has(broken2)).toBe(false)
+    expect(received).toHaveLength(2)
+  })
 })
 
 describe('remote server lifecycle', () => {

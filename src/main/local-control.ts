@@ -33,6 +33,28 @@ export function localControlFilePath(dataDir: string): string {
   return path.join(dataDir, LOCAL_CONTROL_FILE)
 }
 
+/** Removes `cli-control.json` and (on POSIX) the Unix socket only when this instance still owns `cli-control.json`. */
+export function cleanupLocalControlFiles(
+  dataDir: string,
+  meta: LocalControlMeta,
+  platform: NodeJS.Platform = process.platform
+): void {
+  const current = readLocalControlMeta(dataDir)
+  if (!current || current.pid !== meta.pid || current.token !== meta.token) return
+  try {
+    fs.rmSync(localControlFilePath(dataDir), { force: true })
+  } catch {
+    // ignore
+  }
+  if (platform !== 'win32') {
+    try {
+      fs.rmSync(meta.socketPath, { force: true })
+    } catch {
+      // ignore
+    }
+  }
+}
+
 export function localControlSocketPath(dataDir: string, platform: NodeJS.Platform = process.platform): string {
   if (platform === 'win32') {
     const hash = crypto.createHash('sha256').update(pathKey(path.resolve(dataDir))).digest('hex').slice(0, 16)
@@ -277,7 +299,7 @@ export class LocalControlServer {
     this.dataDir = opts.dataDir
     writeTextSafely(localControlFilePath(opts.dataDir), JSON.stringify(meta, null, 2), false)
     this.heartbeat = setInterval(() => {
-      for (const c of this.clients) c.write(HEARTBEAT_FRAME)
+      this.writeSse(HEARTBEAT_FRAME)
     }, HEARTBEAT_MS)
     this.heartbeat.unref?.()
     return meta
@@ -286,7 +308,13 @@ export class LocalControlServer {
   async stop(): Promise<void> {
     if (this.heartbeat) clearInterval(this.heartbeat)
     this.heartbeat = undefined
-    for (const c of this.clients) c.end()
+    for (const c of [...this.clients]) {
+      try {
+        c.end()
+      } catch {
+        // ignore
+      }
+    }
     this.clients.clear()
 
     const server = this.server
@@ -304,32 +332,31 @@ export class LocalControlServer {
     }
 
     if (dataDir && meta) {
-      const current = readLocalControlMeta(dataDir)
-      if (current && current.pid === meta.pid && current.token === meta.token) {
-        try {
-          fs.rmSync(localControlFilePath(dataDir), { force: true })
-        } catch {
-          // ignore
-        }
-      }
-      if (process.platform !== 'win32') {
-        try {
-          fs.rmSync(meta.socketPath, { force: true })
-        } catch {
-          // ignore
-        }
-      }
+      cleanupLocalControlFiles(dataDir, meta)
     }
   }
 
   broadcast(channel: string, payload: unknown): void {
     if (!this.clients.size) return
     const frame = `data: ${JSON.stringify({ channel, payload })}\n\n`
-    for (const c of this.clients) {
+    this.writeSse(frame)
+  }
+
+  private writeSse(frame: string): void {
+    for (const c of [...this.clients]) {
+      if (c.destroyed || c.writableEnded) {
+        this.clients.delete(c)
+        continue
+      }
       try {
         c.write(frame)
       } catch {
         this.clients.delete(c)
+        try {
+          c.destroy()
+        } catch {
+          // ignore
+        }
       }
     }
   }
@@ -364,7 +391,10 @@ export class LocalControlServer {
       })
       res.write(': connected\n\n')
       this.clients.add(res)
-      req.on('close', () => this.clients.delete(res))
+      const remove = () => this.clients.delete(res)
+      res.on('error', remove)
+      res.on('close', remove)
+      req.on('close', remove)
       return
     }
 
