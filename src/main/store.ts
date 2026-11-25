@@ -1,3 +1,4 @@
+import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import { getRuntimeDataDir } from './runtime-paths'
@@ -35,12 +36,42 @@ function writeAtomic(file: string, data: string): void {
   writeTextSafely(file, data, false)
 }
 
-function readJson<T>(file: string): T | undefined {
+type JsonReadResult<T> =
+  | { kind: 'ok'; value: T }
+  | { kind: 'missing' }
+  | { kind: 'io-error'; error: unknown }
+  | { kind: 'parse-error'; error: unknown }
+
+function readJsonFile<T>(file: string): JsonReadResult<T> {
+  let raw: string
   try {
-    return JSON.parse(fs.readFileSync(file, 'utf8')) as T
-  } catch {
-    return undefined
+    raw = fs.readFileSync(file, 'utf8')
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') return { kind: 'missing' }
+    return { kind: 'io-error', error }
   }
+  try {
+    return { kind: 'ok', value: JSON.parse(raw.replace(/^\uFEFF/, '')) as T }
+  } catch (error) {
+    return { kind: 'parse-error', error }
+  }
+}
+
+function backupCorruptStateFile(file: string): string {
+  const backup = `${file}.corrupt-${Date.now()}-${crypto.randomUUID().slice(0, 8)}.bak`
+  fs.copyFileSync(file, backup, fs.constants.COPYFILE_EXCL)
+  if (process.platform !== 'win32') {
+    try {
+      fs.chmodSync(backup, 0o600)
+    } catch {
+      // best effort permission tightening on POSIX
+    }
+  }
+  return backup
+}
+
+function isValidThreadId(id: unknown): id is string {
+  return typeof id === 'string' && id.length > 0 && id !== '.' && id !== '..' && !/[/\\\0:]/.test(id)
 }
 
 export class Store {
@@ -56,64 +87,84 @@ export class Store {
 
   constructor(options?: { dataDir?: string; userDataDir?: string }) {
     this.dir = options?.dataDir ? path.resolve(options.dataDir) : getRuntimeDataDir(options?.userDataDir)
-    this.threadsDir = path.join(this.dir, 'threads')
+    this.threadsDir = path.resolve(this.dir, 'threads')
     this.stateFile = path.join(this.dir, 'state.json')
     fs.mkdirSync(this.threadsDir, { recursive: true, mode: 0o700 })
-    const loaded = readJson<PersistedState>(this.stateFile)
-    const rawClientId = loaded?.settings?.remoteClientId
+    let loaded: Partial<PersistedState> | undefined
+    let recoveredFromCorruptState = false
+    const stateResult = readJsonFile<unknown>(this.stateFile)
+    if (stateResult.kind === 'io-error') {
+      throw stateResult.error
+    } else if (stateResult.kind === 'parse-error') {
+      const backup = backupCorruptStateFile(this.stateFile)
+      console.error('[store] corrupted state.json backed up to', backup, stateResult.error)
+      recoveredFromCorruptState = true
+    } else if (stateResult.kind === 'ok') {
+      if (stateResult.value && typeof stateResult.value === 'object' && !Array.isArray(stateResult.value)) {
+        loaded = stateResult.value as Partial<PersistedState>
+      } else {
+        const backup = backupCorruptStateFile(this.stateFile)
+        console.error('[store] invalid state.json structure backed up to', backup)
+        recoveredFromCorruptState = true
+      }
+    }
+    const loadedSettings = loaded?.settings && typeof loaded.settings === 'object' && !Array.isArray(loaded.settings)
+      ? loaded.settings
+      : undefined
+    const rawClientId = loadedSettings?.remoteClientId
     const remoteClientId = typeof rawClientId === 'string' && validClientId(rawClientId) ? rawClientId : newRemoteClientId()
-    const rawSshPort = loaded?.settings?.remotePublicSshPort
+    const rawSshPort = loadedSettings?.remotePublicSshPort
     const remotePublicSshPort = typeof rawSshPort === 'number' && Number.isInteger(rawSshPort) && rawSshPort >= 1 && rawSshPort <= 65535 ? rawSshPort : 22
-    const fontFamily = normalizeFontFamily(loaded?.settings?.fontFamily)
-    const fontSize = normalizeFontSize(loaded?.settings?.fontSize)
+    const fontFamily = normalizeFontFamily(loadedSettings?.fontFamily)
+    const fontSize = normalizeFontSize(loadedSettings?.fontSize)
     this.state = {
       version: 1,
-      projects: loaded?.projects ?? [],
-      threads: loaded?.threads ?? [],
+      projects: Array.isArray(loaded?.projects) ? loaded.projects : [],
+      threads: Array.isArray(loaded?.threads) ? loaded.threads : [],
       settings: {
         ...DEFAULT_SETTINGS,
-        ...loaded?.settings,
-        language: normalizeLanguage(loaded?.settings?.language),
+        ...loadedSettings,
+        language: normalizeLanguage(loadedSettings?.language),
         fontFamily,
         fontSize,
-        skin: normalizeSkin(loaded?.settings?.skin),
-        skins: normalizeSkins(loaded?.settings?.skins),
-        cliProvider: normalizeCliProvider(loaded?.settings?.cliProvider),
-        codexPath: typeof loaded?.settings?.codexPath === 'string' ? loaded.settings.codexPath : '',
-        codexApiKey: typeof loaded?.settings?.codexApiKey === 'string' ? loaded.settings.codexApiKey : '',
-        claudePath: typeof loaded?.settings?.claudePath === 'string' ? loaded.settings.claudePath : '',
-        claudeApiKey: typeof loaded?.settings?.claudeApiKey === 'string' ? loaded.settings.claudeApiKey : '',
-        antigravityPath: typeof loaded?.settings?.antigravityPath === 'string' ? loaded.settings.antigravityPath : '',
-        antigravityApiKey: typeof loaded?.settings?.antigravityApiKey === 'string' ? loaded.settings.antigravityApiKey : '',
-        antigravityApiEndpoint: typeof loaded?.settings?.antigravityApiEndpoint === 'string' ? loaded.settings.antigravityApiEndpoint : '',
-        codexDefaultModel: typeof loaded?.settings?.codexDefaultModel === 'string' ? loaded.settings.codexDefaultModel : '',
-        claudeDefaultModel: typeof loaded?.settings?.claudeDefaultModel === 'string' ? loaded.settings.claudeDefaultModel : '',
-        antigravityDefaultModel: typeof loaded?.settings?.antigravityDefaultModel === 'string' ? loaded.settings.antigravityDefaultModel : '',
-        favoriteModels: Array.isArray(loaded?.settings?.favoriteModels) ? loaded.settings.favoriteModels : [],
-        codexFavoriteModels: Array.isArray(loaded?.settings?.codexFavoriteModels)
-          ? loaded.settings.codexFavoriteModels
-          : Array.isArray(loaded?.settings?.favoriteModels)
-            ? loaded.settings.favoriteModels.slice()
+        skin: normalizeSkin(loadedSettings?.skin),
+        skins: normalizeSkins(loadedSettings?.skins),
+        cliProvider: normalizeCliProvider(loadedSettings?.cliProvider),
+        codexPath: typeof loadedSettings?.codexPath === 'string' ? loadedSettings.codexPath : '',
+        codexApiKey: typeof loadedSettings?.codexApiKey === 'string' ? loadedSettings.codexApiKey : '',
+        claudePath: typeof loadedSettings?.claudePath === 'string' ? loadedSettings.claudePath : '',
+        claudeApiKey: typeof loadedSettings?.claudeApiKey === 'string' ? loadedSettings.claudeApiKey : '',
+        antigravityPath: typeof loadedSettings?.antigravityPath === 'string' ? loadedSettings.antigravityPath : '',
+        antigravityApiKey: typeof loadedSettings?.antigravityApiKey === 'string' ? loadedSettings.antigravityApiKey : '',
+        antigravityApiEndpoint: typeof loadedSettings?.antigravityApiEndpoint === 'string' ? loadedSettings.antigravityApiEndpoint : '',
+        codexDefaultModel: typeof loadedSettings?.codexDefaultModel === 'string' ? loadedSettings.codexDefaultModel : '',
+        claudeDefaultModel: typeof loadedSettings?.claudeDefaultModel === 'string' ? loadedSettings.claudeDefaultModel : '',
+        antigravityDefaultModel: typeof loadedSettings?.antigravityDefaultModel === 'string' ? loadedSettings.antigravityDefaultModel : '',
+        favoriteModels: Array.isArray(loadedSettings?.favoriteModels) ? loadedSettings.favoriteModels : [],
+        codexFavoriteModels: Array.isArray(loadedSettings?.codexFavoriteModels)
+          ? loadedSettings.codexFavoriteModels
+          : Array.isArray(loadedSettings?.favoriteModels)
+            ? loadedSettings.favoriteModels.slice()
             : [],
-        claudeFavoriteModels: Array.isArray(loaded?.settings?.claudeFavoriteModels) ? loaded.settings.claudeFavoriteModels : [],
-        antigravityFavoriteModels: Array.isArray(loaded?.settings?.antigravityFavoriteModels) ? loaded.settings.antigravityFavoriteModels : [],
-        mcpServers: normalizeMcpServers(loaded?.settings?.mcpServers),
-        skills: normalizeSkills(loaded?.settings?.skills),
-        grokbotBots: normalizeGrokBotNames(loaded?.settings?.grokbotBots),
-        panelWidths: normalizePanelWidths(loaded?.settings?.panelWidths),
-        threadToolbarButtons: normalizeToolbarButtons(loaded?.settings?.threadToolbarButtons),
+        claudeFavoriteModels: Array.isArray(loadedSettings?.claudeFavoriteModels) ? loadedSettings.claudeFavoriteModels : [],
+        antigravityFavoriteModels: Array.isArray(loadedSettings?.antigravityFavoriteModels) ? loadedSettings.antigravityFavoriteModels : [],
+        mcpServers: normalizeMcpServers(loadedSettings?.mcpServers),
+        skills: normalizeSkills(loadedSettings?.skills),
+        grokbotBots: normalizeGrokBotNames(loadedSettings?.grokbotBots),
+        panelWidths: normalizePanelWidths(loadedSettings?.panelWidths),
+        threadToolbarButtons: normalizeToolbarButtons(loadedSettings?.threadToolbarButtons),
         remoteClientId,
         remotePublicSshPort
       }
     }
     if (remoteClientId !== rawClientId || remotePublicSshPort !== rawSshPort
-      || fontFamily !== loaded?.settings?.fontFamily || fontSize !== loaded?.settings?.fontSize
-      || JSON.stringify(this.state.settings.skin) !== JSON.stringify(loaded?.settings?.skin)
-      || JSON.stringify(this.state.settings.threadToolbarButtons) !== JSON.stringify(loaded?.settings?.threadToolbarButtons)) {
+      || fontFamily !== loadedSettings?.fontFamily || fontSize !== loadedSettings?.fontSize
+      || JSON.stringify(this.state.settings.skin) !== JSON.stringify(loadedSettings?.skin)
+      || JSON.stringify(this.state.settings.threadToolbarButtons) !== JSON.stringify(loadedSettings?.threadToolbarButtons)) {
       this.stateDirty = true
       this.flush()
     }
-    if (fs.existsSync(path.join(this.dir, 'attachments'))) {
+    if (!recoveredFromCorruptState && fs.existsSync(path.join(this.dir, 'attachments'))) {
       try {
         attachmentsFor(this).collectGarbage()
       } catch (error) {
@@ -203,8 +254,10 @@ export class Store {
   }
 
   createThread(init: Omit<ThreadMeta, 'id' | 'createdAt' | 'updatedAt'> & Partial<ThreadMeta>): ThreadMeta {
+    const id = init.id ?? newId()
+    if (!isValidThreadId(id)) throw new Error(`Invalid thread id: ${String(id)}`)
     const now = Date.now()
-    const thread: ThreadMeta = { createdAt: now, updatedAt: now, ...init, id: init.id ?? newId() }
+    const thread: ThreadMeta = { createdAt: now, updatedAt: now, ...init, id }
     this.state.threads.push(thread)
     this.itemsCache.set(thread.id, [])
     this.scheduleSave()
@@ -241,30 +294,33 @@ export class Store {
   }
 
   deleteThread(id: string): void {
+    if (!this.thread(id)) return
     const attachmentIds = this.peekItems(id).flatMap((item) => item.kind === 'user' ? (item.attachments ?? []).map((ref) => ref.id) : item.kind === 'tool' ? (item.images ?? []).map((ref) => ref.id) : [])
     this.state.threads = this.state.threads.filter((t) => t.id !== id)
     this.itemsCache.delete(id)
     this.dirtyThreads.delete(id)
-    fs.rmSync(this.threadFile(id), { force: true })
+    const file = this.threadFile(id)
+    if (file) fs.rmSync(file, { force: true })
     if (attachmentIds.length) attachmentsFor(this).removeUnreferenced(attachmentIds)
     this.scheduleSave()
   }
 
   items(threadId: string): Item[] {
+    const thread = this.thread(threadId)
+    if (!thread) return []
     let items = this.itemsCache.get(threadId)
     if (!items) {
-      items = readJson<Item[]>(this.threadFile(threadId)) ?? []
+      items = this.readItemsFile(threadId)
       this.itemsCache.set(threadId, items)
-      const thread = this.thread(threadId)
-      const cwd = thread?.cwd ?? (thread ? this.project(thread.projectId)?.path : undefined) ?? ''
+      const cwd = thread.cwd ?? this.project(thread.projectId)?.path ?? ''
       if (restoreToolFileChanges(items, cwd)) this.markItemsDirty(threadId)
       if (repairTurnTimings(items)) this.markItemsDirty(threadId)
-      if (thread?.chatId && threadCli(thread) === 'codex') {
+      if (thread.chatId && threadCli(thread) === 'codex') {
         const repairedTools = repairCodexMcpTools(thread.chatId, items)
         const repairedMessages = repairCodexAssistantMessages(thread.chatId, items)
         if (repairedTools || repairedMessages) this.markItemsDirty(threadId)
       }
-      if (thread?.chatId && threadCli(thread) === 'codex'
+      if (thread.chatId && threadCli(thread) === 'codex'
         && items.some((item) => item.kind === 'result' && (!item.usage?.requests || item.usageComplete === false || (!item.quotaSnapshot && !item.quotaUsage)))) {
         const turns = readCodexUsage(thread.chatId)
         const previous = new Map(items.filter((item): item is ResultItem => item.kind === 'result').map((item) => [item.id, item.usageId]))
@@ -285,13 +341,14 @@ export class Store {
 
   /** Saved items for read-only scans: no cache fill and no history repair. */
   peekItems(threadId: string): Item[] {
-    return this.itemsCache.get(threadId) ?? readJson<Item[]>(this.threadFile(threadId)) ?? []
+    if (!this.thread(threadId)) return []
+    return this.itemsCache.get(threadId) ?? this.readItemsFile(threadId)
   }
 
   private repairUsageCopies(repaired: Map<string, ResultItem>, turns: CodexUsageTurn[]): void {
     if (!repaired.size) return
     for (const thread of this.threads) {
-      const items = this.itemsCache.get(thread.id) ?? readJson<Item[]>(this.threadFile(thread.id)) ?? []
+      const items = this.peekItems(thread.id)
       let changed = false
       const groups = new Set<CodexUsageTurn>()
       for (const item of items) {
@@ -315,11 +372,13 @@ export class Store {
   }
 
   setItems(threadId: string, items: Item[]): void {
+    if (!this.thread(threadId) || !this.threadFile(threadId) || !Array.isArray(items)) return
     this.itemsCache.set(threadId, items)
     this.markItemsDirty(threadId)
   }
 
   markItemsDirty(threadId: string): void {
+    if (!this.thread(threadId) || !this.threadFile(threadId)) return
     this.dirtyThreads.add(threadId)
     this.queueSave(ITEMS_SAVE_MS)
   }
@@ -348,7 +407,8 @@ export class Store {
       }
       for (const id of [...this.dirtyThreads]) {
         const items = this.itemsCache.get(id)
-        if (items && this.thread(id)) writeAtomic(this.threadFile(id), JSON.stringify(items))
+        const file = this.threadFile(id)
+        if (items && this.thread(id) && file) writeAtomic(file, JSON.stringify(items))
         this.dirtyThreads.delete(id)
       }
     } catch (err) {
@@ -358,8 +418,19 @@ export class Store {
     }
   }
 
-  private threadFile(id: string): string {
-    return path.join(this.threadsDir, `${id}.json`)
+  private readItemsFile(threadId: string): Item[] {
+    const file = this.threadFile(threadId)
+    if (!file) return []
+    const result = readJsonFile<unknown>(file)
+    if (result.kind !== 'ok' || !Array.isArray(result.value)) return []
+    return result.value.filter((item): item is Item => !!item && typeof item === 'object' && !Array.isArray(item))
+  }
+
+  private threadFile(id: string): string | undefined {
+    if (!isValidThreadId(id)) return undefined
+    const file = path.resolve(this.threadsDir, `${id}.json`)
+    if (path.dirname(file) !== this.threadsDir || path.basename(file) !== `${id}.json`) return undefined
+    return file
   }
 }
 

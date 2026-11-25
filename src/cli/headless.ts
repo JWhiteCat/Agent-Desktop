@@ -2,14 +2,14 @@ import type { AgentEvent, AppState, CliProvider, ModelInfo } from '@shared/types
 import { setLanguage } from '@shared/i18n'
 import { cleanupAcpUsagePreload } from '../main/acp-usage'
 import { gitDiff } from '../main/git'
-import { acquireHeadlessLock, HeadlessLockConflictError, type AcquiredHeadlessLock } from '../main/headless-lock'
+import { acquireHeadlessLock, HeadlessLockConflictError, isProcessAlive, type AcquiredHeadlessLock } from '../main/headless-lock'
 import { attachmentHandlers } from '../main/ipc/attachments'
 import { cliHandlers } from '../main/ipc/cli'
 import type { IpcDeps } from '../main/ipc/deps'
 import { projectHandlers } from '../main/ipc/projects'
 import { threadHandlers } from '../main/ipc/threads'
 import { usageHandlers } from '../main/ipc/usage'
-import { handlersForLocalCli } from '../main/local-control'
+import { handlersForLocalCli, readLocalControlMeta } from '../main/local-control'
 import { configureManagedCliDirectory } from '../main/managed-cli-location'
 import type { Handler } from '../main/remote'
 import { remoteSafeState } from '../main/remote-runtime'
@@ -49,6 +49,13 @@ export class HeadlessCliRuntime implements CliRuntime {
     }
 
     try {
+      const desktop = readLocalControlMeta(dataDir)
+      if (desktop && isProcessAlive(desktop.pid)) {
+        throw new CliError(
+          `Agent Desktop (PID ${desktop.pid}) is currently running on ${dataDir}. Omit --headless to attach to it safely.`,
+          EXIT_CONFLICT
+        )
+      }
       this.store = new Store({ dataDir })
       configureManagedCliDirectory(this.store.dataDir)
       const locale = Intl.DateTimeFormat().resolvedOptions().locale || 'en-US'
