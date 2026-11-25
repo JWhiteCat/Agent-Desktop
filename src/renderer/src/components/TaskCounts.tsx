@@ -13,6 +13,8 @@ export function TaskCounts({ counts, onOpenRunning, onOpenUnread, navigationPend
       <button
         type="button"
         className="task-count task-count-button"
+        data-kind="running"
+        data-active={counts.running > 0 ? 'true' : undefined}
         onClick={onOpenRunning}
         disabled={!onOpenRunning || counts.running === 0 || navigationPending}
         title={t('跳转到下一个正在进行的会话')}
@@ -25,6 +27,8 @@ export function TaskCounts({ counts, onOpenRunning, onOpenUnread, navigationPend
       <button
         type="button"
         className="task-count task-count-button"
+        data-kind="unread"
+        data-active={counts.unread > 0 ? 'true' : undefined}
         onClick={onOpenUnread}
         disabled={!onOpenUnread || counts.unread === 0 || navigationPending}
         title={t('跳转到下一个未读会话')}

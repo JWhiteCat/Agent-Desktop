@@ -34,11 +34,13 @@ export function CliPicker({
     <>
       <button
         ref={btn}
-        className={`pill ${open ? 'active' : ''}`}
+        className={`pill cli-pill ${open ? 'active' : ''}`}
+        data-cli={value}
         disabled={disabled}
         title={note ?? `${cliTitle(value)} CLI`}
         onClick={() => setOpen((o) => !o)}
       >
+        <span className="cli-dot" data-cli={value} aria-hidden="true" />
         <span>{cliTitle(value)}</span>
         <IconChevronDown size={12} />
       </button>
@@ -48,6 +50,7 @@ export function CliPicker({
           items={CLIS.map((cli) => ({
             label: cli.label,
             hint: cli.desc,
+            icon: <span className="cli-dot" data-cli={cli.id} aria-hidden="true" />,
             checked: cli.id === value,
             onSelect: () => onChange(cli.id)
           }))}

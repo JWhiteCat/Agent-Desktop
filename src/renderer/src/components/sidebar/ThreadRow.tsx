@@ -101,7 +101,7 @@ export function ThreadRow(props: {
             {title}
             {props.projectName && <span className="thread-project"> · {props.projectName}</span>}
           </span>
-          <span className="badge">{cliTitle(threadCli(thread))}</span>
+          <span className="badge cli-badge" data-cli={threadCli(thread)}>{cliTitle(threadCli(thread))}</span>
         </>
       )}
       <span className="thread-time">{relativeTime(thread.updatedAt)}</span>

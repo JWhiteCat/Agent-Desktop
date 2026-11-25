@@ -358,7 +358,10 @@ describe('Markdown rendering after background activity', () => {
 
     expect(html.match(/class="code-block"/g)).toHaveLength(1)
     expect(html).toContain('<span>ts</span>')
-    expect(html).toContain('<pre><code>const message = &quot;hello&quot;;</code></pre>')
+    expect(html).toContain('<span class="hl-kw">const</span>')
+    expect(html).toContain('<span class="hl-str">&quot;hello&quot;</span>')
+    const codeMatch = /<pre><code>([\s\S]*?)<\/code><\/pre>/.exec(html)
+    expect(codeMatch?.[1].replace(/<[^>]+>/g, '')).toBe('const message = &quot;hello&quot;;')
     expect(html).toContain('<p>Done.</p>')
   })
 

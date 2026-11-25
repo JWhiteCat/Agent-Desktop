@@ -46,7 +46,37 @@ export const DEFAULT_SKIN: SkinConfig = {
 export const BUILTIN_SKINS: readonly SkinConfig[] = [
   DEFAULT_SKIN,
   { ...DEFAULT_SKIN, id: 'frost', name: '磨砂', opacity: 82, blur: 18 },
-  { ...DEFAULT_SKIN, id: 'aurora', name: '流光', background: 'gradient', opacity: 78, blur: 16, overlay: 15 }
+  { ...DEFAULT_SKIN, id: 'aurora', name: '流光', background: 'gradient', opacity: 78, blur: 16, overlay: 15 },
+  {
+    ...DEFAULT_SKIN,
+    id: 'midnight',
+    name: '午夜蓝',
+    colors: { background: '#0f172a', panel: '#162033', text: '#e2e8f0', accent: '#38bdf8' }
+  },
+  {
+    ...DEFAULT_SKIN,
+    id: 'nord',
+    name: '北欧极夜',
+    colors: { background: '#1e2430', panel: '#252c3a', text: '#e5e9f0', accent: '#88c0d0' }
+  },
+  {
+    ...DEFAULT_SKIN,
+    id: 'warm-paper',
+    name: '暖纸墨韵',
+    colors: { background: '#faf7f2', panel: '#f2ece2', text: '#2c241d', accent: '#c26d3a' }
+  },
+  {
+    ...DEFAULT_SKIN,
+    id: 'forest',
+    name: '林间暮色',
+    colors: { background: '#111a16', panel: '#17231d', text: '#e4efe8', accent: '#34d399' }
+  },
+  {
+    ...DEFAULT_SKIN,
+    id: 'rose-dusk',
+    name: '暮光玫瑰',
+    colors: { background: '#1a141d', panel: '#231b27', text: '#f3eaf5', accent: '#e879a9' }
+  }
 ]
 export const isSourceId = (value: unknown): value is string => typeof value === 'string' && /^[a-f0-9]{32}$/.test(value)
 export const isSkinColor = (value: unknown): value is string => typeof value === 'string' && /^#[a-f0-9]{6}$/i.test(value)

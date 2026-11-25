@@ -113,7 +113,8 @@ export function Home({ projectId, onOpenImport }: { projectId?: string; onOpenIm
           <div className="suggestions">
             {SUGGESTIONS.map((s) => (
               <button key={s} className="suggestion" onClick={() => composer.current?.setText(t(s))}>
-                {t(s)}
+                <span>{t(s)}</span>
+                <span className="suggestion-arrow" aria-hidden="true">→</span>
               </button>
             ))}
           </div>

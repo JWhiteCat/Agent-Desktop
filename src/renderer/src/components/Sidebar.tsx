@@ -127,7 +127,7 @@ export const Sidebar = forwardRef<HTMLInputElement, Props>(function Sidebar({ on
     <aside className="sidebar">
       <div className="sidebar-top drag" />
       <div className="sidebar-actions">
-        <button className="nav-btn" onClick={() => goHome()}>
+        <button className="nav-btn nav-primary" onClick={() => goHome()}>
           <IconCompose />
           <span>{t('新对话')}</span>
           <kbd>{window.api.platform === 'darwin' ? '⌘N' : 'Ctrl+N'}</kbd>

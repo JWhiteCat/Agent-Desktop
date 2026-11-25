@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { CLI_PROVIDERS, cliTitle, normalizeCliProvider, type CliProvider, type Settings } from '@shared/types'
 import type { UsageWindow } from '@shared/usage'
 import { useT } from '../../lib/i18n'
@@ -6,6 +6,7 @@ import { defaultModelFor, favoritesFor, modelForChat } from '../../lib/model-pre
 import { loadModels, setDefaultModel, useStore } from '../../store'
 import { McpSettings, SkillSettings } from '../AgentConfigSettings'
 import { MODES } from '../Composer'
+import { IconBell, IconBot, IconChart, IconCpu, IconPalette, IconPlug, IconSliders, IconSparkle, IconTerminal, IconWifi } from '../icons'
 import { ModelPicker } from '../ModelPicker'
 import { Modal } from '../Modal'
 import { AppCliPathCard } from './AppCliPathCard'
@@ -33,6 +34,19 @@ const SETTINGS_TABS = [
 ] as const
 
 type SettingsTab = (typeof SETTINGS_TABS)[number]['id']
+
+const SETTINGS_TAB_ICONS: Record<SettingsTab, ReactNode> = {
+  cli: <IconTerminal size={15} />,
+  mcp: <IconPlug size={15} />,
+  skill: <IconSparkle size={15} />,
+  models: <IconCpu size={15} />,
+  usage: <IconChart size={15} />,
+  defaults: <IconSliders size={15} />,
+  notify: <IconBell size={15} />,
+  grokbot: <IconBot size={15} />,
+  remote: <IconWifi size={15} />,
+  appearance: <IconPalette size={15} />
+}
 type ConfigSource = 'app' | 'local'
 
 function ConfigSourceTabs({ value, onChange }: { value: ConfigSource; onChange: (value: ConfigSource) => void }) {
@@ -62,10 +76,12 @@ function ProviderTabs({ label, value, onChange }: {
           type="button"
           role="tab"
           aria-selected={value === id}
-          className={`usage-period ${value === id ? 'active' : ''}`}
+          className={`usage-period provider-tab ${value === id ? 'active' : ''}`}
+          data-cli={id}
           onClick={() => onChange(id)}
         >
-          {cliTitle(id)}
+          <span className="cli-dot" data-cli={id} aria-hidden="true" />
+          <span>{cliTitle(id)}</span>
         </button>
       ))}
     </div>
@@ -122,7 +138,8 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
               aria-current={tab === item.id ? 'page' : undefined}
               onClick={() => setTab(item.id)}
             >
-              {t(item.label)}
+              <span className="settings-nav-icon" aria-hidden="true">{SETTINGS_TAB_ICONS[item.id]}</span>
+              <span>{t(item.label)}</span>
             </button>
           ))}
         </nav>

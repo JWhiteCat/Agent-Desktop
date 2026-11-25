@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { DEFAULT_SKIN, normalizeSkin, normalizeSkins, skinUrl, remoteSkin } from '../src/shared/skins'
+import { BUILTIN_SKINS, DEFAULT_SKIN, normalizeSkin, normalizeSkins, skinUrl, remoteSkin } from '../src/shared/skins'
 import { SkinLibrary, parseSkinRange, parseSteamLibraries, bridgeScript } from '../src/main/skins'
 import { remoteSafeState, handlersForRemote } from '../src/main/remote-runtime'
 import { Store } from '../src/main/store'
@@ -74,7 +74,11 @@ describe('skin preferences', () => {
     await handlers['skin:delete'](saved.id)
     expect(store.settings.skin).toEqual(DEFAULT_SKIN)
     expect(store.settings.skins).toEqual([])
-    expect(() => handlers['skin:delete']('default')).toThrow()
+    for (const builtin of BUILTIN_SKINS) {
+      expect(normalizeSkin(builtin)).toEqual(builtin)
+      expect(() => handlers['skin:delete'](builtin.id)).toThrow()
+    }
+    expect(normalizeSkins([...BUILTIN_SKINS, { id: 'custom-one' }])).toHaveLength(1)
     store.flush()
   })
 })

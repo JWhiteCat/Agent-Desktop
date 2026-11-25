@@ -191,6 +191,61 @@ export const IconVSCode = (p: P) =>
     </>
   ))
 
+export const IconPlug = (p: P) =>
+  base(p, (
+    <>
+      <path d="M12 22v-5" />
+      <path d="M9 8V2M15 8V2" />
+      <path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z" />
+    </>
+  ))
+
+export const IconCpu = (p: P) =>
+  base(p, (
+    <>
+      <rect x="6" y="6" width="12" height="12" rx="2" />
+      <rect x="9.5" y="9.5" width="5" height="5" rx="0.5" />
+      <path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4" />
+    </>
+  ))
+
+export const IconChart = (p: P) =>
+  base(p, (
+    <>
+      <path d="M3 3v18h18" />
+      <path d="M7 16v-4M12 16V8M17 16v-6" />
+    </>
+  ))
+
+export const IconBell = (p: P) =>
+  base(p, (
+    <>
+      <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+      <path d="M10.3 21a1.9 1.9 0 0 0 3.4 0" />
+    </>
+  ))
+
+export const IconWifi = (p: P) =>
+  base(p, (
+    <>
+      <path d="M5 12.6a10 10 0 0 1 14 0" />
+      <path d="M8.5 16.1a5 5 0 0 1 7 0" />
+      <path d="M2 8.8a15 15 0 0 1 20 0" />
+      <circle cx="12" cy="19.5" r="0.8" fill="currentColor" />
+    </>
+  ))
+
+export const IconPalette = (p: P) =>
+  base(p, (
+    <>
+      <path d="M12 22a1 1 0 0 1 0-20 10 9 0 0 1 10 9 5 5 0 0 1-5 5h-2.25a1.75 1.75 0 0 0-1.4 2.8l.3.4a1.75 1.75 0 0 1-1.4 2.8Z" />
+      <circle cx="13.5" cy="6.5" r="0.7" fill="currentColor" />
+      <circle cx="17.5" cy="10.5" r="0.7" fill="currentColor" />
+      <circle cx="8.5" cy="7.5" r="0.7" fill="currentColor" />
+      <circle cx="6.5" cy="12.5" r="0.7" fill="currentColor" />
+    </>
+  ))
+
 export function Spinner({ size = 14 }: { size?: number }): React.ReactElement {
   return <span className="spinner" style={{ width: size, height: size }} />
 }

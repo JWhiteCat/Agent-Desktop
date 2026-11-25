@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { copyText } from '../../lib/clipboard'
 import { useT } from '../../lib/i18n'
+import { tokenizeCode } from '../../lib/syntax-highlight'
 import { errorText, toast } from '../../store/feedback'
 import { IconBranch, IconCheck, IconCopy } from '../icons'
 
@@ -23,7 +24,7 @@ export function CopyButton({ text, className }: { text: string; className?: stri
 
   return (
     <button
-      className={className ?? 'icon-btn tiny'}
+      className={`${className ?? 'icon-btn tiny'}${done ? ' copied' : ''}`}
       title={t('复制')}
       onClick={(e) => {
         e.stopPropagation()
@@ -49,6 +50,7 @@ export function CopyButton({ text, className }: { text: string; className?: stri
 }
 
 export function CodeBlock({ lang, text }: { lang?: string; text: string }) {
+  const tokens = useMemo(() => tokenizeCode(text, lang), [text, lang])
   return (
     <div className="code-block">
       <div className="code-head">
@@ -56,7 +58,11 @@ export function CodeBlock({ lang, text }: { lang?: string; text: string }) {
         <CopyButton text={text} />
       </div>
       <pre>
-        <code>{text}</code>
+        <code>
+          {tokens
+            ? tokens.map((tok, i) => (tok.kind === 'plain' ? tok.text : <span key={i} className={`hl-${tok.kind}`}>{tok.text}</span>))
+            : text}
+        </code>
       </pre>
     </div>
   )

@@ -316,7 +316,7 @@ export function ThreadView({ thread, changesOpen, onToggleChanges }: Props) {
               <IconBranch size={12} /> worktree
             </span>
           )}
-          <span className="badge">{cliTitle(cli)}</span>
+          <span className="badge cli-badge" data-cli={cli}>{cliTitle(cli)}</span>
           {thread.source === 'cli' && <span className="badge">{t('CLI 导入')}</span>}
         </div>
         <ThreadToolbar buttons={settings.threadToolbarButtons} threadId={thread.id} cwd={cwd} modelLabel={thread.modelLabel}

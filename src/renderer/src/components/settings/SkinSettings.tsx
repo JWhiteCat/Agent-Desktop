@@ -43,14 +43,54 @@ export function SkinSettings() {
   const cancel = () => { setDraft(normalizeSkin(settings.skin)); setState({ skinPreview: undefined }) }
   const selected = source?.id === draft.sourceId ? source : undefined
   const palette = [{ key: 'background', label: '背景色' }, { key: 'panel', label: '面板色' }, { key: 'text', label: '文字色' }, { key: 'accent', label: '强调色' }] as const
+  const allSkins = [...BUILTIN_SKINS, ...(settings.skins ?? [])]
   const visibleEntries = entries?.filter(e => (filter === 'all' || e.type === filter) && e.title.toLowerCase().includes(query.toLowerCase()))
   return <section className="appearance-group skin-settings" aria-labelledby="skin-heading">
     <h3 id="skin-heading">{t('皮肤')}</h3>
     <p className="muted small">{t(remote ? '远程端仅同步配色、透明度和模糊效果。' : '修改即时预览，应用后保存；关闭设置或取消将还原未应用的修改。')}</p>
-    {!remote && <Field label={t('选择皮肤')}><select className="input" aria-label={t('选择皮肤')} value={[...BUILTIN_SKINS, ...(settings.skins ?? [])].some(s => s.id === draft.id) ? draft.id : 'default'} onChange={e => {
-      const skin = [...BUILTIN_SKINS, ...(settings.skins ?? [])].find(s => s.id === e.target.value)
-      if (skin) change(skin)
-    }}>{[...BUILTIN_SKINS, ...(settings.skins ?? [])].map(s => <option key={s.id} value={s.id}>{BUILTIN_SKINS.some(b => b.id === s.id) ? t(s.name) : s.name}</option>)}</select></Field>}
+    {!remote && <>
+      <div className="skin-preset-grid" role="group" aria-label={t('皮肤预设')}>
+        {allSkins.map(s => {
+          const isBuiltin = BUILTIN_SKINS.some(b => b.id === s.id)
+          const label = isBuiltin ? t(s.name) : s.name
+          const active = draft.id === s.id
+          const bg = s.colors.background
+          const panel = s.colors.panel ?? bg
+          const text = s.colors.text
+          const accent = s.colors.accent
+          return (
+            <button
+              key={s.id}
+              type="button"
+              className={`skin-preset-card ${active ? 'selected' : ''}`}
+              aria-pressed={active}
+              onClick={() => change(s)}
+            >
+              <span
+                className={`skin-preset-swatch ${s.background === 'gradient' ? 'is-aurora' : s.blur > 0 ? 'is-frost' : ''}`}
+                style={bg ? { background: bg } : undefined}
+                aria-hidden="true"
+              >
+                <span className="skin-preset-sidebar" style={panel ? { background: panel } : undefined} />
+                <span className="skin-preset-body">
+                  <i style={text ? { background: text, opacity: 0.72 } : undefined} />
+                  <i style={text ? { background: text, opacity: 0.42 } : undefined} />
+                  <span className="skin-preset-dot" style={accent ? { background: accent } : undefined} />
+                </span>
+              </span>
+              <span className="skin-preset-label">
+                <span>{label}</span>
+                <span className="theme-option-check" aria-hidden="true" />
+              </span>
+            </button>
+          )
+        })}
+      </div>
+      <Field label={t('选择皮肤')}><select className="input" aria-label={t('选择皮肤')} value={allSkins.some(s => s.id === draft.id) ? draft.id : 'default'} onChange={e => {
+        const skin = allSkins.find(s => s.id === e.target.value)
+        if (skin) change(skin)
+      }}>{allSkins.map(s => <option key={s.id} value={s.id}>{BUILTIN_SKINS.some(b => b.id === s.id) ? t(s.name) : s.name}</option>)}</select></Field>
+    </>}
     {!remote && <Field label={t('皮肤名称')}><input className="input" aria-label={t('皮肤名称')} value={draft.name} maxLength={80} onChange={e => change({ name: e.target.value })} /></Field>}
     <div className="skin-palette">{palette.map(({ key, label }) => <label key={key}>
       <span>{t(label)}</span><input type="color" aria-label={t(label)} value={draft.colors[key] ?? '#808080'} onChange={e => change({ colors: { ...draft.colors, [key]: e.target.value } })} />
