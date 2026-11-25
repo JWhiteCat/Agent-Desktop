@@ -17,6 +17,7 @@ const BUILD_INPUT_FILES = [
 const BUILD_OUTPUT_FILES = [
   path.join('out', 'main', 'index.js'),
   path.join('out', 'main', 'toolbar-runner.cjs'),
+  path.join('out', 'main', 'cli.cjs'),
   path.join('out', 'preload', 'index.js'),
   path.join('out', 'renderer', 'index.html'),
   path.join('out', 'renderer', 'vendor', 'mermaid', 'mermaid.esm.min.mjs')

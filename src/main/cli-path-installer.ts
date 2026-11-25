@@ -19,6 +19,8 @@ export interface PathInstallerEnv {
   dataDir: string
   readWinUserPath?: () => string
   writeWinUserPath?: (nextPath: string) => void
+  isPosixExecutable?: (filePath: string) => boolean
+  chmodPosix?: (filePath: string, mode: number) => void
 }
 
 function defaultEnv(dataDir: string): PathInstallerEnv {
@@ -152,7 +154,19 @@ function resolvePosixTargetDir(ctx: PathInstallerEnv): string {
   return localBin
 }
 
-function inspectPosixCommand(filePath: string): { exists: boolean; managed: boolean; valid: boolean; target?: string } {
+function defaultIsPosixExecutable(filePath: string): boolean {
+  try {
+    fs.accessSync(filePath, fs.constants.X_OK)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function inspectPosixCommand(
+  filePath: string,
+  isExecutable: (p: string) => boolean = defaultIsPosixExecutable
+): { exists: boolean; managed: boolean; valid: boolean; target?: string } {
   let stat: fs.Stats
   try {
     stat = fs.lstatSync(filePath)
@@ -166,7 +180,7 @@ function inspectPosixCommand(filePath: string): { exists: boolean; managed: bool
     return {
       exists: true,
       managed: looksOurs,
-      valid: fs.existsSync(resolved),
+      valid: fs.existsSync(resolved) && isExecutable(resolved),
       target: resolved
     }
   }
@@ -181,7 +195,7 @@ function inspectPosixCommand(filePath: string): { exists: boolean; managed: bool
       return {
         exists: true,
         managed: true,
-        valid: target ? fs.existsSync(target) : true,
+        valid: (target ? fs.existsSync(target) : true) && isExecutable(filePath),
         target
       }
     } catch {
@@ -276,11 +290,12 @@ export function getAppCliPathStatus(dataDir: string, override?: Partial<PathInst
   const candidateDirs = ctx.platform === 'darwin'
     ? ['/usr/local/bin', path.join(ctx.homeDir, '.local', 'bin')]
     : [path.join(ctx.homeDir, '.local', 'bin')]
+  const isExecutable = ctx.isPosixExecutable ?? defaultIsPosixExecutable
 
   let targetDir = resolvePosixTargetDir(ctx)
   for (const dir of candidateDirs) {
-    const primary = inspectPosixCommand(path.join(dir, 'agent-desktop'))
-    const alias = inspectPosixCommand(path.join(dir, 'agd'))
+    const primary = inspectPosixCommand(path.join(dir, 'agent-desktop'), isExecutable)
+    const alias = inspectPosixCommand(path.join(dir, 'agd'), isExecutable)
     if (primary.managed || alias.managed) {
       targetDir = dir
       const inPath = isDirInEnvPath(dir, ctx.env, ctx.platform)
@@ -352,10 +367,20 @@ export function installAppCliToPath(dataDir: string, override?: Partial<PathInst
   // macOS & Linux
   const targetDir = resolvePosixTargetDir(ctx)
   fs.mkdirSync(targetDir, { recursive: true })
+  const isExecutable = ctx.isPosixExecutable ?? defaultIsPosixExecutable
+  const chmodPosix = ctx.chmodPosix ?? ((p: string, mode: number) => fs.chmodSync(p, mode))
+  const writeManagedScript = (dest: string, lines: string[]): void => {
+    fs.writeFileSync(dest, lines.join('\n'), { mode: 0o755 })
+    try {
+      chmodPosix(dest, 0o755)
+    } catch {
+      // ignore if filesystem does not support chmod
+    }
+  }
 
   for (const name of APP_CLI_COMMANDS) {
     const dest = path.join(targetDir, name)
-    const existing = inspectPosixCommand(dest)
+    const existing = inspectPosixCommand(dest, isExecutable)
     if (existing.exists && !existing.managed) {
       throw new Error(`Refusing to overwrite non-Agent-Desktop file at ${dest}`)
     }
@@ -366,29 +391,41 @@ export function installAppCliToPath(dataDir: string, override?: Partial<PathInst
     }
 
     if (ctx.env.APPIMAGE) {
-      const script = [
+      writeManagedScript(dest, [
         '#!/usr/bin/env bash',
         MANAGED_MARKER,
         `AGENT_DESKTOP_CLI=1 exec ${shellQuote(ctx.env.APPIMAGE)} "$@"`,
         ''
-      ].join('\n')
-      fs.writeFileSync(dest, script, { mode: 0o755 })
+      ])
     } else if (ctx.isPackaged) {
       const source = path.join(ctx.resourcesPath, 'bin', name)
-      try {
-        fs.chmodSync(source, 0o755)
-      } catch {
-        // ignore if read-only bundle
+      let symlinked = false
+      if (fs.existsSync(source)) {
+        try {
+          chmodPosix(source, 0o755)
+        } catch {
+          // ignore if read-only bundle
+        }
+        if (isExecutable(source)) {
+          fs.symlinkSync(source, dest)
+          symlinked = true
+        }
       }
-      fs.symlinkSync(source, dest)
+      if (!symlinked) {
+        writeManagedScript(dest, [
+          '#!/usr/bin/env bash',
+          MANAGED_MARKER,
+          `ELECTRON_RUN_AS_NODE=1 exec ${shellQuote(ctx.execPath)} ${shellQuote(cliEntry)} "$@"`,
+          ''
+        ])
+      }
     } else {
-      const script = [
+      writeManagedScript(dest, [
         '#!/usr/bin/env bash',
         MANAGED_MARKER,
         `ELECTRON_RUN_AS_NODE=1 exec ${shellQuote(ctx.execPath)} ${shellQuote(cliEntry)} "$@"`,
         ''
-      ].join('\n')
-      fs.writeFileSync(dest, script, { mode: 0o755 })
+      ])
     }
   }
 
@@ -413,11 +450,12 @@ export function uninstallAppCliFromPath(dataDir: string, override?: Partial<Path
   const candidateDirs = ctx.platform === 'darwin'
     ? ['/usr/local/bin', path.join(ctx.homeDir, '.local', 'bin')]
     : [path.join(ctx.homeDir, '.local', 'bin')]
+  const isExecutable = ctx.isPosixExecutable ?? defaultIsPosixExecutable
 
   for (const dir of candidateDirs) {
     for (const name of APP_CLI_COMMANDS) {
       const dest = path.join(dir, name)
-      const info = inspectPosixCommand(dest)
+      const info = inspectPosixCommand(dest, isExecutable)
       if (info.exists && info.managed) {
         try {
           fs.rmSync(dest, { force: true })

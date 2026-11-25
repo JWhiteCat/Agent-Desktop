@@ -50,6 +50,7 @@ function makeProject() {
 
   fs.writeFileSync(path.join(dir, 'out/main/index.js'), '')
   fs.writeFileSync(path.join(dir, 'out/main/toolbar-runner.cjs'), '')
+  fs.writeFileSync(path.join(dir, 'out/main/cli.cjs'), '')
   fs.writeFileSync(path.join(dir, 'out/preload/index.js'), '')
   fs.writeFileSync(path.join(dir, 'out/renderer/index.html'), '')
   fs.writeFileSync(path.join(dir, 'out/renderer/vendor/mermaid/mermaid.esm.min.mjs'), '')
@@ -121,6 +122,12 @@ describe('Windows launcher state helper', () => {
     expect(previewNeedsBuild(dir)).toBe(false)
 
     fs.rmSync(path.join(dir, 'out/renderer/vendor/mermaid/mermaid.esm.min.mjs'))
+    expect(previewNeedsBuild(dir)).toBe(true)
+
+    fs.writeFileSync(path.join(dir, 'out/renderer/vendor/mermaid/mermaid.esm.min.mjs'), '')
+    expect(previewNeedsBuild(dir)).toBe(false)
+
+    fs.rmSync(path.join(dir, 'out/main/cli.cjs'))
     expect(previewNeedsBuild(dir)).toBe(true)
   })
 

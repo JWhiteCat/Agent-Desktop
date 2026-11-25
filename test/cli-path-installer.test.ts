@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -116,5 +117,78 @@ describe('cli-path-installer', () => {
     expect(removed.state).toBe('not-installed')
     expect(fs.existsSync(primaryFile)).toBe(false)
     expect(fs.existsSync(aliasFile)).toBe(false)
+  })
+
+  it('keeps packaged POSIX CLI wrapper scripts executable in git and on POSIX filesystems', () => {
+    const scripts = ['resources/cli-bin/agent-desktop', 'resources/cli-bin/agd']
+    if (fs.existsSync(path.resolve('.git'))) {
+      const out = execFileSync('git', ['ls-files', '-s', ...scripts], { encoding: 'utf8', windowsHide: true })
+      const lines = out.trim().split(/\r?\n/)
+      expect(lines).toHaveLength(2)
+      for (const line of lines) {
+        expect(line).toMatch(/^100755\s+/)
+      }
+    }
+    if (process.platform !== 'win32') {
+      for (const rel of scripts) {
+        expect(fs.statSync(path.resolve(rel)).mode & 0o111).not.toBe(0)
+      }
+    }
+  })
+
+  it('writes executable managed shims instead of non-executable symlinks for read-only POSIX bundles', () => {
+    const homeDir = path.join(tmpRoot, 'home')
+    const appDir = path.join(tmpRoot, 'opt', 'Agent Desktop')
+    const resourcesPath = path.join(appDir, 'resources')
+    const binDir = path.join(resourcesPath, 'bin')
+    const cliDir = path.join(resourcesPath, 'cli')
+    const execPath = path.join(appDir, 'agent-desktop')
+    const dataDir = path.join(tmpRoot, 'data')
+    fs.mkdirSync(homeDir, { recursive: true })
+    fs.mkdirSync(binDir, { recursive: true })
+    fs.mkdirSync(cliDir, { recursive: true })
+    fs.writeFileSync(execPath, '#!/bin/sh\n')
+    fs.writeFileSync(path.join(cliDir, 'cli.cjs'), '// cli')
+    fs.writeFileSync(path.join(binDir, 'agent-desktop'), '#!/usr/bin/env bash\n', { mode: 0o644 })
+    fs.writeFileSync(path.join(binDir, 'agd'), '#!/usr/bin/env bash\n', { mode: 0o644 })
+
+    const readOnlySource = new Set([path.join(binDir, 'agent-desktop'), path.join(binDir, 'agd')])
+    const ctx: Partial<PathInstallerEnv> = {
+      platform: 'linux',
+      isPackaged: true,
+      homeDir,
+      resourcesPath,
+      dataDir,
+      execPath,
+      appPath: appDir,
+      env: { PATH: `${path.join(homeDir, '.local', 'bin')}:/usr/bin` },
+      chmodPosix: (filePath, mode) => {
+        if (readOnlySource.has(filePath)) {
+          const err = new Error(`EPERM: operation not permitted, chmod '${filePath}'`) as NodeJS.ErrnoException
+          err.code = 'EPERM'
+          throw err
+        }
+        fs.chmodSync(filePath, mode)
+      },
+      isPosixExecutable: (filePath) => !readOnlySource.has(filePath)
+    }
+
+    const installed = installAppCliToPath(dataDir, ctx)
+    expect(installed.state).toBe('installed')
+    expect(installed.inPath).toBe(true)
+
+    for (const cmd of ['agent-desktop', 'agd']) {
+      const dest = path.join(homeDir, '.local', 'bin', cmd)
+      expect(fs.lstatSync(dest).isSymbolicLink()).toBe(false)
+      const content = fs.readFileSync(dest, 'utf8')
+      expect(content).toContain('# Managed by Agent Desktop CLI')
+      expect(content).toContain(`ELECTRON_RUN_AS_NODE=1 exec '${execPath}' '${path.join(cliDir, 'cli.cjs')}' "$@"`)
+    }
+
+    // Non-executable installed commands are reported as stale rather than installed.
+    expect(getAppCliPathStatus(dataDir, { ...ctx, isPosixExecutable: () => false }).state).toBe('stale')
+
+    const removed = uninstallAppCliFromPath(dataDir, ctx)
+    expect(removed.state).toBe('not-installed')
   })
 })

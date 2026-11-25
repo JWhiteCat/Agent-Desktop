@@ -154,11 +154,10 @@ class Handler(BaseHTTPRequestHandler):
             "Connection: close",
             f"X-Agent-Desktop-Prefix: /c/{client_id}",
         ]
-        for key in self.headers:
+        for key, value in self.headers.items():
             if key.lower() in HOP:
                 continue
-            for value in self.headers.get_all(key) or []:
-                lines.append(f"{key}: {value}")
+            lines.append(f"{key}: {value}")
         return ("\r\n".join(lines) + "\r\n\r\n").encode("iso-8859-1", "surrogateescape")
 
     def log_message(self, fmt: str, *args) -> None:

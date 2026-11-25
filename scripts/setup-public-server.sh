@@ -73,15 +73,31 @@ set_directive() {
   local tmp
   tmp=$(mktemp)
   awk -v key="$key" -v value="$value" '
-    BEGIN { done = 0 }
-    /^[[:space:]]/ { print; next }
+    BEGIN { done = 0; in_match = 0; key_lc = tolower(key) }
     {
       orig = $0
+      if (in_match) {
+        print orig
+        next
+      }
+      if (orig ~ /^[[:space:]]*[Mm][Aa][Tt][Cc][Hh]([[:space:]]|$)/) {
+        if (!done) {
+          print key " " value
+          done = 1
+        }
+        in_match = 1
+        print orig
+        next
+      }
+      if (orig ~ /^[[:space:]]/) {
+        print orig
+        next
+      }
       line = orig
       commented = (line ~ /^#/)
       sub(/^#[[:space:]]*/, "", line)
       n = split(line, parts, /[[:space:]]+/)
-      if (n >= 1 && parts[1] == key) {
+      if (n >= 1 && tolower(parts[1]) == key_lc) {
         if (!done) {
           print key " " value
           done = 1
@@ -98,7 +114,13 @@ set_directive() {
   rm -f "$tmp"
 }
 
+DROPIN=/etc/ssh/sshd_config.d/00-agentdesktop-remote.conf
+dropin_written=0
+
 restore() {
+  if [[ "$dropin_written" -eq 1 ]]; then
+    rm -f "$DROPIN"
+  fi
   cp -a "$backup" "$CFG"
   echo "sshd 配置校验失败，已恢复 $backup" >&2
 }
@@ -120,11 +142,10 @@ forward=$(effective allowtcpforwarding || true)
 stream=$(effective allowstreamlocalforwarding || true)
 unlink=$(effective streamlocalbindunlink || true)
 if [[ "$forward" != "yes" || "$stream" != "yes" || "$unlink" != "yes" ]]; then
-  dropin=/etc/ssh/sshd_config.d/00-agentdesktop-remote.conf
   mkdir -p /etc/ssh/sshd_config.d
-  printf 'AllowTcpForwarding yes\nAllowStreamLocalForwarding yes\nStreamLocalBindUnlink yes\n' > "$dropin"
+  dropin_written=1
+  printf 'AllowTcpForwarding yes\nAllowStreamLocalForwarding yes\nStreamLocalBindUnlink yes\n' > "$DROPIN"
   if ! sshd -t; then
-    rm -f "$dropin"
     restore
     exit 1
   fi
@@ -139,9 +160,9 @@ if [[ "$forward" != "yes" || "$stream" != "yes" || "$unlink" != "yes" ]]; then
   exit 1
 fi
 
-if command -v systemctl >/dev/null 2>&1 && systemctl cat sshd >/dev/null 2>&1; then
+if command -v systemctl >/dev/null 2>&1 && [[ -d /run/systemd/system ]] && systemctl cat sshd >/dev/null 2>&1; then
   systemctl reload sshd
-elif command -v systemctl >/dev/null 2>&1 && systemctl cat ssh >/dev/null 2>&1; then
+elif command -v systemctl >/dev/null 2>&1 && [[ -d /run/systemd/system ]] && systemctl cat ssh >/dev/null 2>&1; then
   systemctl reload ssh
 elif command -v service >/dev/null 2>&1; then
   service sshd reload 2>/dev/null || service ssh reload

@@ -1,6 +1,7 @@
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
 import fs from 'node:fs'
 import http from 'node:http'
+import net from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -173,5 +174,46 @@ describe('public gateway', () => {
     } finally {
       await reader.cancel()
     }
+  }, 15_000)
+
+  it.skipIf(!python)('forwards repeated request headers linearly without quadratic duplication', async () => {
+    let receivedRawHeaders: string[] = []
+    const upstream = await listen((req, res) => {
+      receivedRawHeaders = req.rawHeaders
+      res.writeHead(200, { 'content-type': 'text/plain' })
+      res.end('ok')
+    })
+    const origin = await gateway(`${ID_A}=127.0.0.1:${upstream.port}`)
+    const port = Number(new URL(origin).port)
+
+    const response = await new Promise<string>((resolve, reject) => {
+      const sock = net.createConnection({ host: '127.0.0.1', port }, () => {
+        sock.write([
+          `GET /c/${ID_A}/headers HTTP/1.1`,
+          `Host: 127.0.0.1:${port}`,
+          'X-Multi: first',
+          'X-Multi: second',
+          'X-Multi: third',
+          'Cookie: a=1',
+          'Cookie: b=2',
+          'Connection: close',
+          '',
+          ''
+        ].join('\r\n'))
+      })
+      let buf = ''
+      sock.setEncoding('utf8')
+      sock.on('data', (chunk) => { buf += chunk })
+      sock.on('error', reject)
+      sock.on('end', () => resolve(buf))
+    })
+
+    expect(response).toContain('200 OK')
+    const pairs: Array<[string, string]> = []
+    for (let i = 0; i < receivedRawHeaders.length; i += 2) {
+      pairs.push([receivedRawHeaders[i].toLowerCase(), receivedRawHeaders[i + 1]])
+    }
+    expect(pairs.filter(([k]) => k === 'x-multi').map(([, v]) => v)).toEqual(['first', 'second', 'third'])
+    expect(pairs.filter(([k]) => k === 'cookie').map(([, v]) => v)).toEqual(['a=1', 'b=2'])
   }, 15_000)
 })
