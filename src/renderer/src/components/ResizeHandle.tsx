@@ -32,6 +32,15 @@ export function ResizeHandle({ panel, label }: { panel: PanelId; label: string }
       if (!drag.current) setWidth(layout.width(panel))
     })
     return () => {
+      const d = drag.current
+      if (d) {
+        if (d.frame) cancelAnimationFrame(d.frame)
+        drag.current = null
+        if (ref.current?.hasPointerCapture?.(d.pointer)) ref.current.releasePointerCapture(d.pointer)
+        ref.current?.classList.remove('active')
+        document.body.classList.remove('panel-resizing')
+        layout.endDrag(d.x !== d.startX)
+      }
       off()
       layout.hide(panel)
     }
@@ -41,6 +50,7 @@ export function ResizeHandle({ panel, label }: { panel: PanelId; label: string }
     () => () => {
       if (saveTimer.current === undefined) return
       clearTimeout(saveTimer.current)
+      saveTimer.current = undefined
       panelLayout().save()
     },
     []

@@ -1,19 +1,46 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { copyText } from '../../lib/clipboard'
 import { useT } from '../../lib/i18n'
+import { errorText, toast } from '../../store/feedback'
 import { IconBranch, IconCheck, IconCopy } from '../icons'
 
 export function CopyButton({ text, className }: { text: string; className?: string }) {
   const t = useT()
   const [done, setDone] = useState(false)
+  const mounted = useRef(true)
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+      if (timer.current !== undefined) {
+        clearTimeout(timer.current)
+        timer.current = undefined
+      }
+    }
+  }, [])
+
   return (
     <button
       className={className ?? 'icon-btn tiny'}
       title={t('复制')}
       onClick={(e) => {
         e.stopPropagation()
-        navigator.clipboard.writeText(text)
-        setDone(true)
-        setTimeout(() => setDone(false), 1200)
+        void copyText(text).then(
+          () => {
+            if (!mounted.current) return
+            setDone(true)
+            if (timer.current !== undefined) clearTimeout(timer.current)
+            timer.current = setTimeout(() => {
+              timer.current = undefined
+              if (mounted.current) setDone(false)
+            }, 1200)
+          },
+          (err) => {
+            toast(t('无法复制：{error}', { error: errorText(err) }), 'error')
+          }
+        )
       }}
     >
       {done ? <IconCheck size={13} /> : <IconCopy size={13} />}

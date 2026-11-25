@@ -197,7 +197,10 @@ export function ThreadView({ thread, changesOpen, onToggleChanges }: Props) {
   const body = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
   const composer = useRef<ComposerHandle>(null)
-  const [editingTitle, setEditingTitle] = useState(false)
+  const [editingThreadId, setEditingThreadId] = useState<string | null>(null)
+  const titleEditCanceled = useRef(false)
+  if (editingThreadId && editingThreadId !== thread.id) setEditingThreadId(null)
+  const editingTitle = editingThreadId === thread.id
   const title = displayThreadTitle(thread, t)
 
   const ownCommands = useStore((s) => s.commandsByThread[thread.id])
@@ -272,21 +275,36 @@ export function ThreadView({ thread, changesOpen, onToggleChanges }: Props) {
         <div className="header-title">
           {editingTitle ? (
             <input
+              key={thread.id}
               autoFocus
               className="title-input"
               defaultValue={title}
               onBlur={(e) => {
+                if (titleEditCanceled.current || editingThreadId !== thread.id) {
+                  titleEditCanceled.current = false
+                  return
+                }
                 const v = e.target.value.trim()
                 if (v && v !== title) window.api.updateThread(thread.id, { title: v })
-                setEditingTitle(false)
+                setEditingThreadId(null)
               }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
-                if (e.key === 'Escape') setEditingTitle(false)
+                if (e.key === 'Escape') {
+                  titleEditCanceled.current = true
+                  setEditingThreadId(null)
+                }
               }}
             />
           ) : (
-            <h1 className="no-drag" onDoubleClick={() => setEditingTitle(true)} title={t('双击重命名')}>
+            <h1
+              className="no-drag"
+              onDoubleClick={() => {
+                titleEditCanceled.current = false
+                setEditingThreadId(thread.id)
+              }}
+              title={t('双击重命名')}
+            >
               {title}
             </h1>
           )}

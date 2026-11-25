@@ -3,9 +3,10 @@ import type { ThreadMeta } from '@shared/types'
 import { cliTitle, threadCli } from '@shared/types'
 import { displayThreadTitle } from '@shared/thread-title'
 import { isThreadUnread } from '@shared/task-counts'
+import { copyText } from '../../lib/clipboard'
 import { relativeTime } from '../../lib/format'
 import { useT } from '../../lib/i18n'
-import { forkThread, openThread, setState, syncThreadFromCli, toast, useStore } from '../../store'
+import { errorText, forkThread, openThread, setState, syncThreadFromCli, toast, useStore } from '../../store'
 import { IconArchive, IconBranch, IconCopy, IconEdit, IconFolder, IconMore, IconPin, IconRefresh, IconTrash, Spinner } from '../icons'
 import { MenuButton, type MenuEntry } from '../Menu'
 import { InlineRename } from './InlineRename'
@@ -55,8 +56,10 @@ export function ThreadRow(props: {
       icon: <IconCopy size={14} />,
       disabled: !thread.chatId,
       onSelect: () => {
-        navigator.clipboard.writeText(thread.chatId!)
-        toast(t('已复制会话 ID，可用 agent --resume <id> 在终端继续'))
+        void copyText(thread.chatId!).then(
+          () => toast(t('已复制会话 ID，可用 agent --resume <id> 在终端继续')),
+          (err) => toast(t('无法复制：{error}', { error: errorText(err) }), 'error')
+        )
       }
     },
     ...(thread.cwd && !window.api.isRemote ? [{ label: t('打开工作目录'), icon: <IconFolder size={14} />, onSelect: () => window.api.openPath(thread.cwd!) }] : []),
