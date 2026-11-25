@@ -26,6 +26,7 @@ Agent Desktop runs the CLIs on your computer through the [Agent Client Protocol]
 - Find text in a conversation or Grok Bot chat with Ctrl+F, with every match highlighted
 - Resize the sidebar, the changes panel, and the Grok Bot list by dragging their inner edge; the widths are remembered
 - Use the same interface remotely over the LAN or an SSH reverse tunnel, with Chinese/English and light/dark themes
+- Built-in CLI (`agent-desktop` / `agd`): install to PATH from Settings to orchestrate projects and threads from your terminal, attaching live to the running desktop app or falling back to headless execution automatically with streaming `text`, `json`, and `jsonl` output
 
 See the [user guide](docs/user-guide.md) for detailed behavior and shortcuts.
 
@@ -65,6 +66,7 @@ The [documentation index](docs/README.md) links to all guides. Each guide has an
 | Guide | Contents |
 | --- | --- |
 | [CLI setup](docs/cli-setup.md) | Installation, CLI paths, authentication, and updates |
+| [App CLI](docs/cli-usage.md) | `agent-desktop` / `agd` CLI, dual-mode execution, and PATH setup |
 | [User guide](docs/user-guide.md) | Projects, conversations, models, attachments, shortcuts, and Plan mode |
 | [MCP and skills](docs/integrations.md) | App-managed and native CLI configuration |
 | [Usage statistics](docs/usage-stats.md) | Token counts, cost estimates, account quota, and Codex session accounting |

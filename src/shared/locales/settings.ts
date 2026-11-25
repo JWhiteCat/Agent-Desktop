@@ -350,5 +350,21 @@ export const settingsMessages: Record<string, string> = {
   '这个配置里已经有名为「{name}」的 MCP 服务器': 'This configuration already has an MCP server named “{name}”',
   '这个 Skill 由本应用管理，请在“本应用”里修改': 'This skill is managed by this app. Edit it under “This app”.',
   '这个 Skill 由 CLI 管理，更新时会被覆盖，不能在这里修改': 'This skill is managed by the CLI and overwritten on update, so it cannot be changed here',
-  '{path} 已存在': '{path} already exists'
+  '{path} 已存在': '{path} already exists',
+  '本应用命令行工具（agent-desktop / agd）': 'App CLI (agent-desktop / agd)',
+  '在终端控制当前运行的桌面端（实时同步界面）；桌面端未运行时自动无头执行，共享配置、Skill 与历史记录。': 'Control the running desktop app from a terminal with live UI sync, or run headless automatically when the desktop app is closed while sharing settings, skills, and history.',
+  '已安装到 PATH': 'Installed on PATH',
+  'PATH 路径已失效': 'PATH entry is stale',
+  '当前环境暂不可安装': 'Unavailable in this environment',
+  '未安装到 PATH': 'Not installed on PATH',
+  '安装命令到 PATH': 'Install command to PATH',
+  '重新安装到 PATH': 'Reinstall to PATH',
+  '从 PATH 移除': 'Remove from PATH',
+  '复制验证命令': 'Copy verify command',
+  '复制 PATH 配置': 'Copy PATH snippet',
+  '已将 agent-desktop 和 agd 安装到 PATH，新开终端生效': 'Installed agent-desktop and agd to PATH. Open a new terminal to use them.',
+  '已从 PATH 移除 agent-desktop 和 agd': 'Removed agent-desktop and agd from PATH.',
+  '当前 Shell 的 PATH 尚未包含此目录，可将以下配置加入 ~/.zshrc 或 ~/.bashrc：': 'This directory is not yet in your shell PATH. Add the line below to ~/.zshrc or ~/.bashrc:',
+  '便携版或 AppImage 移动文件位置后，需要在此重新安装。': 'If you move the portable build or AppImage, reinstall the command here.',
+  '复制失败': 'Copy failed'
 }

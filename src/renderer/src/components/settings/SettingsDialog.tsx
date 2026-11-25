@@ -8,6 +8,7 @@ import { McpSettings, SkillSettings } from '../AgentConfigSettings'
 import { MODES } from '../Composer'
 import { ModelPicker } from '../ModelPicker'
 import { Modal } from '../Modal'
+import { AppCliPathCard } from './AppCliPathCard'
 import { CliCard } from './CliCard'
 import { FavoriteModels } from './FavoriteModels'
 import { Field } from './Field'
@@ -207,6 +208,7 @@ export function SettingsDialog({ onClose, onOpenImport }: { onClose: () => void;
               <option value="antigravity">Antigravity CLI</option>
             </select>
           </Field>
+          {!window.api.isRemote && <AppCliPathCard />}
         </section>
       )}
 

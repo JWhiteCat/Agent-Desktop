@@ -1,4 +1,4 @@
-import { net } from 'electron'
+import { runtimeFetch } from './runtime-fetch'
 import { parseCodexSessionUsage, type CodexSessionUsage } from '@shared/codex-account'
 import { resolveCodexApiKey } from './codex'
 import { readCodexAuth } from './quota'
@@ -24,8 +24,8 @@ export async function loadCodexSessionUsage(
       'Content-Type': 'application/json'
     }
     if (auth.accountId) headers['ChatGPT-Account-Id'] = auth.accountId
-    // Chromium follows the system proxy used by account quota requests.
-    const response = await net.fetch(CODEX_TASK_USAGE, {
+    // Chromium follows the system proxy used by account quota requests; headless falls back to Node fetch.
+    const response = await runtimeFetch(CODEX_TASK_USAGE, {
       method: 'POST',
       headers,
       body: JSON.stringify({

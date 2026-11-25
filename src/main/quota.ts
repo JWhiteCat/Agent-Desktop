@@ -3,7 +3,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { net } from 'electron'
+import { runtimeFetch } from './runtime-fetch'
 import {
   applyCursorMonthUsage,
   parseAntigravityQuota,
@@ -26,8 +26,8 @@ const DETAIL_FETCH_MS = 3_000
 const ANTIGRAVITY_DETAIL_FETCH_MS = 10_000
 const EXPIRED_NOTE = () => translate('Codex 登录已过期，请重新登录')
 
-/** Chromium's network stack follows the system proxy. Node's fetch does not. */
-const http: typeof net.fetch = (...args) => net.fetch(...args)
+/** Chromium's network stack follows the system proxy. Headless CLI falls back to Node's fetch. */
+const http: typeof runtimeFetch = (...args) => runtimeFetch(...args)
 
 /** In-memory only. The API key itself is not stored here. */
 let cursorTokenCache: { keyId: string; accessToken: string; exp: number } | null = null

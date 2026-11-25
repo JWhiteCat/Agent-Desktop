@@ -7,6 +7,7 @@
 | 文档 | 内容 |
 | --- | --- |
 | [CLI 安装与配置](cli-setup.zh-CN.md) | 环境要求、CLI 安装与检测、认证、更新 |
+| [命令行工具](cli-usage.zh-CN.md) | 本应用 CLI（`agent-desktop` / `agd`）、双模式运行、任务编排与 PATH 安装 |
 | [使用指南](user-guide.zh-CN.md) | 功能细节、附件、基本操作、快捷键、界面语言、Plan 模式 |
 | [MCP 与 Skill](integrations.zh-CN.md) | 本应用集成、各 CLI 原生配置、本地管理 |
 | [用量统计](usage-stats.zh-CN.md) | 账号额度、token、费用估算、Codex 回合统计与历史修复 |

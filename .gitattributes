@@ -1,2 +1,5 @@
 *.sh text eol=lf
 *.bat text eol=crlf
+*.cmd text eol=crlf
+resources/cli-bin/agent-desktop text eol=lf
+resources/cli-bin/agd text eol=lf

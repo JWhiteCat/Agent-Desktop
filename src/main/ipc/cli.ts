@@ -16,6 +16,8 @@ import { scanCliSessions } from '../history'
 import { newId } from '../id'
 import type { Handler } from '../remote'
 import { syncAntigravityFromCli, syncFromCli } from '../thread-history'
+import { getAppCliPathStatus, installAppCliToPath, uninstallAppCliFromPath } from '../cli-path-installer'
+import { runtimeFetch } from '../runtime-fetch'
 import type { IpcDeps } from './deps'
 
 function chosen(settingsCli: CliProvider, provider?: CliProvider): CliProvider {
@@ -33,7 +35,7 @@ export function cliHandlers(deps: IpcDeps): Record<string, Handler> {
   const { store, broadcast, modelsCache } = deps
   const updating = new Set<CliProvider>()
   let antigravityModelRequest = 0
-  const installer = new CliInstaller((url, init) => import('electron').then(({ net }) => net.fetch(url, init)))
+  const installer = new CliInstaller((url, init) => runtimeFetch(url, init))
   const infoCache = cliInfoCacheFor(store)
   const history = {
     store,
@@ -184,6 +186,9 @@ export function cliHandlers(deps: IpcDeps): Record<string, Handler> {
       }
       broadcast()
       return count
-    }
+    },
+    'app-cli:status': () => getAppCliPathStatus(store.dataDir),
+    'app-cli:install': () => installAppCliToPath(store.dataDir),
+    'app-cli:uninstall': () => uninstallAppCliFromPath(store.dataDir)
   }
 }

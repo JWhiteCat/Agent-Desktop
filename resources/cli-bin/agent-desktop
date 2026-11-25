@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+resolve_script() {
+  local src="$1"
+  while [ -L "$src" ]; do
+    local dir
+    dir="$(cd -P "$(dirname -- "$src")" && pwd)"
+    src="$(readlink -- "$src")"
+    case "$src" in
+      /*) ;;
+      *) src="$dir/$src" ;;
+    esac
+  done
+  cd -P "$(dirname -- "$src")" && pwd
+}
+
+BIN_DIR="$(resolve_script "${BASH_SOURCE[0]}")"
+CLI_ENTRY="$BIN_DIR/../cli/cli.cjs"
+
+if [ -x "$BIN_DIR/../../MacOS/Agent Desktop" ]; then
+  APP_BIN="$BIN_DIR/../../MacOS/Agent Desktop"
+elif [ -x "$BIN_DIR/../../agent-desktop" ]; then
+  APP_BIN="$BIN_DIR/../../agent-desktop"
+elif [ -f "$BIN_DIR/../../Agent Desktop.exe" ]; then
+  APP_BIN="$BIN_DIR/../../Agent Desktop.exe"
+else
+  echo "Error: Could not locate Agent Desktop executable next to $BIN_DIR" >&2
+  exit 1
+fi
+
+ELECTRON_RUN_AS_NODE=1 exec "$APP_BIN" "$CLI_ENTRY" "$@"

@@ -26,6 +26,7 @@
 - 可调宽度：拖动侧边栏、变更面板和 Grok Bot 列表的内侧边缘调整宽度，宽度会被记住。
 - 用量统计：查看账号额度、本机 token 和费用估算，以及每轮任务耗时、客户端首字延迟和分词估算的可见输出速度。
 - 桌面与远程体验：系统通知、未读状态、中英文和主题切换，支持局域网与 SSH 公网访问。
+- 命令行工具（`agent-desktop` / `agd`）：在设置中一键安装到 PATH，优先连接运行中的桌面端实时同步会话，桌面端未运行时自动无头执行，支持流式输出、`json`/`jsonl` 与脚本编排。
 
 完整行为和使用细节见 [使用指南](docs/user-guide.zh-CN.md)。
 
@@ -72,6 +73,7 @@ macOS 用户可从 Releases 下载对应芯片的 `agent-desktop-<version>-mac-a
 | 主题 | 说明 |
 | --- | --- |
 | [CLI 安装与配置](docs/cli-setup.zh-CN.md) | 安装、认证、检测与更新 |
+| [命令行工具](docs/cli-usage.zh-CN.md) | `agent-desktop` / `agd` 命令、双模式运行与 PATH 安装 |
 | [使用指南](docs/user-guide.zh-CN.md) | 功能细节、附件、快捷键、语言与 Plan 模式 |
 | [MCP 与 Skill](docs/integrations.zh-CN.md) | 本应用集成与本机原生配置 |
 | [用量统计](docs/usage-stats.zh-CN.md) | 账号额度、token 与费用估算 |

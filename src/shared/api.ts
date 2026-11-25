@@ -2,6 +2,7 @@ import type { ToolImageData, ToolImageRef } from './tool-images'
 import type {
   AgentEvent,
   AgentMode,
+  AppCliPathStatus,
   AppState,
   CliInfo,
   CliInstallStatus,
@@ -91,6 +92,12 @@ export interface DesktopApi {
   cliInstallStatus(provider: CliProvider): Promise<CliInstallStatus>
   installCli(provider: CliProvider): Promise<void>
   updateCli(provider: CliProvider): Promise<string>
+  /** Desktop only: inspects whether `agent-desktop` / `agd` are installed on PATH. */
+  appCliPathStatus(): Promise<AppCliPathStatus>
+  /** Desktop only: registers `agent-desktop` and `agd` on the user's PATH. */
+  installAppCliToPath(): Promise<AppCliPathStatus>
+  /** Desktop only: removes `agent-desktop` and `agd` from the user's PATH. */
+  uninstallAppCliFromPath(): Promise<AppCliPathStatus>
   scanCliSessions(): Promise<CliSession[]>
   importCliSessions(chatIds: string[]): Promise<number>
   gitDiff(cwd: string): Promise<GitDiff>

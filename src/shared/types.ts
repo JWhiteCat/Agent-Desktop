@@ -559,6 +559,18 @@ export interface GrokBotCachedChat extends GrokBotHistory {
 /** Messages added or updated after the cursor. */
 export type GrokBotPoll = GrokBotHistory
 
+export interface AppCliPathStatus {
+  commands: string[]
+  supported: boolean
+  state: 'installed' | 'not-installed' | 'stale' | 'unsupported'
+  targetPath?: string
+  sourcePath?: string
+  inPath: boolean
+  isPortable?: boolean
+  pathSnippet?: string
+  error?: string
+}
+
 export type AgentEvent =
   | { type: 'items'; threadId: string; items: Item[] }
   | { type: 'running'; threadId: string; running: boolean }

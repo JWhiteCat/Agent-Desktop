@@ -7,6 +7,7 @@ Start with the project's [quick start](../README.md#quick-start). For first-time
 | Guide | Contents |
 | --- | --- |
 | [CLI setup](cli-setup.md) | Requirements, installation, detection, authentication, and updates |
+| [App CLI](cli-usage.md) | Built-in `agent-desktop` / `agd` CLI, attached/headless dual mode, and PATH installation |
 | [User guide](user-guide.md) | Projects, conversations, models, permissions, attachments, shortcuts, and Plan mode |
 | [MCP and skills](integrations.md) | App-managed configuration and each CLI's native local configuration |
 | [Usage statistics](usage-stats.md) | Token counts, pricing, account quota, session quota, and accounting limitations |

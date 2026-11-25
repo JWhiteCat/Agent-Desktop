@@ -7,5 +7,9 @@ set -euo pipefail
 app_dir="${APPDIR:-$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")" && pwd)}"
 export LD_LIBRARY_PATH="$app_dir/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 export XDG_DATA_DIRS="$app_dir/usr/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+if [ "${AGENT_DESKTOP_CLI:-}" = "1" ]; then
+  export ELECTRON_RUN_AS_NODE=1
+  exec "$app_dir/agent-desktop" "$app_dir/resources/cli/cli.cjs" "$@"
+fi
 unset ELECTRON_RUN_AS_NODE
 exec "$app_dir/agent-desktop" "$@"

@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+resolve_script() {
+  local src="$1"
+  while [ -L "$src" ]; do
+    local dir
+    dir="$(cd -P "$(dirname -- "$src")" && pwd)"
+    src="$(readlink -- "$src")"
+    case "$src" in
+      /*) ;;
+      *) src="$dir/$src" ;;
+    esac
+  done
+  cd -P "$(dirname -- "$src")" && pwd
+}
+
+BIN_DIR="$(resolve_script "${BASH_SOURCE[0]}")"
+exec "$BIN_DIR/agent-desktop" "$@"

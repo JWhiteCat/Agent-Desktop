@@ -37,7 +37,10 @@ const REMOTE_BLOCKED = new Set([
   'attachment:open', 'tool-image:copy',
   'shell:runToolbarCommand',
   'grokbot:attachmentSave',
-  'grokbot:attachmentReveal'
+  'grokbot:attachmentReveal',
+  'app-cli:status',
+  'app-cli:install',
+  'app-cli:uninstall'
 ])
 const REMOTE_ONLY_DESKTOP_SETTINGS: (keyof Settings)[] = [
   // Changing the destination can redirect the desktop's configured Gemini API key.

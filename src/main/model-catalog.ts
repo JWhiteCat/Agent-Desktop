@@ -1,13 +1,13 @@
-import { app } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { catalogFromStorageJson, type CatalogModel } from '@shared/model-catalog'
+import { getRuntimeAppDataDir } from './runtime-paths'
 
 const STORAGE_KEY = 'src.vs.platform.reactivestorage.browser.reactiveStorageServiceImpl.persistentStorage.applicationUser'
 
 function stateDbPath(): string {
-  return path.join(app.getPath('appData'), 'Cursor', 'User', 'globalStorage', 'state.vscdb')
+  return path.join(getRuntimeAppDataDir(), 'Cursor', 'User', 'globalStorage', 'state.vscdb')
 }
 
 function asText(value: unknown): string {

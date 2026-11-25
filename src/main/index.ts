@@ -11,6 +11,7 @@ import { createIpcHandlers } from './ipc'
 import { configureManagedCliDirectory } from './managed-cli-location'
 import { isTrustedAppFrame } from './ipc/guard'
 import { flushGrokBotCaches, grokBotFiles } from './ipc/grokbot'
+import { handlersForLocalCli, LocalControlServer } from './local-control'
 import { notifyRunFinished } from './notify'
 import { publish } from './publish'
 import { QuitConfirmation } from './quit-confirmation'
@@ -31,6 +32,7 @@ const remoteRuntime = new RemoteRuntime(
   () => store,
   () => snapshot()
 )
+const localControl = new LocalControlServer()
 
 const isWin = process.platform === 'win32'
 const isMac = process.platform === 'darwin'
@@ -50,7 +52,7 @@ function snapshot(): AppState {
 }
 
 function send(channel: string, payload: unknown): void {
-  publish(win, remoteRuntime.server, channel, payload)
+  publish(win, remoteRuntime.server, channel, payload, localControl)
 }
 
 const broadcastState = (): void => {
@@ -91,6 +93,7 @@ function cleanupBeforeExit(): void {
   taskbarBadge?.restore()
   sessions?.stopAll()
   void remoteRuntime.stop()
+  void localControl.stop()
   store?.flush()
   flushGrokBotCaches()
 }
@@ -149,6 +152,13 @@ app.whenReady().then(() => {
     return fn(...args)
   })
   void remoteRuntime.apply()
+  void localControl.start({
+    dataDir: store.dataDir,
+    appVersion: app.getVersion(),
+    handlers: handlersForLocalCli(handlers, snapshot)
+  }).catch((err) => {
+    console.error('[cli-control] failed to start local control server', err)
+  })
   ensureMainWindow()
   app.on('activate', () => {
     const current = ensureMainWindow()
@@ -163,6 +173,7 @@ app.on('window-all-closed', () => {
 })
 
 app.on('will-quit', () => {
+  void localControl.stop()
   cleanupAcpUsagePreload()
   removeDir(sessionDataDir)
 })

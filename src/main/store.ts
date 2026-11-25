@@ -1,6 +1,6 @@
-import { app } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
+import { getRuntimeDataDir } from './runtime-paths'
 import { normalizeMcpServers, normalizeSkills } from '@shared/agent-config'
 import { normalizeLanguage } from '@shared/i18n'
 import { normalizeGrokBotNames } from '@shared/grokbot'
@@ -54,8 +54,8 @@ export class Store {
   private stateDirty = false
   private dirtyThreads = new Set<string>()
 
-  constructor() {
-    this.dir = path.join(app.getPath('userData'), 'data')
+  constructor(options?: { dataDir?: string; userDataDir?: string }) {
+    this.dir = options?.dataDir ? path.resolve(options.dataDir) : getRuntimeDataDir(options?.userDataDir)
     this.threadsDir = path.join(this.dir, 'threads')
     this.stateFile = path.join(this.dir, 'state.json')
     fs.mkdirSync(this.threadsDir, { recursive: true, mode: 0o700 })

@@ -69,6 +69,30 @@ export default defineConfig(({ command }) => ({
           }
         })
       }
+    }, {
+      name: 'standalone-cli',
+      async closeBundle() {
+        // Build self-contained Node CLI bundle that runs under ELECTRON_RUN_AS_NODE=1 without Electron modules.
+        await viteBuild({
+          configFile: false,
+          publicDir: false,
+          logLevel: 'warn',
+          resolve: {
+            alias: {
+              '@shared': resolve('src/shared'),
+              electron: resolve('src/cli/electron-stub.ts'),
+              '@aws-sdk/client-s3': resolve('src/cli/electron-stub.ts')
+            }
+          },
+          build: {
+            target: 'node22',
+            outDir: resolve('out/main'),
+            emptyOutDir: false,
+            lib: { entry: resolve('src/cli/index.ts'), formats: ['cjs'], fileName: () => 'cli.cjs' },
+            rollupOptions: { external: (id) => id.startsWith('node:') || builtinModules.includes(id) }
+          }
+        })
+      }
     }]
   },
   preload: {
