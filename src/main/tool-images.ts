@@ -254,7 +254,12 @@ async function antigravityImageEvidence(chatId: string, file: string, cwd: strin
       for await (const line of handle.readLines()) {
         if (!line.trim()) continue
         if (!sawMatchingRead && !line.includes('"read_file"')) continue
-        const row = JSON.parse(line)
+        let row: any
+        try {
+          row = JSON.parse(line)
+        } catch {
+          continue
+        }
         if (row?.type === 'PLANNER_RESPONSE' && Array.isArray(row.tool_calls)) {
           sawMatchingRead = row.tool_calls.some((call: any) => {
             if (call?.name !== 'read_file' || !call.args || typeof call.args !== 'object') return false

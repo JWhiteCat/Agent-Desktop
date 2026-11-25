@@ -182,4 +182,31 @@ describe('claude history', () => {
     expect(found).toHaveLength(1)
     expect(found[0]).toMatchObject({ chatId: 'sess-1', cli: 'claude', cwd: 'D:/repo', title: '第一句', imported: true })
   })
+
+  it('skips vanished or unreadable session files during scanClaudeSessions instead of aborting', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-desktop-claude-hist-'))
+    roots.push(root)
+    const dir = path.join(root, 'D--repo')
+    fs.mkdirSync(dir, { recursive: true })
+    const goodFile = path.join(dir, 'sess-good.jsonl')
+    const badFile = path.join(dir, 'sess-bad.jsonl')
+    fs.writeFileSync(goodFile, JSON.stringify({
+      type: 'user', sessionId: 'sess-good', cwd: 'D:/repo', timestamp: '2026-01-02T00:00:00.000Z',
+      message: { role: 'user', content: '好会话' }
+    }))
+    fs.writeFileSync(badFile, JSON.stringify({
+      type: 'user', sessionId: 'sess-bad', cwd: 'D:/repo', timestamp: '2026-01-02T00:00:00.000Z',
+      message: { role: 'user', content: '坏会话' }
+    }))
+
+    const origOpenSync = fs.openSync
+    vi.spyOn(fs, 'openSync').mockImplementation((filePath, ...rest) => {
+      if (String(filePath) === badFile) throw Object.assign(new Error('EACCES'), { code: 'EACCES' })
+      return origOpenSync(filePath, ...rest)
+    })
+
+    const found = scanClaudeSessions(new Set(), root)
+    expect(found).toHaveLength(1)
+    expect(found[0]).toMatchObject({ chatId: 'sess-good', title: '好会话' })
+  })
 })

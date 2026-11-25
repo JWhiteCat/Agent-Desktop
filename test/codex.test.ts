@@ -1,10 +1,27 @@
-import { describe, expect, it } from 'vitest'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { attachmentPrompt } from '../src/shared/attachment-message'
 import { codexPlanModePrompt } from '../src/main/acp'
-import { transcriptItems } from '../src/main/codex-history'
+import { scanCodexSessions, transcriptItems } from '../src/main/codex-history'
 import {
   codexModelConfig, codexModeId, configOffersFastMode, currentCodexModel, modelsFromConfig, modelsFromSession,
   resolveCodexAcpEntry, withCodexFastVariants
 } from '../src/main/codex'
+
+const tempDirs: string[] = []
+afterEach(() => {
+  vi.restoreAllMocks()
+  vi.unstubAllEnvs()
+  for (const dir of tempDirs.splice(0)) {
+    const resolved = path.resolve(dir)
+    if (path.dirname(resolved) !== path.resolve(os.tmpdir()) || !path.basename(resolved).startsWith('agent-desktop-codex-hist-')) {
+      throw new Error(`Unexpected test directory: ${resolved}`)
+    }
+    fs.rmSync(resolved, { recursive: true, force: true })
+  }
+})
 
 describe('codex mode and models', () => {
   it('keeps Ask read-only regardless of full access or sandbox settings', () => {
@@ -251,5 +268,74 @@ describe('codex rollout transcripts', () => {
       usageId: 'codex:event-only:line:1', cli: 'codex', durationMs: 1000,
       usage: { inputTokens: 10, outputTokens: 5 }
     })
+  })
+
+  it('strips <agent_desktop_client> instructions from Codex Plan-mode transcripts and scanned session titles', () => {
+    const wrapped = codexPlanModePrompt('重构登录流程')
+    const managedId = '11111111-2222-3333-4444-555555555555'
+    const withAttachment = codexPlanModePrompt(attachmentPrompt('带附件的计划', managedId))
+    const rollout = [
+      JSON.stringify({
+        timestamp: '2026-09-01T00:00:00.000Z',
+        type: 'session_meta',
+        payload: { id: 'plan-session-1', cwd: 'D:/repo', timestamp: '2026-09-01T00:00:00.000Z' }
+      }),
+      JSON.stringify({
+        type: 'response_item',
+        payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: wrapped }] }
+      }),
+      JSON.stringify({
+        type: 'response_item',
+        payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: '好的，先给出计划。' }] }
+      }),
+      JSON.stringify({
+        type: 'response_item',
+        payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: withAttachment }] }
+      })
+    ].join('\n')
+
+    const items = transcriptItems(rollout)
+    expect(items[0]).toMatchObject({ kind: 'user', text: '重构登录流程' })
+    expect(items[0].kind === 'user' && items[0].text).not.toContain('agent_desktop_client')
+    expect(items[2]).toMatchObject({ kind: 'user', text: '带附件的计划\n[附件信息不可用]', managedMessageId: managedId })
+
+    const codexHome = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-desktop-codex-hist-'))
+    tempDirs.push(codexHome)
+    const dir = path.join(codexHome, 'sessions', '2026', '09', '01')
+    fs.mkdirSync(dir, { recursive: true })
+    fs.writeFileSync(path.join(dir, 'rollout-plan-session-1.jsonl'), rollout)
+    vi.stubEnv('CODEX_HOME', codexHome)
+
+    const scanned = scanCodexSessions(new Set())
+    expect(scanned).toHaveLength(1)
+    expect(scanned[0]).toMatchObject({ chatId: 'plan-session-1', title: '重构登录流程', cwd: 'D:/repo' })
+  })
+
+  it('skips vanished or unreadable rollout files during scanCodexSessions instead of aborting the scan', () => {
+    const codexHome = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-desktop-codex-hist-'))
+    tempDirs.push(codexHome)
+    const dir = path.join(codexHome, 'sessions', '2026', '09', '01')
+    fs.mkdirSync(dir, { recursive: true })
+    const goodFile = path.join(dir, 'rollout-good.jsonl')
+    const badFile = path.join(dir, 'rollout-bad.jsonl')
+    fs.writeFileSync(goodFile, [
+      JSON.stringify({ type: 'session_meta', payload: { id: 'good-1', cwd: 'D:/repo', timestamp: '2026-09-01T00:00:00.000Z' } }),
+      JSON.stringify({ type: 'event_msg', payload: { type: 'user_message', message: 'Healthy rollout' } })
+    ].join('\n'))
+    fs.writeFileSync(badFile, [
+      JSON.stringify({ type: 'session_meta', payload: { id: 'bad-1', cwd: 'D:/repo', timestamp: '2026-09-01T00:00:00.000Z' } }),
+      JSON.stringify({ type: 'event_msg', payload: { type: 'user_message', message: 'Unreadable rollout' } })
+    ].join('\n'))
+    vi.stubEnv('CODEX_HOME', codexHome)
+
+    const origOpenSync = fs.openSync
+    vi.spyOn(fs, 'openSync').mockImplementation((filePath, ...rest) => {
+      if (String(filePath) === badFile) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' })
+      return origOpenSync(filePath, ...rest)
+    })
+
+    const scanned = scanCodexSessions(new Set())
+    expect(scanned).toHaveLength(1)
+    expect(scanned[0]).toMatchObject({ chatId: 'good-1', title: 'Healthy rollout' })
   })
 })

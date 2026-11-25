@@ -174,4 +174,82 @@ describe('Antigravity custom gateway', () => {
     expect(await (await send(model)).text()).toBe(stream)
     expect(requests.map(({ url }) => url)).toEqual([`/prefix${API_PATH}${model}${STREAM_ACTION}`])
   })
+
+  it('does not abort an in-flight Carbon retry when the rejected alias response errors mid-retry', async () => {
+    const body = JSON.stringify({ generationConfig: { thinkingConfig: { thinkingLevel: 'HIGH' } } })
+    let aliasRes: http.ServerResponse | undefined
+    const upstream = http.createServer(async (req, res) => {
+      if (req.method === 'GET') {
+        res.writeHead(405).end()
+        return
+      }
+      for await (const _chunk of req) { /* drain */ }
+      if (req.url === `/prefix${API_PATH}${CARBON}-high${STREAM_ACTION}`) {
+        aliasRes = res
+        // Send 403 headers with an unfinished chunked body so we can tear down the socket during retry.
+        res.writeHead(403, { 'content-type': 'text/plain', 'transfer-encoding': 'chunked' })
+        res.write('partial alias error')
+        return
+      }
+      // Tear down the parked rejectedAlias socket while the base-model retry is in flight.
+      aliasRes?.socket?.destroy()
+      await new Promise((resolve) => setTimeout(resolve, 25))
+      res.writeHead(200, { 'content-type': 'text/event-stream' }).end(stream)
+    })
+    await new Promise<void>((resolve) => upstream.listen(0, '127.0.0.1', resolve))
+    cleanups.push(() => { upstream.close(); upstream.closeAllConnections() })
+    const address = upstream.address() as { port: number }
+    const gateway = await openAntigravityGateway(`http://127.0.0.1:${address.port}/prefix/`)
+    cleanups.push(gateway.close)
+
+    const response = await fetch(`${gateway.endpoint}${API_PATH}${CARBON}${STREAM_ACTION}`, {
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': 'fixture-key' }, body
+    })
+    expect(response.status).toBe(200)
+    expect(await response.text()).toBe(stream)
+  })
+
+  it('destroys the paused rejected alias response when the client closes mid-retry', async () => {
+    const body = JSON.stringify({ generationConfig: { thinkingConfig: { thinkingLevel: 'HIGH' } } })
+    let aliasClosed = false
+    let retryClosed = false
+    let retryArrived!: () => void
+    const retryStarted = new Promise<void>((resolve) => { retryArrived = resolve })
+
+    const upstream = http.createServer(async (req, res) => {
+      if (req.method === 'GET') {
+        res.writeHead(405).end()
+        return
+      }
+      for await (const _chunk of req) { /* drain */ }
+      if (req.url === `/prefix${API_PATH}${CARBON}-high${STREAM_ACTION}`) {
+        res.on('close', () => { aliasClosed = true })
+        res.writeHead(403, { 'content-type': 'text/plain', 'transfer-encoding': 'chunked' })
+        res.write('waiting')
+        return
+      }
+      res.on('close', () => { retryClosed = true })
+      retryArrived()
+    })
+    await new Promise<void>((resolve) => upstream.listen(0, '127.0.0.1', resolve))
+    cleanups.push(() => { upstream.close(); upstream.closeAllConnections() })
+    const address = upstream.address() as { port: number }
+    const gateway = await openAntigravityGateway(`http://127.0.0.1:${address.port}/prefix/`)
+    cleanups.push(gateway.close)
+
+    const controller = new AbortController()
+    const pending = fetch(`${gateway.endpoint}${API_PATH}${CARBON}${STREAM_ACTION}`, {
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': 'fixture-key' }, body,
+      signal: controller.signal
+    }).catch(() => undefined)
+
+    await retryStarted
+    controller.abort()
+    await pending
+
+    await vi.waitFor(() => {
+      expect(retryClosed).toBe(true)
+      expect(aliasClosed).toBe(true)
+    })
+  })
 })

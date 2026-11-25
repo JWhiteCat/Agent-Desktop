@@ -16,27 +16,33 @@ import { parseRolloutLines, type TranscriptRow } from './codex-history-repair'
 
 export { repairCodexAssistantMessages, repairCodexMcpTools } from './codex-history-repair'
 
+const CLIENT_BLOCK = /<agent_desktop_client\b[^>]*>[\s\S]*?<\/agent_desktop_client>/gi
+
 export function scanCodexSessions(importedChatIds: Set<string>): CliSession[] {
   const root = codexSessionsRoot()
   if (!fs.existsSync(root)) return []
   const sessions: CliSession[] = []
   for (const file of walkRollouts(root)) {
-    const head = readRolloutHead(file, 256_000)
-    const meta = codexSessionMeta(head)
-    rememberRolloutAlias(file, meta?.id)
-    if (!meta?.id || !meta.cwd) continue
-    const title = firstUserText(head)
-    const stat = fs.statSync(file)
-    sessions.push({
-      chatId: meta.id,
-      cli: 'codex',
-      title: clipTitle(title || UNTITLED),
-      ...(!title ? { titleKind: 'untitled' as const } : {}),
-      cwd: meta.cwd,
-      createdAt: meta.createdAt || Math.floor(stat.birthtimeMs || stat.mtimeMs),
-      updatedAt: Math.floor(stat.mtimeMs),
-      imported: importedChatIds.has(meta.id)
-    })
+    try {
+      const head = readRolloutHead(file, 256_000)
+      const meta = codexSessionMeta(head)
+      rememberRolloutAlias(file, meta?.id)
+      if (!meta?.id || !meta.cwd) continue
+      const title = firstUserText(head)
+      const stat = fs.statSync(file)
+      sessions.push({
+        chatId: meta.id,
+        cli: 'codex',
+        title: clipTitle(title || UNTITLED),
+        ...(!title ? { titleKind: 'untitled' as const } : {}),
+        cwd: meta.cwd,
+        createdAt: meta.createdAt || Math.floor(stat.birthtimeMs || stat.mtimeMs),
+        updatedAt: Math.floor(stat.mtimeMs),
+        imported: importedChatIds.has(meta.id)
+      })
+    } catch {
+      // Skip rollouts that vanished or became unreadable mid-scan.
+    }
   }
   return sessions.sort((a, b) => b.updatedAt - a.updatedAt)
 }
@@ -205,8 +211,10 @@ function pushMessage(items: Item[], payload: any, readForkPrompt: typeof parseFo
 function appendUser(items: Item[], raw: string, createdAt: number, readForkPrompt: typeof parseForkPrompt, images = 0): void {
   const replay = readForkPrompt(raw)
   if (replay) items.push(...untrustedForkItems(replay.items))
-  const managed = parseAttachmentPrompt(replay ? replay.prompt : raw)
-  const text = `${managed.prompt}${images ? `\n[${images} 张图片]` : ''}${managed.managedMessageId ? '\n[附件信息不可用]' : ''}`.trim()
+  const body = replay ? replay.prompt : raw
+  const managed = parseAttachmentPrompt(body)
+  const prompt = managed.managedMessageId ? managed.prompt : body.replace(CLIENT_BLOCK, '').trim()
+  const text = `${prompt}${images ? `\n[${images} 张图片]` : ''}${managed.managedMessageId ? '\n[附件信息不可用]' : ''}`.trim()
   if (text || managed.managedMessageId) {
     items.push({
       id: newId(),
@@ -236,7 +244,11 @@ function firstUserText(text: string): string {
     const payload = row?.payload ?? row
     if (payload?.type === 'user_message' || (payload?.type === 'message' && payload?.role === 'user') || payload?.role === 'user') {
       const message = textOf(payload.message ?? payload.content)
-      if (message) return parseAttachmentPrompt(parseForkPrompt(message)?.prompt ?? message).prompt
+      if (!message) continue
+      const body = parseForkPrompt(message)?.prompt ?? message
+      const managed = parseAttachmentPrompt(body)
+      const prompt = managed.managedMessageId ? managed.prompt : body.replace(CLIENT_BLOCK, '').trim()
+      if (prompt) return prompt
     }
   }
   return ''

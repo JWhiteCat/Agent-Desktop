@@ -99,7 +99,12 @@ async function scanRollout(rollout: string, opts: ScanOptions): Promise<ImageEvi
         if (!wantExecOutput && !line.includes(quotedId) && !line.includes('"session_meta"')
           && !line.includes('"ImageView"') && !line.includes('"custom_tool_call"')) continue
       }
-      const row = JSON.parse(line)
+      let row: any
+      try {
+        row = JSON.parse(line)
+      } catch {
+        continue
+      }
       const p = row?.payload
       if (row?.type === 'session_meta') {
         if (opts.chatId) {
@@ -152,7 +157,12 @@ async function scanRollout(rollout: string, opts: ScanOptions): Promise<ImageEvi
       if (p.type === 'function_call') {
         if (opts.turnId) return
         if (directCall || p.name !== 'view_image') return
-        const args = typeof p.arguments === 'string' ? JSON.parse(p.arguments) : p.arguments
+        let args: any
+        try {
+          args = typeof p.arguments === 'string' ? JSON.parse(p.arguments) : p.arguments
+        } catch {
+          return
+        }
         const target = normalizeLocalPath(args?.path ?? args?.local_image_path, nativeCwd)
         if (!target || !samePath(target, opts.expected)) return
         directCall = true

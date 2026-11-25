@@ -198,23 +198,38 @@ export async function openAntigravityGateway(endpoint: string): Promise<Antigrav
         response.pipe(res)
       }
 
-      function forward(url: URL, retryOriginal = false, rejectedAlias?: http.IncomingMessage): void {
+      function forward(url: URL, retryOriginal = false, rejectedAlias?: http.IncomingMessage, onRejectedError?: () => void): void {
+        const dropRejectedAlias = () => {
+          if (!rejectedAlias || rejectedAlias.destroyed) return
+          rejectedAlias.destroy()
+        }
         const onError = () => {
-          if (res.destroyed) return
-          if (rejectedAlias && !rejectedAlias.destroyed && !res.headersSent) relay(rejectedAlias)
-          else fail()
+          if (res.destroyed) {
+            dropRejectedAlias()
+            return
+          }
+          if (rejectedAlias && !rejectedAlias.destroyed && !rejectedAlias.errored && !res.headersSent) {
+            if (onRejectedError) rejectedAlias.off('error', onRejectedError)
+            relay(rejectedAlias)
+          } else {
+            dropRejectedAlias()
+            fail()
+          }
         }
         const headers: http.OutgoingHttpHeaders = { ...forwardHeaders(req.headers), host: url.host }
         if (body) headers['content-length'] = body.length
         const upstream = transport.request(url, { method: req.method, headers, agent }, (response) => {
           if (res.destroyed) {
             response.destroy()
+            dropRejectedAlias()
             return
           }
           if (retryOriginal && (response.statusCode === 403 || response.statusCode === 404)) {
             // A gateway that only knows the base ID can still serve the turn.
-            response.on('error', fail)
-            forward(target, false, response)
+            // Keep the rejected alias paused without letting its socket errors abort the retry.
+            const ignoreAliasError = () => { response.destroy() }
+            response.on('error', ignoreAliasError)
+            forward(target, false, response, ignoreAliasError)
             return
           }
           if (rejectedAlias && (response.statusCode ?? 502) >= 400) {
@@ -222,14 +237,20 @@ export async function openAntigravityGateway(endpoint: string): Promise<Antigrav
             onError()
             return
           }
-          rejectedAlias?.destroy()
+          dropRejectedAlias()
           relay(response)
         })
         res.once('close', () => {
-          if (!res.writableFinished) upstream.destroy()
+          if (!res.writableFinished) {
+            upstream.destroy()
+            dropRejectedAlias()
+          }
         })
         upstream.on('error', onError)
-        req.on('error', () => upstream.destroy())
+        req.on('error', () => {
+          upstream.destroy()
+          dropRejectedAlias()
+        })
         if (body) upstream.end(body)
         else req.pipe(upstream)
       }

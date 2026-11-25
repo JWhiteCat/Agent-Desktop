@@ -20,20 +20,24 @@ export function scanClaudeSessions(importedChatIds: Set<string>, root = projects
   if (!fs.existsSync(root)) return []
   const sessions: CliSession[] = []
   for (const file of walkSessions(root)) {
-    const head = readHead(file, 256_000)
-    const meta = sessionMeta(head, file)
-    if (!meta?.id || !meta.cwd) continue
-    const stat = fs.statSync(file)
-    sessions.push({
-      chatId: meta.id,
-      cli: 'claude',
-      title: clipTitle(meta.title || UNTITLED),
-      ...(!meta.title ? { titleKind: 'untitled' as const } : {}),
-      cwd: meta.cwd,
-      createdAt: meta.createdAt || Math.floor(stat.birthtimeMs || stat.mtimeMs),
-      updatedAt: Math.floor(stat.mtimeMs),
-      imported: importedChatIds.has(meta.id)
-    })
+    try {
+      const head = readHead(file, 256_000)
+      const meta = sessionMeta(head, file)
+      if (!meta?.id || !meta.cwd) continue
+      const stat = fs.statSync(file)
+      sessions.push({
+        chatId: meta.id,
+        cli: 'claude',
+        title: clipTitle(meta.title || UNTITLED),
+        ...(!meta.title ? { titleKind: 'untitled' as const } : {}),
+        cwd: meta.cwd,
+        createdAt: meta.createdAt || Math.floor(stat.birthtimeMs || stat.mtimeMs),
+        updatedAt: Math.floor(stat.mtimeMs),
+        imported: importedChatIds.has(meta.id)
+      })
+    } catch {
+      // Skip sessions that vanished or became unreadable mid-scan.
+    }
   }
   return sessions.sort((a, b) => b.updatedAt - a.updatedAt)
 }
